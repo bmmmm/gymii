@@ -22,9 +22,12 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   per-profile keys `gymii.<pid>.gym|workouts|active`, settings stay global
   (`gymii.settings`). Legacy top-level keys migrate lazily in
   `ensureProfiles()`. Stored weights are always in the current display
-  unit — `setUnit()` converts ALL profiles' data in one shot. Other lazy
+  unit — `setUnit()` converts ALL profiles' data in one shot. Set shapes:
+  strength `{reps, weight}`, cardio `{distance, seconds}` (distance in the
+  display unit, m/mi via `distUnit()`; seconds unit-less). Other lazy
   migrations live in `getGym()` (outline, meta). Pick lists:
-  `MUSCLE_GROUPS`, `COMMON_SETTINGS`, `ZONE_LABELS`.
+  `MUSCLE_GROUPS`, `COMMON_SETTINGS`, `ZONE_LABELS` (its 'Cardio' string
+  is a room label — unrelated to the `machine.cardio` flag).
 - `js/app.js` — hash-router, renders views into `#view`.
 - `js/studio.js` — floor-plan editor. `drawGym()` is the shared renderer
   (train mini-maps use it too). Polygon outline with vertex/midpoint
@@ -34,6 +37,10 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   mutation must go through `save()`, never `saveGym()` directly.
 - `js/train.js` — guided workout: `active.plan` (machine order), overview
   hub, per-machine `restSeconds`, locker number, two-tap finish guard.
+  `machine.cardio` flips the log screen to distance+time; the flag is
+  SNAPSHOTTED onto the entry (like num/label) — history/edit/chart/AI read
+  `entry.cardio`, never the live machine. Set-arithmetic must guard
+  against the other shape (`st.reps * st.weight || 0`).
 - `js/history.js` — month heatmap (per-machine filter), progress chart
   (`js/chart.js`), workout list with repeat.
 - `js/ai.js` — copy prompt+data / paste-import. Deliberately NO AI API.

@@ -231,29 +231,41 @@ export function getSettings() {
   };
 }
 
-// Stored weights are always in the current display unit. Switching units
-// therefore converts every stored weight — across ALL profiles' histories
-// and active workouts (unit is global, weight data is per profile) — plus
-// the shared weight step. Rounded to the nearest 0.5 in the target unit.
+// Distances pair with the weight unit: meters in metric, miles in imperial.
+export const distUnit = (settings) => (settings.unit === 'kg' ? 'm' : 'mi');
+
+// Stored weights and distances are always in the current display unit.
+// Switching units therefore converts every stored value — across ALL
+// profiles' histories and active workouts (unit is global, data is per
+// profile) — plus the shared weight step. Weights round to the nearest 0.5
+// in the target unit; distances to whole meters / hundredths of a mile.
+// Seconds are unit-less and untouched.
 export function setUnit(unit) {
   const s = getSettings();
   if (unit === s.unit) return;
-  const factor = unit === 'lbs' ? 2.2046226218 : 1 / 2.2046226218;
-  const round = (v) => Math.round(v * factor * 2) / 2;
+  const wFactor = unit === 'lbs' ? 2.2046226218 : 1 / 2.2046226218;
+  const roundW = (v) => Math.round(v * wFactor * 2) / 2;
+  const roundD = unit === 'lbs'
+    ? (v) => Math.round((v / 1609.344) * 100) / 100
+    : (v) => Math.round(v * 1609.344);
+  const convertSets = (entries) => entries.forEach((e) => e.sets.forEach((st) => {
+    if (st.weight != null) st.weight = roundW(st.weight);
+    if (st.distance != null) st.distance = roundD(st.distance);
+  }));
 
   ensureProfiles().list.forEach((p) => {
     const workouts = read(scopedKey(p.id, 'workouts'), []);
-    workouts.forEach((w) => w.entries.forEach((e) => e.sets.forEach((st) => { st.weight = round(st.weight); })));
+    workouts.forEach((w) => convertSets(w.entries));
     write(scopedKey(p.id, 'workouts'), workouts);
 
     const active = read(scopedKey(p.id, 'active'), null);
     if (active) {
-      active.entries.forEach((e) => e.sets.forEach((st) => { st.weight = round(st.weight); }));
+      convertSets(active.entries);
       write(scopedKey(p.id, 'active'), active);
     }
   });
 
-  saveSettings({ ...s, unit, weightStep: Math.max(0.5, round(s.weightStep)) });
+  saveSettings({ ...s, unit, weightStep: Math.max(0.5, roundW(s.weightStep)) });
 }
 
 // Total sets per machine across all history — feeds the usage map view.

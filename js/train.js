@@ -1,9 +1,9 @@
 import {
   getGym, saveGym, getSettings, saveSettings, getActive, saveActive, finishWorkout,
-  lastEntryFor, getWorkouts, uid, usageByMachine,
+  lastEntryFor, getWorkouts, uid, usageByMachine, distUnit,
 } from './store.js';
 import { drawGym, usagePayload, findMachineByNum } from './studio.js';
-import { esc } from './ui.js';
+import { esc, fmtDuration, workoutTotals } from './ui.js';
 
 // Active workout shape:
 //   { v: 2, id, startedAt, plan: [machineId…], currentMachineId|null, entries: [] }
@@ -52,15 +52,12 @@ export function startWorkoutFrom(source, firstMachineId = null) {
 
 const machineChain = (workout) => workout.entries.map((e) => `#${e.num}`).join(' → ');
 
-const workoutVolume = (workout) => workout.entries.reduce(
-  (v, e) => v + e.sets.reduce((x, st) => x + st.reps * st.weight, 0), 0);
-
 // --- start screen ---
 
 function renderStart(root, gym, message) {
   const workouts = getWorkouts();
   const last = workouts[workouts.length - 1];
-  const unit = getSettings().unit;
+  const s = getSettings();
   const recent = workouts.slice(-5).reverse();
 
   root.innerHTML = `
@@ -80,7 +77,7 @@ function renderStart(root, gym, message) {
         <div class="recent-row">
           <div class="recent-info">
             <strong>${new Date(w.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</strong>
-            <span class="muted">${machineChain(w)} · ${Math.round(workoutVolume(w))} ${unit}</span>
+            <span class="muted">${machineChain(w)} · ${workoutTotals(w, s)}</span>
           </div>
           <button class="btn btn-inline repeat-w" data-wid="${w.id}">Repeat</button>
         </div>`).join('')}
@@ -200,10 +197,8 @@ const entryFor = (active, machineId) => active.entries.find((e) => e.machineId =
 const isDone = (active, machineId) => (entryFor(active, machineId)?.sets.length ?? 0) > 0;
 
 function renderOverview(root, gym, active) {
-  const unit = getSettings().unit;
+  const s = getSettings();
   const sets = active.entries.reduce((n, e) => n + e.sets.length, 0);
-  const volume = active.entries.reduce(
-    (v, e) => v + e.sets.reduce((x, st) => x + st.reps * st.weight, 0), 0);
   const mins = Math.max(1, Math.round((Date.now() - active.startedAt) / 60000));
 
   const rows = active.plan.map((id) => {
@@ -223,7 +218,7 @@ function renderOverview(root, gym, active) {
 
   root.innerHTML = `
     <h1>Workout</h1>
-    <p class="muted">${mins} min · ${sets} set${sets === 1 ? '' : 's'} · ${Math.round(volume)} ${unit}</p>
+    <p class="muted">${mins} min · ${sets} set${sets === 1 ? '' : 's'} · ${workoutTotals(active, s)}</p>
     <section class="card">
       <h2>Locker</h2>
       <div class="row">
@@ -310,15 +305,30 @@ function renderLog(root, gym, active) {
   let entry = entryFor(active, machine.id);
   if (!entry) {
     // created eagerly so settings edits stick; set-less entries are
-    // dropped again when the workout is finished
-    entry = { machineId: machine.id, num: machine.num, label: machine.label, settings: {}, sets: [] };
+    // dropped again when the workout is finished. cardio is snapshotted
+    // like num/label so history stays readable if the machine changes.
+    entry = {
+      machineId: machine.id, num: machine.num, label: machine.label,
+      ...(machine.cardio ? { cardio: true } : {}),
+      settings: {}, sets: [],
+    };
     machine.settingsFields.forEach((f) => { entry.settings[f] = last?.settings?.[f] ?? ''; });
     active.entries.push(entry);
+    saveActive(active);
+  } else if (!entry.sets.length && !!entry.cardio !== !!machine.cardio) {
+    // machine type was toggled in the studio before any set was logged
+    if (machine.cardio) entry.cardio = true;
+    else delete entry.cardio;
     saveActive(active);
   }
 
   const s = getSettings();
-  const def = nextSetDefaults(entry, last);
+  const cardio = !!entry.cardio; // entry flag rules the screen — sets stay homogeneous
+  const du = distUnit(s);
+  // A last entry of the other type (flag toggled since) is useless as a
+  // set prefill or "Last:" line; machine settings still carry over above.
+  const lastSets = last && !!last.cardio === cardio ? last : null;
+  const def = nextSetDefaults(entry, lastSets, cardio, s);
   const restSeconds = machine.restSeconds ?? s.restSeconds;
   const planPos = `${active.plan.indexOf(machine.id) + 1}/${active.plan.length}`;
   const nextId = nextOpenMachineId(active, machine.id);
@@ -330,8 +340,8 @@ function renderLog(root, gym, active) {
       <div>
         <div class="title">${esc(machine.label)} <span class="muted">${planPos}</span>
           ${active.locker ? `<span class="muted">· 🔒 ${esc(active.locker)}</span>` : ''}</div>
-        <div class="muted">${last
-          ? `Last: ${setsSummary(last.sets)} ${s.unit}`
+        <div class="muted">${lastSets
+          ? `Last: ${setsSummary(lastSets.sets, s)}`
           : 'First time on this machine'}</div>
         ${machine.muscles?.length ? `<div class="muted">${machine.muscles.map(esc).join(' · ')}</div>` : ''}
         ${machine.docUrl ? `<a class="doc-link" href="${esc(machine.docUrl)}"
@@ -355,11 +365,28 @@ function renderLog(root, gym, active) {
         ${entry.sets.map((st, i) => `
           <div class="set-row">
             <span>Set ${i + 1}</span>
-            <span>${st.weight} ${s.unit} × ${st.reps}</span>
+            <span>${cardio
+    ? `${st.distance} ${du} · ${fmtDuration(st.seconds)}`
+    : `${st.weight} ${s.unit} × ${st.reps}`}</span>
             <button class="x" data-i="${i}" aria-label="Remove set ${i + 1}">✕</button>
           </div>`).join('') || '<p class="muted">No sets logged yet.</p>'}
       </div>
       <div class="next-set">
+        ${cardio ? `
+        <div class="spread"><span class="label">Distance (${du})</span>
+          <div class="stepper" data-step="${s.unit === 'kg' ? 100 : 0.1}" data-min="0">
+            <button type="button" class="step-down" aria-label="decrease distance">−</button>
+            <input id="set-distance" type="number" inputmode="decimal" value="${def.distance}">
+            <button type="button" class="step-up" aria-label="increase distance">+</button>
+          </div>
+        </div>
+        <div class="spread"><span class="label">Time (min)</span>
+          <div class="stepper" data-step="1" data-min="0">
+            <button type="button" class="step-down" aria-label="decrease time">−</button>
+            <input id="set-time" type="number" inputmode="decimal" value="${Math.round((def.seconds / 60) * 100) / 100}">
+            <button type="button" class="step-up" aria-label="increase time">+</button>
+          </div>
+        </div>` : `
         <div class="spread"><span class="label">Weight</span>
           <div class="stepper" data-step="${s.weightStep}" data-min="0">
             <button type="button" class="step-down" aria-label="decrease weight">−</button>
@@ -373,7 +400,7 @@ function renderLog(root, gym, active) {
             <input id="set-reps" type="number" inputmode="numeric" value="${def.reps}">
             <button type="button" class="step-up" aria-label="increase reps">+</button>
           </div>
-        </div>
+        </div>`}
         <div class="spread"><span class="label">Rest (s)</span>
           <div class="stepper" data-step="15" data-min="0">
             <button type="button" class="step-down" aria-label="decrease rest">−</button>
@@ -416,10 +443,16 @@ function renderLog(root, gym, active) {
   });
 
   root.querySelector('#log-set').addEventListener('click', () => {
-    const weight = Math.max(0, parseFloat(root.querySelector('#set-weight').value) || 0);
-    const reps = Math.max(1, Math.round(parseFloat(root.querySelector('#set-reps').value) || 1));
     const rest = Math.max(0, Math.round(parseFloat(root.querySelector('#set-rest').value) || 0));
-    entry.sets.push({ reps, weight });
+    if (cardio) {
+      const distance = Math.max(0, parseFloat(root.querySelector('#set-distance').value) || 0);
+      const seconds = Math.max(0, Math.round((parseFloat(root.querySelector('#set-time').value) || 0) * 60));
+      entry.sets.push({ distance, seconds });
+    } else {
+      const weight = Math.max(0, parseFloat(root.querySelector('#set-weight').value) || 0);
+      const reps = Math.max(1, Math.round(parseFloat(root.querySelector('#set-reps').value) || 1));
+      entry.sets.push({ reps, weight });
+    }
     saveActive(active);
     renderLog(root, gym, active);
     startRest(rest);
@@ -439,16 +472,27 @@ function renderLog(root, gym, active) {
 }
 
 // Default for the next set: same set number last time, then the set just
-// done this session, then the last set of the previous session.
-function nextSetDefaults(entry, last) {
+// done this session, then the last set of the previous session. `last`
+// must already be type-matched to the entry (caller gates on cardio).
+function nextSetDefaults(entry, last, cardio, s) {
   const i = entry.sets.length;
   if (last?.sets?.[i]) return last.sets[i];
   if (entry.sets.length) return entry.sets[entry.sets.length - 1];
   if (last?.sets?.length) return last.sets[last.sets.length - 1];
-  return { reps: 10, weight: 20 };
+  return cardio
+    ? { distance: s.unit === 'kg' ? 1000 : 0.5, seconds: 600 }
+    : { reps: 10, weight: 20 };
 }
 
-const setsSummary = (sets) => sets.map((s) => `${s.weight}×${s.reps}`).join(', ');
+// Branches per set shape so mixed history stays readable; strength sets
+// get the weight unit appended once at the end, cardio sets carry theirs.
+const setsSummary = (sets, s) => {
+  const strength = sets.every((st) => st.distance == null);
+  const body = sets.map((st) => (st.distance != null
+    ? `${st.distance} ${distUnit(s)} · ${fmtDuration(st.seconds)}`
+    : `${st.weight}×${st.reps}`)).join(', ');
+  return strength ? `${body} ${s.unit}` : body;
+};
 
 function finish(root, active) {
   const saved = finishWorkout(active);
@@ -458,7 +502,7 @@ function finish(root, active) {
   }
   const sets = saved.entries.reduce((n, e) => n + e.sets.length, 0);
   renderTrain(root, `Workout saved: ${saved.entries.length} machine${saved.entries.length === 1 ? '' : 's'}, `
-    + `${sets} sets, ${Math.round(workoutVolume(saved))} ${getSettings().unit} total volume.`);
+    + `${sets} sets, ${workoutTotals(saved, getSettings())} total.`);
 }
 
 // --- rest timer ---
@@ -481,7 +525,6 @@ function startRest(secs) {
   let endsAt = Date.now() + secs * 1000;
   let done = false;
   const cd = overlay.querySelector('#cd');
-  const fmt = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 
   // Keep the screen on while resting. The browser auto-releases the lock
   // when the tab is hidden, so re-acquire on return.
@@ -507,7 +550,7 @@ function startRest(secs) {
   };
   const tick = () => {
     const rem = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
-    cd.textContent = fmt(rem);
+    cd.textContent = fmtDuration(rem);
     if (rem === 0 && !done) {
       done = true;
       cd.classList.add('done');

@@ -2,10 +2,10 @@
 // the user copies data out and pastes results back in, keeping full
 // control over where their data goes.
 
-import { getGym, getWorkouts, getSettings, saveSettings, importData } from './store.js';
+import { getGym, getWorkouts, getSettings, saveSettings, importData, distUnit } from './store.js';
 import { esc } from './ui.js';
 
-const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]).
+const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given).
 
 Analyze my progress: trends per machine, plateaus, and muscle-group imbalances. Then suggest concrete targets for my next workout — weight × reps per machine — and one or two practical tips.
 
@@ -95,12 +95,13 @@ function buildAiExport() {
     app: 'gymii',
     kind: 'ai-export',
     unit: settings.unit,
-    note: 'sets are [weight, reps]',
+    note: `sets are [weight, reps]; entries with cardio:true use [distance, seconds], distance in ${distUnit(settings)}`,
     gym: gym ? {
       name: gym.name,
       machines: gym.machines.map((m) => ({
         num: m.num,
         label: m.label,
+        ...(m.cardio ? { cardio: true } : {}),
         settings: m.settingsFields,
         muscles: m.muscles?.length ? m.muscles : undefined,
         doc: m.docUrl || undefined,
@@ -111,9 +112,10 @@ function buildAiExport() {
       entries: w.entries.map((e) => ({
         machine: e.label,
         num: e.num,
+        ...(e.cardio ? { cardio: true } : {}),
         ...(Object.keys(e.settings || {}).some((k) => String(e.settings[k]).trim() !== '')
           ? { settings: e.settings } : {}),
-        sets: e.sets.map((st) => [st.weight, st.reps]),
+        sets: e.sets.map((st) => (e.cardio ? [st.distance, st.seconds] : [st.weight, st.reps])),
       })),
     })),
   }, null, 1);

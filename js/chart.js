@@ -2,7 +2,7 @@
 // Chart color #35a273 is validated (dataviz six checks) against the
 // dark surface #171c22 — change both together if the theme moves.
 
-export function lineChart(container, points, { unit = '' } = {}) {
+export function lineChart(container, points, { unit = '', label = 'Top set weight over time' } = {}) {
   if (!points.length) {
     container.innerHTML = '<p class="muted">No data for this machine yet.</p>';
     return;
@@ -30,7 +30,7 @@ export function lineChart(container, points, { unit = '' } = {}) {
 
   container.innerHTML = `
     <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img"
-      aria-label="Top set weight over time">
+      aria-label="${label}">
       ${ticks.map((v) => `
         <line class="c-grid" x1="${pad.l}" x2="${W - pad.r}" y1="${Y(v)}" y2="${Y(v)}"/>
         <text class="c-tick" x="${pad.l - 8}" y="${Y(v)}" text-anchor="end"

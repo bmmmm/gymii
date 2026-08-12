@@ -746,6 +746,10 @@ export function renderStudio(root) {
             </div>
           </label>
           <label class="field"><span>Label</span><input id="m-label" type="text" value="${esc(item.label)}"></label>
+          <div class="field-block"><span>Type</span>
+            <div class="chip-select"><button type="button" id="m-cardio"
+              class="chip${item.cardio ? ' sel' : ''}">Cardio — distance + time</button></div>
+          </div>
           <div class="field-block"><span>Color on the plan</span>
             <div id="m-color">${colorRow(item.color)}</div>
           </div>
@@ -774,6 +778,13 @@ export function renderStudio(root) {
         item.label = e.target.value.trim() || `Machine ${item.num}`;
         e.target.value = item.label;
         save();
+      });
+
+      props.querySelector('#m-cardio').addEventListener('click', () => {
+        if (item.cardio) delete item.cardio; // absent = strength, keeps exports clean
+        else item.cardio = true;
+        save();
+        renderProps();
       });
 
       wireColorRow('#m-color', item);

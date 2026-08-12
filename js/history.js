@@ -1,7 +1,7 @@
 import {
-  getGym, getWorkouts, getSettings, getActive, deleteWorkout, updateWorkout,
+  getGym, getWorkouts, getSettings, getActive, deleteWorkout, updateWorkout, distUnit,
 } from './store.js';
-import { esc, fmtDate, fmtTime } from './ui.js';
+import { esc, fmtDate, fmtTime, fmtDuration, workoutTotals } from './ui.js';
 import { lineChart } from './chart.js';
 import { startWorkoutFrom } from './train.js';
 
@@ -16,7 +16,8 @@ export function renderHistory(root) {
     return;
   }
 
-  const unit = getSettings().unit;
+  const s = getSettings();
+  const unit = s.unit;
   const gym = getGym();
 
   // Machines seen in history, labeled with their current gym name when
@@ -51,7 +52,7 @@ export function renderHistory(root) {
       <p id="hm-info" class="muted" role="status">Tap a day for details.</p>
     </section>
     <section class="card">
-      <h2>Progress — top set weight (${unit})</h2>
+      <h2 id="chart-title">Progress</h2>
       <select id="chart-machine" aria-label="Machine">
         ${options.map(([id, m]) => `<option value="${id}">#${m.num} ${esc(m.label)}</option>`).join('')}
       </select>
@@ -68,7 +69,7 @@ export function renderHistory(root) {
   const list = root.querySelector('#workout-list');
   const renderList = () => {
     list.innerHTML = workouts.slice().reverse()
-      .map((w) => (editDraft?.id === w.id ? editWorkoutHtml(editDraft, unit) : workoutHtml(w, unit)))
+      .map((w) => (editDraft?.id === w.id ? editWorkoutHtml(editDraft, s) : workoutHtml(w, s)))
       .join('');
   };
   renderList();
@@ -145,6 +146,14 @@ export function renderHistory(root) {
       const v = Math.max(1, Math.round(parseFloat(t.value) || 1));
       t.value = v;
       editDraft.entries[+t.dataset.ei].sets[+t.dataset.si].reps = v;
+    } else if (t.classList.contains('edit-distance')) {
+      const v = Math.max(0, parseFloat(t.value) || 0);
+      t.value = v;
+      editDraft.entries[+t.dataset.ei].sets[+t.dataset.si].distance = v;
+    } else if (t.classList.contains('edit-minutes')) {
+      const v = Math.max(0, parseFloat(t.value) || 0);
+      t.value = v;
+      editDraft.entries[+t.dataset.ei].sets[+t.dataset.si].seconds = Math.round(v * 60);
     } else if (t.classList.contains('edit-locker')) {
       editDraft.locker = t.value.trim();
     }
@@ -173,10 +182,13 @@ export function renderHistory(root) {
       const sets = entries.reduce((n, e) => n + e.sets.length, 0);
       if (!sets) return;
       const volume = entries.reduce(
-        (v, e) => v + e.sets.reduce((x, st) => x + st.reps * st.weight, 0), 0);
-      const day = days.get(d.getDate()) || { sets: 0, volume: 0, nums: new Set() };
+        (v, e) => v + e.sets.reduce((x, st) => x + (st.reps * st.weight || 0), 0), 0);
+      const dist = entries.reduce(
+        (v, e) => v + e.sets.reduce((x, st) => x + (st.distance || 0), 0), 0);
+      const day = days.get(d.getDate()) || { sets: 0, volume: 0, dist: 0, nums: new Set() };
       day.sets += sets;
       day.volume += volume;
+      day.dist += dist;
       entries.forEach((e) => day.nums.add(e.num));
       days.set(d.getDate(), day);
     });
@@ -206,8 +218,11 @@ export function renderHistory(root) {
         const label = new Date(y, m, dayNum)
           .toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
         hmInfo.textContent = info
-          ? `${label} — ${info.sets} set${info.sets === 1 ? '' : 's'} · ${Math.round(info.volume)} ${unit}`
-            + ` · ${[...info.nums].sort((a, b) => a - b).map((n) => `#${n}`).join(', ')}`
+          ? [`${label} — ${info.sets} set${info.sets === 1 ? '' : 's'}`,
+            info.volume ? `${Math.round(info.volume)} ${unit}` : '',
+            info.dist ? `${Math.round(info.dist * 100) / 100} ${distUnit(s)}` : '',
+            [...info.nums].sort((a, b) => a - b).map((n) => `#${n}`).join(', ')]
+            .filter(Boolean).join(' · ')
           : `${label} — no training`;
       });
     });
@@ -226,26 +241,42 @@ export function renderHistory(root) {
 
   const select = root.querySelector('#chart-machine');
   const chartEl = root.querySelector('#chart');
+  const chartTitle = root.querySelector('#chart-title');
   const draw = () => {
     const id = select.value;
-    const points = workouts
-      .filter((w) => w.entries.some((e) => e.machineId === id && e.sets.length))
-      .map((w) => ({
+    const relevant = workouts
+      .map((w) => ({ w, e: w.entries.find((e) => e.machineId === id && e.sets.length) }))
+      .filter((x) => x.e);
+    // A machine's type can be toggled over time; plot the metric of its
+    // most recent entry and skip entries of the other shape.
+    const cardio = !!relevant[relevant.length - 1]?.e.cardio;
+    const points = relevant
+      .filter(({ e }) => !!e.cardio === cardio)
+      .map(({ w, e }) => ({
         t: w.startedAt,
-        v: Math.max(...w.entries.find((e) => e.machineId === id).sets.map((s) => s.weight)),
+        v: cardio
+          ? Math.max(...e.sets.map((st) => st.distance || 0))
+          : Math.max(...e.sets.map((st) => st.weight || 0)),
       }));
-    lineChart(chartEl, points, { unit });
+    const metric = cardio ? `top distance (${distUnit(s)})` : `top set weight (${unit})`;
+    chartTitle.textContent = `Progress — ${metric}`;
+    lineChart(chartEl, points, {
+      unit: cardio ? distUnit(s) : unit,
+      label: `Progress: ${metric} over time`,
+    });
   };
   select.addEventListener('change', draw);
   draw();
 }
 
 const setCount = (w) => w.entries.reduce((n, e) => n + e.sets.length, 0);
-const volumeOf = (w) => w.entries.reduce(
-  (v, e) => v + e.sets.reduce((x, st) => x + st.reps * st.weight, 0), 0);
 const minsOf = (w) => Math.max(1, Math.round((w.finishedAt - w.startedAt) / 60000));
 
-function workoutHtml(w, unit) {
+const setStr = (st, s) => (st.distance != null
+  ? `${st.distance} ${distUnit(s)} · ${fmtDuration(st.seconds)}`
+  : `${st.weight}×${st.reps}`);
+
+function workoutHtml(w, s) {
   const sets = setCount(w);
   const chain = w.entries.map((e) => `#${e.num}`).join(' → ');
   return `<details class="workout">
@@ -253,13 +284,13 @@ function workoutHtml(w, unit) {
       <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>
         <span class="muted">${fmtTime(w.startedAt)} · ${minsOf(w)} min</span></div>
       <div class="muted">${chain}</div>
-      <div class="muted">${sets} set${sets === 1 ? '' : 's'} · ${Math.round(volumeOf(w))} ${unit}${w.locker
+      <div class="muted">${sets} set${sets === 1 ? '' : 's'} · ${workoutTotals(w, s)}${w.locker
         ? ` · 🔒 ${esc(w.locker)}` : ''}</div>
     </summary>
     ${w.entries.map((e) => `
       <div class="entry-line">
         <div>#${e.num} ${esc(e.label)}</div>
-        <div class="sets">${e.sets.map((s) => `${s.weight}×${s.reps}`).join(', ')}${settingsStr(e)}</div>
+        <div class="sets">${e.sets.map((st) => setStr(st, s)).join(', ')}${settingsStr(e)}</div>
       </div>`).join('')}
     <button class="btn repeat-w" data-wid="${w.id}">Repeat this workout</button>
     <div class="row">
@@ -269,13 +300,14 @@ function workoutHtml(w, unit) {
   </details>`;
 }
 
-function editWorkoutHtml(w, unit) {
+function editWorkoutHtml(w, s) {
   const sets = setCount(w);
+  const du = distUnit(s);
   return `<details class="workout" open>
     <summary>
       <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>
         <span class="muted">${fmtTime(w.startedAt)} · ${minsOf(w)} min</span></div>
-      <div class="muted">Editing — ${sets} set${sets === 1 ? '' : 's'} · ${Math.round(volumeOf(w))} ${unit}</div>
+      <div class="muted">Editing — ${sets} set${sets === 1 ? '' : 's'} · ${workoutTotals(w, s)}</div>
     </summary>
     ${w.entries.map((e, ei) => `
       <div class="entry-line">
@@ -283,11 +315,15 @@ function editWorkoutHtml(w, unit) {
         ${e.sets.map((st, si) => `
           <div class="set-row">
             <span>Set ${si + 1}</span>
-            <span class="edit-set">
+            <span class="edit-set">${e.cardio ? `
+              <input type="number" inputmode="decimal" class="edit-distance" data-ei="${ei}" data-si="${si}"
+                value="${st.distance}" aria-label="Distance (${du})"> ${du} ·
+              <input type="number" inputmode="decimal" class="edit-minutes" data-ei="${ei}" data-si="${si}"
+                value="${Math.round((st.seconds / 60) * 100) / 100}" aria-label="Time (minutes)"> min` : `
               <input type="number" inputmode="decimal" class="edit-weight" data-ei="${ei}" data-si="${si}"
-                value="${st.weight}" aria-label="Weight (${unit})"> ${unit} ×
+                value="${st.weight}" aria-label="Weight (${s.unit})"> ${s.unit} ×
               <input type="number" inputmode="numeric" class="edit-reps" data-ei="${ei}" data-si="${si}"
-                value="${st.reps}" aria-label="Reps">
+                value="${st.reps}" aria-label="Reps">`}
             </span>
             <button class="x set-del" data-ei="${ei}" data-si="${si}" aria-label="Remove set ${si + 1}">✕</button>
           </div>`).join('') || '<p class="muted">No sets left — removed on save.</p>'}

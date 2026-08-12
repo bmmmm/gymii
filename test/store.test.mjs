@@ -153,6 +153,34 @@ assert.equal(localStorage.getItem(`gymii.${secondId}.workouts`), null, 'deleted 
 assert.equal(store.deleteProfile(firstId), false, 'the last profile cannot be deleted');
 assert.equal(store.getProfiles().list.length, 1);
 
+// cardio sets {distance, seconds}: finish keeps them, setUnit converts
+// distances per field (m <-> mi), seconds stay untouched
+store.setActiveProfile(firstId);
+assert.equal(store.distUnit(store.getSettings()), 'm', 'metric pairs with meters');
+store.saveActive({
+  v: 2, id: 'cw', startedAt: 10, plan: [], currentMachineId: null,
+  entries: [
+    { machineId: 'm1', num: 1, label: 'A', settings: {}, sets: [{ reps: 5, weight: 20 }] },
+    { machineId: 'tm', num: 9, label: 'Treadmill', cardio: true, settings: {}, sets: [{ distance: 5000, seconds: 1800 }] },
+  ],
+});
+const cardioSaved = store.finishWorkout(store.getActive());
+assert.equal(cardioSaved.entries[1].cardio, true, 'cardio flag survives finish');
+assert.deepEqual(cardioSaved.entries[1].sets[0], { distance: 5000, seconds: 1800 });
+
+store.setUnit('lbs');
+assert.equal(store.distUnit(store.getSettings()), 'mi', 'imperial pairs with miles');
+let cw = store.getWorkouts().find((w) => w.id === 'cw');
+assert.equal(cw.entries[0].sets[0].weight, 44, 'mixed workout: weight converted');
+assert.equal(cw.entries[1].sets[0].distance, 3.11, '5000 m -> 3.11 mi');
+assert.equal(cw.entries[1].sets[0].seconds, 1800, 'seconds untouched by unit switch');
+store.setUnit('kg');
+cw = store.getWorkouts().find((w) => w.id === 'cw');
+assert.equal(cw.entries[1].sets[0].distance, 5005, '3.11 mi -> 5005 m (accepted rounding drift)');
+assert.equal(store.updateWorkout({ ...cw, locker: '3' }).entries[1].sets[0].seconds, 1800,
+  'updateWorkout passes cardio sets through');
+store.deleteWorkout('cw');
+
 // clearAll wipes every gymii key and self-heals into a fresh default profile
 store.clearAll();
 assert.equal([...mem.keys()].filter((k) => k.startsWith('gymii.')).length, 0, 'clearAll leaves no gymii keys');

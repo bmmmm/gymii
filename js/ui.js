@@ -1,5 +1,7 @@
 // Small shared UI helpers.
 
+import { distUnit } from './store.js';
+
 // One delegated handler powers every .stepper on the page:
 // <div class="stepper" data-step="2.5" data-min="0"><button class="step-down">−</button><input><button class="step-up">+</button></div>
 export function initSteppers() {
@@ -34,3 +36,20 @@ export const fmtTime = (ts) =>
 
 export const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+export const fmtDuration = (sec) =>
+  `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+
+// "500 kg · 3.2 km"-style rollup of a workout's strength volume and cardio
+// distance; parts appear only when non-zero so pure-cardio workouts don't
+// read "0 kg".
+export function workoutTotals(workout, settings) {
+  const volume = workout.entries.reduce(
+    (v, e) => v + e.sets.reduce((x, st) => x + (st.reps * st.weight || 0), 0), 0);
+  const distance = workout.entries.reduce(
+    (v, e) => v + e.sets.reduce((x, st) => x + (st.distance || 0), 0), 0);
+  const parts = [];
+  if (volume) parts.push(`${Math.round(volume)} ${settings.unit}`);
+  if (distance) parts.push(`${Math.round(distance * 100) / 100} ${distUnit(settings)}`);
+  return parts.join(' · ') || `0 ${settings.unit}`;
+}
