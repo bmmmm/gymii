@@ -288,7 +288,29 @@ details.workout summary::-webkit-details-marker { display: none; }
 .entry-line { padding: 6px 0 6px 12px; font-size: 14px; border-left: 2px solid var(--border); margin: 6px 0; }
 .entry-line .sets { color: var(--muted); font-variant-numeric: tabular-nums; }
 
+.chart-wrap { position: relative; margin-top: 10px; }
 .chart-wrap svg { display: block; width: 100%; }
+
+/* chart color #35a273 validated against surface #171c22 (dataviz checks) */
+.c-grid { stroke: rgba(255, 255, 255, 0.06); stroke-width: 1; }
+.c-tick { fill: var(--muted); font-size: 11px; font-family: system-ui, -apple-system, sans-serif; }
+.c-line { fill: none; stroke: #35a273; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.c-dot { fill: #35a273; stroke: var(--surface); stroke-width: 2; }
+.c-hit { fill: transparent; }
+.c-label { fill: var(--text); font-size: 12px; font-weight: 600; font-family: system-ui, -apple-system, sans-serif; }
+
+.c-tip {
+  position: absolute;
+  transform: translate(-50%, -130%);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
 
 select {
   font: inherit;
