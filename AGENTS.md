@@ -76,11 +76,19 @@ Push both or the mirror drifts: `git push origin main && git push github main`.
 Dependabot/CodeQL PRs on GitHub are signals only — fix locally and push to
 both remotes, never merge in the GitHub UI.
 
-`.github/workflows/ci.yml` runs `node test/store.test.mjs` on every push/PR
-and deploys the repo root to Pages (<https://bmmmm.github.io/gymii/>) when
-`test` passes on main. The site lives on a project subpath, so every asset
-reference must stay RELATIVE (`css/style.css`, not `/css/style.css`) —
-index.html, manifest and the `sw.js` SHELL list already are.
+`.github/workflows/ci.yml` runs `node test/store.test.mjs` and cross-checks the
+`sw.js` SHELL list against `git ls-files`, then deploys the repo root to Pages
+(<https://bmmmm.github.io/gymii/>) once both pass on main. `security.yml`
+(gitleaks + forbidden files + token grep) and `shellcheck.yml` (only on
+`scripts/**`) round out the checkers. The site lives on a project subpath, so
+every asset reference must stay RELATIVE (`css/style.css`, not
+`/css/style.css`) — index.html, manifest and the SHELL list already are.
+
+When a Pages deploy fails, dispatch a fresh run
+(`gh workflow run ci.yml --ref main`) — never `gh run rerun --failed`. The
+replay uploads a second `github-pages` artifact into the same run and
+`deploy-pages` then aborts on "Multiple artifacts named github-pages", which
+looks like a workflow bug and isn't.
 
 Open: the community-template PR flow (`templates/index.json` is the manifest
 "database" with country/city metadata).
