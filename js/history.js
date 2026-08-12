@@ -177,7 +177,8 @@ function workoutHtml(w, unit) {
       <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>
         <span class="muted">${fmtTime(w.startedAt)} · ${mins} min</span></div>
       <div class="muted">${chain}</div>
-      <div class="muted">${sets} sets · ${Math.round(volume)} ${unit}</div>
+      <div class="muted">${sets} set${sets === 1 ? '' : 's'} · ${Math.round(volume)} ${unit}${w.locker
+        ? ` · 🔒 ${esc(w.locker)}` : ''}</div>
     </summary>
     ${w.entries.map((e) => `
       <div class="entry-line">

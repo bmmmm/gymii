@@ -1,8 +1,17 @@
 import {
   getGym, saveGym, newGym, uid, importData, defaultOutline, exportGymTemplate,
-  MUSCLE_GROUPS, COMMON_SETTINGS,
+  MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS,
 } from './store.js';
 import { esc, download } from './ui.js';
+
+// Map furniture beyond machines: doors, water, mirrors, lockers, trash.
+export const FIXTURES = {
+  door: { icon: '🚪', label: 'Door', w: 2, h: 2 },
+  water: { icon: '🚰', label: 'Water', w: 2, h: 2 },
+  mirror: { icon: '🪞', label: 'Mirror', w: 6, h: 1 },
+  locker: { icon: '🔒', label: 'Lockers', w: 3, h: 2 },
+  trash: { icon: '🗑️', label: 'Trash', w: 2, h: 2 },
+};
 
 const SNAP = 1;
 const snap = (v) => Math.round(v / SNAP) * SNAP;
@@ -78,8 +87,19 @@ function shapeSvg(s) {
       <line class="hit" x1="${s.x}" y1="${s.y}" x2="${x2}" y2="${y2}"/>
     </g>`;
   }
+  if (s.kind === 'fixture') {
+    const icon = FIXTURES[s.fixture]?.icon ?? '❓';
+    const fs = clamp(Math.min(s.w, s.h) * 0.7, 0.8, 2.2);
+    return `<g class="shape" data-id="${s.id}">
+      <rect class="fixture-box" x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}" rx="0.3"/>
+      <text class="fixture-icon" x="${s.x + s.w / 2}" y="${s.y + s.h / 2}" font-size="${fs}"
+        text-anchor="middle" dominant-baseline="central" pointer-events="none">${icon}</text>
+    </g>`;
+  }
   return `<g class="shape" data-id="${s.id}">
     <rect class="shape-rect" x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}" rx="0.3"/>
+    ${s.label ? `<text class="zone-label" x="${s.x + 1}" y="${s.y + 2.1}" font-size="1.4"
+      pointer-events="none">${esc(s.label)}</text>` : ''}
   </g>`;
 }
 
@@ -126,9 +146,13 @@ export function renderStudio(root) {
   root.innerHTML = `
     <h1>Studio</h1>
     <div class="toolbar">
-      <button id="add-room" class="btn">+ Room</button>
+      <button id="add-room" class="btn">+ Zone</button>
       <button id="add-wall" class="btn">+ Wall</button>
       <button id="add-machine" class="btn btn-primary">+ Machine</button>
+    </div>
+    <div class="toolbar toolbar-sub">
+      ${Object.entries(FIXTURES).map(([key, f]) =>
+        `<button class="btn add-fixture" data-fixture="${key}">${f.icon} ${f.label}</button>`).join('')}
     </div>
     <div class="floor-wrap"><svg id="floor" class="floor" xmlns="http://www.w3.org/2000/svg"></svg></div>
     <div id="props"></div>
@@ -231,8 +255,9 @@ export function renderStudio(root) {
       it.w = clamp(snap(p.x - it.x), -it.x, gym.grid.w - it.x);
       it.h = clamp(snap(p.y - it.y), -it.y, gym.grid.h - it.y);
     } else {
-      it.w = clamp(snap(p.x - it.x), 2, gym.grid.w - it.x);
-      it.h = clamp(snap(p.y - it.y), 2, gym.grid.h - it.y);
+      const minSize = it.kind === 'fixture' ? 1 : 2; // mirrors etc. may be slim
+      it.w = clamp(snap(p.x - it.x), minSize, gym.grid.w - it.x);
+      it.h = clamp(snap(p.y - it.y), minSize, gym.grid.h - it.y);
     }
     drag.moved = true;
     redraw();
@@ -257,7 +282,7 @@ export function renderStudio(root) {
     return gym.machines.reduce((mx, m) => Math.max(mx, m.num), 0) + 1;
   }
 
-  function addItem(kind) {
+  function addItem(kind, fixtureType = null) {
     const g = gym.grid;
     const off = ((gym.shapes.length + gym.machines.length) % 6); // cascade new items
     let item;
@@ -270,7 +295,15 @@ export function renderStudio(root) {
       };
       gym.machines.push(item);
     } else if (kind === 'rect') {
-      item = { id: uid(), kind: 'rect', x: snap(g.w / 2 - 6 + off), y: snap(g.h / 2 - 4 + off), w: 12, h: 8 };
+      item = { id: uid(), kind: 'rect', label: '', x: snap(g.w / 2 - 6 + off), y: snap(g.h / 2 - 4 + off), w: 12, h: 8 };
+      gym.shapes.push(item);
+    } else if (kind === 'fixture') {
+      const f = FIXTURES[fixtureType];
+      item = {
+        id: uid(), kind: 'fixture', fixture: fixtureType,
+        x: snap(g.w / 2 - f.w / 2 + off), y: snap(g.h / 2 - f.h / 2 + off),
+        w: f.w, h: f.h,
+      };
       gym.shapes.push(item);
     } else {
       item = { id: uid(), kind: 'line', x: snap(g.w / 2 - 4 + off), y: snap(g.h / 2 + off), w: 8, h: 0 };
@@ -284,6 +317,9 @@ export function renderStudio(root) {
   root.querySelector('#add-room').addEventListener('click', () => addItem('rect'));
   root.querySelector('#add-wall').addEventListener('click', () => addItem('line'));
   root.querySelector('#add-machine').addEventListener('click', () => addItem('machine'));
+  root.querySelectorAll('.add-fixture').forEach((btn) => {
+    btn.addEventListener('click', () => addItem('fixture', btn.dataset.fixture));
+  });
 
   async function openTemplateBrowser(panel) {
     panel.innerHTML = '<p class="muted">Loading library…</p>';
@@ -539,10 +575,48 @@ export function renderStudio(root) {
         item.docUrl = e.target.value.trim();
         saveGym(gym);
       });
+    } else if (item.kind === 'rect') {
+      const zoneOptions = [...ZONE_LABELS,
+        ...(item.label && !ZONE_LABELS.includes(item.label) ? [item.label] : [])];
+      props.innerHTML = `
+        <section class="card">
+          <h2>Zone</h2>
+          <div class="field-block"><span>Label — tap to set, tap again to clear</span>
+            <div class="chip-select" id="z-labels">
+              ${zoneOptions.map((z) => `<button type="button"
+                class="chip${item.label === z ? ' sel' : ''}" data-value="${esc(z)}">${esc(z)}</button>`).join('')}
+            </div>
+            <div class="row">
+              <input id="z-custom" type="text" placeholder="Custom label…">
+              <button type="button" id="z-set" class="btn btn-inline">Set</button>
+            </div>
+          </div>
+          <button id="del-item" class="btn btn-danger">Delete</button>
+        </section>`;
+      props.querySelector('#z-labels').addEventListener('click', (e) => {
+        const chip = e.target.closest('.chip');
+        if (!chip) return;
+        item.label = item.label === chip.dataset.value ? '' : chip.dataset.value;
+        saveGym(gym);
+        redraw();
+        renderProps();
+      });
+      const setCustom = () => {
+        const v = props.querySelector('#z-custom').value.trim();
+        if (!v) return;
+        item.label = v;
+        saveGym(gym);
+        redraw();
+        renderProps();
+      };
+      props.querySelector('#z-set').addEventListener('click', setCustom);
+      props.querySelector('#z-custom').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') setCustom();
+      });
     } else {
       props.innerHTML = `
         <section class="card">
-          <h2>${item.kind === 'line' ? 'Wall' : 'Room'}</h2>
+          <h2>${item.kind === 'line' ? 'Wall' : (FIXTURES[item.fixture]?.label ?? 'Element')}</h2>
           <button id="del-item" class="btn btn-danger">Delete</button>
         </section>`;
     }

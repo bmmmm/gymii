@@ -200,6 +200,14 @@ function renderOverview(root, gym, active) {
     <h1>Workout</h1>
     <p class="muted">${mins} min · ${sets} set${sets === 1 ? '' : 's'} · ${Math.round(volume)} ${unit}</p>
     <section class="card">
+      <h2>Locker</h2>
+      <div class="row">
+        <input id="locker-num" type="text" inputmode="numeric" placeholder="Locker #"
+          value="${esc(active.locker ?? '')}">
+      </div>
+      <p class="muted">Note where your stuff is — handy if the key goes missing.</p>
+    </section>
+    <section class="card">
       <h2>Machines</h2>
       ${rows || '<p class="muted">No machines yet — pick your first one below.</p>'}
     </section>
@@ -208,6 +216,11 @@ function renderOverview(root, gym, active) {
       <div id="picker"></div>
     </section>
     <button id="finish" class="btn">Finish workout</button>`;
+
+  root.querySelector('#locker-num').addEventListener('change', (e) => {
+    active.locker = e.target.value.trim();
+    saveActive(active);
+  });
 
   root.querySelectorAll('.plan-row').forEach((row) => {
     row.addEventListener('click', () => {
@@ -290,7 +303,8 @@ function renderLog(root, gym, active) {
     <div class="machine-head">
       <span class="machine-badge">${machine.num}</span>
       <div>
-        <div class="title">${esc(machine.label)} <span class="muted">${planPos}</span></div>
+        <div class="title">${esc(machine.label)} <span class="muted">${planPos}</span>
+          ${active.locker ? `<span class="muted">· 🔒 ${esc(active.locker)}</span>` : ''}</div>
         <div class="muted">${last
           ? `Last: ${setsSummary(last.sets)} ${s.unit}`
           : 'First time on this machine'}</div>

@@ -12,10 +12,15 @@
       { "x": 20, "y": 38 }, { "x": 20, "y": 34 }, { "x": 2, "y": 34 }
     ],
     "shapes": [
-      { "id": "zone-machines", "kind": "rect", "x": 2, "y": 2, "w": 30, "h": 28 },
-      { "id": "zone-freeweights", "kind": "rect", "x": 34, "y": 2, "w": 24, "h": 17 },
-      { "id": "zone-cardio", "kind": "rect", "x": 34, "y": 21, "w": 24, "h": 17 },
-      { "id": "wall-divider", "kind": "line", "x": 34, "y": 20, "w": 24, "h": 0 }
+      { "id": "zone-machines", "kind": "rect", "x": 2, "y": 2, "w": 30, "h": 28, "label": "Machines" },
+      { "id": "zone-freeweights", "kind": "rect", "x": 34, "y": 2, "w": 24, "h": 17, "label": "Free weights" },
+      { "id": "zone-cardio", "kind": "rect", "x": 34, "y": 21, "w": 24, "h": 17, "label": "Cardio" },
+      { "id": "wall-divider", "kind": "line", "x": 34, "y": 20, "w": 24, "h": 0 },
+      { "id": "door-entrance", "kind": "fixture", "fixture": "door", "x": 3, "y": 31, "w": 2, "h": 2 },
+      { "id": "lockers", "kind": "fixture", "fixture": "locker", "x": 7, "y": 31, "w": 4, "h": 2 },
+      { "id": "water-fountain", "kind": "fixture", "fixture": "water", "x": 28, "y": 34, "w": 2, "h": 2 },
+      { "id": "trash-bin", "kind": "fixture", "fixture": "trash", "x": 31, "y": 34, "w": 2, "h": 2 },
+      { "id": "mirror-freeweights", "kind": "fixture", "fixture": "mirror", "x": 34, "y": 2, "w": 22, "h": 1 }
     ],
     "machines": [
       { "id": "chest-press", "num": 1, "label": "Chest press", "x": 4, "y": 4, "w": 5, "h": 4, "settingsFields": ["Seat"], "muscles": ["Chest", "Triceps"], "docUrl": "" },

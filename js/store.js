@@ -31,6 +31,11 @@ export const MUSCLE_GROUPS = [
   'Full body',
 ];
 
+export const ZONE_LABELS = [
+  'Machines', 'Free weights', 'Cardio', 'Functional', 'Stretching',
+  'Turf', 'Entrance', 'Changing room',
+];
+
 export const COMMON_SETTINGS = [
   'Seat', 'Seat angle', 'Back pad', 'Chest pad', 'Thigh pad', 'Shin pad',
   'Ankle pad', 'Arm pads', 'Pad height', 'Pulley height', 'Handle position',
@@ -113,6 +118,7 @@ export function finishWorkout(active) {
     startedAt: active.startedAt,
     finishedAt: Date.now(),
     entries,
+    ...(active.locker ? { locker: active.locker } : {}),
   };
   const list = getWorkouts();
   list.push(workout);

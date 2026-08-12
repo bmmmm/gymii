@@ -222,6 +222,11 @@ textarea {
 
 .toolbar { display: flex; gap: 8px; margin-bottom: 10px; }
 .toolbar .btn { margin: 0; padding: 12px 8px; font-size: 14px; }
+.toolbar-sub .btn { padding: 9px 4px; font-size: 12px; font-weight: 500; }
+
+svg .fixture-box { fill: #242d38; stroke: #4a5765; stroke-width: 0.12; }
+svg .fixture-icon, svg .zone-label { font-family: system-ui, -apple-system, sans-serif; }
+svg .zone-label { fill: #5f6d7d; font-weight: 600; letter-spacing: 0.04em; }
 
 .floor-wrap { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
 
