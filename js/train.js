@@ -63,7 +63,19 @@ function renderStart(root, gym, message) {
   const workouts = getWorkouts();
   const last = workouts[workouts.length - 1];
   const s = getSettings();
-  const recent = workouts.slice(-5).reverse();
+
+  // Easy starting points: the latest workout gets the big button, and
+  // every DIFFERENT machine chain in history (a push/pull/legs rotation,
+  // say) gets its own start row — routines emerge from the log, no
+  // manual routine management.
+  const routines = [];
+  const seen = new Set(last ? [machineChain(last)] : []);
+  for (let i = workouts.length - 2; i >= 0 && routines.length < 4; i--) {
+    const chain = machineChain(workouts[i]);
+    if (seen.has(chain)) continue;
+    seen.add(chain);
+    routines.push(workouts[i]);
+  }
 
   root.innerHTML = `
     <h1>Train</h1>
@@ -71,22 +83,25 @@ function renderStart(root, gym, message) {
     ${last ? `<button id="repeat" class="btn btn-primary btn-big">Repeat last workout
       <span class="sub">${new Date(last.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
       · ${machineChain(last)}</span></button>` : ''}
+    ${routines.length ? `
     <section class="card">
-      <h2>Free training</h2>
-      <div id="picker"></div>
-    </section>
-    ${recent.length ? `
-    <section class="card">
-      <h2>Recent workouts</h2>
-      ${recent.map((w) => `
+      <h2>Start another routine</h2>
+      ${routines.map((w) => `
         <div class="recent-row">
           <div class="recent-info">
-            <strong>${new Date(w.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</strong>
-            <span class="muted">${machineChain(w)} · ${workoutTotals(w, s)}</span>
+            <strong>${machineChain(w)}</strong>
+            <span class="muted">last: ${new Date(w.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+              · ${workoutTotals(w, s)}</span>
           </div>
-          <button class="btn btn-inline repeat-w" data-wid="${w.id}">Repeat</button>
+          <button class="btn btn-inline repeat-w" data-wid="${w.id}">Start</button>
         </div>`).join('')}
-    </section>` : ''}`;
+    </section>` : ''}
+    <section class="card">
+      <h2>Start at a machine</h2>
+      <div id="picker"></div>
+      <p class="muted">Opening a machine starts your workout — finish it any time
+        from the workout overview.</p>
+    </section>`;
 
   root.querySelector('#repeat')?.addEventListener('click', () => {
     startWorkoutFrom(last);
