@@ -1,0 +1,28 @@
+{
+  "app": "gymii",
+  "kind": "gym-template",
+  "v": 1,
+  "gym": {
+    "v": 1,
+    "name": "Example gym",
+    "grid": { "w": 60, "h": 40 },
+    "shapes": [
+      { "id": "zone-machines", "kind": "rect", "x": 2, "y": 2, "w": 30, "h": 36 },
+      { "id": "zone-freeweights", "kind": "rect", "x": 34, "y": 2, "w": 24, "h": 17 },
+      { "id": "zone-cardio", "kind": "rect", "x": 34, "y": 21, "w": 24, "h": 17 },
+      { "id": "wall-entrance", "kind": "line", "x": 2, "y": 40, "w": 14, "h": 0 }
+    ],
+    "machines": [
+      { "id": "chest-press", "num": 1, "label": "Chest press", "x": 4, "y": 4, "w": 5, "h": 4, "settingsFields": ["Seat"] },
+      { "id": "lat-pulldown", "num": 2, "label": "Lat pulldown", "x": 11, "y": 4, "w": 5, "h": 4, "settingsFields": ["Seat", "Thigh pad"] },
+      { "id": "seated-row", "num": 3, "label": "Seated row", "x": 18, "y": 4, "w": 5, "h": 4, "settingsFields": ["Chest pad"] },
+      { "id": "shoulder-press", "num": 4, "label": "Shoulder press", "x": 25, "y": 4, "w": 5, "h": 4, "settingsFields": ["Seat"] },
+      { "id": "leg-press", "num": 5, "label": "Leg press", "x": 4, "y": 12, "w": 5, "h": 4, "settingsFields": ["Seat angle"] },
+      { "id": "leg-extension", "num": 6, "label": "Leg extension", "x": 11, "y": 12, "w": 5, "h": 4, "settingsFields": ["Seat", "Shin pad"] },
+      { "id": "leg-curl", "num": 7, "label": "Leg curl", "x": 18, "y": 12, "w": 5, "h": 4, "settingsFields": ["Seat", "Ankle pad"] },
+      { "id": "pec-deck", "num": 8, "label": "Pec deck", "x": 25, "y": 12, "w": 5, "h": 4, "settingsFields": ["Seat", "Arm pads"] },
+      { "id": "cable-tower", "num": 9, "label": "Cable tower", "x": 4, "y": 20, "w": 5, "h": 4, "settingsFields": ["Pulley height"] },
+      { "id": "abdominal-crunch", "num": 10, "label": "Abdominal crunch", "x": 11, "y": 20, "w": 5, "h": 4, "settingsFields": ["Seat"] }
+    ]
+  }
+}

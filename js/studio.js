@@ -1,4 +1,4 @@
-import { getGym, saveGym, newGym, uid } from './store.js';
+import { getGym, saveGym, newGym, uid, importData } from './store.js';
 import { esc } from './ui.js';
 
 const SNAP = 1;
@@ -222,7 +222,20 @@ export function renderStudio(root) {
           </label>
           <p class="muted">Add rooms, walls and machines, then drag them into place.
           Tap an item to edit it; drag the white corner handle to resize.</p>
+          ${gym.machines.length || gym.shapes.length ? '' : `
+            <button id="load-example" class="btn">Load example gym</button>
+            <p class="muted" id="example-err"></p>`}
         </section>`;
+      props.querySelector('#load-example')?.addEventListener('click', async () => {
+        try {
+          const res = await fetch('templates/example-gym.json');
+          importData(await res.json());
+          renderStudio(root);
+        } catch {
+          props.querySelector('#example-err').textContent =
+            'Could not load the example template.';
+        }
+      });
       props.querySelector('#gym-name').addEventListener('change', (e) => {
         gym.name = e.target.value.trim() || 'My gym';
         saveGym(gym);
