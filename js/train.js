@@ -207,7 +207,7 @@ function renderOverview(root, gym, active) {
       <h2>Add machine</h2>
       <div id="picker"></div>
     </section>
-    <button id="finish" class="btn ${sets ? 'btn-primary btn-big' : ''}">Finish workout</button>`;
+    <button id="finish" class="btn">Finish workout</button>`;
 
   root.querySelectorAll('.plan-row').forEach((row) => {
     row.addEventListener('click', () => {
@@ -224,7 +224,24 @@ function renderOverview(root, gym, active) {
     renderTrain(root);
   });
 
-  root.querySelector('#finish').addEventListener('click', () => finish(root, active));
+  // two-tap guard: finishing only happens once, at the very end
+  const finishBtn = root.querySelector('#finish');
+  let armTimer = null;
+  finishBtn.addEventListener('click', () => {
+    if (!finishBtn.classList.contains('armed')) {
+      finishBtn.classList.add('armed', 'btn-primary');
+      finishBtn.textContent = sets
+        ? 'Tap again to finish & save'
+        : 'Tap again to discard (no sets logged)';
+      armTimer = setTimeout(() => {
+        finishBtn.classList.remove('armed', 'btn-primary');
+        finishBtn.textContent = 'Finish workout';
+      }, 4000);
+      return;
+    }
+    clearTimeout(armTimer);
+    finish(root, active);
+  });
 }
 
 // Next unfinished machine in the plan after `afterId`, wrapping around so
@@ -329,10 +346,11 @@ function renderLog(root, gym, active) {
       </div>
     </section>
 
-    ${nextMachine ? `<button id="next-machine" class="btn">Next: #${nextMachine.num}
-      ${esc(nextMachine.label)} →</button>` : ''}
-    <button id="change-machine" class="btn">Change machine / overview</button>
-    <button id="finish" class="btn">Finish workout</button>
+    ${nextMachine
+    ? `<button id="next-machine" class="btn btn-next btn-big">Next: #${nextMachine.num}
+        ${esc(nextMachine.label)} →</button>
+      <button id="change-machine" class="btn">Change machine / overview</button>`
+    : '<button id="change-machine" class="btn btn-next btn-big">Workout overview →</button>'}
   `;
 
   root.querySelectorAll('.m-setting').forEach((inp) => {
@@ -379,8 +397,6 @@ function renderLog(root, gym, active) {
     saveActive(active);
     renderTrain(root);
   });
-
-  root.querySelector('#finish').addEventListener('click', () => finish(root, active));
 }
 
 // Default for the next set: same set number last time, then the set just

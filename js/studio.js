@@ -1,4 +1,7 @@
-import { getGym, saveGym, newGym, uid, importData, defaultOutline, exportGymTemplate } from './store.js';
+import {
+  getGym, saveGym, newGym, uid, importData, defaultOutline, exportGymTemplate,
+  MUSCLE_GROUPS, COMMON_SETTINGS,
+} from './store.js';
 import { esc, download } from './ui.js';
 
 const SNAP = 1;
@@ -458,6 +461,13 @@ export function renderStudio(root) {
     }
 
     if (!item.kind) { // machine
+      const muscles = item.muscles || [];
+      const muscleOptions = [...MUSCLE_GROUPS, ...muscles.filter((m) => !MUSCLE_GROUPS.includes(m))];
+      const settingsOptions = [...new Set([...COMMON_SETTINGS, ...item.settingsFields])];
+      const chipRow = (options, selected) => options.map((o) =>
+        `<button type="button" class="chip${selected.includes(o) ? ' sel' : ''}"
+          data-value="${esc(o)}">${esc(o)}</button>`).join('');
+
       props.innerHTML = `
         <section class="card">
           <h2>Machine</h2>
@@ -469,17 +479,21 @@ export function renderStudio(root) {
             </div>
           </label>
           <label class="field"><span>Label</span><input id="m-label" type="text" value="${esc(item.label)}"></label>
-          <label class="field"><span>Settings</span><input id="m-fields" type="text"
-            placeholder="e.g. Seat, Back pad" value="${esc(item.settingsFields.join(', '))}"></label>
-          <label class="field"><span>Muscles</span><input id="m-muscles" type="text"
-            placeholder="e.g. Lower back, Glutes" value="${esc((item.muscles || []).join(', '))}"></label>
+          <div class="field-block"><span>Muscles — tap to toggle</span>
+            <div class="chip-select" id="m-muscles">${chipRow(muscleOptions, muscles)}</div>
+          </div>
+          <div class="field-block"><span>Settings — the machine's adjustable parts</span>
+            <div class="chip-select" id="m-fields">${chipRow(settingsOptions, item.settingsFields)}</div>
+            <div class="row">
+              <input id="m-field-custom" type="text" placeholder="Other setting…">
+              <button type="button" id="m-field-add" class="btn btn-inline">Add</button>
+            </div>
+          </div>
           <label class="field"><span>Doc link</span><input id="m-doc" type="text" inputmode="url"
             placeholder="https://…" value="${esc(item.docUrl || '')}"></label>
-          <p class="muted">Settings are the machine's adjustable parts (seat height, pad position…) —
-          you log a value for each during workouts. Muscles are filter tags; the doc link can point
-          to the manufacturer's exercise guide.</p>
           <button id="del-item" class="btn btn-danger">Delete machine</button>
         </section>`;
+
       props.querySelector('#m-num').addEventListener('change', (e) => {
         item.num = Math.max(1, Math.round(parseFloat(e.target.value) || 1));
         e.target.value = item.num;
@@ -491,14 +505,36 @@ export function renderStudio(root) {
         e.target.value = item.label;
         saveGym(gym);
       });
-      props.querySelector('#m-fields').addEventListener('change', (e) => {
-        item.settingsFields = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
+
+      const toggleIn = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+      props.querySelector('#m-muscles').addEventListener('click', (e) => {
+        const chip = e.target.closest('.chip');
+        if (!chip) return;
+        item.muscles = toggleIn(muscles, chip.dataset.value);
         saveGym(gym);
+        renderProps();
       });
-      props.querySelector('#m-muscles').addEventListener('change', (e) => {
-        item.muscles = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
+      props.querySelector('#m-fields').addEventListener('click', (e) => {
+        const chip = e.target.closest('.chip');
+        if (!chip) return;
+        item.settingsFields = toggleIn(item.settingsFields, chip.dataset.value);
         saveGym(gym);
+        renderProps();
       });
+
+      const addCustomField = () => {
+        const input = props.querySelector('#m-field-custom');
+        const v = input.value.trim();
+        if (!v) return;
+        if (!item.settingsFields.includes(v)) item.settingsFields.push(v);
+        saveGym(gym);
+        renderProps();
+      };
+      props.querySelector('#m-field-add').addEventListener('click', addCustomField);
+      props.querySelector('#m-field-custom').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') addCustomField();
+      });
+
       props.querySelector('#m-doc').addEventListener('change', (e) => {
         item.docUrl = e.target.value.trim();
         saveGym(gym);

@@ -125,6 +125,8 @@ a { color: var(--accent); }
 
 .btn-big { padding: 18px; font-size: 17px; }
 
+.btn-next { background: var(--accent-dim); border-color: var(--accent); color: #dff5e9; }
+
 .btn-danger {
   color: var(--danger);
   background: transparent;
@@ -164,6 +166,13 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-col
 
 .field input[type="text"] { flex: 1; max-width: 62%; }
 .field > span { flex-shrink: 0; }
+
+.field-block { margin: 14px 0; font-size: 15px; }
+.field-block > span { display: block; margin-bottom: 8px; color: var(--muted); font-size: 13px; }
+.field-block .row { margin-top: 8px; }
+
+.chip-select { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip.sel { background: var(--accent-dim); border-color: var(--accent); color: #dff5e9; }
 
 textarea {
   width: 100%;

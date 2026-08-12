@@ -23,6 +23,20 @@ function write(key, value) {
 
 export const uid = () => Math.random().toString(36).slice(2, 10);
 
+// Canonical pick lists — selectable chips beat free text (fewer typos).
+export const MUSCLE_GROUPS = [
+  'Chest', 'Upper back', 'Lower back', 'Lats', 'Shoulders', 'Traps',
+  'Biceps', 'Triceps', 'Forearms', 'Abs', 'Obliques',
+  'Quads', 'Hamstrings', 'Glutes', 'Calves', 'Adductors', 'Abductors',
+  'Full body',
+];
+
+export const COMMON_SETTINGS = [
+  'Seat', 'Seat angle', 'Back pad', 'Chest pad', 'Thigh pad', 'Shin pad',
+  'Ankle pad', 'Arm pads', 'Pad height', 'Pulley height', 'Handle position',
+  'Foot plate',
+];
+
 // --- gym template ---
 
 export function getGym() {
