@@ -43,7 +43,8 @@ export function lineChart(container, points, { unit = '' } = {}) {
       ${points.map((p, i) => `
         <circle class="c-dot" cx="${X(p.t).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="4"/>
         <circle class="c-hit" cx="${X(p.t).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="14" data-i="${i}"/>`).join('')}
-      <text class="c-label" x="${X(lastP.t).toFixed(1)}" y="${(Y(lastP.v) - 12).toFixed(1)}"
+      <text class="c-label" x="${X(lastP.t).toFixed(1)}"
+        y="${(Y(lastP.v) - 12 < 12 ? Y(lastP.v) + 24 : Y(lastP.v) - 12).toFixed(1)}"
         text-anchor="${points.length > 1 ? 'end' : 'middle'}">${lastP.v} ${unit}</text>
     </svg>
     <div class="c-tip" hidden></div>`;
