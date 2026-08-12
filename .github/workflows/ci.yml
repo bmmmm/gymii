@@ -21,10 +21,29 @@ jobs:
           node-version: '24'
       - run: node test/store.test.mjs
 
+  # A runtime asset missing from the sw.js SHELL list breaks the app OFFLINE
+  # only — invisible in every normal test. icons/icon.svg is the source the
+  # PNGs are generated from, never fetched at runtime, so it stays out.
+  shell-list:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Every runtime asset is in the sw.js SHELL list
+        run: |
+          missing=0
+          while IFS= read -r f; do
+            if ! grep -qF "'$f'" sw.js; then
+              echo "::error file=sw.js::$f is not in the SHELL list — it would be missing offline"
+              missing=1
+            fi
+          done < <(git ls-files 'js/*.js' 'css/*.css' 'icons/*.png')
+          [ "$missing" -eq 0 ] && echo "SHELL list covers every runtime asset."
+          exit "$missing"
+
   # Flat no-build site: the repo root IS the publish dir. Only main deploys;
-  # pull_request runs stop after `test`.
+  # pull_request runs stop after the checks.
   deploy:
-    needs: test
+    needs: [test, shell-list]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:
