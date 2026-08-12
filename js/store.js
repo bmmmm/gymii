@@ -28,6 +28,7 @@ export const uid = () => Math.random().toString(36).slice(2, 10);
 export function getGym() {
   const gym = read(KEYS.gym, null);
   if (gym && !Array.isArray(gym.outline)) gym.outline = defaultOutline(gym.grid); // pre-outline gyms
+  if (gym && !gym.meta) gym.meta = {}; // pre-meta gyms
   return gym;
 }
 
@@ -46,7 +47,12 @@ export function defaultOutline(grid) {
 
 export function newGym(name = 'My gym') {
   const grid = { w: 60, h: 40 };
-  return { v: 1, name, grid, outline: defaultOutline(grid), shapes: [], machines: [] };
+  return {
+    v: 1, name, grid,
+    meta: { address: '', city: '', country: '' },
+    outline: defaultOutline(grid),
+    shapes: [], machines: [],
+  };
 }
 
 // --- workout history ---

@@ -1,5 +1,5 @@
-import { getGym, saveGym, newGym, uid, importData, defaultOutline } from './store.js';
-import { esc } from './ui.js';
+import { getGym, saveGym, newGym, uid, importData, defaultOutline, exportGymTemplate } from './store.js';
+import { esc, download } from './ui.js';
 
 const SNAP = 1;
 const snap = (v) => Math.round(v / SNAP) * SNAP;
@@ -282,6 +282,65 @@ export function renderStudio(root) {
   root.querySelector('#add-wall').addEventListener('click', () => addItem('line'));
   root.querySelector('#add-machine').addEventListener('click', () => addItem('machine'));
 
+  async function openTemplateBrowser(panel) {
+    panel.innerHTML = '<p class="muted">Loading library…</p>';
+    let list = [];
+    try {
+      const idx = await fetch('templates/index.json', { cache: 'no-store' }).then((r) => r.json());
+      list = idx.templates || [];
+    } catch { /* no manifest reachable — file import below still works */ }
+
+    panel.innerHTML = `
+      ${list.map((t) => {
+        const where = [t.city, t.country].filter(Boolean).join(', ');
+        return `<button class="btn tpl-load" data-file="${esc(t.file)}"
+          data-label="${esc(t.name)}${where ? ` — ${where}` : ''}">
+          ${esc(t.name)}${where ? `<span class="sub">${esc(where)}</span>` : ''}</button>`;
+      }).join('') || '<p class="muted">Library is empty.</p>'}
+      <button class="btn" id="tpl-file-btn">From file…</button>
+      <input type="file" hidden accept=".json,application/json" id="tpl-file-input">
+      <p class="muted" id="tpl-msg">Loading a template replaces the current gym layout
+      (workout history stays).</p>`;
+
+    const msg = panel.querySelector('#tpl-msg');
+    const apply = (data) => {
+      importData(data);
+      renderStudio(root);
+    };
+
+    panel.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.tpl-load');
+      if (!btn) return;
+      if (!btn.classList.contains('armed')) { // two-tap replace guard
+        btn.classList.add('armed');
+        btn.textContent = 'Tap again to replace current gym';
+        setTimeout(() => {
+          btn.classList.remove('armed');
+          btn.textContent = btn.dataset.label;
+        }, 4000);
+        return;
+      }
+      try {
+        apply(await fetch(btn.dataset.file, { cache: 'no-store' }).then((r) => r.json()));
+      } catch (err) {
+        msg.textContent = `Load failed: ${err.message}`;
+      }
+    });
+
+    panel.querySelector('#tpl-file-btn').addEventListener('click', () => {
+      panel.querySelector('#tpl-file-input').click();
+    });
+    panel.querySelector('#tpl-file-input').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        apply(JSON.parse(await file.text()));
+      } catch (err) {
+        msg.textContent = `Import failed: ${err.message}`;
+      }
+    });
+  }
+
   function renderProps() {
     if (selectedId === OUTLINE_ID) {
       const canDelete = selectedVertex !== null && gym.outline.length > 3;
@@ -339,19 +398,42 @@ export function renderStudio(root) {
           <p class="muted">Add rooms, walls and machines, then drag them into place.
           Tap an item to edit it; drag the white corner handle to resize.
           Tap the outer wall to reshape the floor outline.</p>
-          ${gym.machines.length || gym.shapes.length ? '' : `
-            <button id="load-example" class="btn">Load example gym</button>
-            <p class="muted" id="example-err"></p>`}
+        </section>
+        <section class="card">
+          <h2>Location</h2>
+          <label class="field"><span>Address</span><input id="gym-address" type="text"
+            value="${esc(gym.meta?.address || '')}"></label>
+          <label class="field"><span>City</span><input id="gym-city" type="text"
+            value="${esc(gym.meta?.city || '')}"></label>
+          <label class="field"><span>Country</span><input id="gym-country" type="text"
+            value="${esc(gym.meta?.country || '')}"></label>
+          <p class="muted">Travels with the template so others can find this gym when you share it.</p>
+        </section>
+        <section class="card">
+          <h2>Templates</h2>
+          <button id="load-template" class="btn">Load template…</button>
+          <button id="save-template" class="btn">Save as template</button>
+          <div id="template-browser"></div>
         </section>`;
-      props.querySelector('#load-example')?.addEventListener('click', async () => {
-        try {
-          const res = await fetch('templates/example-gym.json');
-          importData(await res.json());
-          renderStudio(root);
-        } catch {
-          props.querySelector('#example-err').textContent =
-            'Could not load the example template.';
-        }
+
+      const bindMeta = (sel, key) => {
+        props.querySelector(sel).addEventListener('change', (e) => {
+          gym.meta = { ...(gym.meta || {}), [key]: e.target.value.trim() };
+          saveGym(gym);
+        });
+      };
+      bindMeta('#gym-address', 'address');
+      bindMeta('#gym-city', 'city');
+      bindMeta('#gym-country', 'country');
+
+      props.querySelector('#save-template').addEventListener('click', () => {
+        const slug = [gym.name, gym.meta?.city].filter(Boolean).join('-')
+          .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'gym';
+        download(`gymii-template-${slug}.json`, exportGymTemplate());
+      });
+
+      props.querySelector('#load-template').addEventListener('click', () => {
+        openTemplateBrowser(props.querySelector('#template-browser'));
       });
       props.querySelector('#gym-name').addEventListener('change', (e) => {
         gym.name = e.target.value.trim() || 'My gym';

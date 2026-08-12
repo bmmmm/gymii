@@ -16,8 +16,12 @@ tracking.
 - **History** — workout list with per-machine details and an SVG chart of
   top-set weight over time.
 - **Templates** — export/import your gym as JSON ("machines are the same
-  everywhere"), plus a full-backup format. `templates/example-gym.json` ships
-  as a starter and can be loaded with one tap from an empty Studio.
+  everywhere"), plus a full-backup format. The Studio has a small template
+  library: `templates/index.json` is the manifest ("the database"), each
+  template carries location metadata (address, city, country). Load from the
+  library or from a local file; save your own gym as a shareable template.
+  The long-term idea: community-contributed floor plans per country/city via
+  pull requests, so you can pick your actual gym off the shelf.
 - **AI exchange** — copy an editable prompt + compact data snapshot into any
   LLM you trust, and paste gymii JSON produced by the LLM back in. gymii
   deliberately never talks to an AI service itself — your data, your choice.

@@ -133,6 +133,8 @@ a { color: var(--accent); }
 
 .btn-danger.armed { background: var(--danger); color: #fff; }
 
+.tpl-load.armed { border-color: var(--accent); color: var(--accent); }
+
 .btn-inline { display: inline-block; width: auto; padding: 10px 14px; margin: 0; }
 
 .btn:disabled { opacity: 0.45; cursor: default; }

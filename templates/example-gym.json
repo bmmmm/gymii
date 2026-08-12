@@ -5,6 +5,7 @@
   "gym": {
     "v": 1,
     "name": "Example gym",
+    "meta": { "address": "", "city": "", "country": "" },
     "grid": { "w": 60, "h": 40 },
     "outline": [
       { "x": 2, "y": 2 }, { "x": 58, "y": 2 }, { "x": 58, "y": 38 },

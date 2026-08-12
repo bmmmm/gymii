@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "note": "Manifest of shareable gym templates. Add your gym: contribute the template file plus one entry here (name, city, country help others find it).",
+  "templates": [
+    {
+      "id": "example-gym",
+      "name": "Example gym",
+      "country": "",
+      "city": "",
+      "file": "templates/example-gym.json"
+    }
+  ]
+}
