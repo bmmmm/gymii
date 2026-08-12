@@ -20,7 +20,10 @@
       { "id": "lockers", "kind": "fixture", "fixture": "locker", "x": 7, "y": 31, "w": 4, "h": 2 },
       { "id": "water-fountain", "kind": "fixture", "fixture": "water", "x": 28, "y": 34, "w": 2, "h": 2 },
       { "id": "trash-bin", "kind": "fixture", "fixture": "trash", "x": 31, "y": 34, "w": 2, "h": 2 },
-      { "id": "mirror-freeweights", "kind": "fixture", "fixture": "mirror", "x": 34, "y": 2, "w": 22, "h": 1 }
+      { "id": "mirror-freeweights", "kind": "fixture", "fixture": "mirror", "x": 34, "y": 2, "w": 22, "h": 1 },
+      { "id": "main-entrance", "kind": "fixture", "fixture": "entrance", "x": 18.2, "y": 35.4, "w": 3.6, "h": 1.2, "rot": 90 },
+      { "id": "window-north", "kind": "fixture", "fixture": "window", "x": 24, "y": 1.5, "w": 4, "h": 1, "rot": 0 },
+      { "id": "front-counter", "kind": "fixture", "fixture": "counter", "x": 23, "y": 33, "w": 5, "h": 2 }
     ],
     "machines": [
       { "id": "chest-press", "num": 1, "label": "Chest press", "x": 4, "y": 4, "w": 5, "h": 4, "settingsFields": ["Seat"], "muscles": ["Chest", "Triceps"], "docUrl": "" },

@@ -1,8 +1,8 @@
 import {
-  getGym, saveGym, getSettings, getActive, saveActive, finishWorkout,
-  lastEntryFor, getWorkouts, uid,
+  getGym, saveGym, getSettings, saveSettings, getActive, saveActive, finishWorkout,
+  lastEntryFor, getWorkouts, uid, usageByMachine,
 } from './store.js';
-import { drawGym, findMachineByNum } from './studio.js';
+import { drawGym, usagePayload, findMachineByNum } from './studio.js';
 import { esc } from './ui.js';
 
 // Active workout shape:
@@ -123,10 +123,23 @@ function machinePicker(container, gym, onPick) {
     </select>
     <div class="pick-chips"></div>` : ''}
     <div class="map-wrap"><svg xmlns="http://www.w3.org/2000/svg"></svg></div>
+    <div class="map-mode pick-mode">
+      <button type="button" class="chip" data-mode="custom">Colors</button>
+      <button type="button" class="chip" data-mode="usage">Usage</button>
+    </div>
     <p class="pick-err muted">Enter a machine number or tap one on the map.</p>`;
 
   const svg = container.querySelector('svg');
-  drawGym(svg, gym);
+  const drawMap = () => drawGym(svg, gym, {
+    usage: getSettings().mapColors === 'usage' ? usagePayload(usageByMachine()) : null,
+  });
+  drawMap();
+
+  const modeBar = container.querySelector('.pick-mode');
+  const updateModeBar = () => modeBar.querySelectorAll('.chip').forEach((c) =>
+    c.classList.toggle('sel', (c.dataset.mode === 'usage') === (getSettings().mapColors === 'usage')));
+  updateModeBar();
+
   const input = container.querySelector('.pick-num');
   const err = container.querySelector('.pick-err');
 
@@ -149,8 +162,8 @@ function machinePicker(container, gym, onPick) {
 
   const muscleSelect = container.querySelector('.pick-muscle');
   const chips = container.querySelector('.pick-chips');
-  muscleSelect?.addEventListener('change', () => {
-    const muscle = muscleSelect.value;
+  const applyMuscleFilter = () => {
+    const muscle = muscleSelect?.value || '';
     const matching = muscle
       ? gym.machines.filter((m) => (m.muscles || []).includes(muscle))
       : [];
@@ -158,14 +171,26 @@ function machinePicker(container, gym, onPick) {
     svg.querySelectorAll('.machine').forEach((g) => {
       g.style.opacity = !muscle || matchIds.has(g.dataset.id) ? '' : '0.22';
     });
-    chips.innerHTML = matching
-      .sort((a, b) => a.num - b.num)
-      .map((m) => `<button class="chip" data-id="${m.id}">#${m.num} ${esc(m.label)}</button>`)
-      .join('');
-  });
+    if (chips) {
+      chips.innerHTML = matching
+        .sort((a, b) => a.num - b.num)
+        .map((m) => `<button class="chip" data-id="${m.id}">#${m.num} ${esc(m.label)}</button>`)
+        .join('');
+    }
+  };
+  muscleSelect?.addEventListener('change', applyMuscleFilter);
   chips?.addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (chip) onPick(chip.dataset.id);
+  });
+
+  modeBar.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    saveSettings({ ...getSettings(), mapColors: chip.dataset.mode });
+    updateModeBar();
+    drawMap();
+    applyMuscleFilter(); // redraw resets the dimming, so re-apply it
   });
 }
 

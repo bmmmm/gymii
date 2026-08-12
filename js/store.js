@@ -129,7 +129,19 @@ export function finishWorkout(active) {
 // --- settings ---
 
 export function getSettings() {
-  return { v: 1, restSeconds: 90, weightStep: 2.5, unit: 'kg', ...read(KEYS.settings, {}) };
+  return {
+    v: 1, restSeconds: 90, weightStep: 2.5, unit: 'kg', mapColors: 'custom',
+    ...read(KEYS.settings, {}),
+  };
+}
+
+// Total sets per machine across all history — feeds the usage map view.
+export function usageByMachine() {
+  const usage = new Map();
+  getWorkouts().forEach((w) => w.entries.forEach((e) => {
+    usage.set(e.machineId, (usage.get(e.machineId) || 0) + e.sets.length);
+  }));
+  return usage;
 }
 
 export function saveSettings(settings) {

@@ -1,19 +1,31 @@
 import {
   getGym, saveGym, newGym, uid, importData, defaultOutline, exportGymTemplate,
+  getSettings, saveSettings, usageByMachine,
   MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS,
 } from './store.js';
 import { esc, download } from './ui.js';
 
-// Map furniture beyond machines: doors, water, mirrors, lockers, trash.
-// Doors are special: they snap onto the nearest wall and render as a
-// floor-plan opening (gap + leaf + swing arc) instead of an icon box.
+// Map furniture beyond machines. Entrances, doors and windows snap onto
+// the nearest wall and render as floor-plan symbols; the rest are boxes.
 export const FIXTURES = {
+  entrance: { icon: '🚶', label: 'Entrance', w: 3.6, h: 1.2 },
   door: { icon: '🚪', label: 'Door', w: 2.4, h: 1.2 },
-  water: { icon: '🚰', label: 'Water', w: 2, h: 2 },
+  window: { icon: '🪟', label: 'Window', w: 4, h: 1 },
+  counter: { icon: '🛎️', label: 'Reception', w: 5, h: 2 },
   mirror: { icon: '🪞', label: 'Mirror', w: 6, h: 1 },
   locker: { icon: '🔒', label: 'Lockers', w: 3, h: 2 },
+  water: { icon: '🚰', label: 'Water', w: 2, h: 2 },
   trash: { icon: '🗑️', label: 'Trash', w: 2, h: 2 },
 };
+
+const WALL_SNAPPED = new Set(['entrance', 'door', 'window']);
+
+// Item accent colors — categorical palette validated (dataviz checks)
+// against surface #171c22; identity never rides on color alone (machines
+// carry numbers, zones carry labels), which covers the deutan WARN band.
+export const ITEM_COLORS = [
+  '#35a273', '#bf5f9f', '#3f7fd1', '#c08327', '#22a8b0', '#c65454', '#ab5fd6',
+];
 
 // All wall segments a door can live on: outline edges + interior walls.
 function wallSegments(gym) {
@@ -62,7 +74,9 @@ const OUTLINE_ID = 'outline';
 
 // --- shared renderer (also used by the Train mini-map) ---
 
-export function drawGym(svg, gym, { selectedId = null, editor = false, selectedVertex = null } = {}) {
+export function drawGym(svg, gym, {
+  selectedId = null, editor = false, selectedVertex = null, usage = null,
+} = {}) {
   svg.setAttribute('viewBox', `0 0 ${gym.grid.w} ${gym.grid.h}`);
   svg.style.aspectRatio = `${gym.grid.w} / ${gym.grid.h}`;
   const selected = selectedId && selectedId !== OUTLINE_ID ? findItem(gym, selectedId) : null;
@@ -73,9 +87,14 @@ export function drawGym(svg, gym, { selectedId = null, editor = false, selectedV
     (editor ? gridSvg(gym.grid) : '') +
     gym.shapes.map(shapeSvg).join('') +
     (editor ? outlineHitSvg(gym.outline) : '') +
-    gym.machines.map(machineSvg).join('') +
+    gym.machines.map((m) => machineSvg(m, usage)).join('') +
     (editor && selected ? selectionSvg(selected) : '') +
     (editor && selectedId === OUTLINE_ID ? outlineHandlesSvg(gym.outline, selectedVertex) : '');
+}
+
+// Builds the usage payload for drawGym from all-time set counts.
+export function usagePayload(counts) {
+  return { counts, max: Math.max(1, ...counts.values()) };
 }
 
 const outlinePath = (outline) => `M${outline.map((p) => `${p.x} ${p.y}`).join('L')}Z`;
@@ -129,6 +148,8 @@ function shapeSvg(s) {
   }
   if (s.kind === 'fixture') {
     if (s.fixture === 'door') return doorSvg(s);
+    if (s.fixture === 'entrance') return entranceSvg(s);
+    if (s.fixture === 'window') return windowSvg(s);
     const icon = FIXTURES[s.fixture]?.icon ?? '❓';
     const fs = clamp(Math.min(s.w, s.h) * 0.7, 0.8, 2.2);
     return `<g class="shape" data-id="${s.id}">
@@ -137,19 +158,39 @@ function shapeSvg(s) {
         text-anchor="middle" dominant-baseline="central" pointer-events="none">${icon}</text>
     </g>`;
   }
+  const zoneStyle = s.color
+    ? ` style="fill:${s.color};fill-opacity:0.13;stroke:${s.color};stroke-opacity:0.55"` : '';
   return `<g class="shape" data-id="${s.id}">
-    <rect class="shape-rect" x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}" rx="0.3"/>
+    <rect class="shape-rect" x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}" rx="0.3"${zoneStyle}/>
     ${s.label ? `<text class="zone-label" x="${s.x + 1}" y="${s.y + 2.1}" font-size="1.4"
       pointer-events="none">${esc(s.label)}</text>` : ''}
   </g>`;
 }
 
-function machineSvg(m) {
+function machineSvg(m, usage = null) {
   const fs = clamp(Math.min(m.w, m.h) * 0.55, 1.2, 2.4);
+  let boxStyle = '';
+  let numStyle = '';
+  if (usage) {
+    // sequential green ramp by all-time sets; unused machines fade out
+    const sets = usage.counts.get(m.id) || 0;
+    if (!sets) {
+      boxStyle = ' style="fill:#1c232c;stroke:#38424e"';
+      numStyle = ' style="fill:#5f6d7d"';
+    } else {
+      const t = sets / usage.max;
+      const c = t > 0.75 ? '#35a273' : t > 0.5 ? '#2c7d55' : t > 0.25 ? '#23593f' : '#183b2b';
+      boxStyle = ` style="fill:${c};stroke:${c}"`;
+      if (t > 0.75) numStyle = ' style="fill:#06130c"';
+    }
+  } else if (m.color) {
+    boxStyle = ` style="fill:${m.color};stroke:${m.color}"`;
+    numStyle = ' style="fill:#0c1116"';
+  }
   return `<g class="machine" data-id="${m.id}">
-    <rect class="machine-box" x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="0.4"/>
+    <rect class="machine-box" x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="0.4"${boxStyle}/>
     <text class="machine-num" x="${m.x + m.w / 2}" y="${m.y + m.h / 2}" font-size="${fs}"
-      text-anchor="middle" dominant-baseline="central" pointer-events="none">${m.num}</text>
+      text-anchor="middle" dominant-baseline="central" pointer-events="none"${numStyle}>${m.num}</text>
   </g>`;
 }
 
@@ -173,6 +214,33 @@ function doorSvg(s) {
   </g>`;
 }
 
+// Entrance: a wide wall opening with an inward arrow. flipV points it
+// the other way when the inside is on the other side of the wall.
+function entranceSvg(s) {
+  const cx = s.x + s.w / 2;
+  const cy = s.y + s.h / 2;
+  const fy = s.flipV ? -1 : 1;
+  return `<g class="shape" data-id="${s.id}" transform="rotate(${s.rot || 0} ${cx} ${cy})
+      translate(${cx} ${cy}) scale(1 ${fy}) translate(${-cx} ${-cy})">
+    <rect class="door-hit hit" x="${s.x}" y="${cy - 0.9}" width="${s.w}" height="1.8"/>
+    <rect class="door-gap" x="${s.x}" y="${cy - 0.45}" width="${s.w}" height="0.9"/>
+    <path class="entrance-arrow" d="M ${cx} ${cy + 1.7} L ${cx} ${cy - 1.3}
+      M ${cx - 0.7} ${cy - 0.5} L ${cx} ${cy - 1.3} L ${cx + 0.7} ${cy - 0.5}"/>
+  </g>`;
+}
+
+// Window: the classic double line inside the wall stroke.
+function windowSvg(s) {
+  const cx = s.x + s.w / 2;
+  const cy = s.y + s.h / 2;
+  return `<g class="shape" data-id="${s.id}" transform="rotate(${s.rot || 0} ${cx} ${cy})">
+    <rect class="door-hit hit" x="${s.x}" y="${cy - 0.7}" width="${s.w}" height="1.4"/>
+    <rect class="window-gap" x="${s.x}" y="${cy - 0.35}" width="${s.w}" height="0.7"/>
+    <line class="window-line" x1="${s.x}" y1="${cy - 0.18}" x2="${s.x + s.w}" y2="${cy - 0.18}"/>
+    <line class="window-line" x1="${s.x}" y1="${cy + 0.18}" x2="${s.x + s.w}" y2="${cy + 0.18}"/>
+  </g>`;
+}
+
 function bbox(item) {
   return {
     x: Math.min(item.x, item.x + item.w),
@@ -183,7 +251,7 @@ function bbox(item) {
 }
 
 function selectionSvg(item) {
-  if (item.fixture === 'door') { // doors rotate with their wall and have no resize handle
+  if (WALL_SNAPPED.has(item.fixture)) { // wall pieces rotate along and have no resize handle
     const cx = item.x + item.w / 2;
     const cy = item.y + item.h / 2;
     return `<rect class="selected-outline" x="${item.x - 0.4}" y="${cy - 1.2}"
@@ -229,12 +297,32 @@ export function renderStudio(root) {
         `<button class="btn add-fixture" data-fixture="${key}">${f.icon} ${f.label}</button>`).join('')}
     </div>
     <div class="floor-wrap"><svg id="floor" class="floor" xmlns="http://www.w3.org/2000/svg"></svg></div>
+    <div class="map-mode" id="map-mode">
+      <button type="button" class="chip" data-mode="custom">Colors</button>
+      <button type="button" class="chip" data-mode="usage">Usage</button>
+    </div>
     <div id="props"></div>
   `;
 
   const svg = root.querySelector('#floor');
   const props = root.querySelector('#props');
-  const redraw = () => drawGym(svg, gym, { selectedId, editor: true, selectedVertex });
+  const usageOn = () => getSettings().mapColors === 'usage';
+  const redraw = () => drawGym(svg, gym, {
+    selectedId, editor: true, selectedVertex,
+    usage: usageOn() ? usagePayload(usageByMachine()) : null,
+  });
+
+  const modeBar = root.querySelector('#map-mode');
+  const updateModeBar = () => modeBar.querySelectorAll('.chip').forEach((c) =>
+    c.classList.toggle('sel', (c.dataset.mode === 'usage') === usageOn()));
+  modeBar.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    saveSettings({ ...getSettings(), mapColors: chip.dataset.mode });
+    updateModeBar();
+    redraw();
+  });
+  updateModeBar();
 
   // --- undo/redo: one snapshot per completed edit ---
   const history = [JSON.stringify(gym)];
@@ -363,8 +451,8 @@ export function renderStudio(root) {
     }
     const it = drag.item;
     if (drag.mode === 'move') {
-      if (it.fixture === 'door') {
-        // doors ignore the grid and glue themselves to the nearest wall
+      if (WALL_SNAPPED.has(it.fixture)) {
+        // wall pieces ignore the grid and glue themselves to the nearest wall
         it.x = p.x - drag.offX;
         it.y = p.y - drag.offY;
         snapDoorToWall(gym, it);
@@ -427,7 +515,7 @@ export function renderStudio(root) {
         x: snap(g.w / 2 - f.w / 2 + off), y: snap(g.h / 2 - f.h / 2 + off),
         w: f.w, h: f.h,
       };
-      if (fixtureType === 'door') snapDoorToWall(gym, item); // born on a wall
+      if (WALL_SNAPPED.has(fixtureType)) snapDoorToWall(gym, item); // born on a wall
       gym.shapes.push(item);
     } else {
       item = { id: uid(), kind: 'line', x: snap(g.w / 2 - 4 + off), y: snap(g.h / 2 + off), w: 8, h: 0 };
@@ -503,6 +591,25 @@ export function renderStudio(root) {
       }
     });
   }
+
+  // Swatch row for picking an item accent color (empty = default look).
+  const colorRow = (current) => `<div class="swatch-row">
+    <button type="button" class="swatch none${!current ? ' sel' : ''}" data-color="" aria-label="default color"></button>
+    ${ITEM_COLORS.map((c) => `<button type="button" class="swatch${current === c ? ' sel' : ''}"
+      data-color="${c}" style="background:${c}" aria-label="color ${c}"></button>`).join('')}
+  </div>`;
+
+  const wireColorRow = (sel, item) => {
+    props.querySelector(sel).addEventListener('click', (e) => {
+      const sw = e.target.closest('.swatch');
+      if (!sw) return;
+      if (sw.dataset.color) item.color = sw.dataset.color;
+      else delete item.color;
+      save();
+      redraw();
+      renderProps();
+    });
+  };
 
   function renderProps() {
     if (selectedId === OUTLINE_ID) {
@@ -639,6 +746,9 @@ export function renderStudio(root) {
             </div>
           </label>
           <label class="field"><span>Label</span><input id="m-label" type="text" value="${esc(item.label)}"></label>
+          <div class="field-block"><span>Color on the plan</span>
+            <div id="m-color">${colorRow(item.color)}</div>
+          </div>
           <div class="field-block"><span>Muscles — tap to toggle</span>
             <div class="chip-select" id="m-muscles">${chipRow(muscleOptions, muscles)}</div>
           </div>
@@ -665,6 +775,8 @@ export function renderStudio(root) {
         e.target.value = item.label;
         save();
       });
+
+      wireColorRow('#m-color', item);
 
       const toggleIn = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
       props.querySelector('#m-muscles').addEventListener('click', (e) => {
@@ -715,8 +827,12 @@ export function renderStudio(root) {
               <button type="button" id="z-set" class="btn btn-inline">Set</button>
             </div>
           </div>
+          <div class="field-block"><span>Color on the plan</span>
+            <div id="z-color">${colorRow(item.color)}</div>
+          </div>
           <button id="del-item" class="btn btn-danger">Delete</button>
         </section>`;
+      wireColorRow('#z-color', item);
       props.querySelector('#z-labels').addEventListener('click', (e) => {
         const chip = e.target.closest('.chip');
         if (!chip) return;
@@ -739,20 +855,24 @@ export function renderStudio(root) {
       });
     } else {
       const isDoor = item.fixture === 'door';
+      const isEntrance = item.fixture === 'entrance';
       props.innerHTML = `
         <section class="card">
           <h2>${item.kind === 'line' ? 'Wall' : (FIXTURES[item.fixture]?.label ?? 'Element')}</h2>
           ${isDoor ? `
             <button id="flip-swing" class="btn">Flip swing side (in/out)</button>
             <button id="flip-hinge" class="btn">Flip hinge side (left/right)</button>` : ''}
+          ${isEntrance ? '<button id="flip-swing" class="btn">Flip direction (in/out)</button>' : ''}
           <button id="del-item" class="btn btn-danger">Delete</button>
         </section>`;
-      if (isDoor) {
+      if (isDoor || isEntrance) {
         props.querySelector('#flip-swing').addEventListener('click', () => {
           item.flipV = !item.flipV;
           save();
           redraw();
         });
+      }
+      if (isDoor) {
         props.querySelector('#flip-hinge').addEventListener('click', () => {
           item.flipH = !item.flipH;
           save();
