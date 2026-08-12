@@ -76,6 +76,32 @@ assert.throws(() => store.importData({
   gym: { ...store.newGym('bad'), outline: [{ x: 1, y: 2 }, { x: 'a', y: 3 }, { x: 4, y: 5 }] },
 }));
 
+// delete/update workouts (inline history edits)
+store.clearAll();
+store.saveWorkouts([
+  { id: 'wa', startedAt: 1, finishedAt: 2, entries: [{ machineId: 'm1', num: 1, label: 'A', settings: {}, sets: [{ reps: 10, weight: 40 }] }] },
+  { id: 'wb', startedAt: 3, finishedAt: 4, entries: [{ machineId: 'm2', num: 2, label: 'B', settings: {}, sets: [{ reps: 8, weight: 30 }] }], locker: '7' },
+]);
+store.deleteWorkout('nope');
+assert.equal(store.getWorkouts().length, 2, 'unknown delete id is a no-op');
+store.deleteWorkout('wa');
+assert.deepEqual(store.getWorkouts().map((w) => w.id), ['wb'], 'delete removes exactly one workout');
+
+assert.equal(store.updateWorkout({ id: 'nope', entries: [] }), null, 'unknown update id returns null');
+const updated = store.updateWorkout({
+  id: 'wb', startedAt: 3, finishedAt: 4, locker: '9',
+  entries: [
+    { machineId: 'm2', num: 2, label: 'B', settings: {}, sets: [{ reps: 5, weight: 35 }] },
+    { machineId: 'm3', num: 3, label: 'C', settings: {}, sets: [] },
+  ],
+});
+assert.equal(updated.locker, '9', 'update replaces workout fields');
+assert.equal(store.getWorkouts()[0].entries.length, 1, 'zero-set entries dropped on update');
+assert.equal(store.getWorkouts()[0].entries[0].sets[0].weight, 35);
+assert.equal(store.updateWorkout({ id: 'wb', entries: [{ machineId: 'm2', num: 2, label: 'B', settings: {}, sets: [] }] }),
+  null, 'update with only empty entries removes the workout');
+assert.equal(store.getWorkouts().length, 0);
+
 // the shipped example template must pass import validation
 const { readFileSync } = await import('node:fs');
 const example = JSON.parse(readFileSync(new URL('../templates/example-gym.json', import.meta.url), 'utf8'));

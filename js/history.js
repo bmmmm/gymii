@@ -1,4 +1,6 @@
-import { getGym, getWorkouts, getSettings, getActive } from './store.js';
+import {
+  getGym, getWorkouts, getSettings, getActive, deleteWorkout, updateWorkout,
+} from './store.js';
 import { esc, fmtDate, fmtTime } from './ui.js';
 import { lineChart } from './chart.js';
 import { startWorkoutFrom } from './train.js';
@@ -57,23 +59,95 @@ export function renderHistory(root) {
     </section>
     <section class="card">
       <h2>Workouts</h2>
-      <div id="workout-list">
-        ${workouts.slice().reverse().map((w) => workoutHtml(w, unit)).join('')}
-      </div>
+      <div id="workout-list"></div>
     </section>`;
 
-  root.querySelector('#workout-list').addEventListener('click', (e) => {
-    const btn = e.target.closest('.repeat-w');
-    if (!btn) return;
-    if (getActive()) {
-      btn.textContent = 'Finish your current workout first';
-      btn.disabled = true;
+  // One card at a time can be in edit mode; the draft is a deep clone so
+  // Cancel never touches stored data.
+  let editDraft = null;
+  const list = root.querySelector('#workout-list');
+  const renderList = () => {
+    list.innerHTML = workouts.slice().reverse()
+      .map((w) => (editDraft?.id === w.id ? editWorkoutHtml(editDraft, unit) : workoutHtml(w, unit)))
+      .join('');
+  };
+  renderList();
+
+  list.addEventListener('click', (e) => {
+    const repeat = e.target.closest('.repeat-w');
+    if (repeat) {
+      if (getActive()) {
+        repeat.textContent = 'Finish your current workout first';
+        repeat.disabled = true;
+        return;
+      }
+      const workout = workouts.find((w) => w.id === repeat.dataset.wid);
+      if (!workout) return;
+      startWorkoutFrom(workout);
+      location.hash = '#train';
       return;
     }
-    const workout = workouts.find((w) => w.id === btn.dataset.wid);
-    if (!workout) return;
-    startWorkoutFrom(workout);
-    location.hash = '#train';
+
+    const edit = e.target.closest('.edit-w');
+    if (edit) {
+      const workout = workouts.find((w) => w.id === edit.dataset.wid);
+      if (!workout) return;
+      editDraft = JSON.parse(JSON.stringify(workout));
+      renderList();
+      return;
+    }
+    if (e.target.closest('.edit-cancel')) {
+      editDraft = null;
+      renderList();
+      return;
+    }
+    const setDel = e.target.closest('.set-del');
+    if (setDel && editDraft) {
+      editDraft.entries[+setDel.dataset.ei].sets.splice(+setDel.dataset.si, 1);
+      renderList();
+      return;
+    }
+    if (e.target.closest('.edit-save') && editDraft) {
+      if (!editDraft.locker) delete editDraft.locker;
+      updateWorkout(editDraft);
+      renderHistory(root); // heatmap/chart/options close over the old snapshot
+      return;
+    }
+
+    const del = e.target.closest('.delete-w');
+    if (del) {
+      // Two-tap guard per card: the arm timer lives on the button element
+      // because the list holds one delete button per workout.
+      if (!del.classList.contains('armed')) {
+        del.classList.add('armed');
+        del.textContent = 'Tap again to delete';
+        clearTimeout(del._armTimer);
+        del._armTimer = setTimeout(() => {
+          del.classList.remove('armed');
+          del.textContent = 'Delete';
+        }, 4000);
+        return;
+      }
+      clearTimeout(del._armTimer);
+      deleteWorkout(del.dataset.wid);
+      renderHistory(root);
+    }
+  });
+
+  list.addEventListener('change', (e) => {
+    if (!editDraft) return;
+    const t = e.target;
+    if (t.classList.contains('edit-weight')) {
+      const v = Math.max(0, parseFloat(t.value) || 0);
+      t.value = v;
+      editDraft.entries[+t.dataset.ei].sets[+t.dataset.si].weight = v;
+    } else if (t.classList.contains('edit-reps')) {
+      const v = Math.max(1, Math.round(parseFloat(t.value) || 1));
+      t.value = v;
+      editDraft.entries[+t.dataset.ei].sets[+t.dataset.si].reps = v;
+    } else if (t.classList.contains('edit-locker')) {
+      editDraft.locker = t.value.trim();
+    }
   });
 
   // --- training-days heatmap: month × machine ---
@@ -166,18 +240,20 @@ export function renderHistory(root) {
   draw();
 }
 
+const setCount = (w) => w.entries.reduce((n, e) => n + e.sets.length, 0);
+const volumeOf = (w) => w.entries.reduce(
+  (v, e) => v + e.sets.reduce((x, st) => x + st.reps * st.weight, 0), 0);
+const minsOf = (w) => Math.max(1, Math.round((w.finishedAt - w.startedAt) / 60000));
+
 function workoutHtml(w, unit) {
-  const sets = w.entries.reduce((n, e) => n + e.sets.length, 0);
-  const volume = w.entries.reduce(
-    (v, e) => v + e.sets.reduce((x, st) => x + st.reps * st.weight, 0), 0);
-  const mins = Math.max(1, Math.round((w.finishedAt - w.startedAt) / 60000));
+  const sets = setCount(w);
   const chain = w.entries.map((e) => `#${e.num}`).join(' → ');
   return `<details class="workout">
     <summary>
       <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>
-        <span class="muted">${fmtTime(w.startedAt)} · ${mins} min</span></div>
+        <span class="muted">${fmtTime(w.startedAt)} · ${minsOf(w)} min</span></div>
       <div class="muted">${chain}</div>
-      <div class="muted">${sets} set${sets === 1 ? '' : 's'} · ${Math.round(volume)} ${unit}${w.locker
+      <div class="muted">${sets} set${sets === 1 ? '' : 's'} · ${Math.round(volumeOf(w))} ${unit}${w.locker
         ? ` · 🔒 ${esc(w.locker)}` : ''}</div>
     </summary>
     ${w.entries.map((e) => `
@@ -186,6 +262,42 @@ function workoutHtml(w, unit) {
         <div class="sets">${e.sets.map((s) => `${s.weight}×${s.reps}`).join(', ')}${settingsStr(e)}</div>
       </div>`).join('')}
     <button class="btn repeat-w" data-wid="${w.id}">Repeat this workout</button>
+    <div class="row">
+      <button class="btn btn-inline edit-w" data-wid="${w.id}">Edit</button>
+      <button class="btn btn-inline btn-danger delete-w" data-wid="${w.id}">Delete</button>
+    </div>
+  </details>`;
+}
+
+function editWorkoutHtml(w, unit) {
+  const sets = setCount(w);
+  return `<details class="workout" open>
+    <summary>
+      <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>
+        <span class="muted">${fmtTime(w.startedAt)} · ${minsOf(w)} min</span></div>
+      <div class="muted">Editing — ${sets} set${sets === 1 ? '' : 's'} · ${Math.round(volumeOf(w))} ${unit}</div>
+    </summary>
+    ${w.entries.map((e, ei) => `
+      <div class="entry-line">
+        <div>#${e.num} ${esc(e.label)}</div>
+        ${e.sets.map((st, si) => `
+          <div class="set-row">
+            <span>Set ${si + 1}</span>
+            <span class="edit-set">
+              <input type="number" inputmode="decimal" class="edit-weight" data-ei="${ei}" data-si="${si}"
+                value="${st.weight}" aria-label="Weight (${unit})"> ${unit} ×
+              <input type="number" inputmode="numeric" class="edit-reps" data-ei="${ei}" data-si="${si}"
+                value="${st.reps}" aria-label="Reps">
+            </span>
+            <button class="x set-del" data-ei="${ei}" data-si="${si}" aria-label="Remove set ${si + 1}">✕</button>
+          </div>`).join('') || '<p class="muted">No sets left — removed on save.</p>'}
+      </div>`).join('')}
+    <label class="field"><span>Locker</span>
+      <input type="text" class="edit-locker" value="${esc(w.locker || '')}" placeholder="none"></label>
+    <div class="row">
+      <button class="btn btn-primary edit-save">Save</button>
+      <button class="btn edit-cancel">Cancel</button>
+    </div>
   </details>`;
 }
 

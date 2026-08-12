@@ -84,6 +84,29 @@ export function saveWorkouts(list) {
   write(KEYS.workouts, list);
 }
 
+// Deletes a workout by id; no-op if unknown.
+export function deleteWorkout(id) {
+  saveWorkouts(getWorkouts().filter((w) => w.id !== id));
+}
+
+// Replaces a workout's fields by id (inline history edits). Entries with
+// zero sets are dropped, mirroring finishWorkout(); if none remain the
+// whole workout is removed. Returns the updated workout, or null.
+export function updateWorkout(patch) {
+  const list = getWorkouts();
+  const idx = list.findIndex((w) => w.id === patch.id);
+  if (idx === -1) return null;
+  const entries = patch.entries.filter((e) => e.sets.length);
+  if (!entries.length) {
+    list.splice(idx, 1);
+    saveWorkouts(list);
+    return null;
+  }
+  list[idx] = { ...list[idx], ...patch, entries };
+  saveWorkouts(list);
+  return list[idx];
+}
+
 // Most recent entry with at least one set for this machine, or null.
 export function lastEntryFor(machineId) {
   const workouts = getWorkouts();
