@@ -20,8 +20,8 @@ store.saveGym(gym);
 
 // log a workout; the set-less entry must be dropped on finish
 store.saveActive({
-  v: 1, id: 'w1', startedAt: 1000, mode: 'free', queue: null, queueIndex: 0,
-  currentMachineId: null,
+  v: 2, id: 'w1', startedAt: 1000, plan: ['m1', 'm2'],
+  currentMachineId: null, currentExercise: null,
   entries: [
     { machineId: 'm1', num: 1, label: 'Chest press', settings: { Seat: '4' }, sets: [{ reps: 10, weight: 40 }, { reps: 8, weight: 45 }] },
     { machineId: 'm2', num: 2, label: 'Lat pulldown', settings: {}, sets: [] },
@@ -39,7 +39,7 @@ assert.equal(store.getWorkouts().length, 1);
 const last = store.lastEntryFor('m1');
 assert.equal(last.sets[1].weight, 45);
 assert.equal(last.settings.Seat, '4');
-assert.equal(store.lastEntryFor('m2'), null, 'machines without sets have no last entry');
+assert.strictEqual(store.lastEntryFor('m2'), null, 'machines without sets have no last entry');
 
 // export -> clear -> import roundtrip
 const backup = store.exportBackup();
@@ -58,6 +58,18 @@ assert.equal(store.getWorkouts().length, 0, 'template import brings no history')
 // invalid files must throw, not corrupt
 assert.throws(() => store.importData({ app: 'other' }));
 assert.throws(() => store.importData({ app: 'gymii', kind: 'gym-template', gym: { machines: 'nope' } }));
+assert.throws(() => store.importData({
+  app: 'gymii', kind: 'gym-template', v: 1,
+  gym: { ...store.newGym('bad'), machines: [{ id: 'x', num: 1, exercises: [{ name: 'Curl' }] }] },
+}), 'non-string exercises rejected');
+
+// machines healed on read: a hand-edited import without settingsFields must
+// not brick Train/Studio (they call machine.settingsFields.forEach)
+const bare = store.newGym('Bare');
+bare.machines.push({ id: 'b1', num: 1, label: 'Imported' });
+store.saveGym(bare);
+assert.deepEqual(store.getGym().machines[0].settingsFields, [], 'missing settingsFields healed');
+assert.deepEqual(store.getGym().machines[0].muscles, [], 'missing muscles healed');
 
 // outline: new gyms carry a full-rect outline, legacy gyms get one on read
 assert.equal(store.newGym('x').outline.length, 4);
@@ -87,7 +99,7 @@ assert.equal(store.getWorkouts().length, 2, 'unknown delete id is a no-op');
 store.deleteWorkout('wa');
 assert.deepEqual(store.getWorkouts().map((w) => w.id), ['wb'], 'delete removes exactly one workout');
 
-assert.equal(store.updateWorkout({ id: 'nope', entries: [] }), null, 'unknown update id returns null');
+assert.strictEqual(store.updateWorkout({ id: 'nope', entries: [] }), null, 'unknown update id returns null');
 const updated = store.updateWorkout({
   id: 'wb', startedAt: 3, finishedAt: 4, locker: '9',
   entries: [
@@ -98,6 +110,8 @@ const updated = store.updateWorkout({
 assert.equal(updated.locker, '9', 'update replaces workout fields');
 assert.equal(store.getWorkouts()[0].entries.length, 1, 'zero-set entries dropped on update');
 assert.equal(store.getWorkouts()[0].entries[0].sets[0].weight, 35);
+const cleared = store.updateWorkout({ ...store.getWorkouts()[0], locker: '' });
+assert.strictEqual(cleared.locker, undefined, 'an emptied locker stays gone (spread merge trap)');
 assert.equal(store.updateWorkout({ id: 'wb', entries: [{ machineId: 'm2', num: 2, label: 'B', settings: {}, sets: [] }] }),
   null, 'update with only empty entries removes the workout');
 assert.equal(store.getWorkouts().length, 0);
@@ -195,7 +209,7 @@ const exSaved = store.finishWorkout(store.getActive());
 assert.equal(exSaved.entries.length, 3, 'same-station entries with different exercises both kept');
 assert.equal(store.lastEntryFor('db', 'Biceps curls').sets[0].weight, 12.5);
 assert.equal(store.lastEntryFor('db', 'Shoulder press').sets[0].weight, 10);
-assert.equal(store.lastEntryFor('db'), null, 'bare bucket does not match exercise entries');
+assert.strictEqual(store.lastEntryFor('db'), null, 'bare bucket does not match exercise entries');
 assert.equal(store.lastEntryFor('pb').entries, undefined); // sanity: returns an entry, not a workout
 assert.equal(store.lastEntryFor('pb').bodyweight, true, 'bodyweight flag survives finish');
 

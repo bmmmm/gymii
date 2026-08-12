@@ -3,7 +3,7 @@ import {
   getProfiles, createProfile, renameProfile, deleteProfile, setActiveProfile, setUnit,
   exportGymTemplate, exportBackup, importData, clearAll,
 } from './store.js';
-import { download, esc } from './ui.js';
+import { download, esc, twoTapConfirm } from './ui.js';
 
 export function renderSettings(root) {
   const s = getSettings();
@@ -80,7 +80,8 @@ export function renderSettings(root) {
   });
 
   root.querySelector('#weight-step').addEventListener('change', (e) => {
-    const v = Math.max(0.25, parseFloat(e.target.value) || 2.5);
+    // 0.5 min matches the stepper's data-min and setUnit's clamp
+    const v = Math.max(0.5, parseFloat(e.target.value) || 2.5);
     e.target.value = v;
     saveSettings({ ...getSettings(), weightStep: v });
   });
@@ -110,18 +111,9 @@ export function renderSettings(root) {
   });
 
   const delProfileBtn = root.querySelector('#profile-delete');
-  let delProfileTimer = null;
   delProfileBtn?.addEventListener('click', () => {
-    if (!delProfileBtn.classList.contains('armed')) {
-      delProfileBtn.classList.add('armed');
-      delProfileBtn.textContent = 'Tap again to delete this gym and its history';
-      delProfileTimer = setTimeout(() => {
-        delProfileBtn.classList.remove('armed');
-        delProfileBtn.textContent = 'Delete this gym';
-      }, 4000);
-      return;
-    }
-    clearTimeout(delProfileTimer);
+    if (!twoTapConfirm(delProfileBtn,
+      'Tap again to delete this gym and its history', 'Delete this gym')) return;
     deleteProfile(getProfiles().activeId);
     renderSettings(root);
   });
@@ -155,18 +147,8 @@ export function renderSettings(root) {
 
   // Two-step confirm instead of a blocking confirm() dialog.
   const clearBtn = root.querySelector('#clear-all');
-  let armTimer = null;
   clearBtn.addEventListener('click', () => {
-    if (!clearBtn.classList.contains('armed')) {
-      clearBtn.classList.add('armed');
-      clearBtn.textContent = 'Tap again to erase everything';
-      armTimer = setTimeout(() => {
-        clearBtn.classList.remove('armed');
-        clearBtn.textContent = 'Clear all data';
-      }, 4000);
-      return;
-    }
-    clearTimeout(armTimer);
+    if (!twoTapConfirm(clearBtn, 'Tap again to erase everything', 'Clear all data')) return;
     clearAll();
     renderSettings(root);
   });

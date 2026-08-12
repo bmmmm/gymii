@@ -2,7 +2,7 @@
 // files (no stale-module hell, no cache-name bump per deploy); an offline
 // user gets whatever was last fetched successfully. Relative URLs keep the
 // app subpath-safe (e.g. GitHub Pages project sites).
-const CACHE = 'gymii-v1';
+const CACHE = 'gymii-v2'; // bumped: SHELL gained templates/*.json
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest',
   'css/style.css',
@@ -10,6 +10,7 @@ const SHELL = [
   'js/ai.js', 'js/settings.js', 'js/ui.js', 'js/chart.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-512-maskable.png',
   'icons/apple-touch-icon.png',
+  'templates/index.json', 'templates/example-gym.json',
 ];
 
 self.addEventListener('install', (e) => {
@@ -32,10 +33,12 @@ self.addEventListener('fetch', (e) => {
       .then((res) => {
         if (res.ok) {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy));
+          caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
         }
         return res;
       })
-      .catch(() => caches.match(e.request)),
+      // respondWith(undefined) throws inside the worker — return a real
+      // network error for anything that was never cached
+      .catch(() => caches.match(e.request).then((hit) => hit ?? Response.error())),
   );
 });

@@ -135,7 +135,12 @@ a { color: var(--accent); }
 
 .btn-danger.armed { background: var(--danger); color: #fff; }
 
-.tpl-load.armed { border-color: var(--accent); color: var(--accent); }
+/* armed state of non-danger two-tap buttons (finish, template replace) */
+.btn.armed:not(.btn-danger) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
 
 .btn-inline { display: inline-block; width: auto; padding: 10px 14px; margin: 0; }
 
@@ -363,6 +368,9 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 /* inline history edit: compact weight/reps inputs inside a set row */
 .edit-set { display: flex; gap: 6px; align-items: center; color: var(--muted); }
 .edit-set input { width: 64px; text-align: center; }
+
+/* exercise chips: mark movements already logged this session */
+.chip.done::after { content: ' ✓'; }
 
 .next-set { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
 .next-set .spread { align-items: center; }

@@ -1,7 +1,7 @@
 import {
   getGym, getWorkouts, getSettings, getActive, deleteWorkout, updateWorkout, distUnit,
 } from './store.js';
-import { esc, fmtDate, fmtTime, fmtDuration, workoutTotals } from './ui.js';
+import { esc, fmtDate, fmtTime, workoutTotals, setStr, twoTapConfirm } from './ui.js';
 import { lineChart } from './chart.js';
 import { startWorkoutFrom } from './train.js';
 
@@ -41,6 +41,7 @@ export function renderHistory(root) {
   const decodeKey = (value) => {
     if (!value) return null; // '' = the heatmap's "All machines"
     const i = value.indexOf(' ');
+    if (i === -1) return { machineId: value, exercise: null }; // defensive: bare id
     return { machineId: value.slice(0, i), exercise: value.slice(i + 1) || null };
   };
   const entryMatches = (e, sel) =>
@@ -132,19 +133,8 @@ export function renderHistory(root) {
 
     const del = e.target.closest('.delete-w');
     if (del) {
-      // Two-tap guard per card: the arm timer lives on the button element
-      // because the list holds one delete button per workout.
-      if (!del.classList.contains('armed')) {
-        del.classList.add('armed');
-        del.textContent = 'Tap again to delete';
-        clearTimeout(del._armTimer);
-        del._armTimer = setTimeout(() => {
-          del.classList.remove('armed');
-          del.textContent = 'Delete';
-        }, 4000);
-        return;
-      }
-      clearTimeout(del._armTimer);
+      // works per card: the arm timer lives on each button element
+      if (!twoTapConfirm(del, 'Tap again to delete', 'Delete')) return;
       deleteWorkout(del.dataset.wid);
       renderHistory(root);
     }
@@ -258,7 +248,10 @@ export function renderHistory(root) {
   const chartTitle = root.querySelector('#chart-title');
   const draw = () => {
     const sel = decodeKey(select.value);
-    if (!sel) return;
+    if (!sel) {
+      chartEl.innerHTML = '<p class="muted">No data yet.</p>';
+      return;
+    }
     const relevant = workouts
       .map((w) => ({ w, e: w.entries.find((e) => entryMatches(e, sel) && e.sets.length) }))
       .filter((x) => x.e);
@@ -290,13 +283,8 @@ export function renderHistory(root) {
 }
 
 const setCount = (w) => w.entries.reduce((n, e) => n + e.sets.length, 0);
-const minsOf = (w) => Math.max(1, Math.round((w.finishedAt - w.startedAt) / 60000));
-
-const setStr = (st, s, bodyweight = false) => (st.distance != null
-  ? `${st.distance} ${distUnit(s)} · ${fmtDuration(st.seconds)}`
-  : bodyweight
-    ? (st.weight ? `BW+${st.weight}×${st.reps}` : `BW×${st.reps}`)
-    : `${st.weight}×${st.reps}`);
+const minsOf = (w) => // finishedAt can be absent in imported data
+  Math.max(1, Math.round(((w.finishedAt ?? w.startedAt) - w.startedAt) / 60000));
 
 const entryTitle = (e) => `#${e.num} ${esc(e.label)}${e.exercise ? ` · ${esc(e.exercise)}` : ''}`;
 

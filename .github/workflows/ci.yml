@@ -36,7 +36,7 @@ jobs:
               echo "::error file=sw.js::$f is not in the SHELL list — it would be missing offline"
               missing=1
             fi
-          done < <(git ls-files 'js/*.js' 'css/*.css' 'icons/*.png')
+          done < <(git ls-files 'js/*.js' 'css/*.css' 'icons/*.png' 'templates/*.json')
           [ "$missing" -eq 0 ] && echo "SHELL list covers every runtime asset."
           exit "$missing"
 

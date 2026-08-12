@@ -12,10 +12,13 @@ even a cookie banner.
 - 🗺️ **Studio** — a real floor-plan editor: walls, zones, doors, mirrors,
   lockers, and machines you can tap. Undo/redo included.
 - 💪 **Train** — repeat a past workout in order, or roam by number, map tap or
-  muscle. Last session's numbers prefill every set.
+  muscle. Last session's numbers prefill every set. Cardio stations log
+  distance + time, bodyweight stations reps + extra weight, and free-weight
+  areas keep separate histories per named exercise.
 - ⏱️ **Rest timer** — starts itself, remembers per machine, keeps the screen
   awake, beeps when you're up.
-- 📈 **History** — training heatmap, progress chart, one-tap repeat.
+- 📈 **History** — training heatmap, progress chart, one-tap repeat, and past
+  workouts can be edited inline or deleted.
 - 🏨 **Profiles & units** — home gym, hotel gym, whatever. kg or lbs, switched
   in one go.
 - 📦 **Templates** — export your gym as JSON, import someone else's.

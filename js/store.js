@@ -121,6 +121,12 @@ export function getGym() {
   const gym = read(scopedKey(activeProfileId(), 'gym'), null);
   if (gym && !Array.isArray(gym.outline)) gym.outline = defaultOutline(gym.grid); // pre-outline gyms
   if (gym && !gym.meta) gym.meta = {}; // pre-meta gyms
+  // heal machines from hand-edited/AI-produced imports — a missing
+  // settingsFields would otherwise throw across Train and Studio
+  gym?.machines.forEach((m) => {
+    if (!Array.isArray(m.settingsFields)) m.settingsFields = [];
+    if (!Array.isArray(m.muscles)) m.muscles = [];
+  });
   return gym;
 }
 
@@ -141,11 +147,13 @@ export function defaultOutline(grid) {
 // placement). Quick start and the picker's create-on-miss use this, so a
 // gym can grow without ever opening the studio — arranging is optional.
 export function addMachine(gym, num, label) {
-  const off = gym.machines.length % 5;
+  // 5 per row, next row below, wrapping inside the grid — plain modulo
+  // would stack machine 1/6/11 on the same spot
+  const n = gym.machines.length;
   const machine = {
     id: uid(), num, label,
-    x: Math.round(gym.grid.w / 2 - 2 + off),
-    y: Math.round(gym.grid.h / 2 - 1.5 + off),
+    x: Math.round(2 + (n % 5) * 5) % Math.max(1, gym.grid.w - 4),
+    y: Math.round(2 + Math.floor(n / 5) * 4) % Math.max(1, gym.grid.h - 3),
     w: 4, h: 3, settingsFields: [], muscles: [], docUrl: '',
   };
   gym.machines.push(machine);
@@ -190,9 +198,13 @@ export function updateWorkout(patch) {
     saveWorkouts(list);
     return null;
   }
-  list[idx] = { ...list[idx], ...patch, entries };
+  const next = { ...list[idx], ...patch, entries };
+  // a spread merge can't express key removal — an emptied locker would
+  // otherwise silently resurrect from the stored workout
+  if (!patch.locker) delete next.locker;
+  list[idx] = next;
   saveWorkouts(list);
-  return list[idx];
+  return next;
 }
 
 // Most recent entry with at least one set for this machine — and, at
@@ -321,7 +333,8 @@ function isValidGym(gym) {
     && gym.grid && Number.isFinite(gym.grid.w) && Number.isFinite(gym.grid.h)
     && Array.isArray(gym.shapes) && Array.isArray(gym.machines)
     && gym.machines.every((m) => m.id && Number.isFinite(m.num)
-      && (m.exercises === undefined || Array.isArray(m.exercises)))
+      && (m.exercises === undefined
+        || (Array.isArray(m.exercises) && m.exercises.every((x) => typeof x === 'string'))))
     && (gym.outline === undefined || (Array.isArray(gym.outline) && gym.outline.length >= 3
       && gym.outline.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))));
 }

@@ -3,7 +3,7 @@ import {
   lastEntryFor, getWorkouts, uid, usageByMachine, distUnit, newGym, addMachine,
 } from './store.js';
 import { drawGym, usagePayload, findMachineByNum } from './studio.js';
-import { esc, fmtDuration, workoutTotals } from './ui.js';
+import { esc, fmtDuration, workoutTotals, setStr, twoTapConfirm } from './ui.js';
 
 // Active workout shape:
 //   { v: 2, id, startedAt, plan: [machineId…], currentMachineId|null, entries: [] }
@@ -13,11 +13,14 @@ import { esc, fmtDuration, workoutTotals } from './ui.js';
 
 export function renderTrain(root, message = '') {
   const gym = getGym();
-  if (!gym || !gym.machines.length) {
+  const active = getActive();
+  // An in-progress workout outranks onboarding: machines can be wiped
+  // mid-workout by an import or a studio edit, and the quick start must
+  // never overwrite logged sets.
+  if (!gym || (!active && !gym.machines.length)) {
     renderOnboarding(root, message);
     return;
   }
-  const active = getActive();
   if (active) {
     if (!active.plan) { // migrate a pre-plan active workout
       active.plan = active.queue || active.entries.map((e) => e.machineId);
@@ -61,15 +64,17 @@ function renderStart(root, gym, message) {
   const s = getSettings();
 
   // Easy starting points: the latest workout gets the big button, and
-  // every DIFFERENT machine chain in history (a push/pull/legs rotation,
+  // every DIFFERENT machine set in history (a push/pull/legs rotation,
   // say) gets its own start row — routines emerge from the log, no
-  // manual routine management.
+  // manual routine management. Keyed on machine IDs, not the displayed
+  // #num chain, so renumbering in the studio doesn't split a routine.
+  const routineKey = (w) => [...new Set(w.entries.map((e) => e.machineId))].join('|');
   const routines = [];
-  const seen = new Set(last ? [machineChain(last)] : []);
+  const seen = new Set(last ? [routineKey(last)] : []);
   for (let i = workouts.length - 2; i >= 0 && routines.length < 4; i--) {
-    const chain = machineChain(workouts[i]);
-    if (seen.has(chain)) continue;
-    seen.add(chain);
+    const key = routineKey(workouts[i]);
+    if (seen.has(key)) continue;
+    seen.add(key);
     routines.push(workouts[i]);
   }
 
@@ -89,7 +94,7 @@ function renderStart(root, gym, message) {
             <span class="muted">last: ${new Date(w.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
               · ${workoutTotals(w, s)}</span>
           </div>
-          <button class="btn btn-inline repeat-w" data-wid="${w.id}">Start</button>
+          <button class="btn btn-inline repeat-w" data-wid="${w.id}">Repeat</button>
         </div>`).join('')}
     </section>` : ''}
     <section class="card">
@@ -151,6 +156,8 @@ function renderOnboarding(root, message) {
   const start = () => {
     const label = root.querySelector('#qs-label').value.trim();
     if (!label) return;
+    // backstop: never clobber a workout that already has logged sets
+    if (getActive()?.entries.some((e) => e.sets.length)) return;
     const gym = getGym() ?? newGym();
     const machine = addMachine(gym, gym.machines.length + 1, label);
     saveGym(gym);
@@ -202,7 +209,7 @@ function machinePicker(container, gym, onPick) {
 
   const go = () => {
     const num = Math.round(parseFloat(input.value));
-    if (!num) return;
+    if (!num || num < 1) return;
     const machine = findMachineByNum(gym, num);
     if (!machine) {
       // create-on-miss: standing at a real machine whose number gymii
@@ -337,20 +344,11 @@ function renderOverview(root, gym, active) {
 
   // two-tap guard: finishing only happens once, at the very end
   const finishBtn = root.querySelector('#finish');
-  let armTimer = null;
   finishBtn.addEventListener('click', () => {
-    if (!finishBtn.classList.contains('armed')) {
-      finishBtn.classList.add('armed', 'btn-primary');
-      finishBtn.textContent = sets
-        ? 'Tap again to finish & save'
-        : 'Tap again to discard (no sets logged)';
-      armTimer = setTimeout(() => {
-        finishBtn.classList.remove('armed', 'btn-primary');
-        finishBtn.textContent = 'Finish workout';
-      }, 4000);
-      return;
-    }
-    clearTimeout(armTimer);
+    const armedLabel = sets
+      ? 'Tap again to finish & save'
+      : 'Tap again to discard (no sets logged)';
+    if (!twoTapConfirm(finishBtn, armedLabel, 'Finish workout')) return;
     finish(root, active);
   });
 }
@@ -451,8 +449,11 @@ function renderLog(root, gym, active) {
     <section class="card">
       <h2>Exercise</h2>
       <div class="chip-select" id="exercise-chips">
-        ${exercises.map((x) => `<button type="button" class="chip${x === exercise ? ' sel' : ''}"
-          data-exercise="${esc(x)}">${esc(x)}</button>`).join('')}
+        ${exercises.map((x) => {
+    const done = (entryFor(active, machine.id, x)?.sets.length ?? 0) > 0;
+    return `<button type="button" class="chip${x === exercise ? ' sel' : ''}${done ? ' done' : ''}"
+          data-exercise="${esc(x)}">${esc(x)}</button>`;
+  }).join('')}
       </div>
       ${pickPending ? '<p class="muted">Pick an exercise to start logging.</p>' : ''}
     </section>` : ''}
@@ -484,55 +485,15 @@ function renderLog(root, gym, active) {
       </div>
       <div class="next-set">
         ${cardio ? `
-        <div class="spread"><span class="label">Distance (${du})</span>
-          <div class="stepper" data-step="${s.unit === 'kg' ? 100 : 0.1}" data-min="0">
-            <button type="button" class="step-down" aria-label="decrease distance">−</button>
-            <input id="set-distance" type="number" inputmode="decimal" value="${def.distance}">
-            <button type="button" class="step-up" aria-label="increase distance">+</button>
-          </div>
-        </div>
-        <div class="spread"><span class="label">Time (min)</span>
-          <div class="stepper" data-step="1" data-min="0">
-            <button type="button" class="step-down" aria-label="decrease time">−</button>
-            <input id="set-time" type="number" inputmode="decimal" value="${Math.round((def.seconds / 60) * 100) / 100}">
-            <button type="button" class="step-up" aria-label="increase time">+</button>
-          </div>
-        </div>` : type === 'bodyweight' ? `
-        <div class="spread"><span class="label">Reps</span>
-          <div class="stepper" data-step="1" data-min="1">
-            <button type="button" class="step-down" aria-label="decrease reps">−</button>
-            <input id="set-reps" type="number" inputmode="numeric" value="${def.reps}">
-            <button type="button" class="step-up" aria-label="increase reps">+</button>
-          </div>
-        </div>
-        <div class="spread"><span class="label">Extra weight</span>
-          <div class="stepper" data-step="${s.weightStep}" data-min="0">
-            <button type="button" class="step-down" aria-label="decrease extra weight">−</button>
-            <input id="set-weight" type="number" inputmode="decimal" value="${def.weight}">
-            <button type="button" class="step-up" aria-label="increase extra weight">+</button>
-          </div>
-        </div>` : `
-        <div class="spread"><span class="label">Weight</span>
-          <div class="stepper" data-step="${s.weightStep}" data-min="0">
-            <button type="button" class="step-down" aria-label="decrease weight">−</button>
-            <input id="set-weight" type="number" inputmode="decimal" value="${def.weight}">
-            <button type="button" class="step-up" aria-label="increase weight">+</button>
-          </div>
-        </div>
-        <div class="spread"><span class="label">Reps</span>
-          <div class="stepper" data-step="1" data-min="1">
-            <button type="button" class="step-down" aria-label="decrease reps">−</button>
-            <input id="set-reps" type="number" inputmode="numeric" value="${def.reps}">
-            <button type="button" class="step-up" aria-label="increase reps">+</button>
-          </div>
-        </div>`}
-        <div class="spread"><span class="label">Rest (s)</span>
-          <div class="stepper" data-step="15" data-min="0">
-            <button type="button" class="step-down" aria-label="decrease rest">−</button>
-            <input id="set-rest" type="number" inputmode="numeric" value="${restSeconds}">
-            <button type="button" class="step-up" aria-label="increase rest">+</button>
-          </div>
-        </div>
+        ${stepperField(`Distance (${du})`, 'set-distance', { step: s.unit === 'kg' ? 100 : 0.1, min: 0, value: def.distance })}
+        ${stepperField('Time (min)', 'set-time', { step: 1, min: 0, value: Math.round((def.seconds / 60) * 100) / 100 })}`
+    : type === 'bodyweight' ? `
+        ${stepperField('Reps', 'set-reps', { step: 1, min: 1, value: def.reps, mode: 'numeric' })}
+        ${stepperField('Extra weight', 'set-weight', { step: s.weightStep, min: 0, value: def.weight })}`
+      : `
+        ${stepperField('Weight', 'set-weight', { step: s.weightStep, min: 0, value: def.weight })}
+        ${stepperField('Reps', 'set-reps', { step: 1, min: 1, value: def.reps, mode: 'numeric' })}`}
+        ${stepperField('Rest (s)', 'set-rest', { step: 15, min: 0, value: restSeconds, mode: 'numeric' })}
         <button id="log-set" class="btn btn-primary btn-big">✓ Log set</button>
       </div>
     </section>`}
@@ -608,6 +569,17 @@ function renderLog(root, gym, active) {
   });
 }
 
+// One labeled stepper row for the logging screen — renderLog needs three
+// per branch and the markup is identical apart from label/id/step.
+const stepperField = (label, id, { step, min, value, mode = 'decimal' }) => `
+  <div class="spread"><span class="label">${label}</span>
+    <div class="stepper" data-step="${step}" data-min="${min}">
+      <button type="button" class="step-down" aria-label="decrease ${label.toLowerCase()}">−</button>
+      <input id="${id}" type="number" inputmode="${mode}" value="${value}">
+      <button type="button" class="step-up" aria-label="increase ${label.toLowerCase()}">+</button>
+    </div>
+  </div>`;
+
 // Default for the next set: same set number last time, then the set just
 // done this session, then the last set of the previous session. `last`
 // must already be type-matched to the entry (caller gates on the flags).
@@ -621,14 +593,10 @@ function nextSetDefaults(entry, last, type, s) {
   return { reps: 10, weight: 20 };
 }
 
-// Branches per set shape (bodyweight shares {reps,weight}, so its flag is
-// passed in); the weight unit is appended once when any weight was moved.
+// Joins ui.js's setStr per set; the weight unit is appended once when any
+// weight was actually moved.
 const setsSummary = (sets, s, bodyweight = false) => {
-  const body = sets.map((st) => (st.distance != null
-    ? `${st.distance} ${distUnit(s)} · ${fmtDuration(st.seconds)}`
-    : bodyweight
-      ? (st.weight ? `BW+${st.weight}×${st.reps}` : `BW×${st.reps}`)
-      : `${st.weight}×${st.reps}`)).join(', ');
+  const body = sets.map((st) => setStr(st, s, bodyweight)).join(', ');
   const suffix = sets.every((st) => st.distance == null) && sets.some((st) => st.weight)
     ? ` ${s.unit}` : '';
   return body + suffix;
@@ -641,8 +609,10 @@ function finish(root, active) {
     return;
   }
   const sets = saved.entries.reduce((n, e) => n + e.sets.length, 0);
-  renderTrain(root, `Workout saved: ${saved.entries.length} machine${saved.entries.length === 1 ? '' : 's'}, `
-    + `${sets} sets, ${workoutTotals(saved, getSettings())} total.`);
+  // count stations, not entries — a multi-exercise station is one machine
+  const stations = new Set(saved.entries.map((e) => e.machineId)).size;
+  renderTrain(root, `Workout saved: ${stations} machine${stations === 1 ? '' : 's'}, `
+    + `${sets} set${sets === 1 ? '' : 's'}, ${workoutTotals(saved, getSettings())} total.`);
 }
 
 // --- rest timer ---
@@ -667,21 +637,36 @@ function startRest(secs) {
   const cd = overlay.querySelector('#cd');
 
   // Keep the screen on while resting. The browser auto-releases the lock
-  // when the tab is hidden, so re-acquire on return.
+  // when the tab is hidden, so re-acquire on return. Guard against the
+  // request being in flight (visibilitychange re-entry) and against the
+  // overlay closing before the request resolves — an unreleased sentinel
+  // would keep the screen awake forever.
   let wakeLock = null;
+  let wakeLockPending = false;
+  let closed = false;
   const requestWakeLock = async () => {
+    if (wakeLock || wakeLockPending) return;
+    wakeLockPending = true;
     try {
-      wakeLock = await navigator.wakeLock?.request('screen');
-      wakeLock?.addEventListener('release', () => { wakeLock = null; });
-    } catch { /* unsupported or denied */ }
+      const sentinel = await navigator.wakeLock?.request('screen');
+      if (!sentinel) return;
+      if (closed) { sentinel.release().catch(() => {}); return; }
+      wakeLock = sentinel;
+      sentinel.addEventListener('release', () => {
+        if (wakeLock === sentinel) wakeLock = null;
+      });
+    } catch { /* unsupported or denied */ } finally {
+      wakeLockPending = false;
+    }
   };
   const onVisible = () => {
-    if (document.visibilityState === 'visible' && !wakeLock) requestWakeLock();
+    if (document.visibilityState === 'visible') requestWakeLock();
   };
   requestWakeLock();
   document.addEventListener('visibilitychange', onVisible);
 
   const close = () => {
+    closed = true;
     clearInterval(interval);
     document.removeEventListener('visibilitychange', onVisible);
     wakeLock?.release().catch(() => {});

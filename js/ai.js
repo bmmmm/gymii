@@ -3,7 +3,7 @@
 // control over where their data goes.
 
 import { getGym, getWorkouts, getSettings, saveSettings, importData, distUnit } from './store.js';
-import { esc } from './ui.js';
+import { esc, twoTapConfirm } from './ui.js';
 
 const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; an "exercise" field names one movement at a multi-exercise station like a free-weight area).
 
@@ -54,7 +54,11 @@ export function renderAi(root) {
     saveSettings({ ...getSettings(), aiPrompt: promptEl.value });
   });
 
-  root.querySelector('#ai-reset').addEventListener('click', () => {
+  // two-tap: a hand-edited prompt has no undo anywhere on this page
+  const resetBtn = root.querySelector('#ai-reset');
+  resetBtn.addEventListener('click', () => {
+    if (!twoTapConfirm(resetBtn,
+      'Tap again to discard your edited prompt', 'Reset prompt to default')) return;
     const { aiPrompt, ...rest } = getSettings();
     saveSettings(rest);
     promptEl.value = DEFAULT_PROMPT;

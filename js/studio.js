@@ -3,7 +3,7 @@ import {
   getSettings, saveSettings, usageByMachine,
   MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS,
 } from './store.js';
-import { esc, download } from './ui.js';
+import { esc, download, twoTapConfirm } from './ui.js';
 
 // Map furniture beyond machines. Entrances, doors and windows snap onto
 // the nearest wall and render as floor-plan symbols; the rest are boxes.
@@ -562,15 +562,7 @@ export function renderStudio(root) {
     panel.addEventListener('click', async (e) => {
       const btn = e.target.closest('.tpl-load');
       if (!btn) return;
-      if (!btn.classList.contains('armed')) { // two-tap replace guard
-        btn.classList.add('armed');
-        btn.textContent = 'Tap again to replace current gym';
-        setTimeout(() => {
-          btn.classList.remove('armed');
-          btn.textContent = btn.dataset.label;
-        }, 4000);
-        return;
-      }
+      if (!twoTapConfirm(btn, 'Tap again to replace current gym', btn.dataset.label)) return;
       try {
         apply(await fetch(btn.dataset.file, { cache: 'no-store' }).then((r) => r.json()));
       } catch (err) {
@@ -936,7 +928,11 @@ export function renderStudio(root) {
       }
     }
 
-    props.querySelector('#del-item').addEventListener('click', () => {
+    // two-tap even though undo exists — fat fingers happen faster than
+    // people notice the undo button
+    const delBtn = props.querySelector('#del-item');
+    delBtn.addEventListener('click', () => {
+      if (!twoTapConfirm(delBtn, 'Tap again to delete', delBtn.textContent)) return;
       gym.machines = gym.machines.filter((m) => m.id !== item.id);
       gym.shapes = gym.shapes.filter((s) => s.id !== item.id);
       save();

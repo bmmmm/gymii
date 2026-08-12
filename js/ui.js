@@ -37,8 +37,37 @@ export const fmtTime = (ts) =>
 export const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-export const fmtDuration = (sec) =>
-  `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+export const fmtDuration = (sec) => {
+  const s = Math.max(0, Math.round(sec) || 0); // imported data may be fractional/absent
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+// Shared two-tap confirm for destructive actions (AGENTS.md convention).
+// Call inside any click handler (works delegated too): arms the button on
+// the first tap, returns true on the confirming second tap within 4 s.
+export function twoTapConfirm(btn, armedLabel, restLabel) {
+  if (!btn.classList.contains('armed')) {
+    btn.classList.add('armed');
+    btn.textContent = armedLabel;
+    clearTimeout(btn._armTimer);
+    btn._armTimer = setTimeout(() => {
+      btn.classList.remove('armed');
+      btn.textContent = restLabel;
+    }, 4000);
+    return false;
+  }
+  clearTimeout(btn._armTimer);
+  btn.classList.remove('armed');
+  return true;
+}
+
+// One set, rendered compactly; bodyweight shares {reps,weight}, so its
+// flag is passed in rather than sniffed from the shape.
+export const setStr = (st, settings, bodyweight = false) => (st.distance != null
+  ? `${st.distance} ${distUnit(settings)} · ${fmtDuration(st.seconds)}`
+  : bodyweight
+    ? (st.weight ? `BW+${st.weight}×${st.reps}` : `BW×${st.reps}`)
+    : `${st.weight}×${st.reps}`);
 
 // "500 kg · 3.2 km"-style rollup of a workout's strength volume and cardio
 // distance; parts appear only when non-zero so pure-cardio workouts don't
