@@ -747,8 +747,12 @@ export function renderStudio(root) {
           </label>
           <label class="field"><span>Label</span><input id="m-label" type="text" value="${esc(item.label)}"></label>
           <div class="field-block"><span>Type</span>
-            <div class="chip-select"><button type="button" id="m-cardio"
-              class="chip${item.cardio ? ' sel' : ''}">Cardio — distance + time</button></div>
+            <div class="chip-select">
+              <button type="button" id="m-cardio"
+                class="chip${item.cardio ? ' sel' : ''}">Cardio — distance + time</button>
+              <button type="button" id="m-bodyweight"
+                class="chip${item.bodyweight ? ' sel' : ''}">Bodyweight — reps + extra weight</button>
+            </div>
           </div>
           <div class="field-block"><span>Color on the plan</span>
             <div id="m-color">${colorRow(item.color)}</div>
@@ -761,6 +765,13 @@ export function renderStudio(root) {
             <div class="row">
               <input id="m-field-custom" type="text" placeholder="Other setting…">
               <button type="button" id="m-field-add" class="btn btn-inline">Add</button>
+            </div>
+          </div>
+          <div class="field-block"><span>Exercises — for free-weight or multi-exercise stations</span>
+            <div class="chip-select" id="m-exercises">${chipRow(item.exercises ?? [], item.exercises ?? [])}</div>
+            <div class="row">
+              <input id="m-exercise-custom" type="text" placeholder="e.g. Biceps curls…">
+              <button type="button" id="m-exercise-add" class="btn btn-inline">Add</button>
             </div>
           </div>
           <label class="field"><span>Doc link</span><input id="m-doc" type="text" inputmode="url"
@@ -780,9 +791,17 @@ export function renderStudio(root) {
         save();
       });
 
+      // The two type flags are mutually exclusive; absent = strength
+      // machine, and flags are deleted (not set false) to keep exports clean.
       props.querySelector('#m-cardio').addEventListener('click', () => {
-        if (item.cardio) delete item.cardio; // absent = strength, keeps exports clean
-        else item.cardio = true;
+        if (item.cardio) delete item.cardio;
+        else { item.cardio = true; delete item.bodyweight; }
+        save();
+        renderProps();
+      });
+      props.querySelector('#m-bodyweight').addEventListener('click', () => {
+        if (item.bodyweight) delete item.bodyweight;
+        else { item.bodyweight = true; delete item.cardio; }
         save();
         renderProps();
       });
@@ -816,6 +835,31 @@ export function renderStudio(root) {
       props.querySelector('#m-field-add').addEventListener('click', addCustomField);
       props.querySelector('#m-field-custom').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') addCustomField();
+      });
+
+      // Exercises: tap a chip to remove it, add via the text row. The field
+      // is deleted when emptied so plain stations export without it.
+      props.querySelector('#m-exercises').addEventListener('click', (e) => {
+        const chip = e.target.closest('.chip');
+        if (!chip) return;
+        const next = (item.exercises ?? []).filter((x) => x !== chip.dataset.value);
+        if (next.length) item.exercises = next;
+        else delete item.exercises;
+        save();
+        renderProps();
+      });
+      const addExercise = () => {
+        const input = props.querySelector('#m-exercise-custom');
+        const v = input.value.trim();
+        if (!v) return;
+        item.exercises = item.exercises ?? [];
+        if (!item.exercises.includes(v)) item.exercises.push(v);
+        save();
+        renderProps();
+      };
+      props.querySelector('#m-exercise-add').addEventListener('click', addExercise);
+      props.querySelector('#m-exercise-custom').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') addExercise();
       });
 
       props.querySelector('#m-doc').addEventListener('change', (e) => {

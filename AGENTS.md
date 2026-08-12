@@ -24,8 +24,12 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   `ensureProfiles()`. Stored weights are always in the current display
   unit — `setUnit()` converts ALL profiles' data in one shot. Set shapes:
   strength `{reps, weight}`, cardio `{distance, seconds}` (distance in the
-  display unit, m/mi via `distUnit()`; seconds unit-less). Other lazy
-  migrations live in `getGym()` (outline, meta). Pick lists:
+  display unit, m/mi via `distUnit()`; seconds unit-less), bodyweight
+  reuses `{reps, weight}` with weight = ADDED weight. Machine type flags
+  `cardio`/`bodyweight` are mutually exclusive and absent for strength;
+  optional `machine.exercises: [string]` (deleted when emptied) splits a
+  station into per-exercise entries — `lastEntryFor(machineId, exercise)`.
+  Other lazy migrations live in `getGym()` (outline, meta). Pick lists:
   `MUSCLE_GROUPS`, `COMMON_SETTINGS`, `ZONE_LABELS` (its 'Cardio' string
   is a room label — unrelated to the `machine.cardio` flag).
 - `js/app.js` — hash-router, renders views into `#view`.
@@ -37,10 +41,13 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   mutation must go through `save()`, never `saveGym()` directly.
 - `js/train.js` — guided workout: `active.plan` (machine order), overview
   hub, per-machine `restSeconds`, locker number, two-tap finish guard.
-  `machine.cardio` flips the log screen to distance+time; the flag is
-  SNAPSHOTTED onto the entry (like num/label) — history/edit/chart/AI read
-  `entry.cardio`, never the live machine. Set-arithmetic must guard
-  against the other shape (`st.reps * st.weight || 0`).
+  `machine.cardio` flips the log screen to distance+time,
+  `machine.bodyweight` to reps + extra weight; type flags and `exercise`
+  are SNAPSHOTTED onto the entry (like num/label) — history/edit/chart/AI
+  read the entry, never the live machine. Multi-exercise stations hold one
+  entry per (machineId, exercise); `active.currentExercise` tracks the
+  picked one and resets on every machine switch. Set-arithmetic must guard
+  against other shapes (`st.reps * st.weight || 0`).
 - `js/history.js` — month heatmap (per-machine filter), progress chart
   (`js/chart.js`), workout list with repeat.
 - `js/ai.js` — copy prompt+data / paste-import. Deliberately NO AI API.

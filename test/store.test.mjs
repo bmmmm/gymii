@@ -181,6 +181,31 @@ assert.equal(store.updateWorkout({ ...cw, locker: '3' }).entries[1].sets[0].seco
   'updateWorkout passes cardio sets through');
 store.deleteWorkout('cw');
 
+// exercises: entries at one station are isolated per exercise; the bare
+// bucket (no exercise) never leaks into exercise lookups and vice versa
+store.saveActive({
+  v: 2, id: 'ew', startedAt: 20, plan: ['db'], currentMachineId: null, currentExercise: null,
+  entries: [
+    { machineId: 'db', num: 4, label: 'Dumbbells', exercise: 'Biceps curls', settings: {}, sets: [{ reps: 10, weight: 12.5 }] },
+    { machineId: 'db', num: 4, label: 'Dumbbells', exercise: 'Shoulder press', settings: {}, sets: [{ reps: 8, weight: 10 }] },
+    { machineId: 'pb', num: 5, label: 'Pull-up bar', bodyweight: true, settings: {}, sets: [{ reps: 8, weight: 0 }, { reps: 6, weight: 10 }] },
+  ],
+});
+const exSaved = store.finishWorkout(store.getActive());
+assert.equal(exSaved.entries.length, 3, 'same-station entries with different exercises both kept');
+assert.equal(store.lastEntryFor('db', 'Biceps curls').sets[0].weight, 12.5);
+assert.equal(store.lastEntryFor('db', 'Shoulder press').sets[0].weight, 10);
+assert.equal(store.lastEntryFor('db'), null, 'bare bucket does not match exercise entries');
+assert.equal(store.lastEntryFor('pb').entries, undefined); // sanity: returns an entry, not a workout
+assert.equal(store.lastEntryFor('pb').bodyweight, true, 'bodyweight flag survives finish');
+
+// bodyweight added weight converts like any weight; 0 stays 0
+store.setUnit('lbs');
+const pb = store.getWorkouts().find((w) => w.id === 'ew').entries[2];
+assert.deepEqual(pb.sets.map((st) => st.weight), [0, 22], 'added weight converted, 0 stays 0');
+store.setUnit('kg');
+store.deleteWorkout('ew');
+
 // clearAll wipes every gymii key and self-heals into a fresh default profile
 store.clearAll();
 assert.equal([...mem.keys()].filter((k) => k.startsWith('gymii.')).length, 0, 'clearAll leaves no gymii keys');

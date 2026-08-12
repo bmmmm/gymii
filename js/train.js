@@ -38,19 +38,24 @@ export function renderTrain(root, message = '') {
 // Exported so History can offer "repeat this workout" too.
 export function startWorkoutFrom(source, firstMachineId = null) {
   const gym = getGym();
+  // Set-dedupe: multi-exercise stations produce several entries per station
+  // but only one plan slot.
   const plan = source
-    ? source.entries.map((e) => e.machineId).filter((id) => gym?.machines.some((m) => m.id === id))
+    ? [...new Set(source.entries.map((e) => e.machineId)
+      .filter((id) => gym?.machines.some((m) => m.id === id)))]
     : [];
   if (firstMachineId && !plan.includes(firstMachineId)) plan.push(firstMachineId);
   saveActive({
     v: 2, id: uid(), startedAt: Date.now(),
     plan,
     currentMachineId: firstMachineId ?? plan[0] ?? null,
+    currentExercise: null,
     entries: [],
   });
 }
 
-const machineChain = (workout) => workout.entries.map((e) => `#${e.num}`).join(' → ');
+const machineChain = (workout) =>
+  [...new Set(workout.entries.map((e) => `#${e.num}`))].join(' → ');
 
 // --- start screen ---
 
@@ -193,8 +198,15 @@ function machinePicker(container, gym, onPick) {
 
 // --- workout overview hub ---
 
-const entryFor = (active, machineId) => active.entries.find((e) => e.machineId === machineId);
-const isDone = (active, machineId) => (entryFor(active, machineId)?.sets.length ?? 0) > 0;
+// Exact-match lookup for the logging screen (exercise-scoped entries at
+// multi-exercise stations); entriesForMachine aggregates a whole station
+// for the overview hub and done-state.
+const entryFor = (active, machineId, exercise = null) =>
+  active.entries.find((e) => e.machineId === machineId && (e.exercise ?? null) === exercise);
+const entriesForMachine = (active, machineId) =>
+  active.entries.filter((e) => e.machineId === machineId);
+const isDone = (active, machineId) =>
+  entriesForMachine(active, machineId).some((e) => e.sets.length);
 
 function renderOverview(root, gym, active) {
   const s = getSettings();
@@ -203,16 +215,17 @@ function renderOverview(root, gym, active) {
 
   const rows = active.plan.map((id) => {
     const machine = gym.machines.find((m) => m.id === id);
-    const entry = entryFor(active, id);
-    if (!machine && !entry) return '';
-    const num = machine?.num ?? entry.num;
-    const label = machine?.label ?? entry.label;
+    const stationEntries = entriesForMachine(active, id);
+    if (!machine && !stationEntries.length) return '';
+    const num = machine?.num ?? stationEntries[0].num;
+    const label = machine?.label ?? stationEntries[0].label;
+    const stationSets = stationEntries.reduce((n, e) => n + e.sets.length, 0);
     const done = isDone(active, id);
     return `<button class="plan-row" data-id="${id}" ${machine ? '' : 'disabled'}>
       <span class="machine-badge sm">${num}</span>
       <span class="plan-label">${esc(label)}</span>
       <span class="plan-status${done ? ' done' : ''}">${done
-        ? `✓ ${entry.sets.length} set${entry.sets.length === 1 ? '' : 's'}` : 'open'}</span>
+        ? `✓ ${stationSets} set${stationSets === 1 ? '' : 's'}` : 'open'}</span>
     </button>`;
   }).join('');
 
@@ -245,6 +258,7 @@ function renderOverview(root, gym, active) {
   root.querySelectorAll('.plan-row').forEach((row) => {
     row.addEventListener('click', () => {
       active.currentMachineId = row.dataset.id;
+      active.currentExercise = null;
       saveActive(active);
       renderTrain(root);
     });
@@ -253,6 +267,7 @@ function renderOverview(root, gym, active) {
   machinePicker(root.querySelector('#picker'), gym, (machineId) => {
     if (!active.plan.includes(machineId)) active.plan.push(machineId);
     active.currentMachineId = machineId;
+    active.currentExercise = null;
     saveActive(active);
     renderTrain(root);
   });
@@ -291,6 +306,7 @@ function renderLog(root, gym, active) {
   const machine = gym.machines.find((m) => m.id === active.currentMachineId);
   if (!machine) { // machine was deleted in the studio mid-workout
     active.currentMachineId = null;
+    active.currentExercise = null;
     saveActive(active);
     renderTrain(root);
     return;
@@ -301,34 +317,51 @@ function renderLog(root, gym, active) {
     saveActive(active);
   }
 
-  const last = lastEntryFor(machine.id);
-  let entry = entryFor(active, machine.id);
-  if (!entry) {
-    // created eagerly so settings edits stick; set-less entries are
-    // dropped again when the workout is finished. cardio is snapshotted
-    // like num/label so history stays readable if the machine changes.
-    entry = {
-      machineId: machine.id, num: machine.num, label: machine.label,
-      ...(machine.cardio ? { cardio: true } : {}),
-      settings: {}, sets: [],
-    };
-    machine.settingsFields.forEach((f) => { entry.settings[f] = last?.settings?.[f] ?? ''; });
-    active.entries.push(entry);
-    saveActive(active);
-  } else if (!entry.sets.length && !!entry.cardio !== !!machine.cardio) {
-    // machine type was toggled in the studio before any set was logged
-    if (machine.cardio) entry.cardio = true;
-    else delete entry.cardio;
-    saveActive(active);
+  // At multi-exercise stations (free weights) each exercise gets its own
+  // entry; until one is picked there is no entry and no logging UI.
+  const exercises = machine.exercises ?? [];
+  const exercise = exercises.includes(active.currentExercise) ? active.currentExercise : null;
+  const pickPending = exercises.length > 0 && !exercise;
+
+  const last = pickPending ? null : lastEntryFor(machine.id, exercise);
+  let entry = null;
+  if (!pickPending) {
+    entry = entryFor(active, machine.id, exercise);
+    if (!entry) {
+      // created eagerly so settings edits stick; set-less entries are
+      // dropped again when the workout is finished. type flags and the
+      // exercise are snapshotted like num/label so history stays readable
+      // if the machine changes.
+      entry = {
+        machineId: machine.id, num: machine.num, label: machine.label,
+        ...(machine.cardio ? { cardio: true } : {}),
+        ...(machine.bodyweight ? { bodyweight: true } : {}),
+        ...(exercise ? { exercise } : {}),
+        settings: {}, sets: [],
+      };
+      machine.settingsFields.forEach((f) => { entry.settings[f] = last?.settings?.[f] ?? ''; });
+      active.entries.push(entry);
+      saveActive(active);
+    } else if (!entry.sets.length
+      && (!!entry.cardio !== !!machine.cardio || !!entry.bodyweight !== !!machine.bodyweight)) {
+      // machine type was toggled in the studio before any set was logged
+      if (machine.cardio) entry.cardio = true; else delete entry.cardio;
+      if (machine.bodyweight) entry.bodyweight = true; else delete entry.bodyweight;
+      saveActive(active);
+    }
   }
 
   const s = getSettings();
-  const cardio = !!entry.cardio; // entry flag rules the screen — sets stay homogeneous
+  // entry flags rule the screen — sets stay homogeneous per entry
+  const type = entry?.cardio ? 'cardio' : entry?.bodyweight ? 'bodyweight' : 'strength';
+  const cardio = type === 'cardio';
   const du = distUnit(s);
-  // A last entry of the other type (flag toggled since) is useless as a
+  // A last entry of another type (flag toggled since) is useless as a
   // set prefill or "Last:" line; machine settings still carry over above.
-  const lastSets = last && !!last.cardio === cardio ? last : null;
-  const def = nextSetDefaults(entry, lastSets, cardio, s);
+  const lastSets = last
+    && !!last.cardio === !!entry?.cardio
+    && !!last.bodyweight === !!entry?.bodyweight ? last : null;
+  const def = pickPending ? null : nextSetDefaults(entry, lastSets, type, s);
   const restSeconds = machine.restSeconds ?? s.restSeconds;
   const planPos = `${active.plan.indexOf(machine.id) + 1}/${active.plan.length}`;
   const nextId = nextOpenMachineId(active, machine.id);
@@ -340,15 +373,28 @@ function renderLog(root, gym, active) {
       <div>
         <div class="title">${esc(machine.label)} <span class="muted">${planPos}</span>
           ${active.locker ? `<span class="muted">· 🔒 ${esc(active.locker)}</span>` : ''}</div>
-        <div class="muted">${lastSets
-          ? `Last: ${setsSummary(lastSets.sets, s)}`
-          : 'First time on this machine'}</div>
+        <div class="muted">${pickPending
+    ? 'Pick an exercise below'
+    : lastSets
+      ? `Last: ${setsSummary(lastSets.sets, s, !!lastSets.bodyweight)}`
+      : `First time on this ${exercise ? 'exercise' : 'machine'}`}</div>
         ${machine.muscles?.length ? `<div class="muted">${machine.muscles.map(esc).join(' · ')}</div>` : ''}
         ${machine.docUrl ? `<a class="doc-link" href="${esc(machine.docUrl)}"
           target="_blank" rel="noopener">Machine docs ↗</a>` : ''}
       </div>
     </div>
 
+    ${exercises.length ? `
+    <section class="card">
+      <h2>Exercise</h2>
+      <div class="chip-select" id="exercise-chips">
+        ${exercises.map((x) => `<button type="button" class="chip${x === exercise ? ' sel' : ''}"
+          data-exercise="${esc(x)}">${esc(x)}</button>`).join('')}
+      </div>
+      ${pickPending ? '<p class="muted">Pick an exercise to start logging.</p>' : ''}
+    </section>` : ''}
+
+    ${pickPending ? '' : `
     ${machine.settingsFields.length ? `
     <section class="card">
       <h2>Machine settings</h2>
@@ -367,7 +413,9 @@ function renderLog(root, gym, active) {
             <span>Set ${i + 1}</span>
             <span>${cardio
     ? `${st.distance} ${du} · ${fmtDuration(st.seconds)}`
-    : `${st.weight} ${s.unit} × ${st.reps}`}</span>
+    : type === 'bodyweight'
+      ? (st.weight ? `BW+${st.weight} ${s.unit} × ${st.reps}` : `BW × ${st.reps}`)
+      : `${st.weight} ${s.unit} × ${st.reps}`}</span>
             <button class="x" data-i="${i}" aria-label="Remove set ${i + 1}">✕</button>
           </div>`).join('') || '<p class="muted">No sets logged yet.</p>'}
       </div>
@@ -385,6 +433,20 @@ function renderLog(root, gym, active) {
             <button type="button" class="step-down" aria-label="decrease time">−</button>
             <input id="set-time" type="number" inputmode="decimal" value="${Math.round((def.seconds / 60) * 100) / 100}">
             <button type="button" class="step-up" aria-label="increase time">+</button>
+          </div>
+        </div>` : type === 'bodyweight' ? `
+        <div class="spread"><span class="label">Reps</span>
+          <div class="stepper" data-step="1" data-min="1">
+            <button type="button" class="step-down" aria-label="decrease reps">−</button>
+            <input id="set-reps" type="number" inputmode="numeric" value="${def.reps}">
+            <button type="button" class="step-up" aria-label="increase reps">+</button>
+          </div>
+        </div>
+        <div class="spread"><span class="label">Extra weight</span>
+          <div class="stepper" data-step="${s.weightStep}" data-min="0">
+            <button type="button" class="step-down" aria-label="decrease extra weight">−</button>
+            <input id="set-weight" type="number" inputmode="decimal" value="${def.weight}">
+            <button type="button" class="step-up" aria-label="increase extra weight">+</button>
           </div>
         </div>` : `
         <div class="spread"><span class="label">Weight</span>
@@ -410,7 +472,7 @@ function renderLog(root, gym, active) {
         </div>
         <button id="log-set" class="btn btn-primary btn-big">✓ Log set</button>
       </div>
-    </section>
+    </section>`}
 
     ${nextMachine
     ? `<button id="next-machine" class="btn btn-next btn-big">Next: #${nextMachine.num}
@@ -419,6 +481,16 @@ function renderLog(root, gym, active) {
     : '<button id="change-machine" class="btn btn-next btn-big">Workout overview →</button>'}
   `;
 
+  root.querySelector('#exercise-chips')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    active.currentExercise = chip.dataset.exercise;
+    saveActive(active);
+    renderLog(root, gym, active);
+  });
+
+  // Everything below the exercise picker only exists once an entry is
+  // resolved — hence the optional chaining on the pick-pending screen.
   root.querySelectorAll('.m-setting').forEach((inp) => {
     inp.addEventListener('change', () => {
       entry.settings[inp.dataset.field] = inp.value.trim();
@@ -426,7 +498,7 @@ function renderLog(root, gym, active) {
     });
   });
 
-  root.querySelector('#sets-list').addEventListener('click', (e) => {
+  root.querySelector('#sets-list')?.addEventListener('click', (e) => {
     const btn = e.target.closest('.x');
     if (!btn) return;
     entry.sets.splice(parseInt(btn.dataset.i, 10), 1);
@@ -435,14 +507,14 @@ function renderLog(root, gym, active) {
   });
 
   // per-machine rest override, remembered on the machine itself
-  root.querySelector('#set-rest').addEventListener('change', (e) => {
+  root.querySelector('#set-rest')?.addEventListener('change', (e) => {
     const v = Math.max(0, Math.round(parseFloat(e.target.value) || 0));
     e.target.value = v;
     machine.restSeconds = v;
     saveGym(gym);
   });
 
-  root.querySelector('#log-set').addEventListener('click', () => {
+  root.querySelector('#log-set')?.addEventListener('click', () => {
     const rest = Math.max(0, Math.round(parseFloat(root.querySelector('#set-rest').value) || 0));
     if (cardio) {
       const distance = Math.max(0, parseFloat(root.querySelector('#set-distance').value) || 0);
@@ -460,12 +532,14 @@ function renderLog(root, gym, active) {
 
   root.querySelector('#next-machine')?.addEventListener('click', () => {
     active.currentMachineId = nextId;
+    active.currentExercise = null;
     saveActive(active);
     renderTrain(root);
   });
 
   root.querySelector('#change-machine').addEventListener('click', () => {
     active.currentMachineId = null;
+    active.currentExercise = null;
     saveActive(active);
     renderTrain(root);
   });
@@ -473,25 +547,28 @@ function renderLog(root, gym, active) {
 
 // Default for the next set: same set number last time, then the set just
 // done this session, then the last set of the previous session. `last`
-// must already be type-matched to the entry (caller gates on cardio).
-function nextSetDefaults(entry, last, cardio, s) {
+// must already be type-matched to the entry (caller gates on the flags).
+function nextSetDefaults(entry, last, type, s) {
   const i = entry.sets.length;
   if (last?.sets?.[i]) return last.sets[i];
   if (entry.sets.length) return entry.sets[entry.sets.length - 1];
   if (last?.sets?.length) return last.sets[last.sets.length - 1];
-  return cardio
-    ? { distance: s.unit === 'kg' ? 1000 : 0.5, seconds: 600 }
-    : { reps: 10, weight: 20 };
+  if (type === 'cardio') return { distance: s.unit === 'kg' ? 1000 : 0.5, seconds: 600 };
+  if (type === 'bodyweight') return { reps: 10, weight: 0 };
+  return { reps: 10, weight: 20 };
 }
 
-// Branches per set shape so mixed history stays readable; strength sets
-// get the weight unit appended once at the end, cardio sets carry theirs.
-const setsSummary = (sets, s) => {
-  const strength = sets.every((st) => st.distance == null);
+// Branches per set shape (bodyweight shares {reps,weight}, so its flag is
+// passed in); the weight unit is appended once when any weight was moved.
+const setsSummary = (sets, s, bodyweight = false) => {
   const body = sets.map((st) => (st.distance != null
     ? `${st.distance} ${distUnit(s)} · ${fmtDuration(st.seconds)}`
-    : `${st.weight}×${st.reps}`)).join(', ');
-  return strength ? `${body} ${s.unit}` : body;
+    : bodyweight
+      ? (st.weight ? `BW+${st.weight}×${st.reps}` : `BW×${st.reps}`)
+      : `${st.weight}×${st.reps}`)).join(', ');
+  const suffix = sets.every((st) => st.distance == null) && sets.some((st) => st.weight)
+    ? ` ${s.unit}` : '';
+  return body + suffix;
 };
 
 function finish(root, active) {

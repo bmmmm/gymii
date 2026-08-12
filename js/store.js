@@ -180,11 +180,14 @@ export function updateWorkout(patch) {
   return list[idx];
 }
 
-// Most recent entry with at least one set for this machine, or null.
-export function lastEntryFor(machineId) {
+// Most recent entry with at least one set for this machine — and, at
+// multi-exercise stations, for this exercise (null matches entries logged
+// without one). Returns null if nothing matches.
+export function lastEntryFor(machineId, exercise = null) {
   const workouts = getWorkouts();
   for (let i = workouts.length - 1; i >= 0; i--) {
-    const entry = workouts[i].entries.find((e) => e.machineId === machineId);
+    const entry = workouts[i].entries.find(
+      (e) => e.machineId === machineId && (e.exercise ?? null) === exercise);
     if (entry && entry.sets.length) return entry;
   }
   return null;
@@ -302,7 +305,8 @@ function isValidGym(gym) {
   return gym && typeof gym === 'object'
     && gym.grid && Number.isFinite(gym.grid.w) && Number.isFinite(gym.grid.h)
     && Array.isArray(gym.shapes) && Array.isArray(gym.machines)
-    && gym.machines.every((m) => m.id && Number.isFinite(m.num))
+    && gym.machines.every((m) => m.id && Number.isFinite(m.num)
+      && (m.exercises === undefined || Array.isArray(m.exercises)))
     && (gym.outline === undefined || (Array.isArray(gym.outline) && gym.outline.length >= 3
       && gym.outline.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))));
 }

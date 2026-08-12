@@ -15,7 +15,10 @@ tracking.
   tags (tap-to-toggle chips), settings fields, a docs link and an accent
   color; a Colors/Usage toggle on the map shades machines by all-time use.
   Treadmills, rowers & co. get a cardio flag — they log distance + time
-  instead of weight × reps.
+  instead of weight × reps. Pull-up bars and the like get a bodyweight
+  flag (reps + optional extra weight, shown as "BW+10"), and free-weight
+  areas can carry a list of named exercises (biceps curls, shoulder
+  press, …) so one station keeps separate histories per movement.
 - **Train** — guided workouts: repeat any past workout in its machine order
   ("Next: #5 Leg press" skips finished machines and wraps around busy ones),
   or train freely by number, map tap or muscle filter. Previous session

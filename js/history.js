@@ -20,16 +20,31 @@ export function renderHistory(root) {
   const unit = s.unit;
   const gym = getGym();
 
-  // Machines seen in history, labeled with their current gym name when
-  // still present, otherwise the name recorded at workout time.
+  // Stations — and, at multi-exercise stations, each exercise — seen in
+  // history, labeled with their current gym name when still present.
+  // Keyed "machineId exercise": uid()s never contain spaces, so decoding
+  // splits on the FIRST space only (exercise names may contain more).
   const machines = new Map();
   workouts.forEach((w) => w.entries.forEach((e) => {
-    machines.set(e.machineId, { num: e.num, label: e.label });
+    machines.set(`${e.machineId} ${e.exercise ?? ''}`,
+      { machineId: e.machineId, exercise: e.exercise ?? null, num: e.num, label: e.label });
   }));
   gym?.machines.forEach((m) => {
-    if (machines.has(m.id)) machines.set(m.id, { num: m.num, label: m.label });
+    machines.forEach((val, key) => {
+      if (val.machineId === m.id) machines.set(key, { ...val, num: m.num, label: m.label });
+    });
   });
-  const options = [...machines.entries()].sort((a, b) => a[1].num - b[1].num);
+  const options = [...machines.entries()].sort((a, b) =>
+    a[1].num - b[1].num || (a[1].exercise ?? '').localeCompare(b[1].exercise ?? ''));
+  const optionHtml = ([key, m]) => `<option value="${esc(key)}">#${m.num} ${esc(m.label)}${
+    m.exercise ? ` · ${esc(m.exercise)}` : ''}</option>`;
+  const decodeKey = (value) => {
+    if (!value) return null; // '' = the heatmap's "All machines"
+    const i = value.indexOf(' ');
+    return { machineId: value.slice(0, i), exercise: value.slice(i + 1) || null };
+  };
+  const entryMatches = (e, sel) =>
+    e.machineId === sel.machineId && (e.exercise ?? null) === sel.exercise;
 
   root.innerHTML = `
     <h1>History</h1>
@@ -42,7 +57,7 @@ export function renderHistory(root) {
       </div>
       <select id="hm-machine" aria-label="Heatmap machine filter">
         <option value="">All machines</option>
-        ${options.map(([id, m]) => `<option value="${id}">#${m.num} ${esc(m.label)}</option>`).join('')}
+        ${options.map(optionHtml).join('')}
       </select>
       <div id="hm-grid" class="hm-grid"></div>
       <div class="hm-legend"><span>less</span>
@@ -54,7 +69,7 @@ export function renderHistory(root) {
     <section class="card">
       <h2 id="chart-title">Progress</h2>
       <select id="chart-machine" aria-label="Machine">
-        ${options.map(([id, m]) => `<option value="${id}">#${m.num} ${esc(m.label)}</option>`).join('')}
+        ${options.map(optionHtml).join('')}
       </select>
       <div class="chart-wrap" id="chart"></div>
     </section>
@@ -176,9 +191,8 @@ export function renderHistory(root) {
     workouts.forEach((w) => {
       const d = new Date(w.startedAt);
       if (d.getFullYear() !== y || d.getMonth() !== m) return;
-      const entries = hmMachine.value
-        ? w.entries.filter((e) => e.machineId === hmMachine.value)
-        : w.entries;
+      const sel = decodeKey(hmMachine.value);
+      const entries = sel ? w.entries.filter((e) => entryMatches(e, sel)) : w.entries;
       const sets = entries.reduce((n, e) => n + e.sets.length, 0);
       if (!sets) return;
       const volume = entries.reduce(
@@ -243,25 +257,31 @@ export function renderHistory(root) {
   const chartEl = root.querySelector('#chart');
   const chartTitle = root.querySelector('#chart-title');
   const draw = () => {
-    const id = select.value;
+    const sel = decodeKey(select.value);
+    if (!sel) return;
     const relevant = workouts
-      .map((w) => ({ w, e: w.entries.find((e) => e.machineId === id && e.sets.length) }))
+      .map((w) => ({ w, e: w.entries.find((e) => entryMatches(e, sel) && e.sets.length) }))
       .filter((x) => x.e);
     // A machine's type can be toggled over time; plot the metric of its
-    // most recent entry and skip entries of the other shape.
-    const cardio = !!relevant[relevant.length - 1]?.e.cardio;
-    const points = relevant
-      .filter(({ e }) => !!e.cardio === cardio)
-      .map(({ w, e }) => ({
-        t: w.startedAt,
-        v: cardio
-          ? Math.max(...e.sets.map((st) => st.distance || 0))
+    // most recent entry and skip entries of any other shape.
+    const latest = relevant[relevant.length - 1]?.e;
+    const cardio = !!latest?.cardio;
+    const bodyweight = !!latest?.bodyweight;
+    const series = relevant.filter(({ e }) => !!e.cardio === cardio && !!e.bodyweight === bodyweight);
+    // Bodyweight progress lives in reps until extra weight shows up.
+    const bwLoaded = bodyweight && series.some(({ e }) => e.sets.some((st) => st.weight > 0));
+    const points = series.map(({ w, e }) => ({
+      t: w.startedAt,
+      v: cardio ? Math.max(...e.sets.map((st) => st.distance || 0))
+        : bodyweight && !bwLoaded ? Math.max(...e.sets.map((st) => st.reps || 0))
           : Math.max(...e.sets.map((st) => st.weight || 0)),
-      }));
-    const metric = cardio ? `top distance (${distUnit(s)})` : `top set weight (${unit})`;
+    }));
+    const metric = cardio ? `top distance (${distUnit(s)})`
+      : bodyweight ? (bwLoaded ? `top added weight (${unit})` : 'top reps')
+        : `top set weight (${unit})`;
     chartTitle.textContent = `Progress — ${metric}`;
     lineChart(chartEl, points, {
-      unit: cardio ? distUnit(s) : unit,
+      unit: cardio ? distUnit(s) : bodyweight && !bwLoaded ? 'reps' : unit,
       label: `Progress: ${metric} over time`,
     });
   };
@@ -272,9 +292,13 @@ export function renderHistory(root) {
 const setCount = (w) => w.entries.reduce((n, e) => n + e.sets.length, 0);
 const minsOf = (w) => Math.max(1, Math.round((w.finishedAt - w.startedAt) / 60000));
 
-const setStr = (st, s) => (st.distance != null
+const setStr = (st, s, bodyweight = false) => (st.distance != null
   ? `${st.distance} ${distUnit(s)} · ${fmtDuration(st.seconds)}`
-  : `${st.weight}×${st.reps}`);
+  : bodyweight
+    ? (st.weight ? `BW+${st.weight}×${st.reps}` : `BW×${st.reps}`)
+    : `${st.weight}×${st.reps}`);
+
+const entryTitle = (e) => `#${e.num} ${esc(e.label)}${e.exercise ? ` · ${esc(e.exercise)}` : ''}`;
 
 function workoutHtml(w, s) {
   const sets = setCount(w);
@@ -289,8 +313,8 @@ function workoutHtml(w, s) {
     </summary>
     ${w.entries.map((e) => `
       <div class="entry-line">
-        <div>#${e.num} ${esc(e.label)}</div>
-        <div class="sets">${e.sets.map((st) => setStr(st, s)).join(', ')}${settingsStr(e)}</div>
+        <div>${entryTitle(e)}</div>
+        <div class="sets">${e.sets.map((st) => setStr(st, s, !!e.bodyweight)).join(', ')}${settingsStr(e)}</div>
       </div>`).join('')}
     <button class="btn repeat-w" data-wid="${w.id}">Repeat this workout</button>
     <div class="row">
@@ -311,7 +335,7 @@ function editWorkoutHtml(w, s) {
     </summary>
     ${w.entries.map((e, ei) => `
       <div class="entry-line">
-        <div>#${e.num} ${esc(e.label)}</div>
+        <div>${entryTitle(e)}</div>
         ${e.sets.map((st, si) => `
           <div class="set-row">
             <span>Set ${si + 1}</span>
@@ -320,8 +344,9 @@ function editWorkoutHtml(w, s) {
                 value="${st.distance}" aria-label="Distance (${du})"> ${du} ·
               <input type="number" inputmode="decimal" class="edit-minutes" data-ei="${ei}" data-si="${si}"
                 value="${Math.round((st.seconds / 60) * 100) / 100}" aria-label="Time (minutes)"> min` : `
-              <input type="number" inputmode="decimal" class="edit-weight" data-ei="${ei}" data-si="${si}"
-                value="${st.weight}" aria-label="Weight (${s.unit})"> ${s.unit} ×
+              ${e.bodyweight ? 'BW+' : ''}<input type="number" inputmode="decimal" class="edit-weight"
+                data-ei="${ei}" data-si="${si}" value="${st.weight}"
+                aria-label="${e.bodyweight ? 'Extra weight' : 'Weight'} (${s.unit})"> ${s.unit} ×
               <input type="number" inputmode="numeric" class="edit-reps" data-ei="${ei}" data-si="${si}"
                 value="${st.reps}" aria-label="Reps">`}
             </span>
