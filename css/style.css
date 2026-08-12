@@ -148,6 +148,9 @@ input[type="number"], input[type="text"] {
 
 input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 
+.field input[type="text"] { flex: 1; max-width: 62%; }
+.field > span { flex-shrink: 0; }
+
 .stepper { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
 .stepper input {
