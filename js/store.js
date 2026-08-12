@@ -26,15 +26,27 @@ export const uid = () => Math.random().toString(36).slice(2, 10);
 // --- gym template ---
 
 export function getGym() {
-  return read(KEYS.gym, null);
+  const gym = read(KEYS.gym, null);
+  if (gym && !Array.isArray(gym.outline)) gym.outline = defaultOutline(gym.grid); // pre-outline gyms
+  return gym;
 }
 
 export function saveGym(gym) {
   write(KEYS.gym, gym);
 }
 
+export function defaultOutline(grid) {
+  return [
+    { x: 0, y: 0 },
+    { x: grid.w, y: 0 },
+    { x: grid.w, y: grid.h },
+    { x: 0, y: grid.h },
+  ];
+}
+
 export function newGym(name = 'My gym') {
-  return { v: 1, name, grid: { w: 60, h: 40 }, shapes: [], machines: [] };
+  const grid = { w: 60, h: 40 };
+  return { v: 1, name, grid, outline: defaultOutline(grid), shapes: [], machines: [] };
 }
 
 // --- workout history ---
@@ -119,7 +131,9 @@ function isValidGym(gym) {
   return gym && typeof gym === 'object'
     && gym.grid && Number.isFinite(gym.grid.w) && Number.isFinite(gym.grid.h)
     && Array.isArray(gym.shapes) && Array.isArray(gym.machines)
-    && gym.machines.every((m) => m.id && Number.isFinite(m.num));
+    && gym.machines.every((m) => m.id && Number.isFinite(m.num))
+    && (gym.outline === undefined || (Array.isArray(gym.outline) && gym.outline.length >= 3
+      && gym.outline.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))));
 }
 
 // Returns the imported kind ('gym-template' | 'backup'), throws on bad input.

@@ -1,21 +1,53 @@
-import { getGym, saveGym, newGym, uid, importData } from './store.js';
+import { getGym, saveGym, newGym, uid, importData, defaultOutline } from './store.js';
 import { esc } from './ui.js';
 
 const SNAP = 1;
 const snap = (v) => Math.round(v / SNAP) * SNAP;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
+// The floor outline is a singleton, addressed by this pseudo item id.
+const OUTLINE_ID = 'outline';
+
 // --- shared renderer (also used by the Train mini-map) ---
 
-export function drawGym(svg, gym, { selectedId = null, editor = false } = {}) {
+export function drawGym(svg, gym, { selectedId = null, editor = false, selectedVertex = null } = {}) {
   svg.setAttribute('viewBox', `0 0 ${gym.grid.w} ${gym.grid.h}`);
   svg.style.aspectRatio = `${gym.grid.w} / ${gym.grid.h}`;
-  const selected = selectedId ? findItem(gym, selectedId) : null;
+  const selected = selectedId && selectedId !== OUTLINE_ID ? findItem(gym, selectedId) : null;
+  // the outline's tap target sits ABOVE zones/walls (which often touch the
+  // outer wall) but below machines and the editing handles
   svg.innerHTML =
+    outlineFloorSvg(gym.outline) +
     (editor ? gridSvg(gym.grid) : '') +
     gym.shapes.map(shapeSvg).join('') +
+    (editor ? outlineHitSvg(gym.outline) : '') +
     gym.machines.map(machineSvg).join('') +
-    (editor && selected ? selectionSvg(selected) : '');
+    (editor && selected ? selectionSvg(selected) : '') +
+    (editor && selectedId === OUTLINE_ID ? outlineHandlesSvg(gym.outline, selectedVertex) : '');
+}
+
+const outlinePath = (outline) => `M${outline.map((p) => `${p.x} ${p.y}`).join('L')}Z`;
+
+function outlineFloorSvg(outline) {
+  if (!Array.isArray(outline) || outline.length < 3) return '';
+  return `<path class="outline-floor" d="${outlinePath(outline)}" pointer-events="none"/>`;
+}
+
+function outlineHitSvg(outline) {
+  if (!Array.isArray(outline) || outline.length < 3) return '';
+  return `<path class="hit" data-id="${OUTLINE_ID}" d="${outlinePath(outline)}" fill="none"/>`;
+}
+
+// Corner handles plus hollow midpoint dots that insert a new corner.
+function outlineHandlesSvg(outline, selectedVertex) {
+  const mids = outline.map((p, i) => {
+    const q = outline[(i + 1) % outline.length];
+    return `<circle class="midpoint" data-mid="${i}"
+      cx="${(p.x + q.x) / 2}" cy="${(p.y + q.y) / 2}" r="0.65"/>`;
+  }).join('');
+  const verts = outline.map((p, i) => `<rect class="vertex${i === selectedVertex ? ' sel' : ''}"
+    data-vertex="${i}" x="${p.x - 0.8}" y="${p.y - 0.8}" width="1.6" height="1.6" rx="0.3"/>`).join('');
+  return mids + verts;
 }
 
 export function findMachineByNum(gym, num) {
@@ -85,7 +117,8 @@ export function renderStudio(root) {
     saveGym(gym);
   }
   let selectedId = null;
-  let drag = null; // { mode: 'move'|'resize', item, offX, offY, moved }
+  let selectedVertex = null; // outline corner index, for deletion
+  let drag = null; // { mode: 'move'|'resize'|'vertex', item?, index?, offX, offY, moved }
 
   root.innerHTML = `
     <h1>Studio</h1>
@@ -100,7 +133,7 @@ export function renderStudio(root) {
 
   const svg = root.querySelector('#floor');
   const props = root.querySelector('#props');
-  const redraw = () => drawGym(svg, gym, { selectedId, editor: true });
+  const redraw = () => drawGym(svg, gym, { selectedId, editor: true, selectedVertex });
 
   function svgPoint(e) {
     return new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
@@ -113,20 +146,62 @@ export function renderStudio(root) {
   }
 
   svg.addEventListener('pointerdown', (e) => {
+    // outline corner / midpoint handles sit on top of everything
+    const handle = e.target.closest('[data-vertex], [data-mid]');
+    if (handle) {
+      if (handle.dataset.vertex !== undefined) {
+        const i = parseInt(handle.dataset.vertex, 10);
+        if (selectedVertex !== i) {
+          selectedVertex = i;
+          renderProps();
+        }
+        drag = { mode: 'vertex', index: i, moved: false };
+      } else {
+        // tapping a midpoint inserts a corner there and starts dragging it
+        const i = parseInt(handle.dataset.mid, 10);
+        const p = gym.outline[i];
+        const q = gym.outline[(i + 1) % gym.outline.length];
+        gym.outline.splice(i + 1, 0, { x: snap((p.x + q.x) / 2), y: snap((p.y + q.y) / 2) });
+        selectedVertex = i + 1;
+        drag = { mode: 'vertex', index: i + 1, moved: true };
+        renderProps();
+      }
+      try { svg.setPointerCapture(e.pointerId); } catch { /* synthetic events have no active pointer */ }
+      redraw();
+      e.preventDefault();
+      return;
+    }
+
     const target = e.target.closest('[data-id]');
     if (!target) {
-      select(null);
+      if (selectedId !== null || selectedVertex !== null) {
+        selectedId = null;
+        selectedVertex = null;
+        renderProps();
+      }
       redraw();
+      e.preventDefault(); // stop the browser from text-selecting on empty-area drags
+      return;
+    }
+    if (target.dataset.id === OUTLINE_ID) {
+      if (selectedId !== OUTLINE_ID) {
+        selectedId = OUTLINE_ID;
+        selectedVertex = null;
+        renderProps();
+      }
+      redraw();
+      e.preventDefault();
       return;
     }
     const item = findItem(gym, target.dataset.id);
     if (!item) return;
+    selectedVertex = null;
     select(item.id);
     const p = svgPoint(e);
     drag = target.dataset.handle
       ? { mode: 'resize', item, moved: false }
       : { mode: 'move', item, offX: p.x - item.x, offY: p.y - item.y, moved: false };
-    svg.setPointerCapture(e.pointerId);
+    try { svg.setPointerCapture(e.pointerId); } catch { /* synthetic events have no active pointer */ }
     redraw();
     e.preventDefault();
   });
@@ -134,6 +209,15 @@ export function renderStudio(root) {
   svg.addEventListener('pointermove', (e) => {
     if (!drag) return;
     const p = svgPoint(e);
+    if (drag.mode === 'vertex') {
+      gym.outline[drag.index] = {
+        x: clamp(snap(p.x), 0, gym.grid.w),
+        y: clamp(snap(p.y), 0, gym.grid.h),
+      };
+      drag.moved = true;
+      redraw();
+      return;
+    }
     const it = drag.item;
     if (drag.mode === 'move') {
       // clamp so the item's bounding box stays on the floor (works for
@@ -154,7 +238,7 @@ export function renderStudio(root) {
   const endDrag = () => {
     if (!drag) return;
     const it = drag.item;
-    if (drag.mode === 'resize' && it.kind === 'line' && Math.abs(it.w) < 1 && Math.abs(it.h) < 1) {
+    if (it && drag.mode === 'resize' && it.kind === 'line' && Math.abs(it.w) < 1 && Math.abs(it.h) < 1) {
       it.w = 3; // never leave an invisible zero-length wall behind
     }
     if (drag.moved) {
@@ -199,6 +283,38 @@ export function renderStudio(root) {
   root.querySelector('#add-machine').addEventListener('click', () => addItem('machine'));
 
   function renderProps() {
+    if (selectedId === OUTLINE_ID) {
+      const canDelete = selectedVertex !== null && gym.outline.length > 3;
+      props.innerHTML = `
+        <section class="card">
+          <h2>Floor outline</h2>
+          <p class="muted">${gym.outline.length} corners. Drag a white corner to reshape the floor;
+          tap a hollow dot between two corners to add a new one.</p>
+          <button id="del-vertex" class="btn btn-danger" ${canDelete ? '' : 'disabled'}>
+            ${selectedVertex === null
+              ? 'Tap a corner to delete it'
+              : canDelete ? 'Delete selected corner' : 'A floor needs at least 3 corners'}
+          </button>
+          <button id="reset-outline" class="btn">Reset outline to full rectangle</button>
+        </section>`;
+      props.querySelector('#del-vertex').addEventListener('click', () => {
+        if (selectedVertex === null || gym.outline.length <= 3) return;
+        gym.outline.splice(selectedVertex, 1);
+        selectedVertex = null;
+        saveGym(gym);
+        redraw();
+        renderProps();
+      });
+      props.querySelector('#reset-outline').addEventListener('click', () => {
+        gym.outline = defaultOutline(gym.grid);
+        selectedVertex = null;
+        saveGym(gym);
+        redraw();
+        renderProps();
+      });
+      return;
+    }
+
     const item = selectedId ? findItem(gym, selectedId) : null;
 
     if (!item) {
@@ -221,7 +337,8 @@ export function renderStudio(root) {
             </div>
           </label>
           <p class="muted">Add rooms, walls and machines, then drag them into place.
-          Tap an item to edit it; drag the white corner handle to resize.</p>
+          Tap an item to edit it; drag the white corner handle to resize.
+          Tap the outer wall to reshape the floor outline.</p>
           ${gym.machines.length || gym.shapes.length ? '' : `
             <button id="load-example" class="btn">Load example gym</button>
             <p class="muted" id="example-err"></p>`}
@@ -245,6 +362,10 @@ export function renderStudio(root) {
           const v = clamp(Math.round(parseFloat(e.target.value) || 20), 20, 200);
           e.target.value = v;
           gym.grid[key] = v;
+          gym.outline.forEach((p) => { // keep the outline on the shrunk floor
+            p.x = Math.min(p.x, gym.grid.w);
+            p.y = Math.min(p.y, gym.grid.h);
+          });
           saveGym(gym);
           redraw();
         });

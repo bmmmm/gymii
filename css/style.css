@@ -214,7 +214,12 @@ textarea {
 
 .floor-wrap { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
 
-svg.floor { display: block; width: 100%; touch-action: none; }
+svg.floor { display: block; width: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
+
+svg .outline-floor { fill: #10151c; stroke: #4a5765; stroke-width: 0.45; stroke-linejoin: round; }
+svg .vertex { fill: #fff; stroke: #0f1216; stroke-width: 0.1; cursor: grab; }
+svg .vertex.sel { fill: var(--accent); }
+svg .midpoint { fill: var(--surface); stroke: #8a97a5; stroke-width: 0.14; cursor: copy; }
 
 svg .shape-rect { fill: #1a212b; stroke: #38424e; stroke-width: 0.15; }
 svg .shape-line { stroke: #38424e; stroke-width: 0.35; stroke-linecap: round; }

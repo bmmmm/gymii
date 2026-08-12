@@ -6,11 +6,15 @@
     "v": 1,
     "name": "Example gym",
     "grid": { "w": 60, "h": 40 },
+    "outline": [
+      { "x": 2, "y": 2 }, { "x": 58, "y": 2 }, { "x": 58, "y": 38 },
+      { "x": 20, "y": 38 }, { "x": 20, "y": 34 }, { "x": 2, "y": 34 }
+    ],
     "shapes": [
-      { "id": "zone-machines", "kind": "rect", "x": 2, "y": 2, "w": 30, "h": 36 },
+      { "id": "zone-machines", "kind": "rect", "x": 2, "y": 2, "w": 30, "h": 28 },
       { "id": "zone-freeweights", "kind": "rect", "x": 34, "y": 2, "w": 24, "h": 17 },
       { "id": "zone-cardio", "kind": "rect", "x": 34, "y": 21, "w": 24, "h": 17 },
-      { "id": "wall-entrance", "kind": "line", "x": 2, "y": 40, "w": 14, "h": 0 }
+      { "id": "wall-divider", "kind": "line", "x": 34, "y": 20, "w": 24, "h": 0 }
     ],
     "machines": [
       { "id": "chest-press", "num": 1, "label": "Chest press", "x": 4, "y": 4, "w": 5, "h": 4, "settingsFields": ["Seat"] },
