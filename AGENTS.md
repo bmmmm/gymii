@@ -17,9 +17,14 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
 
 ## Architecture
 
-- `js/store.js` — the ONLY data layer. Keys `gymii.gym|workouts|active|settings`,
-  each object carries `v:1`. Lazy migrations live in `getGym()` (outline,
-  meta). Pick lists: `MUSCLE_GROUPS`, `COMMON_SETTINGS`, `ZONE_LABELS`.
+- `js/store.js` — the ONLY data layer. Profile registry `gymii.profiles`
+  (`{v, list:[{id,name}], activeId}`); gym/workouts/active live under
+  per-profile keys `gymii.<pid>.gym|workouts|active`, settings stay global
+  (`gymii.settings`). Legacy top-level keys migrate lazily in
+  `ensureProfiles()`. Stored weights are always in the current display
+  unit — `setUnit()` converts ALL profiles' data in one shot. Other lazy
+  migrations live in `getGym()` (outline, meta). Pick lists:
+  `MUSCLE_GROUPS`, `COMMON_SETTINGS`, `ZONE_LABELS`.
 - `js/app.js` — hash-router, renders views into `#view`.
 - `js/studio.js` — floor-plan editor. `drawGym()` is the shared renderer
   (train mini-maps use it too). Polygon outline with vertex/midpoint
@@ -32,6 +37,11 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
 - `js/history.js` — month heatmap (per-machine filter), progress chart
   (`js/chart.js`), workout list with repeat.
 - `js/ai.js` — copy prompt+data / paste-import. Deliberately NO AI API.
+- `sw.js` + `manifest.webmanifest` — PWA. Network-first with cache
+  fallback (online always fresh, no cache bump per deploy). IMPORTANT:
+  new static files (js modules, css, icons) must be added to the SHELL
+  list in `sw.js`. Rest timer holds a screen wake lock (auto re-acquired
+  on visibilitychange; denial is silently ignored).
 
 ## Conventions (user-set, follow them)
 

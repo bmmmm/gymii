@@ -28,3 +28,10 @@ function route() {
 initSteppers();
 window.addEventListener('hashchange', route);
 route();
+
+// Offline support; relative path keeps the registration subpath-safe.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}

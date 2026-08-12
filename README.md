@@ -22,7 +22,8 @@ tracking.
   your locker number, and guards Finish behind a two-tap confirm.
 - **History** — monthly training heatmap (filterable per machine), an SVG
   progress chart of top-set weight, and a workout list with machine chains,
-  locker numbers and one-tap repeat.
+  locker numbers and one-tap repeat. Past workouts can be edited inline
+  (set weights/reps, locker) or deleted behind a two-tap guard.
 - **Templates** — export/import your gym as JSON ("machines are the same
   everywhere"), plus a full-backup format. The Studio has a small template
   library: `templates/index.json` is the manifest ("the database"), each
@@ -33,6 +34,12 @@ tracking.
 - **AI exchange** — copy an editable prompt + compact data snapshot into any
   LLM you trust, and paste gymii JSON produced by the LLM back in. gymii
   deliberately never talks to an AI service itself — your data, your choice.
+- **Gym profiles & units** — multiple gyms, each with its own floor plan and
+  history (a home gym, a hotel gym, …); settings are shared. Metric (kg) is
+  the default; switching to lbs converts all stored weights in one shot.
+- **Installable & offline** — a PWA with a network-first service worker:
+  online you always get the freshest code, offline the app still opens with
+  your data. The rest timer holds a screen wake lock so the display stays on.
 
 ## Run locally
 
@@ -57,7 +64,5 @@ Logic tests: `node test/store.test.mjs`. Agent/contributor notes: `AGENTS.md`.
 
 ## Roadmap
 
+- Cardio machines: distance tracking (meters default, miles with lbs)
 - GitHub Pages deploy (CI workflow)
-- PWA/offline manifest, wake lock during the rest timer
-- Multiple gym profiles, lbs support, polygon floor outlines
-- Delete/edit workouts in history

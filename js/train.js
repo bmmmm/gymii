@@ -483,8 +483,26 @@ function startRest(secs) {
   const cd = overlay.querySelector('#cd');
   const fmt = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 
+  // Keep the screen on while resting. The browser auto-releases the lock
+  // when the tab is hidden, so re-acquire on return.
+  let wakeLock = null;
+  const requestWakeLock = async () => {
+    try {
+      wakeLock = await navigator.wakeLock?.request('screen');
+      wakeLock?.addEventListener('release', () => { wakeLock = null; });
+    } catch { /* unsupported or denied */ }
+  };
+  const onVisible = () => {
+    if (document.visibilityState === 'visible' && !wakeLock) requestWakeLock();
+  };
+  requestWakeLock();
+  document.addEventListener('visibilitychange', onVisible);
+
   const close = () => {
     clearInterval(interval);
+    document.removeEventListener('visibilitychange', onVisible);
+    wakeLock?.release().catch(() => {});
+    wakeLock = null;
     overlay.remove();
   };
   const tick = () => {
