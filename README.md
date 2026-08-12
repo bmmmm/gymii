@@ -7,14 +7,22 @@ tracking.
 
 ## Features
 
-- **Studio** — draw your gym: rooms, walls and numbered machines on a snapped
-  grid (SVG editor, touch + mouse). Each machine can carry settings fields
-  (seat height, pad position, …) that are logged with every workout.
-- **Train** — repeat the last workout (same machine order) or train freely by
-  machine number / map tap. The previous session's values prefill every set;
-  logging a set auto-starts a configurable rest timer (±15 s, skip, beep).
-- **History** — workout list with per-machine details and an SVG chart of
-  top-set weight over time.
+- **Studio** — a real floor-plan editor (SVG, touch + mouse, undo/redo):
+  polygon floor outline with spline-style corner editing, labeled + colorable
+  zones, walls, and fixtures for orientation — entrance, doors and windows
+  snap onto walls (doors flip their swing/hinge side), plus reception,
+  mirrors, lockers, water and trash. Machines carry number, label, muscle
+  tags (tap-to-toggle chips), settings fields, a docs link and an accent
+  color; a Colors/Usage toggle on the map shades machines by all-time use.
+- **Train** — guided workouts: repeat any past workout in its machine order
+  ("Next: #5 Leg press" skips finished machines and wraps around busy ones),
+  or train freely by number, map tap or muscle filter. Previous session
+  values prefill every set; each set auto-starts a rest timer remembered per
+  machine (±15 s, skip, beep). A workout hub shows done/open machines, holds
+  your locker number, and guards Finish behind a two-tap confirm.
+- **History** — monthly training heatmap (filterable per machine), an SVG
+  progress chart of top-set weight, and a workout list with machine chains,
+  locker numbers and one-tap repeat.
 - **Templates** — export/import your gym as JSON ("machines are the same
   everywhere"), plus a full-backup format. The Studio has a small template
   library: `templates/index.json` is the manifest ("the database"), each
@@ -45,6 +53,7 @@ or browsers.
 ## Stack
 
 Vanilla HTML/CSS/JS (ES modules), zero dependencies, no build step.
+Logic tests: `node test/store.test.mjs`. Agent/contributor notes: `AGENTS.md`.
 
 ## Roadmap
 
