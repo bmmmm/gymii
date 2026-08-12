@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Single-page app: every view is a hash route off the same document, so
+     there is exactly one crawlable URL. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://bmmmm.github.io/gymii/</loc>
+    <lastmod>2026-08-12</lastmod>
+  </url>
+</urlset>

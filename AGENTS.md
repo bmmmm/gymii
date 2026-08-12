@@ -68,10 +68,19 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
 - Chart/map colors must pass the dataviz palette validator against
   surface `#171c22` (see comments in chart.js / ITEM_COLORS).
 
-## Publish plan (not done yet — do on request only)
+## Published — dual remote
 
-new-mirrored-repo flow (Forgejo origin + GitHub mirror), Pages CI +
-dependabot from web-project skill references, LICENSE per licensing.md,
-sitemap.xml/robots.txt with the real URL, then the community-template PR
-flow (`templates/index.json` is the manifest "database" with
-country/city metadata).
+`origin` = Forgejo (private, source of truth), `github` = GitHub (public
+mirror), plus a pre-push leak gate that only scans pushes to `github`.
+Push both or the mirror drifts: `git push origin main && git push github main`.
+Dependabot/CodeQL PRs on GitHub are signals only — fix locally and push to
+both remotes, never merge in the GitHub UI.
+
+`.github/workflows/ci.yml` runs `node test/store.test.mjs` on every push/PR
+and deploys the repo root to Pages (<https://bmmmm.github.io/gymii/>) when
+`test` passes on main. The site lives on a project subpath, so every asset
+reference must stay RELATIVE (`css/style.css`, not `/css/style.css`) —
+index.html, manifest and the `sw.js` SHELL list already are.
+
+Open: the community-template PR flow (`templates/index.json` is the manifest
+"database" with country/city metadata).

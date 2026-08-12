@@ -5,6 +5,8 @@ gym, number the machines, log sets against them, and watch your progress —
 all data stays in your browser (localStorage). No accounts, no backend, no
 tracking.
 
+**Live: <https://bmmmm.github.io/gymii/>** — installable as a PWA, works offline.
+
 ## Features
 
 - **Studio** — a real floor-plan editor (SVG, touch + mouse, undo/redo):
@@ -69,4 +71,9 @@ Logic tests: `node test/store.test.mjs`. Agent/contributor notes: `AGENTS.md`.
 
 ## Roadmap
 
-- GitHub Pages deploy (CI workflow)
+- Community-contributed gym templates per country/city via pull requests
+  (`templates/index.json` is the manifest)
+
+## License
+
+GPL-3.0-or-later — see [LICENSE](LICENSE).
