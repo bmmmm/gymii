@@ -1,6 +1,7 @@
-import { getGym, getWorkouts, getSettings } from './store.js';
+import { getGym, getWorkouts, getSettings, getActive } from './store.js';
 import { esc, fmtDate, fmtTime } from './ui.js';
 import { lineChart } from './chart.js';
+import { startWorkoutFrom } from './train.js';
 
 export function renderHistory(root) {
   const workouts = getWorkouts();
@@ -38,8 +39,24 @@ export function renderHistory(root) {
     </section>
     <section class="card">
       <h2>Workouts</h2>
-      ${workouts.slice().reverse().map((w) => workoutHtml(w, unit)).join('')}
+      <div id="workout-list">
+        ${workouts.slice().reverse().map((w) => workoutHtml(w, unit)).join('')}
+      </div>
     </section>`;
+
+  root.querySelector('#workout-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('.repeat-w');
+    if (!btn) return;
+    if (getActive()) {
+      btn.textContent = 'Finish your current workout first';
+      btn.disabled = true;
+      return;
+    }
+    const workout = workouts.find((w) => w.id === btn.dataset.wid);
+    if (!workout) return;
+    startWorkoutFrom(workout);
+    location.hash = '#train';
+  });
 
   const select = root.querySelector('#chart-machine');
   const chartEl = root.querySelector('#chart');
@@ -62,18 +79,20 @@ function workoutHtml(w, unit) {
   const volume = w.entries.reduce(
     (v, e) => v + e.sets.reduce((x, st) => x + st.reps * st.weight, 0), 0);
   const mins = Math.max(1, Math.round((w.finishedAt - w.startedAt) / 60000));
+  const chain = w.entries.map((e) => `#${e.num}`).join(' → ');
   return `<details class="workout">
     <summary>
       <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>
         <span class="muted">${fmtTime(w.startedAt)} · ${mins} min</span></div>
-      <div class="muted">${w.entries.length} machine${w.entries.length === 1 ? '' : 's'}
-        · ${sets} sets · ${Math.round(volume)} ${unit}</div>
+      <div class="muted">${chain}</div>
+      <div class="muted">${sets} sets · ${Math.round(volume)} ${unit}</div>
     </summary>
     ${w.entries.map((e) => `
       <div class="entry-line">
         <div>#${e.num} ${esc(e.label)}</div>
         <div class="sets">${e.sets.map((s) => `${s.weight}×${s.reps}`).join(', ')}${settingsStr(e)}</div>
       </div>`).join('')}
+    <button class="btn repeat-w" data-wid="${w.id}">Repeat this workout</button>
   </details>`;
 }
 
