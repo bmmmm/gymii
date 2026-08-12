@@ -1,11 +1,14 @@
 import {
   getSettings, saveSettings, getGym,
+  getProfiles, createProfile, renameProfile, deleteProfile, setActiveProfile, setUnit,
   exportGymTemplate, exportBackup, importData, clearAll,
 } from './store.js';
-import { download } from './ui.js';
+import { download, esc } from './ui.js';
 
 export function renderSettings(root) {
   const s = getSettings();
+  const profiles = getProfiles();
+  const activeProfile = profiles.list.find((p) => p.id === profiles.activeId);
   root.innerHTML = `
     <h1>Settings</h1>
 
@@ -18,6 +21,12 @@ export function renderSettings(root) {
           <button type="button" class="step-up" aria-label="increase">+</button>
         </div>
       </label>
+      <div class="field-block"><span>Units</span>
+        <div class="chip-select" id="unit-chips">
+          <button type="button" class="chip${s.unit === 'kg' ? ' sel' : ''}" data-unit="kg">kg · m</button>
+          <button type="button" class="chip${s.unit === 'lbs' ? ' sel' : ''}" data-unit="lbs">lbs · mi</button>
+        </div>
+      </div>
       <label class="field"><span>Weight step (${s.unit})</span>
         <div class="stepper" data-step="0.5" data-min="0.5">
           <button type="button" class="step-down" aria-label="decrease">−</button>
@@ -25,6 +34,24 @@ export function renderSettings(root) {
           <button type="button" class="step-up" aria-label="increase">+</button>
         </div>
       </label>
+    </section>
+
+    <section class="card">
+      <h2>Gyms</h2>
+      <div class="chip-select" id="profile-chips">
+        ${profiles.list.map((p) => `<button type="button" class="chip${p.id === profiles.activeId
+          ? ' sel' : ''}" data-id="${p.id}">${esc(p.name)}</button>`).join('')}
+      </div>
+      <label class="field"><span>Gym name</span>
+        <input id="profile-rename" type="text" value="${esc(activeProfile.name)}"></label>
+      <div class="row">
+        <input id="profile-new-name" type="text" placeholder="New gym name">
+        <button id="profile-add" class="btn btn-inline">Add gym</button>
+      </div>
+      ${profiles.list.length > 1
+        ? '<button id="profile-delete" class="btn btn-danger">Delete this gym</button>' : ''}
+      <p class="muted">Each gym has its own floor plan and workout history; units and timers are
+        shared. A workout in progress waits in its gym until you switch back.</p>
     </section>
 
     <section class="card">
@@ -56,6 +83,47 @@ export function renderSettings(root) {
     const v = Math.max(0.25, parseFloat(e.target.value) || 2.5);
     e.target.value = v;
     saveSettings({ ...getSettings(), weightStep: v });
+  });
+
+  root.querySelector('#unit-chips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    setUnit(chip.dataset.unit); // converts all stored weights across profiles
+    renderSettings(root);
+  });
+
+  root.querySelector('#profile-chips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    setActiveProfile(chip.dataset.id);
+    renderSettings(root);
+  });
+
+  root.querySelector('#profile-rename').addEventListener('change', (e) => {
+    renameProfile(getProfiles().activeId, e.target.value);
+    renderSettings(root);
+  });
+
+  root.querySelector('#profile-add').addEventListener('click', () => {
+    createProfile(root.querySelector('#profile-new-name').value);
+    renderSettings(root);
+  });
+
+  const delProfileBtn = root.querySelector('#profile-delete');
+  let delProfileTimer = null;
+  delProfileBtn?.addEventListener('click', () => {
+    if (!delProfileBtn.classList.contains('armed')) {
+      delProfileBtn.classList.add('armed');
+      delProfileBtn.textContent = 'Tap again to delete this gym and its history';
+      delProfileTimer = setTimeout(() => {
+        delProfileBtn.classList.remove('armed');
+        delProfileBtn.textContent = 'Delete this gym';
+      }, 4000);
+      return;
+    }
+    clearTimeout(delProfileTimer);
+    deleteProfile(getProfiles().activeId);
+    renderSettings(root);
   });
 
   root.querySelector('#export-gym').addEventListener('click', () => {

@@ -102,6 +102,63 @@ assert.equal(store.updateWorkout({ id: 'wb', entries: [{ machineId: 'm2', num: 2
   null, 'update with only empty entries removes the workout');
 assert.equal(store.getWorkouts().length, 0);
 
+// profiles: legacy top-level keys migrate under a default profile on first access
+store.clearAll();
+localStorage.setItem('gymii.gym', JSON.stringify(store.newGym('Legacy gym')));
+localStorage.setItem('gymii.workouts', JSON.stringify(
+  [{ id: 'lw', startedAt: 1, finishedAt: 2, entries: [{ machineId: 'm1', num: 1, label: 'A', settings: {}, sets: [{ reps: 5, weight: 20 }] }] }]));
+const profiles = store.getProfiles();
+assert.equal(profiles.list.length, 1);
+assert.equal(profiles.list[0].name, 'Legacy gym', 'migrated profile takes the gym name');
+assert.equal(localStorage.getItem('gymii.gym'), null, 'legacy key moved under the profile');
+assert.equal(store.getGym().name, 'Legacy gym', 'gym readable through the profile');
+assert.equal(store.getWorkouts().length, 1, 'history readable through the profile');
+
+// profile switching: each profile is an isolated {gym, workouts, active} bundle
+const firstId = profiles.activeId;
+const secondId = store.createProfile('Second gym');
+assert.equal(store.getProfiles().activeId, secondId, 'new profile becomes active');
+assert.equal(store.getGym(), null, 'new profile starts without a gym');
+assert.equal(store.getWorkouts().length, 0);
+store.saveWorkouts(
+  [{ id: 'sw', startedAt: 3, finishedAt: 4, entries: [{ machineId: 'x', num: 1, label: 'X', settings: {}, sets: [{ reps: 8, weight: 100 }] }] }]);
+store.setActiveProfile(firstId);
+assert.equal(store.getGym().name, 'Legacy gym', 'switching back returns the original bundle');
+assert.equal(store.getWorkouts()[0].id, 'lw');
+store.renameProfile(firstId, 'Renamed gym');
+assert.equal(store.getProfiles().list.find((p) => p.id === firstId).name, 'Renamed gym');
+
+// setUnit converts every profile's stored weights, not just the active one
+store.saveActive({ v: 2, id: 'aw', startedAt: 5, entries: [{ machineId: 'm1', num: 1, label: 'A', settings: {}, sets: [{ reps: 3, weight: 60 }] }] });
+store.setUnit('lbs');
+assert.equal(store.getSettings().unit, 'lbs');
+assert.equal(store.getWorkouts()[0].entries[0].sets[0].weight, 44, '20 kg -> 44 lbs (nearest 0.5)');
+assert.equal(store.getActive().entries[0].sets[0].weight, 132.5, 'active workout converted');
+assert.equal(store.getSettings().weightStep, 5.5, '2.5 kg step -> 5.5 lbs');
+store.setActiveProfile(secondId);
+assert.equal(store.getWorkouts()[0].entries[0].sets[0].weight, 220.5, 'inactive profile converted too');
+store.setUnit('lbs');
+assert.equal(store.getWorkouts()[0].entries[0].sets[0].weight, 220.5, 'same-unit switch is a no-op');
+store.setUnit('kg');
+assert.equal(store.getWorkouts()[0].entries[0].sets[0].weight, 100, 'roundtrip back to kg');
+store.setActiveProfile(firstId);
+assert.equal(store.getActive().entries[0].sets[0].weight, 60, 'active roundtrips too');
+store.clearActive();
+
+// deleting profiles: keys are removed, the last profile is protected
+store.setActiveProfile(secondId);
+assert.equal(store.deleteProfile(secondId), true);
+assert.equal(store.getProfiles().activeId, firstId, 'active falls back to the first remaining profile');
+assert.equal(localStorage.getItem(`gymii.${secondId}.workouts`), null, 'deleted profile keys removed');
+assert.equal(store.deleteProfile(firstId), false, 'the last profile cannot be deleted');
+assert.equal(store.getProfiles().list.length, 1);
+
+// clearAll wipes every gymii key and self-heals into a fresh default profile
+store.clearAll();
+assert.equal([...mem.keys()].filter((k) => k.startsWith('gymii.')).length, 0, 'clearAll leaves no gymii keys');
+assert.equal(store.getGym(), null);
+assert.equal(store.getProfiles().list.length, 1, 'fresh default profile after reset');
+
 // the shipped example template must pass import validation
 const { readFileSync } = await import('node:fs');
 const example = JSON.parse(readFileSync(new URL('../templates/example-gym.json', import.meta.url), 'utf8'));

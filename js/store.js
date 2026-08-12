@@ -2,11 +2,13 @@
 // inside each object so future schema migrations have something to check.
 
 const KEYS = {
-  gym: 'gymii.gym',
-  workouts: 'gymii.workouts',
-  active: 'gymii.active',
+  profiles: 'gymii.profiles',
   settings: 'gymii.settings',
 };
+
+// Gym, workouts and the active workout are stored per profile ("one gym,
+// one history"); settings stay global.
+const scopedKey = (pid, part) => `gymii.${pid}.${part}`;
 
 function read(key, fallback) {
   try {
@@ -22,6 +24,77 @@ function write(key, value) {
 }
 
 export const uid = () => Math.random().toString(36).slice(2, 10);
+
+// --- gym profiles ---
+// gymii.profiles = { v:1, list:[{id,name}], activeId }. Created lazily; a
+// pre-profile install's gymii.gym|workouts|active keys are moved (as raw
+// strings) under a new default profile on first access.
+
+function ensureProfiles() {
+  let profiles = read(KEYS.profiles, null);
+  if (profiles) return profiles;
+  const id = uid();
+  let name = 'My gym';
+  const legacyGym = localStorage.getItem('gymii.gym');
+  if (legacyGym) {
+    try { name = JSON.parse(legacyGym).name || name; } catch { /* keep default */ }
+  }
+  ['gym', 'workouts', 'active'].forEach((part) => {
+    const raw = localStorage.getItem(`gymii.${part}`);
+    if (raw != null) {
+      localStorage.setItem(scopedKey(id, part), raw);
+      localStorage.removeItem(`gymii.${part}`);
+    }
+  });
+  profiles = { v: 1, list: [{ id, name }], activeId: id };
+  write(KEYS.profiles, profiles);
+  return profiles;
+}
+
+const activeProfileId = () => ensureProfiles().activeId;
+
+export function getProfiles() {
+  return ensureProfiles();
+}
+
+// Creates a profile and makes it active. It starts without a gym; Studio
+// auto-creates one on first visit.
+export function createProfile(name) {
+  const profiles = ensureProfiles();
+  const id = uid();
+  profiles.list.push({ id, name: String(name || '').trim() || 'New gym' });
+  profiles.activeId = id;
+  write(KEYS.profiles, profiles);
+  return id;
+}
+
+export function renameProfile(id, name) {
+  const profiles = ensureProfiles();
+  const p = profiles.list.find((x) => x.id === id);
+  const trimmed = String(name || '').trim();
+  if (!p || !trimmed) return;
+  p.name = trimmed;
+  write(KEYS.profiles, profiles);
+}
+
+export function setActiveProfile(id) {
+  const profiles = ensureProfiles();
+  if (!profiles.list.some((p) => p.id === id)) return;
+  profiles.activeId = id;
+  write(KEYS.profiles, profiles);
+}
+
+// Refuses to delete the last remaining profile (returns false). Deleting
+// the active profile switches to the first remaining one.
+export function deleteProfile(id) {
+  const profiles = ensureProfiles();
+  if (profiles.list.length <= 1) return false;
+  profiles.list = profiles.list.filter((p) => p.id !== id);
+  if (profiles.activeId === id) profiles.activeId = profiles.list[0].id;
+  write(KEYS.profiles, profiles);
+  ['gym', 'workouts', 'active'].forEach((part) => localStorage.removeItem(scopedKey(id, part)));
+  return true;
+}
 
 // Canonical pick lists — selectable chips beat free text (fewer typos).
 export const MUSCLE_GROUPS = [
@@ -45,14 +118,14 @@ export const COMMON_SETTINGS = [
 // --- gym template ---
 
 export function getGym() {
-  const gym = read(KEYS.gym, null);
+  const gym = read(scopedKey(activeProfileId(), 'gym'), null);
   if (gym && !Array.isArray(gym.outline)) gym.outline = defaultOutline(gym.grid); // pre-outline gyms
   if (gym && !gym.meta) gym.meta = {}; // pre-meta gyms
   return gym;
 }
 
 export function saveGym(gym) {
-  write(KEYS.gym, gym);
+  write(scopedKey(activeProfileId(), 'gym'), gym);
 }
 
 export function defaultOutline(grid) {
@@ -77,11 +150,11 @@ export function newGym(name = 'My gym') {
 // --- workout history ---
 
 export function getWorkouts() {
-  return read(KEYS.workouts, []);
+  return read(scopedKey(activeProfileId(), 'workouts'), []);
 }
 
 export function saveWorkouts(list) {
-  write(KEYS.workouts, list);
+  write(scopedKey(activeProfileId(), 'workouts'), list);
 }
 
 // Deletes a workout by id; no-op if unknown.
@@ -120,15 +193,15 @@ export function lastEntryFor(machineId) {
 // --- active (in-progress) workout, saved after every set for crash safety ---
 
 export function getActive() {
-  return read(KEYS.active, null);
+  return read(scopedKey(activeProfileId(), 'active'), null);
 }
 
 export function saveActive(workout) {
-  write(KEYS.active, workout);
+  write(scopedKey(activeProfileId(), 'active'), workout);
 }
 
 export function clearActive() {
-  localStorage.removeItem(KEYS.active);
+  localStorage.removeItem(scopedKey(activeProfileId(), 'active'));
 }
 
 // Moves the active workout into history; entries without sets are dropped.
@@ -156,6 +229,31 @@ export function getSettings() {
     v: 1, restSeconds: 90, weightStep: 2.5, unit: 'kg', mapColors: 'custom',
     ...read(KEYS.settings, {}),
   };
+}
+
+// Stored weights are always in the current display unit. Switching units
+// therefore converts every stored weight — across ALL profiles' histories
+// and active workouts (unit is global, weight data is per profile) — plus
+// the shared weight step. Rounded to the nearest 0.5 in the target unit.
+export function setUnit(unit) {
+  const s = getSettings();
+  if (unit === s.unit) return;
+  const factor = unit === 'lbs' ? 2.2046226218 : 1 / 2.2046226218;
+  const round = (v) => Math.round(v * factor * 2) / 2;
+
+  ensureProfiles().list.forEach((p) => {
+    const workouts = read(scopedKey(p.id, 'workouts'), []);
+    workouts.forEach((w) => w.entries.forEach((e) => e.sets.forEach((st) => { st.weight = round(st.weight); })));
+    write(scopedKey(p.id, 'workouts'), workouts);
+
+    const active = read(scopedKey(p.id, 'active'), null);
+    if (active) {
+      active.entries.forEach((e) => e.sets.forEach((st) => { st.weight = round(st.weight); }));
+      write(scopedKey(p.id, 'active'), active);
+    }
+  });
+
+  saveSettings({ ...s, unit, weightStep: Math.max(0.5, round(s.weightStep)) });
 }
 
 // Total sets per machine across all history — feeds the usage map view.
@@ -215,6 +313,11 @@ export function importData(data) {
   throw new Error('Unrecognized file kind');
 }
 
+// Full factory reset: every profile's data, the registry, and settings.
 export function clearAll() {
-  Object.values(KEYS).forEach((k) => localStorage.removeItem(k));
+  const profiles = read(KEYS.profiles, null);
+  profiles?.list.forEach((p) => ['gym', 'workouts', 'active']
+    .forEach((part) => localStorage.removeItem(scopedKey(p.id, part))));
+  [KEYS.profiles, KEYS.settings, 'gymii.gym', 'gymii.workouts', 'gymii.active']
+    .forEach((k) => localStorage.removeItem(k));
 }
