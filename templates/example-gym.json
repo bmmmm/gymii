@@ -17,16 +17,17 @@
       { "id": "wall-divider", "kind": "line", "x": 34, "y": 20, "w": 24, "h": 0 }
     ],
     "machines": [
-      { "id": "chest-press", "num": 1, "label": "Chest press", "x": 4, "y": 4, "w": 5, "h": 4, "settingsFields": ["Seat"] },
-      { "id": "lat-pulldown", "num": 2, "label": "Lat pulldown", "x": 11, "y": 4, "w": 5, "h": 4, "settingsFields": ["Seat", "Thigh pad"] },
-      { "id": "seated-row", "num": 3, "label": "Seated row", "x": 18, "y": 4, "w": 5, "h": 4, "settingsFields": ["Chest pad"] },
-      { "id": "shoulder-press", "num": 4, "label": "Shoulder press", "x": 25, "y": 4, "w": 5, "h": 4, "settingsFields": ["Seat"] },
-      { "id": "leg-press", "num": 5, "label": "Leg press", "x": 4, "y": 12, "w": 5, "h": 4, "settingsFields": ["Seat angle"] },
-      { "id": "leg-extension", "num": 6, "label": "Leg extension", "x": 11, "y": 12, "w": 5, "h": 4, "settingsFields": ["Seat", "Shin pad"] },
-      { "id": "leg-curl", "num": 7, "label": "Leg curl", "x": 18, "y": 12, "w": 5, "h": 4, "settingsFields": ["Seat", "Ankle pad"] },
-      { "id": "pec-deck", "num": 8, "label": "Pec deck", "x": 25, "y": 12, "w": 5, "h": 4, "settingsFields": ["Seat", "Arm pads"] },
-      { "id": "cable-tower", "num": 9, "label": "Cable tower", "x": 4, "y": 20, "w": 5, "h": 4, "settingsFields": ["Pulley height"] },
-      { "id": "abdominal-crunch", "num": 10, "label": "Abdominal crunch", "x": 11, "y": 20, "w": 5, "h": 4, "settingsFields": ["Seat"] }
+      { "id": "chest-press", "num": 1, "label": "Chest press", "x": 4, "y": 4, "w": 5, "h": 4, "settingsFields": ["Seat"], "muscles": ["Chest", "Triceps"], "docUrl": "" },
+      { "id": "lat-pulldown", "num": 2, "label": "Lat pulldown", "x": 11, "y": 4, "w": 5, "h": 4, "settingsFields": ["Seat", "Thigh pad"], "muscles": ["Lats", "Upper back", "Biceps"], "docUrl": "" },
+      { "id": "seated-row", "num": 3, "label": "Seated row", "x": 18, "y": 4, "w": 5, "h": 4, "settingsFields": ["Chest pad"], "muscles": ["Upper back", "Lats"], "docUrl": "" },
+      { "id": "shoulder-press", "num": 4, "label": "Shoulder press", "x": 25, "y": 4, "w": 5, "h": 4, "settingsFields": ["Seat"], "muscles": ["Shoulders", "Triceps"], "docUrl": "" },
+      { "id": "leg-press", "num": 5, "label": "Leg press", "x": 4, "y": 12, "w": 5, "h": 4, "settingsFields": ["Seat angle"], "muscles": ["Quads", "Glutes"], "docUrl": "" },
+      { "id": "leg-extension", "num": 6, "label": "Leg extension", "x": 11, "y": 12, "w": 5, "h": 4, "settingsFields": ["Seat", "Shin pad"], "muscles": ["Quads"], "docUrl": "" },
+      { "id": "leg-curl", "num": 7, "label": "Leg curl", "x": 18, "y": 12, "w": 5, "h": 4, "settingsFields": ["Seat", "Ankle pad"], "muscles": ["Hamstrings"], "docUrl": "" },
+      { "id": "pec-deck", "num": 8, "label": "Pec deck", "x": 25, "y": 12, "w": 5, "h": 4, "settingsFields": ["Seat", "Arm pads"], "muscles": ["Chest"], "docUrl": "" },
+      { "id": "cable-tower", "num": 9, "label": "Cable tower", "x": 4, "y": 20, "w": 5, "h": 4, "settingsFields": ["Pulley height"], "muscles": ["Full body"], "docUrl": "" },
+      { "id": "abdominal-crunch", "num": 10, "label": "Abdominal crunch", "x": 11, "y": 20, "w": 5, "h": 4, "settingsFields": ["Seat"], "muscles": ["Abs"], "docUrl": "" },
+      { "id": "back-extension", "num": 11, "label": "Back extension", "x": 18, "y": 20, "w": 5, "h": 4, "settingsFields": ["Pad height"], "muscles": ["Lower back", "Glutes"], "docUrl": "" }
     ]
   }
 }

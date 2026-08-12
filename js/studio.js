@@ -263,7 +263,7 @@ export function renderStudio(root) {
       item = {
         id: uid(), num, label: `Machine ${num}`,
         x: snap(g.w / 2 - 2 + off), y: snap(g.h / 2 - 1.5 + off),
-        w: 4, h: 3, settingsFields: [],
+        w: 4, h: 3, settingsFields: [], muscles: [], docUrl: '',
       };
       gym.machines.push(item);
     } else if (kind === 'rect') {
@@ -389,8 +389,13 @@ export function renderStudio(root) {
           <label class="field"><span>Label</span><input id="m-label" type="text" value="${esc(item.label)}"></label>
           <label class="field"><span>Settings</span><input id="m-fields" type="text"
             placeholder="e.g. Seat, Back pad" value="${esc(item.settingsFields.join(', '))}"></label>
-          <p class="muted">Settings are the machine's adjustable parts (seat height, pad position…).
-          You log a value for each during workouts.</p>
+          <label class="field"><span>Muscles</span><input id="m-muscles" type="text"
+            placeholder="e.g. Lower back, Glutes" value="${esc((item.muscles || []).join(', '))}"></label>
+          <label class="field"><span>Doc link</span><input id="m-doc" type="text" inputmode="url"
+            placeholder="https://…" value="${esc(item.docUrl || '')}"></label>
+          <p class="muted">Settings are the machine's adjustable parts (seat height, pad position…) —
+          you log a value for each during workouts. Muscles are filter tags; the doc link can point
+          to the manufacturer's exercise guide.</p>
           <button id="del-item" class="btn btn-danger">Delete machine</button>
         </section>`;
       props.querySelector('#m-num').addEventListener('change', (e) => {
@@ -406,6 +411,14 @@ export function renderStudio(root) {
       });
       props.querySelector('#m-fields').addEventListener('change', (e) => {
         item.settingsFields = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
+        saveGym(gym);
+      });
+      props.querySelector('#m-muscles').addEventListener('change', (e) => {
+        item.muscles = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
+        saveGym(gym);
+      });
+      props.querySelector('#m-doc').addEventListener('change', (e) => {
+        item.docUrl = e.target.value.trim();
         saveGym(gym);
       });
     } else {

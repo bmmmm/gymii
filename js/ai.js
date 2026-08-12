@@ -98,7 +98,13 @@ function buildAiExport() {
     note: 'sets are [weight, reps]',
     gym: gym ? {
       name: gym.name,
-      machines: gym.machines.map((m) => ({ num: m.num, label: m.label, settings: m.settingsFields })),
+      machines: gym.machines.map((m) => ({
+        num: m.num,
+        label: m.label,
+        settings: m.settingsFields,
+        muscles: m.muscles?.length ? m.muscles : undefined,
+        doc: m.docUrl || undefined,
+      })),
     } : null,
     workouts: getWorkouts().map((w) => ({
       date: new Date(w.startedAt).toISOString().slice(0, 10),

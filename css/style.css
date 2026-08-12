@@ -270,6 +270,28 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .next-set .spread { align-items: center; }
 .next-set .label { font-size: 14px; color: var(--muted); width: 64px; }
 
+.pick-muscle { margin-top: 10px; }
+
+.pick-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chip:active { filter: brightness(1.2); }
+
+.doc-link { font-size: 13px; }
+
 .map-wrap { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); margin: 10px 0; }
 .map-wrap svg { display: block; width: 100%; }
 .map-wrap .machine-box { cursor: pointer; }

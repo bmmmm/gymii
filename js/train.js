@@ -69,13 +69,22 @@ function renderStart(root, gym, message) {
   });
 }
 
-// Number input + tappable mini-map; calls onPick(machineId).
+// Number input, muscle filter and tappable mini-map; calls onPick(machineId).
 function machinePicker(container, gym, onPick) {
+  const allMuscles = [...new Set(gym.machines.flatMap((m) => m.muscles || []))]
+    .sort((a, b) => a.localeCompare(b));
+
   container.innerHTML = `
     <div class="row">
       <input class="pick-num" type="number" inputmode="numeric" min="1" placeholder="Machine #">
       <button class="btn btn-inline pick-go">Open</button>
     </div>
+    ${allMuscles.length ? `
+    <select class="pick-muscle" aria-label="Filter by muscle">
+      <option value="">All muscles</option>
+      ${allMuscles.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join('')}
+    </select>
+    <div class="pick-chips"></div>` : ''}
     <div class="map-wrap"><svg xmlns="http://www.w3.org/2000/svg"></svg></div>
     <p class="pick-err muted">Enter a machine number or tap one on the map.</p>`;
 
@@ -99,6 +108,27 @@ function machinePicker(container, gym, onPick) {
   svg.addEventListener('click', (e) => {
     const g = e.target.closest('.machine');
     if (g) onPick(g.dataset.id);
+  });
+
+  const muscleSelect = container.querySelector('.pick-muscle');
+  const chips = container.querySelector('.pick-chips');
+  muscleSelect?.addEventListener('change', () => {
+    const muscle = muscleSelect.value;
+    const matching = muscle
+      ? gym.machines.filter((m) => (m.muscles || []).includes(muscle))
+      : [];
+    const matchIds = new Set(matching.map((m) => m.id));
+    svg.querySelectorAll('.machine').forEach((g) => {
+      g.style.opacity = !muscle || matchIds.has(g.dataset.id) ? '' : '0.22';
+    });
+    chips.innerHTML = matching
+      .sort((a, b) => a.num - b.num)
+      .map((m) => `<button class="chip" data-id="${m.id}">#${m.num} ${esc(m.label)}</button>`)
+      .join('');
+  });
+  chips?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (chip) onPick(chip.dataset.id);
   });
 }
 
@@ -159,6 +189,9 @@ function renderLog(root, gym, active) {
         <div class="muted">${last
           ? `Last: ${setsSummary(last.sets)} ${s.unit}`
           : 'First time on this machine'}</div>
+        ${machine.muscles?.length ? `<div class="muted">${machine.muscles.map(esc).join(' · ')}</div>` : ''}
+        ${machine.docUrl ? `<a class="doc-link" href="${esc(machine.docUrl)}"
+          target="_blank" rel="noopener">Machine docs ↗</a>` : ''}
       </div>
     </div>
 
