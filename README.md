@@ -29,11 +29,12 @@ tracking.
 ## Run locally
 
 ```sh
-python3 -m http.server 8437
+python3 serve.py
 # open http://localhost:8437
 ```
 
-Any static file server works (ES modules need http, not `file://`).
+Any static file server works (ES modules need http, not `file://`) —
+`serve.py` just disables caching so code changes show up on plain reload.
 
 ## Data & privacy
 
