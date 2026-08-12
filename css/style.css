@@ -163,6 +163,20 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-col
 .field input[type="text"] { flex: 1; max-width: 62%; }
 .field > span { flex-shrink: 0; }
 
+textarea {
+  width: 100%;
+  font: 13px/1.5 ui-monospace, 'SF Mono', Monaco, monospace;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  resize: vertical;
+}
+
+.stack { display: block; margin: 10px 0; }
+.stack > span { display: block; margin-bottom: 6px; }
+
 .stepper { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
 .stepper input {
