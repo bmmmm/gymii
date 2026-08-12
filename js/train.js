@@ -1,6 +1,6 @@
 import {
   getGym, saveGym, getSettings, saveSettings, getActive, saveActive, finishWorkout,
-  lastEntryFor, getWorkouts, uid, usageByMachine, distUnit,
+  lastEntryFor, getWorkouts, uid, usageByMachine, distUnit, newGym, addMachine,
 } from './store.js';
 import { drawGym, usagePayload, findMachineByNum } from './studio.js';
 import { esc, fmtDuration, workoutTotals } from './ui.js';
@@ -14,11 +14,7 @@ import { esc, fmtDuration, workoutTotals } from './ui.js';
 export function renderTrain(root, message = '') {
   const gym = getGym();
   if (!gym || !gym.machines.length) {
-    root.innerHTML = `<h1>Train</h1>
-      <div class="empty"><div class="big">🏗️</div>
-        <p>No machines yet.</p>
-        <p><a href="#studio">Build your gym in Studio</a> — add numbered machines, then start training here.</p>
-      </div>`;
+    renderOnboarding(root, message);
     return;
   }
   const active = getActive();
@@ -123,6 +119,50 @@ function renderStart(root, gym, message) {
   });
 }
 
+// First-run screen: three ways in — the studio (the intended path), a
+// quick start that creates the gym and first machine right here, or the
+// template library. Training never requires a studio visit first.
+function renderOnboarding(root, message) {
+  root.innerHTML = `
+    <h1>Train</h1>
+    ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
+    <section class="card">
+      <h2>Build your gym</h2>
+      <p class="muted">Draw the floor plan and number the machines like the
+        stickers in your gym — training then starts from that map.</p>
+      <a class="btn btn-primary btn-big" href="#studio">Open the Studio</a>
+    </section>
+    <section class="card">
+      <h2>Quick start</h2>
+      <p class="muted">No time to draw? Name the machine in front of you and
+        start logging — arrange the floor plan later in the Studio.</p>
+      <div class="row">
+        <input id="qs-label" type="text" placeholder="e.g. Chest press">
+        <button id="qs-start" class="btn btn-inline">Start</button>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Use a template</h2>
+      <p class="muted">Load a ready-made gym from the
+        <a href="#studio">Studio's template library</a>, or import a backup in
+        <a href="#settings">Settings</a>.</p>
+    </section>`;
+
+  const start = () => {
+    const label = root.querySelector('#qs-label').value.trim();
+    if (!label) return;
+    const gym = getGym() ?? newGym();
+    const machine = addMachine(gym, gym.machines.length + 1, label);
+    saveGym(gym);
+    startWorkoutFrom(null, machine.id);
+    renderTrain(root);
+  };
+  root.querySelector('#qs-start').addEventListener('click', start);
+  root.querySelector('#qs-label').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') start();
+  });
+}
+
 // Number input, muscle filter and tappable mini-map; calls onPick(machineId).
 function machinePicker(container, gym, onPick) {
   const allMuscles = [...new Set(gym.machines.flatMap((m) => m.muscles || []))]
@@ -165,7 +205,15 @@ function machinePicker(container, gym, onPick) {
     if (!num) return;
     const machine = findMachineByNum(gym, num);
     if (!machine) {
-      err.textContent = `No machine #${num} in this gym.`;
+      // create-on-miss: standing at a real machine whose number gymii
+      // doesn't know yet, one tap adds it — rename/arrange later in Studio
+      err.innerHTML = `No machine #${num} yet — <button type="button"
+        class="btn btn-inline pick-create">Create #${num} &amp; open</button>`;
+      err.querySelector('.pick-create').addEventListener('click', () => {
+        const created = addMachine(gym, num, `Machine ${num}`);
+        saveGym(gym);
+        onPick(created.id);
+      });
       return;
     }
     onPick(machine.id);

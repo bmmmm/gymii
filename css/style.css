@@ -141,6 +141,8 @@ a { color: var(--accent); }
 
 .btn:disabled { opacity: 0.45; cursor: default; }
 
+a.btn { text-decoration: none; }
+
 /* --- forms --- */
 
 .field {

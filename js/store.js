@@ -137,6 +137,21 @@ export function defaultOutline(grid) {
   ];
 }
 
+// Appends a machine near the grid center (loosely mirroring the studio's
+// placement). Quick start and the picker's create-on-miss use this, so a
+// gym can grow without ever opening the studio — arranging is optional.
+export function addMachine(gym, num, label) {
+  const off = gym.machines.length % 5;
+  const machine = {
+    id: uid(), num, label,
+    x: Math.round(gym.grid.w / 2 - 2 + off),
+    y: Math.round(gym.grid.h / 2 - 1.5 + off),
+    w: 4, h: 3, settingsFields: [], muscles: [], docUrl: '',
+  };
+  gym.machines.push(machine);
+  return machine;
+}
+
 export function newGym(name = 'My gym') {
   const grid = { w: 60, h: 40 };
   return {

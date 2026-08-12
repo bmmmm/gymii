@@ -212,6 +212,16 @@ assert.equal([...mem.keys()].filter((k) => k.startsWith('gymii.')).length, 0, 'c
 assert.equal(store.getGym(), null);
 assert.equal(store.getProfiles().list.length, 1, 'fresh default profile after reset');
 
+// addMachine appends with an auto position (quick start / create-on-miss)
+const quickGym = store.newGym('Quick');
+const quickMachine = store.addMachine(quickGym, 1, 'Chest press');
+assert.equal(quickGym.machines.length, 1);
+assert.ok(quickMachine.id, 'gets an id');
+assert.ok(Number.isFinite(quickMachine.x) && Number.isFinite(quickMachine.y), 'auto-position assigned');
+assert.equal(store.addMachine(quickGym, 2, 'Row').num, 2);
+store.saveGym(quickGym);
+assert.equal(store.getGym().machines.length, 2, 'quick gym saves cleanly');
+
 // the shipped example template must pass import validation
 const { readFileSync } = await import('node:fs');
 const example = JSON.parse(readFileSync(new URL('../templates/example-gym.json', import.meta.url), 'utf8'));
