@@ -220,6 +220,10 @@ textarea {
 
 /* --- studio --- */
 
+.studio-head { align-items: center; }
+.undo-group { display: flex; gap: 6px; }
+.undo-group .btn { min-width: 48px; font-size: 18px; padding: 10px 12px; }
+
 .toolbar { display: flex; gap: 8px; margin-bottom: 10px; }
 .toolbar .btn { margin: 0; padding: 12px 8px; font-size: 14px; }
 .toolbar-sub .btn { padding: 9px 4px; font-size: 12px; font-weight: 500; }

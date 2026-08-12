@@ -160,7 +160,12 @@ function doorSvg(s) {
   const cy = s.y + s.h / 2;
   const w = s.w;
   const hx = cx - w / 2; // hinge
-  return `<g class="shape" data-id="${s.id}" transform="rotate(${s.rot || 0} ${cx} ${cy})">
+  // flipH mirrors the hinge side, flipV the swing side; both happen in the
+  // door's local (unrotated) frame, then the wall rotation applies
+  const fx = s.flipH ? -1 : 1;
+  const fy = s.flipV ? -1 : 1;
+  return `<g class="shape" data-id="${s.id}" transform="rotate(${s.rot || 0} ${cx} ${cy})
+      translate(${cx} ${cy}) scale(${fx} ${fy}) translate(${-cx} ${-cy})">
     <rect class="door-hit hit" x="${hx}" y="${cy - 0.8}" width="${w}" height="1.6"/>
     <rect class="door-gap" x="${hx}" y="${cy - 0.4}" width="${w}" height="0.8"/>
     <path class="door-arc" d="M ${hx} ${cy - w} A ${w} ${w} 0 0 1 ${cx + w / 2} ${cy}"/>
@@ -200,14 +205,20 @@ export function renderStudio(root) {
   let gym = getGym();
   if (!gym) {
     gym = newGym();
-    saveGym(gym);
+    saveGym(gym); // fresh gym: persist directly, history starts from it
   }
   let selectedId = null;
   let selectedVertex = null; // outline corner index, for deletion
   let drag = null; // { mode: 'move'|'resize'|'vertex', item?, index?, offX, offY, moved }
 
   root.innerHTML = `
-    <h1>Studio</h1>
+    <div class="spread studio-head">
+      <h1>Studio</h1>
+      <div class="undo-group">
+        <button id="undo" class="btn btn-inline" aria-label="Undo" disabled>↩</button>
+        <button id="redo" class="btn btn-inline" aria-label="Redo" disabled>↪</button>
+      </div>
+    </div>
     <div class="toolbar">
       <button id="add-room" class="btn">+ Zone</button>
       <button id="add-wall" class="btn">+ Wall</button>
@@ -224,6 +235,48 @@ export function renderStudio(root) {
   const svg = root.querySelector('#floor');
   const props = root.querySelector('#props');
   const redraw = () => drawGym(svg, gym, { selectedId, editor: true, selectedVertex });
+
+  // --- undo/redo: one snapshot per completed edit ---
+  const history = [JSON.stringify(gym)];
+  let hIndex = 0;
+  const undoBtn = root.querySelector('#undo');
+  const redoBtn = root.querySelector('#redo');
+
+  const updateUndoButtons = () => {
+    undoBtn.disabled = hIndex === 0;
+    redoBtn.disabled = hIndex === history.length - 1;
+  };
+
+  // every studio mutation goes through save(): persist + record history
+  const save = () => {
+    saveGym(gym);
+    history.length = hIndex + 1; // editing kills the redo branch
+    history.push(JSON.stringify(gym));
+    if (history.length > 60) history.shift();
+    else hIndex++;
+    updateUndoButtons();
+  };
+
+  const restore = (json) => {
+    gym = JSON.parse(json);
+    saveGym(gym); // persist without recording — undo/redo just moves the pointer
+    selectedId = null; // the selected item may not exist in this state
+    selectedVertex = null;
+    redraw();
+    renderProps();
+    updateUndoButtons();
+  };
+
+  undoBtn.addEventListener('click', () => {
+    if (hIndex === 0) return;
+    hIndex--;
+    restore(history[hIndex]);
+  });
+  redoBtn.addEventListener('click', () => {
+    if (hIndex === history.length - 1) return;
+    hIndex++;
+    restore(history[hIndex]);
+  });
 
   function svgPoint(e) {
     return new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
@@ -340,7 +393,7 @@ export function renderStudio(root) {
       it.w = 3; // never leave an invisible zero-length wall behind
     }
     if (drag.moved) {
-      saveGym(gym);
+      save();
       redraw();
     }
     drag = null;
@@ -380,7 +433,7 @@ export function renderStudio(root) {
       item = { id: uid(), kind: 'line', x: snap(g.w / 2 - 4 + off), y: snap(g.h / 2 + off), w: 8, h: 0 };
       gym.shapes.push(item);
     }
-    saveGym(gym);
+    save();
     select(item.id);
     redraw();
   }
@@ -470,14 +523,14 @@ export function renderStudio(root) {
         if (selectedVertex === null || gym.outline.length <= 3) return;
         gym.outline.splice(selectedVertex, 1);
         selectedVertex = null;
-        saveGym(gym);
+        save();
         redraw();
         renderProps();
       });
       props.querySelector('#reset-outline').addEventListener('click', () => {
         gym.outline = defaultOutline(gym.grid);
         selectedVertex = null;
-        saveGym(gym);
+        save();
         redraw();
         renderProps();
       });
@@ -529,7 +582,7 @@ export function renderStudio(root) {
       const bindMeta = (sel, key) => {
         props.querySelector(sel).addEventListener('change', (e) => {
           gym.meta = { ...(gym.meta || {}), [key]: e.target.value.trim() };
-          saveGym(gym);
+          save();
         });
       };
       bindMeta('#gym-address', 'address');
@@ -547,7 +600,7 @@ export function renderStudio(root) {
       });
       props.querySelector('#gym-name').addEventListener('change', (e) => {
         gym.name = e.target.value.trim() || 'My gym';
-        saveGym(gym);
+        save();
       });
       const onFloor = (inputId, key) => {
         props.querySelector(inputId).addEventListener('change', (e) => {
@@ -558,7 +611,7 @@ export function renderStudio(root) {
             p.x = Math.min(p.x, gym.grid.w);
             p.y = Math.min(p.y, gym.grid.h);
           });
-          saveGym(gym);
+          save();
           redraw();
         });
       };
@@ -604,13 +657,13 @@ export function renderStudio(root) {
       props.querySelector('#m-num').addEventListener('change', (e) => {
         item.num = Math.max(1, Math.round(parseFloat(e.target.value) || 1));
         e.target.value = item.num;
-        saveGym(gym);
+        save();
         redraw();
       });
       props.querySelector('#m-label').addEventListener('change', (e) => {
         item.label = e.target.value.trim() || `Machine ${item.num}`;
         e.target.value = item.label;
-        saveGym(gym);
+        save();
       });
 
       const toggleIn = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
@@ -618,14 +671,14 @@ export function renderStudio(root) {
         const chip = e.target.closest('.chip');
         if (!chip) return;
         item.muscles = toggleIn(muscles, chip.dataset.value);
-        saveGym(gym);
+        save();
         renderProps();
       });
       props.querySelector('#m-fields').addEventListener('click', (e) => {
         const chip = e.target.closest('.chip');
         if (!chip) return;
         item.settingsFields = toggleIn(item.settingsFields, chip.dataset.value);
-        saveGym(gym);
+        save();
         renderProps();
       });
 
@@ -634,7 +687,7 @@ export function renderStudio(root) {
         const v = input.value.trim();
         if (!v) return;
         if (!item.settingsFields.includes(v)) item.settingsFields.push(v);
-        saveGym(gym);
+        save();
         renderProps();
       };
       props.querySelector('#m-field-add').addEventListener('click', addCustomField);
@@ -644,7 +697,7 @@ export function renderStudio(root) {
 
       props.querySelector('#m-doc').addEventListener('change', (e) => {
         item.docUrl = e.target.value.trim();
-        saveGym(gym);
+        save();
       });
     } else if (item.kind === 'rect') {
       const zoneOptions = [...ZONE_LABELS,
@@ -668,7 +721,7 @@ export function renderStudio(root) {
         const chip = e.target.closest('.chip');
         if (!chip) return;
         item.label = item.label === chip.dataset.value ? '' : chip.dataset.value;
-        saveGym(gym);
+        save();
         redraw();
         renderProps();
       });
@@ -676,7 +729,7 @@ export function renderStudio(root) {
         const v = props.querySelector('#z-custom').value.trim();
         if (!v) return;
         item.label = v;
-        saveGym(gym);
+        save();
         redraw();
         renderProps();
       };
@@ -685,17 +738,33 @@ export function renderStudio(root) {
         if (e.key === 'Enter') setCustom();
       });
     } else {
+      const isDoor = item.fixture === 'door';
       props.innerHTML = `
         <section class="card">
           <h2>${item.kind === 'line' ? 'Wall' : (FIXTURES[item.fixture]?.label ?? 'Element')}</h2>
+          ${isDoor ? `
+            <button id="flip-swing" class="btn">Flip swing side (in/out)</button>
+            <button id="flip-hinge" class="btn">Flip hinge side (left/right)</button>` : ''}
           <button id="del-item" class="btn btn-danger">Delete</button>
         </section>`;
+      if (isDoor) {
+        props.querySelector('#flip-swing').addEventListener('click', () => {
+          item.flipV = !item.flipV;
+          save();
+          redraw();
+        });
+        props.querySelector('#flip-hinge').addEventListener('click', () => {
+          item.flipH = !item.flipH;
+          save();
+          redraw();
+        });
+      }
     }
 
     props.querySelector('#del-item').addEventListener('click', () => {
       gym.machines = gym.machines.filter((m) => m.id !== item.id);
       gym.shapes = gym.shapes.filter((s) => s.id !== item.id);
-      saveGym(gym);
+      save();
       select(null);
       redraw();
     });
