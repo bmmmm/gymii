@@ -80,6 +80,18 @@ h2 {
 }
 
 .muted { color: var(--muted); font-size: 13px; }
+
+a { color: var(--accent); }
+
+.notice {
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 14px;
+}
+
+.btn .sub { display: block; font-weight: 400; font-size: 13px; margin-top: 4px; opacity: 0.8; }
 .footnote { margin-top: 20px; }
 .row { display: flex; gap: 8px; align-items: center; }
 .row > * { flex: 1; }
