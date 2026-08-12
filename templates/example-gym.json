@@ -16,7 +16,7 @@
       { "id": "zone-freeweights", "kind": "rect", "x": 34, "y": 2, "w": 24, "h": 17, "label": "Free weights" },
       { "id": "zone-cardio", "kind": "rect", "x": 34, "y": 21, "w": 24, "h": 17, "label": "Cardio" },
       { "id": "wall-divider", "kind": "line", "x": 34, "y": 20, "w": 24, "h": 0 },
-      { "id": "door-entrance", "kind": "fixture", "fixture": "door", "x": 3, "y": 31, "w": 2, "h": 2 },
+      { "id": "door-entrance", "kind": "fixture", "fixture": "door", "x": 8.8, "y": 33.4, "w": 2.4, "h": 1.2, "rot": 180 },
       { "id": "lockers", "kind": "fixture", "fixture": "locker", "x": 7, "y": 31, "w": 4, "h": 2 },
       { "id": "water-fountain", "kind": "fixture", "fixture": "water", "x": 28, "y": 34, "w": 2, "h": 2 },
       { "id": "trash-bin", "kind": "fixture", "fixture": "trash", "x": 31, "y": 34, "w": 2, "h": 2 },

@@ -5,13 +5,53 @@ import {
 import { esc, download } from './ui.js';
 
 // Map furniture beyond machines: doors, water, mirrors, lockers, trash.
+// Doors are special: they snap onto the nearest wall and render as a
+// floor-plan opening (gap + leaf + swing arc) instead of an icon box.
 export const FIXTURES = {
-  door: { icon: '🚪', label: 'Door', w: 2, h: 2 },
+  door: { icon: '🚪', label: 'Door', w: 2.4, h: 1.2 },
   water: { icon: '🚰', label: 'Water', w: 2, h: 2 },
   mirror: { icon: '🪞', label: 'Mirror', w: 6, h: 1 },
   locker: { icon: '🔒', label: 'Lockers', w: 3, h: 2 },
   trash: { icon: '🗑️', label: 'Trash', w: 2, h: 2 },
 };
+
+// All wall segments a door can live on: outline edges + interior walls.
+function wallSegments(gym) {
+  const segments = [];
+  const o = gym.outline || [];
+  for (let i = 0; i < o.length; i++) {
+    segments.push([o[i], o[(i + 1) % o.length]]);
+  }
+  gym.shapes.filter((s) => s.kind === 'line').forEach((l) => {
+    segments.push([{ x: l.x, y: l.y }, { x: l.x + l.w, y: l.y + l.h }]);
+  });
+  return segments;
+}
+
+// Projects the door's center onto the nearest wall segment and aligns
+// its rotation with that wall.
+function snapDoorToWall(gym, door) {
+  const cx = door.x + door.w / 2;
+  const cy = door.y + door.h / 2;
+  let best = null;
+  wallSegments(gym).forEach(([a, b]) => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    if (!len2) return;
+    const t = clamp(((cx - a.x) * dx + (cy - a.y) * dy) / len2, 0, 1);
+    const px = a.x + t * dx;
+    const py = a.y + t * dy;
+    const d2 = (px - cx) ** 2 + (py - cy) ** 2;
+    if (!best || d2 < best.d2) {
+      best = { px, py, d2, angle: Math.round((Math.atan2(dy, dx) * 180) / Math.PI) };
+    }
+  });
+  if (!best) return;
+  door.x = Math.round((best.px - door.w / 2) * 10) / 10;
+  door.y = Math.round((best.py - door.h / 2) * 10) / 10;
+  door.rot = best.angle;
+}
 
 const SNAP = 1;
 const snap = (v) => Math.round(v / SNAP) * SNAP;
@@ -88,6 +128,7 @@ function shapeSvg(s) {
     </g>`;
   }
   if (s.kind === 'fixture') {
+    if (s.fixture === 'door') return doorSvg(s);
     const icon = FIXTURES[s.fixture]?.icon ?? '❓';
     const fs = clamp(Math.min(s.w, s.h) * 0.7, 0.8, 2.2);
     return `<g class="shape" data-id="${s.id}">
@@ -112,6 +153,21 @@ function machineSvg(m) {
   </g>`;
 }
 
+// Classic floor-plan door: a gap punched through the wall stroke, a
+// door leaf, and its dashed swing arc. Rotated to match the wall.
+function doorSvg(s) {
+  const cx = s.x + s.w / 2;
+  const cy = s.y + s.h / 2;
+  const w = s.w;
+  const hx = cx - w / 2; // hinge
+  return `<g class="shape" data-id="${s.id}" transform="rotate(${s.rot || 0} ${cx} ${cy})">
+    <rect class="door-hit hit" x="${hx}" y="${cy - 0.8}" width="${w}" height="1.6"/>
+    <rect class="door-gap" x="${hx}" y="${cy - 0.4}" width="${w}" height="0.8"/>
+    <path class="door-arc" d="M ${hx} ${cy - w} A ${w} ${w} 0 0 1 ${cx + w / 2} ${cy}"/>
+    <line class="door-leaf" x1="${hx}" y1="${cy}" x2="${hx}" y2="${cy - w}"/>
+  </g>`;
+}
+
 function bbox(item) {
   return {
     x: Math.min(item.x, item.x + item.w),
@@ -122,6 +178,13 @@ function bbox(item) {
 }
 
 function selectionSvg(item) {
+  if (item.fixture === 'door') { // doors rotate with their wall and have no resize handle
+    const cx = item.x + item.w / 2;
+    const cy = item.y + item.h / 2;
+    return `<rect class="selected-outline" x="${item.x - 0.4}" y="${cy - 1.2}"
+      width="${item.w + 0.8}" height="2.4" pointer-events="none"
+      transform="rotate(${item.rot || 0} ${cx} ${cy})"/>`;
+  }
   const b = bbox(item);
   const hx = item.x + item.w;
   const hy = item.y + item.h;
@@ -247,10 +310,17 @@ export function renderStudio(root) {
     }
     const it = drag.item;
     if (drag.mode === 'move') {
-      // clamp so the item's bounding box stays on the floor (works for
-      // rects and for lines with negative w/h)
-      it.x = clamp(snap(p.x - drag.offX), -Math.min(it.w, 0), gym.grid.w - Math.max(it.w, 0));
-      it.y = clamp(snap(p.y - drag.offY), -Math.min(it.h, 0), gym.grid.h - Math.max(it.h, 0));
+      if (it.fixture === 'door') {
+        // doors ignore the grid and glue themselves to the nearest wall
+        it.x = p.x - drag.offX;
+        it.y = p.y - drag.offY;
+        snapDoorToWall(gym, it);
+      } else {
+        // clamp so the item's bounding box stays on the floor (works for
+        // rects and for lines with negative w/h)
+        it.x = clamp(snap(p.x - drag.offX), -Math.min(it.w, 0), gym.grid.w - Math.max(it.w, 0));
+        it.y = clamp(snap(p.y - drag.offY), -Math.min(it.h, 0), gym.grid.h - Math.max(it.h, 0));
+      }
     } else if (it.kind === 'line') {
       it.w = clamp(snap(p.x - it.x), -it.x, gym.grid.w - it.x);
       it.h = clamp(snap(p.y - it.y), -it.y, gym.grid.h - it.y);
@@ -304,6 +374,7 @@ export function renderStudio(root) {
         x: snap(g.w / 2 - f.w / 2 + off), y: snap(g.h / 2 - f.h / 2 + off),
         w: f.w, h: f.h,
       };
+      if (fixtureType === 'door') snapDoorToWall(gym, item); // born on a wall
       gym.shapes.push(item);
     } else {
       item = { id: uid(), kind: 'line', x: snap(g.w / 2 - 4 + off), y: snap(g.h / 2 + off), w: 8, h: 0 };
