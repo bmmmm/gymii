@@ -411,7 +411,7 @@ function resolveEntry(machine, active) {
   const exercises = machine.exercises ?? [];
   const exercise = exercises.includes(active.currentExercise) ? active.currentExercise : null;
   const pickPending = exercises.length > 0 && !exercise;
-  if (pickPending) return { exercise, pickPending, entry: null, last: null };
+  if (pickPending) return { exercises, exercise, pickPending, entry: null, last: null };
 
   const last = lastEntryFor(machine.id, exercise);
   let entry = entryFor(active, machine.id, exercise);
@@ -433,7 +433,7 @@ function resolveEntry(machine, active) {
     if (machine.bodyweight) entry.bodyweight = true; else delete entry.bodyweight;
     saveActive(active);
   }
-  return { exercise, pickPending, entry, last };
+  return { exercises, exercise, pickPending, entry, last };
 }
 
 function renderLog(root, gym, active) {
@@ -446,7 +446,7 @@ function renderLog(root, gym, active) {
     return;
   }
 
-  const { exercise, pickPending, entry, last } = resolveEntry(machine, active);
+  const { exercises, exercise, pickPending, entry, last } = resolveEntry(machine, active);
 
   const machineSlots = active.plan.filter((p) => p.machineId === machine.id);
   if (!machineSlots.length) { // free sessions grow the plan

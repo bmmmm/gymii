@@ -12,7 +12,7 @@ globalThis.localStorage = {
 };
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
-const { startWorkoutFrom } = await import(new URL('../js/train.js', import.meta.url).href);
+const { startWorkoutFrom, renderTrain } = await import(new URL('../js/train.js', import.meta.url).href);
 
 const gym = store.newGym('Test gym');
 gym.machines.push({ id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
@@ -68,5 +68,40 @@ active = store.getActive();
 assert.deepEqual(active.plan, [{ machineId: 'm1', exercise: null }]);
 assert.equal(active.currentMachineId, 'm1');
 assert.strictEqual(active.currentExercise, null);
+
+// --- logging-screen render smoke ---
+// renderLog once referenced a variable that a refactor had moved out of
+// scope, throwing for EVERY machine; a bare innerHTML render catches that
+// whole bug class. Stub just enough DOM: renderLog only sets innerHTML and
+// wires listeners via (optionally chained) querySelector.
+const stubEl = () => ({
+  addEventListener() {}, value: '', innerHTML: '',
+  querySelector: () => stubEl(), querySelectorAll: () => [],
+  classList: { toggle() {}, add() {} }, dataset: {}, style: {},
+});
+const root = {
+  innerHTML: '',
+  querySelector: () => stubEl(),
+  querySelectorAll: () => [],
+};
+
+// plain machine: full logging UI
+store.saveActive({
+  v: 2, id: 'w-log', startedAt: 1755000000000,
+  plan: [{ machineId: 'm1', exercise: null }],
+  currentMachineId: 'm1', currentExercise: null, entries: [],
+});
+renderTrain(root);
+assert.ok(root.innerHTML.includes('Log set'), 'plain machine renders the set logger');
+
+// multi-exercise station, no exercise picked yet: chip picker, no logger
+store.saveActive({
+  v: 2, id: 'w-pick', startedAt: 1755000000000,
+  plan: [{ machineId: 'db', exercise: null }],
+  currentMachineId: 'db', currentExercise: null, entries: [],
+});
+renderTrain(root);
+assert.ok(root.innerHTML.includes('Biceps curls'), 'station renders its exercise chips');
+assert.ok(!root.innerHTML.includes('Log set'), 'no logger while the exercise pick is pending');
 
 console.log('train plan construction: all assertions passed');
