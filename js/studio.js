@@ -191,6 +191,40 @@ function findItem(gym, id) {
   return gym.machines.find((m) => m.id === id) || gym.shapes.find((s) => s.id === id) || null;
 }
 
+// Axis-aligned overlap between a proposed box and any machine other than
+// `item`. Edge-to-edge contact is fine (strict inequalities).
+export function overlapsMachine(gym, item, x, y, w, h) {
+  return gym.machines.some((m) => m !== item
+    && x < m.x + m.w && x + w > m.x && y < m.y + m.h && y + h > m.y);
+}
+
+// Whether an item may occupy the proposed box. Only machines are
+// exclusive (zones are areas, fixtures are furniture) — and only when
+// they start from a non-overlapping spot, so layouts saved before this
+// rule stay fully editable and can be untangled.
+export function fits(gym, it, x, y, w, h) {
+  if (it.kind) return true;
+  if (overlapsMachine(gym, it, it.x, it.y, it.w, it.h)) return true;
+  return !overlapsMachine(gym, it, x, y, w, h);
+}
+
+// Placement for a new machine: the preferred position if free, else the
+// nearest non-overlapping spot so new machines line up next to existing
+// ones; a packed floor falls back to the preferred spot (overlapping
+// beats refusing to add).
+export function freeSpot(gym, x, y, w, h) {
+  if (!overlapsMachine(gym, null, x, y, w, h)) return { x, y };
+  let best = null;
+  for (let sy = 0; sy + h <= gym.grid.h; sy += SNAP) {
+    for (let sx = 0; sx + w <= gym.grid.w; sx += SNAP) {
+      if (overlapsMachine(gym, null, sx, sy, w, h)) continue;
+      const d = (sx - x) ** 2 + (sy - y) ** 2;
+      if (!best || d < best.d) best = { x: sx, y: sy, d };
+    }
+  }
+  return best ? { x: best.x, y: best.y } : { x, y };
+}
+
 function gridSvg(grid) {
   let d = '';
   for (let x = 0; x <= grid.w; x += 5) d += `M${x} 0V${grid.h}`;
@@ -556,16 +590,35 @@ export function renderStudio(root) {
       } else {
         // clamp so the item's bounding box stays on the floor (works for
         // rects and for lines with negative w/h)
-        it.x = clamp(snap(p.x - drag.offX), -Math.min(it.w, 0), gym.grid.w - Math.max(it.w, 0));
-        it.y = clamp(snap(p.y - drag.offY), -Math.min(it.h, 0), gym.grid.h - Math.max(it.h, 0));
+        const nx = clamp(snap(p.x - drag.offX), -Math.min(it.w, 0), gym.grid.w - Math.max(it.w, 0));
+        const ny = clamp(snap(p.y - drag.offY), -Math.min(it.h, 0), gym.grid.h - Math.max(it.h, 0));
+        // when the target spot collides with another machine, try each
+        // axis alone so the item slides along the neighbor's edge
+        if (fits(gym, it, nx, ny, it.w, it.h)) {
+          it.x = nx;
+          it.y = ny;
+        } else if (fits(gym, it, nx, it.y, it.w, it.h)) {
+          it.x = nx;
+        } else if (fits(gym, it, it.x, ny, it.w, it.h)) {
+          it.y = ny;
+        }
       }
     } else if (it.kind === 'line') {
       it.w = clamp(snap(p.x - it.x), -it.x, gym.grid.w - it.x);
       it.h = clamp(snap(p.y - it.y), -it.y, gym.grid.h - it.y);
     } else {
       const minSize = it.kind === 'fixture' ? 1 : 2; // mirrors etc. may be slim
-      it.w = clamp(snap(p.x - it.x), minSize, gym.grid.w - it.x);
-      it.h = clamp(snap(p.y - it.y), minSize, gym.grid.h - it.y);
+      const nw = clamp(snap(p.x - it.x), minSize, gym.grid.w - it.x);
+      const nh = clamp(snap(p.y - it.y), minSize, gym.grid.h - it.y);
+      // growing into a neighboring machine is blocked per axis
+      if (fits(gym, it, it.x, it.y, nw, nh)) {
+        it.w = nw;
+        it.h = nh;
+      } else if (fits(gym, it, it.x, it.y, nw, it.h)) {
+        it.w = nw;
+      } else if (fits(gym, it, it.x, it.y, it.w, nh)) {
+        it.h = nh;
+      }
     }
     drag.moved = true;
     redraw();
@@ -596,9 +649,10 @@ export function renderStudio(root) {
     let item;
     if (kind === 'machine') {
       const num = nextNum();
+      const pos = freeSpot(gym, snap(g.w / 2 - 2 + off), snap(g.h / 2 - 1.5 + off), 4, 3);
       item = {
         id: uid(), num, label: `Machine ${num}`,
-        x: snap(g.w / 2 - 2 + off), y: snap(g.h / 2 - 1.5 + off),
+        x: pos.x, y: pos.y,
         w: 4, h: 3, settingsFields: [], muscles: [], docUrl: '',
       };
       gym.machines.push(item);
