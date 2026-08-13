@@ -218,4 +218,12 @@ assert.ok(!root.innerHTML.includes('data-wid="w-push"'),
   'routine matching a plan name is owned by the plan row');
 assert.ok(root.innerHTML.includes('last: '), 'plan row shows when it was last done');
 
+// --- onboarding points fresh starters at planning ---
+
+store.createProfile('Fresh gym'); // empty profile -> onboarding screen
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('Build your gym'), 'fresh profile lands on onboarding');
+assert.ok(root.innerHTML.includes('Plan ahead'), 'onboarding advertises planned workouts');
+
 console.log('workout plans: all assertions passed');

@@ -172,7 +172,8 @@ function renderStart(root, gym, message) {
       </div>
       <button id="plan-new" class="btn">+ Plan a workout</button>
       ${plans.length ? '' : `<p class="muted">Build a session in advance — pick machines
-        by muscle, set targets, start it any day. Or ask your AI for one on the AI tab.</p>`}
+        or exercises, set target sets × reps × weight, start it any day.
+        (Your AI can draft one too, via the AI tab.)</p>`}
     </section>
     ${routines.length ? `
     <section class="card">
@@ -265,6 +266,13 @@ function renderOnboarding(root, message) {
       <p class="muted">Load a ready-made gym from the
         <a href="#studio">Studio's template library</a>, or import a backup in
         <a href="#settings">Settings</a>.</p>
+    </section>
+    <section class="card">
+      <h2>Plan ahead</h2>
+      <p class="muted">As soon as your gym has its first machine, this screen
+        adds planned workouts: pick machines or exercises, set target
+        sets × reps × weight, save — then just tick the plan off at the gym.
+        (Your AI can draft one too, via the <a href="#ai">AI tab</a>.)</p>
     </section>`;
 
   const start = () => {
