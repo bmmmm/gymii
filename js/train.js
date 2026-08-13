@@ -6,9 +6,12 @@ import { drawGym, usagePayload, findMachineByNum } from './studio.js';
 import { esc, fmtDuration, workoutTotals, setStr, twoTapConfirm } from './ui.js';
 
 // Active workout shape:
-//   { v: 2, id, startedAt, plan: [machineId…], currentMachineId|null, entries: [] }
-// plan is the guided order — prefilled when repeating a workout, growing as
-// machines are opened in a free session. currentMachineId null shows the
+//   { v: 2, id, startedAt, plan: [{machineId, exercise|null}…],
+//     currentMachineId|null, currentExercise|null, entries: [] }
+// plan is the guided order — one slot per (machine, exercise) pair when
+// repeating a workout (so "Next:" walks every exercise of a multi-exercise
+// station), growing as machines are opened in a free session. exercise null
+// means the slot covers the whole station. currentMachineId null shows the
 // workout overview hub instead of a machine's logging screen.
 
 export function renderTrain(root, message = '') {
@@ -26,6 +29,11 @@ export function renderTrain(root, message = '') {
       active.plan = active.queue || active.entries.map((e) => e.machineId);
       saveActive(active);
     }
+    if (active.plan.some((p) => typeof p === 'string')) { // machineIds → slots
+      active.plan = active.plan.map((p) =>
+        (typeof p === 'string' ? { machineId: p, exercise: null } : p));
+      saveActive(active);
+    }
     if (active.currentMachineId) renderLog(root, gym, active);
     else renderOverview(root, gym, active);
   } else {
@@ -37,18 +45,32 @@ export function renderTrain(root, message = '') {
 // Exported so History can offer "repeat this workout" too.
 export function startWorkoutFrom(source, firstMachineId = null) {
   const gym = getGym();
-  // Set-dedupe: multi-exercise stations produce several entries per station
-  // but only one plan slot.
-  const plan = source
-    ? [...new Set(source.entries.map((e) => e.machineId)
-      .filter((id) => gym?.machines.some((m) => m.id === id)))]
-    : [];
-  if (firstMachineId && !plan.includes(firstMachineId)) plan.push(firstMachineId);
+  // One plan slot per (machine, exercise) pair, deduped — the guided flow
+  // then walks every exercise of a multi-exercise station. An exercise the
+  // machine no longer offers falls back to a whole-station slot, and such
+  // station slots are dropped again when exercise slots for the same
+  // machine exist (the overview would double-report their sets).
+  const pairs = (source?.entries ?? [])
+    .map((e) => {
+      const machine = gym?.machines.find((m) => m.id === e.machineId);
+      if (!machine) return null;
+      const exercise = machine.exercises?.includes(e.exercise) ? e.exercise : null;
+      return { machineId: e.machineId, exercise };
+    })
+    .filter(Boolean);
+  const plan = pairs
+    .filter((p, i) => pairs.findIndex(
+      (q) => q.machineId === p.machineId && q.exercise === p.exercise) === i)
+    .filter((p) => p.exercise
+      || !pairs.some((q) => q.machineId === p.machineId && q.exercise));
+  if (firstMachineId && !plan.some((p) => p.machineId === firstMachineId)) {
+    plan.push({ machineId: firstMachineId, exercise: null });
+  }
   saveActive({
     v: 2, id: uid(), startedAt: Date.now(),
     plan,
-    currentMachineId: firstMachineId ?? plan[0] ?? null,
-    currentExercise: null,
+    currentMachineId: firstMachineId ?? plan[0]?.machineId ?? null,
+    currentExercise: firstMachineId ? null : plan[0]?.exercise ?? null,
     entries: [],
   });
 }
@@ -269,33 +291,35 @@ function machinePicker(container, gym, onPick) {
 // --- workout overview hub ---
 
 // Exact-match lookup for the logging screen (exercise-scoped entries at
-// multi-exercise stations); entriesForMachine aggregates a whole station
-// for the overview hub and done-state.
+// multi-exercise stations); slotEntries aggregates a whole station when the
+// slot's exercise is null. A slot is done once any of its entries has sets.
 const entryFor = (active, machineId, exercise = null) =>
   active.entries.find((e) => e.machineId === machineId && (e.exercise ?? null) === exercise);
-const entriesForMachine = (active, machineId) =>
-  active.entries.filter((e) => e.machineId === machineId);
-const isDone = (active, machineId) =>
-  entriesForMachine(active, machineId).some((e) => e.sets.length);
+const slotEntries = (active, slot) =>
+  active.entries.filter((e) => e.machineId === slot.machineId
+    && (!slot.exercise || (e.exercise ?? null) === slot.exercise));
+const slotDone = (active, slot) =>
+  slotEntries(active, slot).some((e) => e.sets.length);
 
 function renderOverview(root, gym, active) {
   const s = getSettings();
   const sets = active.entries.reduce((n, e) => n + e.sets.length, 0);
   const mins = Math.max(1, Math.round((Date.now() - active.startedAt) / 60000));
 
-  const rows = active.plan.map((id) => {
-    const machine = gym.machines.find((m) => m.id === id);
-    const stationEntries = entriesForMachine(active, id);
-    if (!machine && !stationEntries.length) return '';
-    const num = machine?.num ?? stationEntries[0].num;
-    const label = machine?.label ?? stationEntries[0].label;
-    const stationSets = stationEntries.reduce((n, e) => n + e.sets.length, 0);
-    const done = isDone(active, id);
-    return `<button class="plan-row" data-id="${id}" ${machine ? '' : 'disabled'}>
+  const rows = active.plan.map((slot, i) => {
+    const machine = gym.machines.find((m) => m.id === slot.machineId);
+    const entries = slotEntries(active, slot);
+    if (!machine && !entries.length) return '';
+    const num = machine?.num ?? entries[0].num;
+    const label = machine?.label ?? entries[0].label;
+    const slotSets = entries.reduce((n, e) => n + e.sets.length, 0);
+    const done = slotDone(active, slot);
+    return `<button class="plan-row" data-i="${i}" ${machine ? '' : 'disabled'}>
       <span class="machine-badge sm">${num}</span>
-      <span class="plan-label">${esc(label)}</span>
+      <span class="plan-label">${esc(label)}${slot.exercise
+        ? ` <span class="muted">· ${esc(slot.exercise)}</span>` : ''}</span>
       <span class="plan-status${done ? ' done' : ''}">${done
-        ? `✓ ${stationSets} set${stationSets === 1 ? '' : 's'}` : 'open'}</span>
+        ? `✓ ${slotSets} set${slotSets === 1 ? '' : 's'}` : 'open'}</span>
     </button>`;
   }).join('');
 
@@ -327,15 +351,18 @@ function renderOverview(root, gym, active) {
 
   root.querySelectorAll('.plan-row').forEach((row) => {
     row.addEventListener('click', () => {
-      active.currentMachineId = row.dataset.id;
-      active.currentExercise = null;
+      const slot = active.plan[parseInt(row.dataset.i, 10)];
+      active.currentMachineId = slot.machineId;
+      active.currentExercise = slot.exercise;
       saveActive(active);
       renderTrain(root);
     });
   });
 
   machinePicker(root.querySelector('#picker'), gym, (machineId) => {
-    if (!active.plan.includes(machineId)) active.plan.push(machineId);
+    if (!active.plan.some((p) => p.machineId === machineId)) {
+      active.plan.push({ machineId, exercise: null });
+    }
     active.currentMachineId = machineId;
     active.currentExercise = null;
     saveActive(active);
@@ -353,15 +380,61 @@ function renderOverview(root, gym, active) {
   });
 }
 
-// Next unfinished machine in the plan after `afterId`, wrapping around so
-// a skipped (busy) machine comes up again at the end.
-function nextOpenMachineId(active, afterId) {
-  const idx = active.plan.indexOf(afterId);
+// Next unfinished plan slot after the current one, wrapping around so a
+// skipped (busy) machine comes up again at the end. Another exercise at
+// the SAME station is a valid next stop — only the current slot is out.
+function nextOpenSlot(active, afterId, afterExercise = null) {
+  const idx = planSlotIndex(active, afterId, afterExercise);
   const order = [...active.plan.slice(idx + 1), ...active.plan.slice(0, Math.max(idx, 0))];
-  return order.find((id) => id !== afterId && !isDone(active, id)) ?? null;
+  return order.find((slot) => !slotDone(active, slot)) ?? null;
+}
+
+// The plan index the logging screen is at: the exact (machine, exercise)
+// slot when one exists, else the machine's first slot (pick pending).
+function planSlotIndex(active, machineId, exercise = null) {
+  const exact = active.plan.findIndex(
+    (p) => p.machineId === machineId && (p.exercise ?? null) === (exercise ?? null));
+  return exact !== -1 ? exact
+    : active.plan.findIndex((p) => p.machineId === machineId);
 }
 
 // --- logging screen ---
+
+// Resolves which entry the logging screen edits. At multi-exercise
+// stations (free weights) each exercise gets its own entry; until one is
+// picked (pickPending) there is no entry and no logging UI. Entries are
+// created eagerly so settings edits stick; set-less ones are dropped again
+// when the workout is finished. Type flags and the exercise are
+// snapshotted like num/label so history stays readable if the machine
+// changes. `last` is the previous session's entry for set prefills.
+function resolveEntry(machine, active) {
+  const exercises = machine.exercises ?? [];
+  const exercise = exercises.includes(active.currentExercise) ? active.currentExercise : null;
+  const pickPending = exercises.length > 0 && !exercise;
+  if (pickPending) return { exercise, pickPending, entry: null, last: null };
+
+  const last = lastEntryFor(machine.id, exercise);
+  let entry = entryFor(active, machine.id, exercise);
+  if (!entry) {
+    entry = {
+      machineId: machine.id, num: machine.num, label: machine.label,
+      ...(machine.cardio ? { cardio: true } : {}),
+      ...(machine.bodyweight ? { bodyweight: true } : {}),
+      ...(exercise ? { exercise } : {}),
+      settings: {}, sets: [],
+    };
+    machine.settingsFields.forEach((f) => { entry.settings[f] = last?.settings?.[f] ?? ''; });
+    active.entries.push(entry);
+    saveActive(active);
+  } else if (!entry.sets.length
+    && (!!entry.cardio !== !!machine.cardio || !!entry.bodyweight !== !!machine.bodyweight)) {
+    // machine type was toggled in the studio before any set was logged
+    if (machine.cardio) entry.cardio = true; else delete entry.cardio;
+    if (machine.bodyweight) entry.bodyweight = true; else delete entry.bodyweight;
+    saveActive(active);
+  }
+  return { exercise, pickPending, entry, last };
+}
 
 function renderLog(root, gym, active) {
   const machine = gym.machines.find((m) => m.id === active.currentMachineId);
@@ -373,43 +446,20 @@ function renderLog(root, gym, active) {
     return;
   }
 
-  if (!active.plan.includes(machine.id)) { // free sessions grow the plan
-    active.plan.push(machine.id);
+  const { exercise, pickPending, entry, last } = resolveEntry(machine, active);
+
+  const machineSlots = active.plan.filter((p) => p.machineId === machine.id);
+  if (!machineSlots.length) { // free sessions grow the plan
+    active.plan.push({ machineId: machine.id, exercise: null });
     saveActive(active);
-  }
-
-  // At multi-exercise stations (free weights) each exercise gets its own
-  // entry; until one is picked there is no entry and no logging UI.
-  const exercises = machine.exercises ?? [];
-  const exercise = exercises.includes(active.currentExercise) ? active.currentExercise : null;
-  const pickPending = exercises.length > 0 && !exercise;
-
-  const last = pickPending ? null : lastEntryFor(machine.id, exercise);
-  let entry = null;
-  if (!pickPending) {
-    entry = entryFor(active, machine.id, exercise);
-    if (!entry) {
-      // created eagerly so settings edits stick; set-less entries are
-      // dropped again when the workout is finished. type flags and the
-      // exercise are snapshotted like num/label so history stays readable
-      // if the machine changes.
-      entry = {
-        machineId: machine.id, num: machine.num, label: machine.label,
-        ...(machine.cardio ? { cardio: true } : {}),
-        ...(machine.bodyweight ? { bodyweight: true } : {}),
-        ...(exercise ? { exercise } : {}),
-        settings: {}, sets: [],
-      };
-      machine.settingsFields.forEach((f) => { entry.settings[f] = last?.settings?.[f] ?? ''; });
-      active.entries.push(entry);
-      saveActive(active);
-    } else if (!entry.sets.length
-      && (!!entry.cardio !== !!machine.cardio || !!entry.bodyweight !== !!machine.bodyweight)) {
-      // machine type was toggled in the studio before any set was logged
-      if (machine.cardio) entry.cardio = true; else delete entry.cardio;
-      if (machine.bodyweight) entry.bodyweight = true; else delete entry.bodyweight;
-      saveActive(active);
-    }
+  } else if (exercise && !machineSlots.some((p) => !p.exercise)
+    && !machineSlots.some((p) => p.exercise === exercise)) {
+    // a fresh exercise at a station whose slots are exercise-scoped gets
+    // its own slot (after its siblings) so the overview and "Next:" see
+    // it; a whole-station slot already aggregates it otherwise
+    const lastIdx = active.plan.findLastIndex((p) => p.machineId === machine.id);
+    active.plan.splice(lastIdx + 1, 0, { machineId: machine.id, exercise });
+    saveActive(active);
   }
 
   const s = getSettings();
@@ -424,9 +474,9 @@ function renderLog(root, gym, active) {
     && !!last.bodyweight === !!entry?.bodyweight ? last : null;
   const def = pickPending ? null : nextSetDefaults(entry, lastSets, type, s);
   const restSeconds = machine.restSeconds ?? s.restSeconds;
-  const planPos = `${active.plan.indexOf(machine.id) + 1}/${active.plan.length}`;
-  const nextId = nextOpenMachineId(active, machine.id);
-  const nextMachine = nextId ? gym.machines.find((m) => m.id === nextId) : null;
+  const planPos = `${planSlotIndex(active, machine.id, exercise) + 1}/${active.plan.length}`;
+  const nextSlot = nextOpenSlot(active, machine.id, exercise);
+  const nextMachine = nextSlot ? gym.machines.find((m) => m.id === nextSlot.machineId) : null;
 
   root.innerHTML = `
     <div class="machine-head">
@@ -500,7 +550,7 @@ function renderLog(root, gym, active) {
 
     ${nextMachine
     ? `<button id="next-machine" class="btn btn-next btn-big">Next: #${nextMachine.num}
-        ${esc(nextMachine.label)} →</button>
+        ${esc(nextMachine.label)}${nextSlot.exercise ? ` · ${esc(nextSlot.exercise)}` : ''} →</button>
       <button id="change-machine" class="btn">Change machine / overview</button>`
     : '<button id="change-machine" class="btn btn-next btn-big">Workout overview →</button>'}
   `;
@@ -555,8 +605,8 @@ function renderLog(root, gym, active) {
   });
 
   root.querySelector('#next-machine')?.addEventListener('click', () => {
-    active.currentMachineId = nextId;
-    active.currentExercise = null;
+    active.currentMachineId = nextSlot.machineId;
+    active.currentExercise = nextSlot.exercise;
     saveActive(active);
     renderTrain(root);
   });

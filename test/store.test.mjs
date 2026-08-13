@@ -20,7 +20,8 @@ store.saveGym(gym);
 
 // log a workout; the set-less entry must be dropped on finish
 store.saveActive({
-  v: 2, id: 'w1', startedAt: 1000, plan: ['m1', 'm2'],
+  v: 2, id: 'w1', startedAt: 1000,
+  plan: [{ machineId: 'm1', exercise: null }, { machineId: 'm2', exercise: null }],
   currentMachineId: null, currentExercise: null,
   entries: [
     { machineId: 'm1', num: 1, label: 'Chest press', settings: { Seat: '4' }, sets: [{ reps: 10, weight: 40 }, { reps: 8, weight: 45 }] },
@@ -198,7 +199,12 @@ store.deleteWorkout('cw');
 // exercises: entries at one station are isolated per exercise; the bare
 // bucket (no exercise) never leaks into exercise lookups and vice versa
 store.saveActive({
-  v: 2, id: 'ew', startedAt: 20, plan: ['db'], currentMachineId: null, currentExercise: null,
+  v: 2, id: 'ew', startedAt: 20, currentMachineId: null, currentExercise: null,
+  plan: [
+    { machineId: 'db', exercise: 'Biceps curls' },
+    { machineId: 'db', exercise: 'Shoulder press' },
+    { machineId: 'pb', exercise: null },
+  ],
   entries: [
     { machineId: 'db', num: 4, label: 'Dumbbells', exercise: 'Biceps curls', settings: {}, sets: [{ reps: 10, weight: 12.5 }] },
     { machineId: 'db', num: 4, label: 'Dumbbells', exercise: 'Shoulder press', settings: {}, sets: [{ reps: 8, weight: 10 }] },

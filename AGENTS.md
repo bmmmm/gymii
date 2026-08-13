@@ -9,7 +9,9 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   `Cache-Control: no-store`; plain `http.server` made Chrome serve stale
   modules — don't go back to it).
 - Logic tests: `node test/store.test.mjs` (stubs localStorage, covers store
-  roundtrips, outline migration, template validation, locker carry-over).
+  roundtrips, outline migration, template validation, locker carry-over) and
+  `node test/train.test.mjs` (guided-plan construction; train.js imports
+  fine in Node as long as no module touches the DOM at top level).
 - UI changes: verify in a real browser (claude-in-chrome). Editor
   interactions are best tested with scripted PointerEvents + localStorage
   asserts — pixel coordinates shift with window size. `setPointerCapture`
@@ -42,14 +44,17 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   window) glue to the nearest wall segment with rotation + flips.
   Undo/redo = snapshot history via the local `save()` wrapper — every
   mutation must go through `save()`, never `saveGym()` directly.
-- `js/train.js` — guided workout: `active.plan` (machine order), overview
-  hub, per-machine `restSeconds`, locker number, two-tap finish guard.
-  `machine.cardio` flips the log screen to distance+time,
-  `machine.bodyweight` to reps + extra weight; type flags and `exercise`
-  are SNAPSHOTTED onto the entry (like num/label) — history/edit/chart/AI
-  read the entry, never the live machine. Multi-exercise stations hold one
-  entry per (machineId, exercise); `active.currentExercise` tracks the
-  picked one and resets on every machine switch. Set-arithmetic must guard
+- `js/train.js` — guided workout: `active.plan` is a list of slots
+  `{machineId, exercise|null}` (null = whole station) — a repeat plans one
+  slot per (machine, exercise) pair so "Next:" walks every exercise of a
+  multi-exercise station; overview hub, per-machine `restSeconds`, locker
+  number, two-tap finish guard. `machine.cardio` flips the log screen to
+  distance+time, `machine.bodyweight` to reps + extra weight; type flags
+  and `exercise` are SNAPSHOTTED onto the entry (like num/label) —
+  history/edit/chart/AI read the entry, never the live machine.
+  Multi-exercise stations hold one entry per (machineId, exercise);
+  `active.currentExercise` tracks the picked one and follows the slot on
+  Next:/overview-row switches (null when arriving via the picker). Set-arithmetic must guard
   against other shapes (`st.reps * st.weight || 0`). No machines = an
   onboarding screen (studio / quick start / template), and the picker
   offers create-on-miss for unknown numbers via `store.addMachine()` —

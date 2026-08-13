@@ -20,6 +20,7 @@ jobs:
         with:
           node-version: '24'
       - run: node test/store.test.mjs
+      - run: node test/train.test.mjs
 
   # A runtime asset missing from the sw.js SHELL list breaks the app OFFLINE
   # only — invisible in every normal test. icons/icon.svg is the source the
