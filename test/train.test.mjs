@@ -75,13 +75,21 @@ assert.strictEqual(active.currentExercise, null);
 // whole bug class. Stub just enough DOM: renderLog only sets innerHTML and
 // wires listeners via (optionally chained) querySelector.
 const stubEl = () => ({
-  addEventListener() {}, value: '', innerHTML: '',
+  listeners: {},
+  addEventListener(type, fn) { this.listeners[type] = fn; },
+  value: '', innerHTML: '',
   querySelector: () => stubEl(), querySelectorAll: () => [],
   classList: { toggle() {}, add() {} }, dataset: {}, style: {},
 });
+// Per-id registry so a test can preset input values and capture a
+// specific element's click listener (e.g. #log-set) before invoking it.
+const byId = new Map();
 const root = {
   innerHTML: '',
-  querySelector: () => stubEl(),
+  querySelector(sel) {
+    if (!byId.has(sel)) byId.set(sel, stubEl());
+    return byId.get(sel);
+  },
   querySelectorAll: () => [],
 };
 
@@ -103,5 +111,29 @@ store.saveActive({
 renderTrain(root);
 assert.ok(root.innerHTML.includes('Biceps curls'), 'station renders its exercise chips');
 assert.ok(!root.innerHTML.includes('Log set'), 'no logger while the exercise pick is pending');
+
+// #log-set stamps `at: Date.now()` onto the logged set
+store.saveActive({
+  v: 2, id: 'w-log-at', startedAt: 1755000000000,
+  plan: [{ machineId: 'm1', exercise: null }],
+  currentMachineId: 'm1', currentExercise: null, entries: [],
+});
+byId.clear();
+renderTrain(root);
+// preset values before the click handler reads them; the registry hands
+// the click handler the very same stub elements back
+root.querySelector('#set-weight').value = '50';
+root.querySelector('#set-reps').value = '5';
+root.querySelector('#set-rest').value = '0'; // startRest(0) returns before touching document
+const before = Date.now();
+root.querySelector('#log-set').listeners.click();
+const after = Date.now();
+
+const loggedEntry = store.getActive().entries.find((e) => e.machineId === 'm1');
+const loggedSet = loggedEntry.sets.at(-1);
+assert.equal(loggedSet.reps, 5);
+assert.equal(loggedSet.weight, 50);
+assert.equal(typeof loggedSet.at, 'number', 'logged set carries a numeric at timestamp');
+assert.ok(loggedSet.at >= before && loggedSet.at <= after, 'at is stamped at log time');
 
 console.log('train plan construction: all assertions passed');

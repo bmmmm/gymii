@@ -13,6 +13,9 @@ import { esc, fmtDuration, workoutTotals, setStr, twoTapConfirm } from './ui.js'
 // station), growing as machines are opened in a free session. exercise null
 // means the slot covers the whole station. currentMachineId null shows the
 // workout overview hub instead of a machine's logging screen.
+// Each entry.sets item ({ reps, weight } or { distance, seconds }) also
+// carries `at` — epoch ms stamped via `Date.now()` when the set is logged.
+// Sets logged before this feature lack `at`; consumers must guard for it.
 
 export function renderTrain(root, message = '') {
   const gym = getGym();
@@ -593,11 +596,11 @@ function renderLog(root, gym, active) {
     if (cardio) {
       const distance = Math.max(0, parseFloat(root.querySelector('#set-distance').value) || 0);
       const seconds = Math.max(0, Math.round((parseFloat(root.querySelector('#set-time').value) || 0) * 60));
-      entry.sets.push({ distance, seconds });
+      entry.sets.push({ distance, seconds, at: Date.now() });
     } else {
       const weight = Math.max(0, parseFloat(root.querySelector('#set-weight').value) || 0);
       const reps = Math.max(1, Math.round(parseFloat(root.querySelector('#set-reps').value) || 1));
-      entry.sets.push({ reps, weight });
+      entry.sets.push({ reps, weight, at: Date.now() });
     }
     saveActive(active);
     renderLog(root, gym, active);
