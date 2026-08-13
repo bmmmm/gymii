@@ -136,4 +136,51 @@ assert.equal(loggedSet.weight, 50);
 assert.equal(typeof loggedSet.at, 'number', 'logged set carries a numeric at timestamp');
 assert.ok(loggedSet.at >= before && loggedSet.at <= after, 'at is stamped at log time');
 
+// --- quick-switch chips ---
+// a superset session logging at station A with `at`-stamped sets on B and
+// C shows chips for the OTHER stations, newest first-ish (both present),
+// but never a chip for the current station A itself.
+gym.machines.push({ id: 'm2', num: 3, label: 'Back extension', x: 12, y: 0, w: 4, h: 3, settingsFields: [] });
+store.saveGym(gym);
+
+store.saveActive({
+  v: 2, id: 'w-quick-switch', startedAt: 1755000000000,
+  plan: [{ machineId: 'm1', exercise: null }, { machineId: 'db', exercise: null }, { machineId: 'm2', exercise: null }],
+  currentMachineId: 'm1', currentExercise: null,
+  entries: [
+    { machineId: 'm1', num: 1, label: 'Chest press', settings: {}, sets: [{ reps: 8, weight: 10, at: 1755000005000 }] },
+    { machineId: 'db', num: 2, label: 'Dumbbells', exercise: 'Biceps curls', settings: {}, sets: [{ reps: 8, weight: 10, at: 1755000001000 }] },
+    { machineId: 'm2', num: 3, label: 'Back extension', settings: {}, sets: [{ reps: 8, weight: 10, at: 1755000002000 }] },
+  ],
+});
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('quick-switch'), 'quick-switch block renders for stations with at-stamped sets');
+assert.ok(root.innerHTML.includes('#2 Dumbbells'), 'chip for station B (Dumbbells)');
+assert.ok(root.innerHTML.includes('#3 Back extension'), 'chip for station C (Back extension)');
+assert.ok(!root.innerHTML.includes('↩ #1 Chest press'), 'no quick-switch chip for the current station');
+
+// tapping a chip swings the session back: currentMachineId/currentExercise
+// switch to the tapped station and the entry that owns its newest set
+const quickSwitchChip = root.querySelector('.quick-switch').listeners.click;
+quickSwitchChip({ target: { closest: () => ({ dataset: { machine: 'db' } }) } });
+active = store.getActive();
+assert.equal(active.currentMachineId, 'db', 'tapping a chip switches the current station');
+assert.equal(active.currentExercise, 'Biceps curls', 'tapping a chip switches to the entry\'s exercise');
+
+// a session whose OTHER-station sets lack `at` renders no quick-switch
+// block at all — nothing to rank, nothing to show
+store.saveActive({
+  v: 2, id: 'w-quick-switch-no-at', startedAt: 1755000000000,
+  plan: [{ machineId: 'm1', exercise: null }, { machineId: 'db', exercise: null }],
+  currentMachineId: 'm1', currentExercise: null,
+  entries: [
+    { machineId: 'm1', num: 1, label: 'Chest press', settings: {}, sets: [{ reps: 8, weight: 10, at: 1755000005000 }] },
+    { machineId: 'db', num: 2, label: 'Dumbbells', exercise: 'Biceps curls', settings: {}, sets: [{ reps: 8, weight: 10 }] },
+  ],
+});
+byId.clear();
+renderTrain(root);
+assert.ok(!root.innerHTML.includes('quick-switch'), 'no quick-switch block when other-station sets lack at');
+
 console.log('train plan construction: all assertions passed');

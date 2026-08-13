@@ -481,6 +481,24 @@ function renderLog(root, gym, active) {
   const nextSlot = nextOpenSlot(active, machine.id, exercise);
   const nextMachine = nextSlot ? gym.machines.find((m) => m.id === nextSlot.machineId) : null;
 
+  // Quick-switch: the OTHER stations most recently trained this session,
+  // ranked by their newest `at`-stamped set. Superset workouts swing
+  // between machines constantly — one tap back beats an overview detour,
+  // and this stays visible even at the superset end-game where every slot
+  // is done and no Next button shows.
+  const otherStations = new Map(); // machineId -> { at, exercise }
+  active.entries.forEach((e) => {
+    if (e.machineId === machine.id) return;
+    e.sets.forEach((st) => {
+      if (typeof st.at !== 'number') return;
+      const cur = otherStations.get(e.machineId);
+      if (!cur || st.at > cur.at) otherStations.set(e.machineId, { at: st.at, exercise: e.exercise ?? null });
+    });
+  });
+  const quickSwitch = [...otherStations].map(([machineId, v]) => ({
+    machineId, ...v, m: gym.machines.find((mm) => mm.id === machineId),
+  })).filter((c) => c.m).sort((a, b) => b.at - a.at).slice(0, 2);
+
   root.innerHTML = `
     <div class="machine-head">
       <span class="machine-badge">${machine.num}</span>
@@ -551,6 +569,12 @@ function renderLog(root, gym, active) {
       </div>
     </section>`}
 
+    ${quickSwitch.length ? `
+    <div class="quick-switch">
+      ${quickSwitch.map((c) => `<button type="button" class="chip" data-machine="${esc(c.machineId)}">
+        ↩ #${c.m.num} ${esc(c.m.label)}</button>`).join('')}
+    </div>` : ''}
+
     ${nextMachine
     ? `<button id="next-machine" class="btn btn-next btn-big">Next: #${nextMachine.num}
         ${esc(nextMachine.label)}${nextSlot.exercise ? ` · ${esc(nextSlot.exercise)}` : ''} →</button>
@@ -605,6 +629,17 @@ function renderLog(root, gym, active) {
     saveActive(active);
     renderLog(root, gym, active);
     startRest(rest);
+  });
+
+  root.querySelector('.quick-switch')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    const c = quickSwitch.find((x) => x.machineId === chip.dataset.machine);
+    if (!c) return;
+    active.currentMachineId = c.machineId;
+    active.currentExercise = c.exercise ?? null;
+    saveActive(active);
+    renderTrain(root);
   });
 
   root.querySelector('#next-machine')?.addEventListener('click', () => {

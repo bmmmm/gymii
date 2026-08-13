@@ -190,6 +190,9 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-col
 .chip-select { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip.sel { background: var(--accent-dim); border-color: var(--accent); color: #dff5e9; }
 
+/* quick-switch: swing back to a recently trained other station */
+.quick-switch { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+
 .swatch-row { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .swatch {
