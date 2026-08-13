@@ -72,6 +72,26 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 // The floor outline is a singleton, addressed by this pseudo item id.
 const OUTLINE_ID = 'outline';
 
+// Editor touch targets are sized in real CSS px (see pxPerUnit), not grid
+// units, so they stay finger-sized regardless of grid size and window
+// width. Values follow the ~44px mobile touch-target guideline.
+const HANDLE_VISIBLE_PX = 26; // resize-handle icon diameter
+const HANDLE_HIT_PX = 44; // resize-handle invisible tap circle
+const VERTEX_VISIBLE_PX = 20; // outline corner square
+const VERTEX_HIT_PX = 40;
+const MID_VISIBLE_PX = 14; // outline midpoint dot
+const MID_HIT_PX = 36;
+const ITEM_MIN_HIT_PX = 44; // minimum tap area for small items
+
+// Assumed phone-ish width used only while the SVG can't be measured yet
+// (e.g. a hidden container) — self-corrects on the next redraw.
+const ASSUMED_SVG_PX = 340;
+
+function pxPerUnit(svg, viewBoxWidth) {
+  const width = svg.getBoundingClientRect().width || ASSUMED_SVG_PX;
+  return width / viewBoxWidth;
+}
+
 // --- shared renderer (also used by the Train mini-map) ---
 
 export function drawGym(svg, gym, {
@@ -87,10 +107,19 @@ export function drawGym(svg, gym, {
   svg.setAttribute('viewBox', `${-pad} ${-pad} ${vw} ${vh}`);
   svg.style.aspectRatio = `${vw} / ${vh}`;
   const selected = selectedId && selectedId !== OUTLINE_ID ? findItem(gym, selectedId) : null;
+  // px-per-unit only matters for editor touch targets — skip the layout
+  // measurement for the read-only Train mini-map.
+  const ppu = editor ? pxPerUnit(svg, vw) : 1;
+  // small free-standing items get invisible tap padding; wall-snapped
+  // fixtures and wall lines keep their own .hit shapes
+  const padded = editor
+    ? [...gym.shapes.filter((s) => s.kind !== 'line' && !WALL_SNAPPED.has(s.fixture)), ...gym.machines]
+    : [];
   // the outline's tap target sits ABOVE zones/walls (which often touch the
   // outer wall) but below wall-snapped fixtures (doors/windows live ON the
   // outline — under it they'd be impossible to tap), machines and the
-  // editing handles
+  // editing handles; tap pads sit below the machines so a visible machine
+  // always wins hit-testing over a neighbor's padding
   const wallPieces = gym.shapes.filter((s) => WALL_SNAPPED.has(s.fixture));
   const floorPieces = gym.shapes.filter((s) => !WALL_SNAPPED.has(s.fixture));
   svg.innerHTML =
@@ -99,9 +128,10 @@ export function drawGym(svg, gym, {
     floorPieces.map(shapeSvg).join('') +
     (editor ? outlineHitSvg(gym.outline) : '') +
     wallPieces.map(shapeSvg).join('') +
+    (editor ? hitPadSvg(padded, ppu) : '') +
     gym.machines.map((m) => machineSvg(m, usage)).join('') +
-    (editor && selected ? selectionSvg(selected) : '') +
-    (editor && selectedId === OUTLINE_ID ? outlineHandlesSvg(gym.outline, selectedVertex) : '');
+    (editor && selected ? selectionSvg(selected, ppu, gym.grid, pad) : '') +
+    (editor && selectedId === OUTLINE_ID ? outlineHandlesSvg(gym.outline, selectedVertex, ppu, gym.grid, pad) : '');
 }
 
 // Builds the usage payload for drawGym from all-time set counts.
@@ -122,20 +152,34 @@ function outlineHitSvg(outline) {
 }
 
 // Corner handles plus hollow midpoint dots that insert a new corner.
-// Each visible handle is paired with a bigger invisible hit area (same
-// data attribute, so the pointer handler doesn't care which one is hit);
-// vertex hits render last and therefore win over midpoint hits nearby.
-function outlineHandlesSvg(outline, selectedVertex) {
+// Visible markers stay exactly on the true corner/midpoint (they ARE the
+// geometry); only the invisible hit shapes' centers clamp into the padded
+// viewBox so corners on the floor boundary stay fully tappable. Vertex
+// hits render last and therefore win over midpoint hits nearby.
+function outlineHandlesSvg(outline, selectedVertex, ppu, grid, pad) {
+  const midVisR = MID_VISIBLE_PX / ppu / 2;
+  const midHitR = MID_HIT_PX / ppu / 2;
+  const vertVis = VERTEX_VISIBLE_PX / ppu;
+  const vertHit = VERTEX_HIT_PX / ppu;
+  const clampX = (x, r) => clamp(x, r - pad, grid.w + pad - r);
+  const clampY = (y, r) => clamp(y, r - pad, grid.h + pad - r);
   const mids = outline.map((p, i) => {
     const q = outline[(i + 1) % outline.length];
     const cx = (p.x + q.x) / 2;
     const cy = (p.y + q.y) / 2;
-    return `<circle class="midpoint" data-mid="${i}" cx="${cx}" cy="${cy}" r="0.8"/>
-      <circle class="hit-area" data-mid="${i}" cx="${cx}" cy="${cy}" r="1.8"/>`;
+    return `<circle class="tap-hit mid-hit" data-mid="${i}"
+        cx="${clampX(cx, midHitR)}" cy="${clampY(cy, midHitR)}" r="${midHitR}"/>
+      <circle class="midpoint" cx="${cx}" cy="${cy}" r="${midVisR}" pointer-events="none"/>`;
   }).join('');
-  const verts = outline.map((p, i) => `<rect class="vertex${i === selectedVertex ? ' sel' : ''}"
-      data-vertex="${i}" x="${p.x - 1}" y="${p.y - 1}" width="2" height="2" rx="0.3"/>
-    <rect class="hit-area" data-vertex="${i}" x="${p.x - 2}" y="${p.y - 2}" width="4" height="4"/>`).join('');
+  const verts = outline.map((p, i) => {
+    const hx = clampX(p.x, vertHit / 2);
+    const hy = clampY(p.y, vertHit / 2);
+    return `<rect class="tap-hit vertex-hit" data-vertex="${i}"
+        x="${hx - vertHit / 2}" y="${hy - vertHit / 2}" width="${vertHit}" height="${vertHit}"/>
+      <rect class="vertex${i === selectedVertex ? ' sel' : ''}" pointer-events="none"
+        x="${p.x - vertVis / 2}" y="${p.y - vertVis / 2}" width="${vertVis}" height="${vertVis}"
+        rx="${vertVis * 0.18}"/>`;
+  }).join('');
   return mids + verts;
 }
 
@@ -212,6 +256,23 @@ function machineSvg(m, usage = null) {
   </g>`;
 }
 
+// Invisible tap padding for items smaller than the touch-target guideline.
+// Must be painted in its own layer BEFORE the visible machines (see
+// drawGym) so a tap on any visible machine always resolves to that
+// machine, never to a neighbor's padding; padding only catches taps on
+// otherwise-empty floor near a small item.
+function hitPadSvg(items, ppu) {
+  const minSize = ITEM_MIN_HIT_PX / ppu;
+  return items.map((it) => {
+    const b = bbox(it);
+    if (b.w >= minSize && b.h >= minSize) return '';
+    const w = Math.max(b.w, minSize);
+    const h = Math.max(b.h, minSize);
+    return `<rect class="tap-hit" data-id="${it.id}"
+      x="${b.x + (b.w - w) / 2}" y="${b.y + (b.h - h) / 2}" width="${w}" height="${h}"/>`;
+  }).join('');
+}
+
 // Classic floor-plan door: a gap punched through the wall stroke, a
 // door leaf, and its dashed swing arc. Rotated to match the wall.
 function doorSvg(s) {
@@ -268,7 +329,7 @@ function bbox(item) {
   };
 }
 
-function selectionSvg(item) {
+function selectionSvg(item, ppu, grid, pad) {
   if (WALL_SNAPPED.has(item.fixture)) { // wall pieces rotate along and have no resize handle
     const cx = item.x + item.w / 2;
     const cy = item.y + item.h / 2;
@@ -277,14 +338,26 @@ function selectionSvg(item) {
       transform="rotate(${item.rot || 0} ${cx} ${cy})"/>`;
   }
   const b = bbox(item);
-  const hx = item.x + item.w;
-  const hy = item.y + item.h;
+  const visR = HANDLE_VISIBLE_PX / ppu / 2;
+  const hitR = HANDLE_HIT_PX / ppu / 2;
+  // Clamp the handle center (visible + hit together — it is a UI
+  // affordance, not real geometry) into the padded viewBox so items flush
+  // against the floor edge keep a fully visible, fully tappable handle;
+  // anything beyond is clipped by .floor-wrap's overflow:hidden.
+  const hx = clamp(item.x + item.w, hitR - pad, grid.w + pad - hitR);
+  const hy = clamp(item.y + item.h, hitR - pad, grid.h + pad - hitR);
+  const a = visR * 0.5; // diagonal arrow half-length
+  const t = visR * 0.32; // arrowhead tick length
   return `<rect class="selected-outline" x="${b.x - 0.4}" y="${b.y - 0.4}"
       width="${b.w + 0.8}" height="${b.h + 0.8}" pointer-events="none"/>
-    <rect class="handle" data-id="${item.id}" data-handle="1"
-      x="${hx - 1}" y="${hy - 1}" width="2" height="2" rx="0.3"/>
-    <rect class="hit-area" data-id="${item.id}" data-handle="1"
-      x="${hx - 2}" y="${hy - 2}" width="4" height="4"/>`;
+    <circle class="tap-hit handle-hit" data-id="${item.id}" data-handle="1"
+      cx="${hx}" cy="${hy}" r="${hitR}"/>
+    <circle class="handle" cx="${hx}" cy="${hy}" r="${visR}"
+      pointer-events="none" stroke-width="${visR * 0.08}"/>
+    <path class="handle-icon" pointer-events="none" stroke-width="${visR * 0.16}"
+      d="M${hx - a} ${hy - a} L${hx + a} ${hy + a}
+         M${hx - a} ${hy - a + t} V${hy - a} H${hx - a + t}
+         M${hx + a} ${hy + a - t} V${hy + a} H${hx + a - t}"/>`;
 }
 
 // --- editor view ---
@@ -331,6 +404,10 @@ export function renderStudio(root) {
     selectedId, editor: true, selectedVertex,
     usage: usageOn() ? usagePayload(usageByMachine()) : null,
   });
+  // Touch targets are sized from the SVG's on-screen width, so re-render
+  // on resize/orientation change. Observing the element (not window)
+  // means the observer dies with it on the next route change.
+  new ResizeObserver(redraw).observe(svg);
 
   const modeBar = root.querySelector('#map-mode');
   const updateModeBar = () => modeBar.querySelectorAll('.chip').forEach((c) =>

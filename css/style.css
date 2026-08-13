@@ -291,14 +291,18 @@ svg .midpoint { fill: var(--surface); stroke: #8a97a5; stroke-width: 0.14; curso
 svg .shape-rect { fill: #1a212b; stroke: #38424e; stroke-width: 0.15; }
 svg .shape-line { stroke: #38424e; stroke-width: 0.35; stroke-linecap: round; }
 svg .hit { stroke: transparent; stroke-width: 2; fill: none; }
+/* Fill-based invisible tap targets for finger-sized handles and pads.
+   Kept separate from .hit (stroke-based, for thin lines) so the two
+   rules never fight over fill when combined. */
+svg .tap-hit { fill: transparent; stroke: none; }
+svg .vertex-hit { cursor: grab; }
+svg .mid-hit { cursor: copy; }
+svg .handle-hit { cursor: nwse-resize; }
+svg .handle-icon { stroke: #0f1216; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 svg .machine-box { fill: var(--accent-dim); stroke: var(--accent); stroke-width: 0.15; }
 svg .machine-num { fill: #dff5e9; font-weight: 700; font-family: system-ui, -apple-system, sans-serif; }
 svg .selected-outline { fill: none; stroke: #fff; stroke-width: 0.2; stroke-dasharray: 0.7 0.5; }
 svg .handle { fill: #fff; stroke: #0f1216; stroke-width: 0.1; }
-/* invisible enlarged tap targets paired with the small visible handles */
-svg .hit-area { fill: transparent; stroke: none; }
-svg .hit-area[data-vertex] { cursor: grab; }
-svg .hit-area[data-mid] { cursor: copy; }
 svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 
 #props .card { margin-top: 10px; }
