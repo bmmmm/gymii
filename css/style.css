@@ -278,7 +278,6 @@ svg .window-gap { fill: #10151c; }
 svg .window-line { stroke: #7d92a8; stroke-width: 0.14; }
 svg .door-arc { fill: none; stroke: #8a97a5; stroke-width: 0.12; stroke-dasharray: 0.5 0.35; }
 svg .door-leaf { stroke: #b9c4cf; stroke-width: 0.28; stroke-linecap: round; }
-svg .door-hit { fill: transparent; stroke: none; }
 svg .fixture-icon, svg .zone-label { font-family: system-ui, -apple-system, sans-serif; }
 svg .zone-label { fill: #5f6d7d; font-weight: 600; letter-spacing: 0.04em; }
 

@@ -56,9 +56,18 @@ gym.shapes.push({ id: 'l1', kind: 'line', x: 0, y: 20, w: 10, h: 0 });
 // --- editor render, nothing selected: tap pads for small items only ---
 let svg = fakeSvg();
 drawGym(svg, gym, { editor: true });
-const pads = tagsWith(svg.innerHTML, 'tap-hit');
+// wall-snapped fixture hit rects are tap-hit too but carry no data-id
+// (their <g> parent has it) — the id-less ones are NOT item pads
+const pads = tagsWith(svg.innerHTML, 'tap-hit').filter((p) => attr(p, 'data-id'));
 assert.deepEqual(pads.map((p) => attr(p, 'data-id')).sort(), ['f1', 'm1', 'm2'],
   'pads exactly for small machines + free-standing fixture (no zone, no door, no wall line)');
+
+// wall line + door get finger-sized (px-based) hit strips in the editor
+const lineHit = tagsWith(svg.innerHTML, 'hit').find((t) => t.startsWith('<line'));
+assert.ok(close(num(lineHit, 'stroke-width'), 28 / ppu), 'wall hit stroke is 28px across');
+const doorHit = tagsWith(svg.innerHTML, 'tap-hit').find((p) => !attr(p, 'data-id'));
+assert.ok(close(num(doorHit, 'height'), 28 / ppu), 'door hit strip is 28px across the wall');
+assert.ok(close(num(doorHit, 'width'), 44 / ppu), 'short door hit stretches to 44px along the wall');
 const minUnits = 44 / ppu;
 const padM1 = pads.find((p) => attr(p, 'data-id') === 'm1');
 assert.ok(close(num(padM1, 'width'), minUnits) && close(num(padM1, 'height'), minUnits),
@@ -111,8 +120,11 @@ assert.equal(tagsWith(svg.innerHTML, 'mid-hit').length, gym.outline.length,
 svg = fakeSvg();
 svg.getBoundingClientRect = () => { throw new Error('mini-map must not measure layout'); };
 drawGym(svg, gym, { editor: false });
-assert.equal(tagsWith(svg.innerHTML, 'tap-hit').length, 0, 'no pads in the mini-map');
+assert.equal(tagsWith(svg.innerHTML, 'tap-hit').filter((p) => attr(p, 'data-id')).length, 0,
+  'no item pads in the mini-map');
 assert.ok(!svg.innerHTML.includes('handle'), 'no handles in the mini-map');
+const miniDoorHit = tagsWith(svg.innerHTML, 'tap-hit').find((p) => !attr(p, 'data-id'));
+assert.ok(close(num(miniDoorHit, 'height'), 2.6), 'mini-map keeps the fixed-unit door strip');
 
 // --- zero-width fallback: sizes stay finite ---
 svg = fakeSvg();
@@ -156,4 +168,140 @@ packed.machines.push(
 assert.deepEqual(freeSpot(packed, 2, 2, 4, 3), { x: 2, y: 2 },
   'packed floor falls back to the preferred spot instead of refusing');
 
-console.log('studio editor rendering + collision: all assertions passed');
+// ---------------------------------------------------------------------------
+// renderStudio integration: drive the real pointer handlers with synthetic
+// events against a faked DOM and assert on the persisted gym state — the
+// headless equivalent of the scripted-PointerEvent browser check.
+// ---------------------------------------------------------------------------
+
+// renderStudio wires a ResizeObserver and svgPoint goes through DOMPoint +
+// getScreenCTM; neither exists in Node.
+globalThis.ResizeObserver = class { observe() {} disconnect() {} };
+globalThis.DOMPoint = class {
+  constructor(x, y) { this.x = x; this.y = y; }
+  matrixTransform(m) { return { x: m.a * this.x + m.e, y: m.d * this.y + m.f }; }
+};
+
+const { renderStudio } = await import(new URL('../js/studio.js', import.meta.url).href);
+const S = SVG_PX / (60 + 2 * PAD); // screen px per unit, editor viewBox
+
+// Permissive element stub: every selector resolves, every listener is
+// recorded, so renderProps and the toolbar wiring run without a DOM.
+function stubEl() {
+  const el = {
+    innerHTML: '',
+    textContent: '',
+    value: '',
+    disabled: false,
+    dataset: {},
+    style: {},
+    listeners: {},
+    addEventListener(type, fn) { (el.listeners[type] ??= []).push(fn); },
+    querySelector: () => stubEl(),
+    querySelectorAll: () => [],
+    classList: { toggle() {}, add() {}, remove() {} },
+  };
+  return el;
+}
+
+function fakeRoot() {
+  const floor = stubEl();
+  floor.setAttribute = () => {};
+  floor.getBoundingClientRect = () => ({ width: SVG_PX });
+  // screen -> unit is a pure scale + the viewBox pad shift (rect at 0,0)
+  floor.getScreenCTM = () => ({
+    inverse: () => ({ a: 1 / S, b: 0, c: 0, d: 1 / S, e: -PAD, f: -PAD }),
+  });
+  const cache = new Map([['#floor', floor]]);
+  return {
+    floor,
+    innerHTML: '',
+    querySelector(sel) {
+      if (!cache.has(sel)) cache.set(sel, stubEl());
+      return cache.get(sel);
+    },
+    querySelectorAll: () => [],
+  };
+}
+
+const at = (ux, uy) => ({ clientX: (ux + PAD) * S, clientY: (uy + PAD) * S });
+// what e.target.closest() must answer for a tap on an item body / its
+// resize handle (the outline-handle probe comes first and returns null)
+const onItem = (id, handle = false) => ({
+  closest: (sel) => (sel.includes('data-vertex') ? null
+    : { dataset: handle ? { id, handle: '1' } : { id } }),
+});
+const fire = (floor, type, props = {}) => {
+  (floor.listeners[type] || []).forEach((fn) => fn({
+    pointerId: 1,
+    preventDefault() {},
+    target: { closest: () => null },
+    ...props,
+  }));
+};
+const dragSeq = (floor, target, from, to) => {
+  fire(floor, 'pointerdown', { ...at(...from), target });
+  fire(floor, 'pointermove', at(...to));
+  fire(floor, 'pointerup');
+};
+
+function studioWith(machines) {
+  const g = store.newGym('Drag test');
+  g.machines.push(...machines);
+  store.saveGym(g);
+  const root = fakeRoot();
+  // the real button starts disabled via its HTML attribute; the stub can't
+  // parse root.innerHTML, so mirror that initial state by hand
+  root.querySelector('#undo').disabled = true;
+  renderStudio(root);
+  return root;
+}
+const machineAt = (id) => store.getGym().machines.find((m) => m.id === id);
+const mk = (id, num, x, y) => ({ id, num, x, y, w: 4, h: 3, settingsFields: [] });
+
+// --- move drag persists through the real handler chain ---
+let root = studioWith([mk('m1', 1, 10, 10), mk('m2', 2, 20, 10)]);
+dragSeq(root.floor, onItem('m1'), [12, 11.5], [14, 21.5]);
+assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [12, 20], 'drag moved the machine');
+assert.equal(root.querySelector('#undo').disabled, false, 'real move recorded an undo entry');
+
+// --- sub-snap wiggle is a no-op: nothing saved, no undo entry ---
+root = studioWith([mk('m1', 1, 10, 10), mk('m2', 2, 20, 10)]);
+dragSeq(root.floor, onItem('m1'), [12, 11.5], [12.3, 11.6]);
+assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [10, 10], 'wiggle did not move');
+assert.equal(root.querySelector('#undo').disabled, true, 'no-op drag left undo history clean');
+
+// --- fully blocked move: machine stays put, still no undo entry ---
+root = studioWith([mk('m1', 1, 10, 10), mk('m2', 2, 20, 10)]);
+dragSeq(root.floor, onItem('m1'), [12, 11.5], [22, 11.5]);
+assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [10, 10], 'blocked drag did not move');
+assert.equal(root.querySelector('#undo').disabled, true, 'blocked drag left undo history clean');
+
+// --- axis slide: x blocked by the neighbor, y still follows the finger ---
+root = studioWith([mk('m1', 1, 10, 10), mk('m2', 2, 20, 10)]);
+dragSeq(root.floor, onItem('m1'), [12, 11.5], [22, 12.5]);
+assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [10, 11], 'slid along the free axis');
+
+// --- resize via the handle target ---
+root = studioWith([mk('m1', 1, 10, 10)]);
+dragSeq(root.floor, onItem('m1', true), [14, 13], [16, 15]);
+assert.deepEqual([machineAt('m1').w, machineAt('m1').h], [6, 5], 'handle drag resized');
+
+// --- resize into a neighbor is blocked per axis ---
+root = studioWith([mk('m1', 1, 10, 10), mk('m2', 2, 16, 10)]);
+dragSeq(root.floor, onItem('m1', true), [14, 13], [18, 14]);
+assert.deepEqual([machineAt('m1').w, machineAt('m1').h], [4, 4],
+  'width growth blocked by the neighbor, height still grew');
+
+// --- add-machine button lands new machines on non-overlapping spots ---
+root = studioWith([]);
+const addBtn = root.querySelector('#add-machine');
+addBtn.listeners.click[0]();
+addBtn.listeners.click[0]();
+const after = store.getGym(); // single parse — overlapsMachine excludes by object identity
+assert.equal(after.machines.length, 2, 'two machines added');
+const second = after.machines[1];
+assert.ok(!overlapsMachine(after, second, second.x, second.y, second.w, second.h),
+  'second machine does not overlap the first');
+
+console.log('studio editor rendering + collision + drag integration: all assertions passed');

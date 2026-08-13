@@ -82,6 +82,7 @@ const VERTEX_HIT_PX = 40;
 const MID_VISIBLE_PX = 14; // outline midpoint dot
 const MID_HIT_PX = 36;
 const ITEM_MIN_HIT_PX = 44; // minimum tap area for small items
+const WALL_HIT_PX = 28; // tap strip across walls/doors — full 44 would swallow neighbors
 
 // Assumed phone-ish width used only while the SVG can't be measured yet
 // (e.g. a hidden container) — self-corrects on the next redraw.
@@ -122,12 +123,13 @@ export function drawGym(svg, gym, {
   // always wins hit-testing over a neighbor's padding
   const wallPieces = gym.shapes.filter((s) => WALL_SNAPPED.has(s.fixture));
   const floorPieces = gym.shapes.filter((s) => !WALL_SNAPPED.has(s.fixture));
+  const shapePpu = editor ? ppu : null;
   svg.innerHTML =
     outlineFloorSvg(gym.outline) +
     (editor ? gridSvg(gym.grid) : '') +
-    floorPieces.map(shapeSvg).join('') +
+    floorPieces.map((s) => shapeSvg(s, shapePpu)).join('') +
     (editor ? outlineHitSvg(gym.outline) : '') +
-    wallPieces.map(shapeSvg).join('') +
+    wallPieces.map((s) => shapeSvg(s, shapePpu)).join('') +
     (editor ? hitPadSvg(padded, ppu) : '') +
     gym.machines.map((m) => machineSvg(m, usage)).join('') +
     (editor && selected ? selectionSvg(selected, ppu, gym.grid, pad) : '') +
@@ -232,20 +234,24 @@ function gridSvg(grid) {
   return `<path class="grid-line" d="${d}" pointer-events="none"/>`;
 }
 
-function shapeSvg(s) {
+// ppu is set in the editor (finger-sized, px-based hit strips) and null
+// in the read-only mini-map, which keeps the old fixed-unit hit sizes.
+function shapeSvg(s, ppu = null) {
   if (s.kind === 'line') {
     const x2 = s.x + s.w;
     const y2 = s.y + s.h;
-    // second, invisible fat line makes thin walls tappable
+    // second, invisible fat line makes thin walls tappable; the inline
+    // stroke-width overrides the .hit default from the stylesheet
+    const hitStroke = ppu ? ` stroke-width="${WALL_HIT_PX / ppu}"` : '';
     return `<g class="shape" data-id="${s.id}">
       <line class="shape-line" x1="${s.x}" y1="${s.y}" x2="${x2}" y2="${y2}"/>
-      <line class="hit" x1="${s.x}" y1="${s.y}" x2="${x2}" y2="${y2}"/>
+      <line class="hit" x1="${s.x}" y1="${s.y}" x2="${x2}" y2="${y2}"${hitStroke}/>
     </g>`;
   }
   if (s.kind === 'fixture') {
-    if (s.fixture === 'door') return doorSvg(s);
-    if (s.fixture === 'entrance') return entranceSvg(s);
-    if (s.fixture === 'window') return windowSvg(s);
+    if (s.fixture === 'door') return doorSvg(s, ppu);
+    if (s.fixture === 'entrance') return entranceSvg(s, ppu);
+    if (s.fixture === 'window') return windowSvg(s, ppu);
     const icon = FIXTURES[s.fixture]?.icon ?? '❓';
     const fs = clamp(Math.min(s.w, s.h) * 0.7, 0.8, 2.2);
     return `<g class="shape" data-id="${s.id}">
@@ -307,9 +313,21 @@ function hitPadSvg(items, ppu) {
   }).join('');
 }
 
+// Tap rect for a wall-snapped fixture, centered on the piece in its
+// local (unrotated) frame: finger-sized in the editor, the old fixed
+// strip in the mini-map. Uses the fill-based tap-hit class — a
+// stroke-based .hit rect this large would only be hittable on its rim.
+function wallHitSvg(s, ppu) {
+  const cx = s.x + s.w / 2;
+  const cy = s.y + s.h / 2;
+  const w = ppu ? Math.max(s.w, ITEM_MIN_HIT_PX / ppu) : s.w;
+  const h = ppu ? WALL_HIT_PX / ppu : 2.6;
+  return `<rect class="tap-hit" x="${cx - w / 2}" y="${cy - h / 2}" width="${w}" height="${h}"/>`;
+}
+
 // Classic floor-plan door: a gap punched through the wall stroke, a
 // door leaf, and its dashed swing arc. Rotated to match the wall.
-function doorSvg(s) {
+function doorSvg(s, ppu) {
   const cx = s.x + s.w / 2;
   const cy = s.y + s.h / 2;
   const w = s.w;
@@ -320,7 +338,7 @@ function doorSvg(s) {
   const fy = s.flipV ? -1 : 1;
   return `<g class="shape" data-id="${s.id}" transform="rotate(${s.rot || 0} ${cx} ${cy})
       translate(${cx} ${cy}) scale(${fx} ${fy}) translate(${-cx} ${-cy})">
-    <rect class="door-hit hit" x="${hx}" y="${cy - 1.3}" width="${w}" height="2.6"/>
+    ${wallHitSvg(s, ppu)}
     <rect class="door-gap" x="${hx}" y="${cy - 0.4}" width="${w}" height="0.8"/>
     <path class="door-arc" d="M ${hx} ${cy - w} A ${w} ${w} 0 0 1 ${cx + w / 2} ${cy}"/>
     <line class="door-leaf" x1="${hx}" y1="${cy}" x2="${hx}" y2="${cy - w}"/>
@@ -329,13 +347,13 @@ function doorSvg(s) {
 
 // Entrance: a wide wall opening with an inward arrow. flipV points it
 // the other way when the inside is on the other side of the wall.
-function entranceSvg(s) {
+function entranceSvg(s, ppu) {
   const cx = s.x + s.w / 2;
   const cy = s.y + s.h / 2;
   const fy = s.flipV ? -1 : 1;
   return `<g class="shape" data-id="${s.id}" transform="rotate(${s.rot || 0} ${cx} ${cy})
       translate(${cx} ${cy}) scale(1 ${fy}) translate(${-cx} ${-cy})">
-    <rect class="door-hit hit" x="${s.x}" y="${cy - 1.3}" width="${s.w}" height="2.6"/>
+    ${wallHitSvg(s, ppu)}
     <rect class="door-gap" x="${s.x}" y="${cy - 0.45}" width="${s.w}" height="0.9"/>
     <path class="entrance-arrow" d="M ${cx} ${cy + 1.7} L ${cx} ${cy - 1.3}
       M ${cx - 0.7} ${cy - 0.5} L ${cx} ${cy - 1.3} L ${cx + 0.7} ${cy - 0.5}"/>
@@ -343,11 +361,11 @@ function entranceSvg(s) {
 }
 
 // Window: the classic double line inside the wall stroke.
-function windowSvg(s) {
+function windowSvg(s, ppu) {
   const cx = s.x + s.w / 2;
   const cy = s.y + s.h / 2;
   return `<g class="shape" data-id="${s.id}" transform="rotate(${s.rot || 0} ${cx} ${cy})">
-    <rect class="door-hit hit" x="${s.x}" y="${cy - 1.3}" width="${s.w}" height="2.6"/>
+    ${wallHitSvg(s, ppu)}
     <rect class="window-gap" x="${s.x}" y="${cy - 0.35}" width="${s.w}" height="0.7"/>
     <line class="window-line" x1="${s.x}" y1="${cy - 0.18}" x2="${s.x + s.w}" y2="${cy - 0.18}"/>
     <line class="window-line" x1="${s.x}" y1="${cy + 0.18}" x2="${s.x + s.w}" y2="${cy + 0.18}"/>
@@ -572,15 +590,17 @@ export function renderStudio(root) {
     if (!drag) return;
     const p = svgPoint(e);
     if (drag.mode === 'vertex') {
-      gym.outline[drag.index] = {
-        x: clamp(snap(p.x), 0, gym.grid.w),
-        y: clamp(snap(p.y), 0, gym.grid.h),
-      };
+      const v = gym.outline[drag.index];
+      const nx = clamp(snap(p.x), 0, gym.grid.w);
+      const ny = clamp(snap(p.y), 0, gym.grid.h);
+      if (nx === v.x && ny === v.y) return; // sub-snap wiggle: nothing changed
+      gym.outline[drag.index] = { x: nx, y: ny };
       drag.moved = true;
       redraw();
       return;
     }
     const it = drag.item;
+    const before = { x: it.x, y: it.y, w: it.w, h: it.h };
     if (drag.mode === 'move') {
       if (WALL_SNAPPED.has(it.fixture)) {
         // wall pieces ignore the grid and glue themselves to the nearest wall
@@ -620,6 +640,9 @@ export function renderStudio(root) {
         it.h = nh;
       }
     }
+    // sub-snap wiggles and fully blocked drags change nothing — don't
+    // mark the drag as moved, or endDrag would record a no-op undo entry
+    if (it.x === before.x && it.y === before.y && it.w === before.w && it.h === before.h) return;
     drag.moved = true;
     redraw();
   });
