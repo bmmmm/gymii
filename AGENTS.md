@@ -98,8 +98,8 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   this session, read live from the gym) double as navigation: a tap
   calls the picker's `setMuscle()` to filter machines for that muscle. Set-arithmetic must guard
   against other shapes (`st.reps * st.weight || 0`). No machines = an
-  onboarding screen (studio / quick start / template / plan-ahead
-  pointer), and the picker
+  onboarding screen (build-your-gym incl. template/backup links / quick
+  start / plan-ahead pointer), and the picker
   offers create-on-miss for unknown numbers via `store.addMachine()` —
   training never requires a studio visit first.
 - `js/history.js` — month heatmap (per-machine filter), progress chart

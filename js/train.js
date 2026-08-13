@@ -267,6 +267,9 @@ function renderOnboarding(root, message) {
       <p class="muted">Draw the floor plan and number the machines like the
         stickers in your gym — training then starts from that map.</p>
       <a class="btn btn-primary btn-big" href="#studio">Open the Studio</a>
+      <p class="muted">No drawing needed: load a ready-made gym from the
+        <a href="#studio">Studio's template library</a>, or import a backup in
+        <a href="#settings">Settings</a>.</p>
     </section>
     <section class="card">
       <h2>Quick start</h2>
@@ -276,12 +279,6 @@ function renderOnboarding(root, message) {
         <input id="qs-label" type="text" placeholder="e.g. Chest press">
         <button id="qs-start" class="btn btn-inline">Start</button>
       </div>
-    </section>
-    <section class="card">
-      <h2>Use a template</h2>
-      <p class="muted">Load a ready-made gym from the
-        <a href="#studio">Studio's template library</a>, or import a backup in
-        <a href="#settings">Settings</a>.</p>
     </section>
     <section class="card">
       <h2>Plan ahead</h2>
