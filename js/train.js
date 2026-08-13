@@ -568,6 +568,31 @@ function planSlotIndex(active, machineId, exercise = null) {
     : active.plan.findIndex((p) => p.machineId === machineId);
 }
 
+// The physically closest OTHER station with an open slot — the escape
+// hatch when the plan's next machine is busy. The user stands at
+// `machine` (its center is the location proxy); the plan-ordered walk
+// stays untouched, this is pure display logic with no stored state: a
+// skipped slot stays open and resurfaces via nextOpenSlot's wrap-around.
+// First open slot per station wins (plan order = exercise order there).
+// Exported for the logic tests.
+export function nearbyAlternative(active, gym, machine, excludeMachineId = null) {
+  const center = (m) => [m.x + m.w / 2, m.y + m.h / 2];
+  const [fx, fy] = center(machine);
+  const seen = new Set();
+  let best = null;
+  for (const slot of active.plan) {
+    if (slot.machineId === machine.id || slot.machineId === excludeMachineId) continue;
+    if (seen.has(slot.machineId) || slotDone(active, slot)) continue;
+    seen.add(slot.machineId);
+    const m = gym.machines.find((mm) => mm.id === slot.machineId);
+    if (!m) continue;
+    const [cx, cy] = center(m);
+    const d = (cx - fx) ** 2 + (cy - fy) ** 2;
+    if (!best || d < best.d) best = { slot, machine: m, d };
+  }
+  return best;
+}
+
 // The plan target that applies at this logging position, if any.
 const planTargetFor = (active, machineId, exercise = null) => {
   const idx = planSlotIndex(active, machineId, exercise);
@@ -665,6 +690,8 @@ function renderLog(root, gym, active) {
   const planPos = `${planSlotIndex(active, machine.id, exercise) + 1}/${active.plan.length}`;
   const nextSlot = nextOpenSlot(active, machine.id, exercise);
   const nextMachine = nextSlot ? gym.machines.find((m) => m.id === nextSlot.machineId) : null;
+  // offered only when it differs from the plan's next (excludeMachineId)
+  const nearby = nextMachine ? nearbyAlternative(active, gym, machine, nextMachine.id) : null;
 
   // Quick-switch: the OTHER stations most recently trained this session,
   // ranked by their newest `at`-stamped set. Superset workouts swing
@@ -770,6 +797,8 @@ function renderLog(root, gym, active) {
         <button type="button" id="locate-next" class="btn btn-next btn-big locate-next"
           aria-label="Show the next machine on the map">📍</button>
       </div>
+      ${nearby ? `<button id="nearby-machine" class="btn">Busy? #${nearby.machine.num}
+        ${esc(nearby.machine.label)} is nearby →</button>` : ''}
       <button id="change-machine" class="btn">Change machine / overview</button>`
     : '<button id="change-machine" class="btn btn-next btn-big">Workout overview →</button>'}
   `;
@@ -838,6 +867,14 @@ function renderLog(root, gym, active) {
     () => showMapOverlay(gym, machine));
   root.querySelector('#locate-next')?.addEventListener('click',
     () => showMapOverlay(gym, nextMachine));
+
+  // same move as a Next tap, just to the nearby station instead
+  root.querySelector('#nearby-machine')?.addEventListener('click', () => {
+    active.currentMachineId = nearby.slot.machineId;
+    active.currentExercise = nearby.slot.exercise;
+    saveActive(active);
+    renderTrain(root);
+  });
 
   root.querySelector('#next-machine')?.addEventListener('click', () => {
     active.currentMachineId = nextSlot.machineId;

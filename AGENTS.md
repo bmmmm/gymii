@@ -85,7 +85,11 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   toggled + persisted via the 🗺 Map chip; Colors/Usage hide with it, the
   map draws lazily on first expand). 📍 buttons on the log screen
   (machine head + next-row) open `showMapOverlay()` — a fullscreen
-  read-only map, target machine pulsing, others dimmed, any tap closes. Set-arithmetic must guard
+  read-only map, target machine pulsing, others dimmed, any tap closes.
+  `nearbyAlternative()` renders a "Busy? #N … is nearby" button under the
+  next-row: the physically closest OTHER open station (machine centers,
+  current + plan-next excluded) as the busy-machine escape hatch —
+  display-only, the skipped slot resurfaces via the wrap-around. Set-arithmetic must guard
   against other shapes (`st.reps * st.weight || 0`). No machines = an
   onboarding screen (studio / quick start / template), and the picker
   offers create-on-miss for unknown numbers via `store.addMachine()` —

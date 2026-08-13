@@ -12,7 +12,8 @@ globalThis.localStorage = {
 };
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
-const { startWorkoutFrom, renderTrain } = await import(new URL('../js/train.js', import.meta.url).href);
+const { startWorkoutFrom, renderTrain, nearbyAlternative } =
+  await import(new URL('../js/train.js', import.meta.url).href);
 
 const gym = store.newGym('Test gym');
 gym.machines.push({ id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
@@ -189,5 +190,69 @@ store.saveActive({
 byId.clear();
 renderTrain(root);
 assert.ok(!root.innerHTML.includes('quick-switch'), 'no quick-switch block when other-station sets lack at');
+
+// --- nearby alternative (busy-machine escape hatch) ---
+// the closest OTHER station with an open slot, by center distance; the
+// current machine and the plan's next are excluded, done slots don't count
+gym.machines.push({ id: 'far', num: 4, label: 'Far press', x: 50, y: 30, w: 4, h: 3, settingsFields: [] });
+gym.machines.push({ id: 'near', num: 5, label: 'Near fly', x: 0, y: 6, w: 4, h: 3, settingsFields: [] });
+store.saveGym(gym);
+
+const m1 = gym.machines.find((m) => m.id === 'm1');
+const mkActive = (entries = []) => ({
+  v: 2, id: 'w-near', startedAt: 1755000000000,
+  plan: [
+    { machineId: 'm1', exercise: null },
+    { machineId: 'db', exercise: null },
+    { machineId: 'm2', exercise: null },
+    { machineId: 'far', exercise: null },
+    { machineId: 'near', exercise: null },
+    { machineId: 'ghost', exercise: null }, // deleted machines never match
+  ],
+  currentMachineId: 'm1', currentExercise: null, entries,
+});
+
+let alt = nearbyAlternative(mkActive(), gym, m1, 'db');
+assert.equal(alt.machine.id, 'near', 'closest open other station wins (current + next excluded)');
+
+// a station with sets logged is done and falls out of the running
+alt = nearbyAlternative(mkActive([
+  { machineId: 'near', num: 5, label: 'Near fly', settings: {}, sets: [{ reps: 8, weight: 10 }] },
+]), gym, m1, 'db');
+assert.equal(alt.machine.id, 'm2', 'done stations are skipped');
+
+// but a plan target keeps its station open until the set count is met
+const targeted = mkActive([
+  { machineId: 'near', num: 5, label: 'Near fly', settings: {}, sets: [{ reps: 8, weight: 10 }] },
+]);
+targeted.plan.find((p) => p.machineId === 'near').target = { sets: 3, reps: 8, weight: 10 };
+alt = nearbyAlternative(targeted, gym, m1, 'db');
+assert.equal(alt.machine.id, 'near', 'a station below its target set count is still open');
+
+// nothing open besides the plan's next -> no alternative
+const onlyNext = { ...mkActive(), plan: [
+  { machineId: 'm1', exercise: null }, { machineId: 'db', exercise: null }] };
+assert.equal(nearbyAlternative(onlyNext, gym, m1, 'db'), null, 'no candidates -> null');
+
+// log screen offers the escape hatch — and only when it exists
+store.saveActive({
+  v: 2, id: 'w-nearby-render', startedAt: 1755000000000,
+  plan: [{ machineId: 'm1', exercise: null }, { machineId: 'db', exercise: null },
+    { machineId: 'near', exercise: null }],
+  currentMachineId: 'm1', currentExercise: null, entries: [],
+});
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('Busy? #5') && root.innerHTML.includes('is nearby'),
+  'log screen renders the nearby alternative');
+
+store.saveActive({
+  v: 2, id: 'w-nearby-none', startedAt: 1755000000000,
+  plan: [{ machineId: 'm1', exercise: null }, { machineId: 'db', exercise: null }],
+  currentMachineId: 'm1', currentExercise: null, entries: [],
+});
+byId.clear();
+renderTrain(root);
+assert.ok(!root.innerHTML.includes('Busy?'), 'no nearby line when only the next slot is open');
 
 console.log('train plan construction: all assertions passed');
