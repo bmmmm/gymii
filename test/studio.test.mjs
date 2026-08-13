@@ -13,7 +13,7 @@ globalThis.localStorage = {
 };
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
-const { drawGym, overlapsMachine, fits, freeSpot } =
+const { drawGym, overlapsSolid, fits, freeSpot } =
   await import(new URL('../js/studio.js', import.meta.url).href);
 
 // drawGym renders into whatever quacks like an SVG element, so a plain
@@ -134,16 +134,23 @@ const fallbackHit = tagsWith(svg.innerHTML, 'handle-hit')[0];
 assert.ok(Number.isFinite(num(fallbackHit, 'r')) && num(fallbackHit, 'r') > 0,
   'ASSUMED_SVG_PX fallback keeps handle sizes finite');
 
-// --- overlapsMachine: AABB semantics ---
+// --- overlapsSolid: AABB semantics ---
 const m1 = gym.machines[0];
-assert.ok(overlapsMachine(gym, null, 12, 11, 4, 3), 'overlap detected');
-assert.ok(!overlapsMachine(gym, null, 0, 0, 4, 3), 'clear spot is free');
-assert.ok(!overlapsMachine(gym, null, 14, 10, 4, 3), 'edge-to-edge contact is allowed');
-assert.ok(!overlapsMachine(gym, m1, 10, 10, 4, 3), 'item never collides with itself');
+assert.ok(overlapsSolid(gym, null, 12, 11, 4, 3), 'overlap detected');
+assert.ok(!overlapsSolid(gym, null, 0, 0, 4, 3), 'clear spot is free');
+assert.ok(!overlapsSolid(gym, null, 14, 10, 4, 3), 'edge-to-edge contact is allowed');
+assert.ok(!overlapsSolid(gym, m1, 10, 10, 4, 3), 'item never collides with itself');
 
-// --- fits: exclusivity is machines-only and grandfathered ---
+// --- free-standing fixtures are solid too ---
+assert.ok(overlapsSolid(gym, null, 19, 19, 4, 3), 'fixture footprint blocks like a machine');
+const waterFixture = gym.shapes.find((s) => s.id === 'f1');
+assert.ok(!fits(gym, m1, 19, 19, 4, 3), 'machine may not cover a fixture');
+assert.ok(!fits(gym, waterFixture, 11, 11, 2, 2), 'fixture may not cover a machine');
+assert.ok(fits(gym, waterFixture, 0, 0, 2, 2), 'fixture moves freely onto empty floor');
+
+// --- fits: exclusivity is solids-only and grandfathered ---
 const zone = { id: 'z2', kind: 'rect', x: 0, y: 0, w: 12, h: 8 };
-assert.ok(fits(gym, zone, 10, 10, 12, 8), 'shapes may overlap machines freely');
+assert.ok(fits(gym, zone, 10, 10, 12, 8), 'zones may overlap machines freely');
 assert.ok(!fits(gym, m1, 55, 36, 4, 3), 'clean machine may not move onto another footprint');
 assert.ok(fits(gym, m1, 24, 10, 4, 3), 'clean machine may move to a free spot');
 const tangled = { id: 'm3', num: 3, x: 11, y: 11, w: 4, h: 3 }; // overlaps m1 already
@@ -245,9 +252,10 @@ const dragSeq = (floor, target, from, to) => {
   fire(floor, 'pointerup');
 };
 
-function studioWith(machines) {
+function studioWith(machines, shapes = []) {
   const g = store.newGym('Drag test');
   g.machines.push(...machines);
+  g.shapes.push(...shapes);
   store.saveGym(g);
   const root = fakeRoot();
   // the real button starts disabled via its HTML attribute; the stub can't
@@ -293,15 +301,25 @@ dragSeq(root.floor, onItem('m1', true), [14, 13], [18, 14]);
 assert.deepEqual([machineAt('m1').w, machineAt('m1').h], [4, 4],
   'width growth blocked by the neighbor, height still grew');
 
+// --- solid fixture: blocked from covering a machine, free floor still works ---
+root = studioWith([mk('m1', 1, 10, 10)],
+  [{ id: 'f1', kind: 'fixture', fixture: 'water', x: 16, y: 10, w: 2, h: 2 }]);
+dragSeq(root.floor, onItem('f1'), [17, 11], [12, 11]);
+let f1 = store.getGym().shapes.find((s) => s.id === 'f1');
+assert.deepEqual([f1.x, f1.y], [16, 10], 'fixture blocked from covering the machine');
+dragSeq(root.floor, onItem('f1'), [17, 11], [17, 21]);
+f1 = store.getGym().shapes.find((s) => s.id === 'f1');
+assert.deepEqual([f1.x, f1.y], [16, 20], 'fixture still moves onto free floor');
+
 // --- add-machine button lands new machines on non-overlapping spots ---
 root = studioWith([]);
 const addBtn = root.querySelector('#add-machine');
 addBtn.listeners.click[0]();
 addBtn.listeners.click[0]();
-const after = store.getGym(); // single parse — overlapsMachine excludes by object identity
+const after = store.getGym(); // single parse — overlapsSolid excludes by object identity
 assert.equal(after.machines.length, 2, 'two machines added');
 const second = after.machines[1];
-assert.ok(!overlapsMachine(after, second, second.x, second.y, second.w, second.h),
+assert.ok(!overlapsSolid(after, second, second.x, second.y, second.w, second.h),
   'second machine does not overlap the first');
 
 console.log('studio editor rendering + collision + drag integration: all assertions passed');

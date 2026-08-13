@@ -193,33 +193,38 @@ function findItem(gym, id) {
   return gym.machines.find((m) => m.id === id) || gym.shapes.find((s) => s.id === id) || null;
 }
 
-// Axis-aligned overlap between a proposed box and any machine other than
-// `item`. Edge-to-edge contact is fine (strict inequalities).
-export function overlapsMachine(gym, item, x, y, w, h) {
-  return gym.machines.some((m) => m !== item
+// Machines and free-standing fixtures (reception, lockers, trash, …) are
+// solid furniture nothing may overlap. Zones are areas items stand IN,
+// wall pieces live ON walls — neither is solid.
+const isSolid = (it) => !it.kind || (it.kind === 'fixture' && !WALL_SNAPPED.has(it.fixture));
+
+// Axis-aligned overlap between a proposed box and any solid item other
+// than `item`. Edge-to-edge contact is fine (strict inequalities).
+export function overlapsSolid(gym, item, x, y, w, h) {
+  return [...gym.machines, ...gym.shapes.filter(isSolid)].some((m) => m !== item
     && x < m.x + m.w && x + w > m.x && y < m.y + m.h && y + h > m.y);
 }
 
-// Whether an item may occupy the proposed box. Only machines are
-// exclusive (zones are areas, fixtures are furniture) — and only when
-// they start from a non-overlapping spot, so layouts saved before this
-// rule stay fully editable and can be untangled.
+// Whether an item may occupy the proposed box. Only solid items are
+// exclusive — and only when they start from a non-overlapping spot, so
+// layouts saved before this rule stay fully editable and can be
+// untangled.
 export function fits(gym, it, x, y, w, h) {
-  if (it.kind) return true;
-  if (overlapsMachine(gym, it, it.x, it.y, it.w, it.h)) return true;
-  return !overlapsMachine(gym, it, x, y, w, h);
+  if (!isSolid(it)) return true;
+  if (overlapsSolid(gym, it, it.x, it.y, it.w, it.h)) return true;
+  return !overlapsSolid(gym, it, x, y, w, h);
 }
 
-// Placement for a new machine: the preferred position if free, else the
-// nearest non-overlapping spot so new machines line up next to existing
+// Placement for a new solid item: the preferred position if free, else
+// the nearest non-overlapping spot so new items line up next to existing
 // ones; a packed floor falls back to the preferred spot (overlapping
 // beats refusing to add).
 export function freeSpot(gym, x, y, w, h) {
-  if (!overlapsMachine(gym, null, x, y, w, h)) return { x, y };
+  if (!overlapsSolid(gym, null, x, y, w, h)) return { x, y };
   let best = null;
   for (let sy = 0; sy + h <= gym.grid.h; sy += SNAP) {
     for (let sx = 0; sx + w <= gym.grid.w; sx += SNAP) {
-      if (overlapsMachine(gym, null, sx, sy, w, h)) continue;
+      if (overlapsSolid(gym, null, sx, sy, w, h)) continue;
       const d = (sx - x) ** 2 + (sy - y) ** 2;
       if (!best || d < best.d) best = { x: sx, y: sy, d };
     }
@@ -684,9 +689,14 @@ export function renderStudio(root) {
       gym.shapes.push(item);
     } else if (kind === 'fixture') {
       const f = FIXTURES[fixtureType];
+      const wx = snap(g.w / 2 - f.w / 2 + off);
+      const wy = snap(g.h / 2 - f.h / 2 + off);
+      // wall pieces snap to a wall anyway; solid furniture lands on a
+      // free spot like machines do
+      const pos = WALL_SNAPPED.has(fixtureType) ? { x: wx, y: wy } : freeSpot(gym, wx, wy, f.w, f.h);
       item = {
         id: uid(), kind: 'fixture', fixture: fixtureType,
-        x: snap(g.w / 2 - f.w / 2 + off), y: snap(g.h / 2 - f.h / 2 + off),
+        x: pos.x, y: pos.y,
         w: f.w, h: f.h,
       };
       if (WALL_SNAPPED.has(fixtureType)) snapDoorToWall(gym, item); // born on a wall
