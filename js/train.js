@@ -4,7 +4,7 @@ import {
   newGym, addMachine,
 } from './store.js';
 import { drawGym, usagePayload, findMachineByNum } from './studio.js';
-import { renderPlanBuilder } from './plan.js';
+import { renderPlanBuilder, DAY_LABELS } from './plan.js';
 import { esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField } from './ui.js';
 
 // Active workout shape:
@@ -56,9 +56,17 @@ export function renderTrain(root, message = '') {
     if (active.currentMachineId) renderLog(root, gym, active);
     else renderOverview(root, gym, active);
   } else if (builder) {
-    renderPlanBuilder(root, builder, (message2 = '') => {
+    // the second onClose arg is a plan to start right away (Save & start —
+    // plan.js can't call startWorkoutFrom without an import cycle)
+    renderPlanBuilder(root, builder, (message2 = '', startPlan = null) => {
       builder = null;
-      renderTrain(root, message2);
+      if (startPlan) {
+        startWorkoutFrom({
+          ...(startPlan.name ? { name: startPlan.name } : {}),
+          entries: startPlan.items,
+        });
+      }
+      renderTrain(root, startPlan ? '' : message2);
     });
   } else {
     renderStart(root, gym, message);
@@ -147,6 +155,12 @@ function renderStart(root, gym, message) {
   const planLastDone = (p) => (p.name
     ? workouts.findLast((w) => w.name === p.name) ?? null : null);
 
+  // plans tagged with today's weekday float to the top (stable sort keeps
+  // the stored order within each group)
+  const today = new Date().getDay();
+  const isToday = (p) => (p.days?.includes(today) ? 1 : 0);
+  const sortedPlans = plans.slice().sort((a, b) => isToday(b) - isToday(a));
+
   root.innerHTML = `
     <h1>Train</h1>
     ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
@@ -156,13 +170,15 @@ function renderStart(root, gym, message) {
     <section class="card">
       <h2>Planned workouts</h2>
       <div id="plan-list">
-        ${plans.map((p) => {
+        ${sortedPlans.map((p) => {
     const done = planLastDone(p);
     const machines = new Set(p.items.map((it) => it.machineId)).size;
     return `<div class="recent-row">
           <div class="recent-info">
-            <strong>${p.name ? esc(p.name) : planChain(p, gym) || 'Unnamed plan'}</strong>
-            <span class="muted">${p.name ? `${planChain(p, gym)} · ` : ''}${machines} machine${machines === 1 ? '' : 's'}${done
+            <strong>${p.name ? esc(p.name) : planChain(p, gym) || 'Unnamed plan'}${isToday(p)
+    ? ' <span class="muted">· today</span>' : ''}</strong>
+            <span class="muted">${p.name ? `${planChain(p, gym)} · ` : ''}${machines} machine${machines === 1 ? '' : 's'}${p.days?.length
+    ? ` · ${p.days.map((d) => DAY_LABELS[d]).join(' ')}` : ''}${done
     ? ` · last: ${new Date(done.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>
           </div>
           <button class="btn btn-inline plan-edit" data-pid="${p.id}">Edit</button>
@@ -955,6 +971,11 @@ const setsSummary = (sets, s, bodyweight = false) => {
 };
 
 function finish(root, active) {
+  // target tally must run BEFORE finishWorkout clears the active state
+  const goalSlots = active.plan.filter((p) => p.target?.sets);
+  const goalTotal = goalSlots.reduce((n, p) => n + p.target.sets, 0);
+  const goalHit = goalSlots.reduce(
+    (n, p) => n + Math.min(slotSetCount(active, p), p.target.sets), 0);
   const saved = finishWorkout(active);
   if (!saved) {
     renderTrain(root, 'Workout discarded — no sets were logged.');
@@ -964,7 +985,8 @@ function finish(root, active) {
   // count stations, not entries — a multi-exercise station is one machine
   const stations = new Set(saved.entries.map((e) => e.machineId)).size;
   renderTrain(root, `Workout saved: ${stations} machine${stations === 1 ? '' : 's'}, `
-    + `${sets} set${sets === 1 ? '' : 's'}, ${workoutTotals(saved, getSettings())} total.`);
+    + `${sets} set${sets === 1 ? '' : 's'}, ${workoutTotals(saved, getSettings())} total`
+    + `${goalTotal ? `, ${goalHit}/${goalTotal} target sets` : ''}.`);
 }
 
 // --- rest timer ---

@@ -401,8 +401,17 @@ export function planFromImport(data) {
     items.push({ machineId: machine.id, exercise, ...(target ? { target } : {}) });
   });
   if (!items.length) throw new Error('No machines matched this gym');
+  const days = Array.isArray(data.days)
+    ? [...new Set(data.days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))]
+      .sort((a, b) => a - b)
+    : [];
   return {
-    plan: { id: uid(), name: String(data.name || '').trim(), items },
+    plan: {
+      id: uid(),
+      name: String(data.name || '').trim(),
+      ...(days.length ? { days } : {}),
+      items,
+    },
     skipped,
   };
 }

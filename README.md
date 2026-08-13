@@ -20,7 +20,8 @@ even a cookie banner.
 - 📋 **Plans** — build a session in advance: pick machines or exercises
   (filter by muscle if you like), set target sets × reps × weight, then just
   tick it off — the workout keeps pulling you back to unfinished targets.
-  Your LLM can draft a plan too; paste it in for review.
+  Tag weekdays and today's plan floats to the top. Your LLM can draft a
+  plan too; paste it in for review.
 - ⏱️ **Rest timer** — starts itself, remembers per machine, keeps the screen
   awake, beeps when you're up.
 - 📈 **History** — training heatmap, progress chart, one-tap repeat, and past

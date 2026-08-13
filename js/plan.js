@@ -10,6 +10,11 @@ import {
 import { drawGym } from './studio.js';
 import { esc, twoTapConfirm, stepperField } from './ui.js';
 
+// Weekday labels indexed by Date#getDay() (0 = Sunday); chips render
+// Monday-first, like gym weeks are planned.
+export const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
 // Seeds a fresh item's target from the last session on that machine so a
 // new plan starts from reality, not from zero. Cross-type history (the
 // machine's type flag changed since) is ignored, like renderLog does.
@@ -113,6 +118,14 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
           workouts you log from it group under this name.</p>
       </section>
       <section class="card">
+        <h2>Days</h2>
+        <div class="chip-select" id="day-chips">
+          ${DAY_ORDER.map((d) => `<button type="button" class="chip${draft.days?.includes(d) ? ' sel' : ''}"
+            data-day="${d}">${DAY_LABELS[d]}</button>`).join('')}
+        </div>
+        <p class="muted">Optional — today's plans sort to the top of the start screen.</p>
+      </section>
+      <section class="card">
         <h2>Machines &amp; targets</h2>
         <div id="plan-items">
           ${draft.items.map(itemRow).join('') || '<p class="muted">No machines yet — add some below.</p>'}
@@ -135,6 +148,7 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
         <p class="muted">Tap a machine — chip or map — to add or remove it.</p>
       </section>
       <button id="plan-save" class="btn btn-primary btn-big">Save plan</button>
+      <button id="plan-start" class="btn btn-next btn-big">Save &amp; start workout</button>
       ${stored ? '<button id="plan-delete" class="btn btn-danger">Delete plan</button>' : ''}
       <button id="plan-cancel" class="btn">Cancel</button>
       <p id="plan-msg" class="muted" role="status"></p>`;
@@ -215,14 +229,37 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
       if (g) toggleMachine(g.dataset.id);
     });
 
-    root.querySelector('#plan-save').addEventListener('click', () => {
+    root.querySelector('#day-chips').addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      const d = parseInt(chip.dataset.day, 10);
+      const days = new Set(draft.days ?? []);
+      if (days.has(d)) days.delete(d); else days.add(d);
+      draft.days = [...days].sort((a, b) => a - b);
+      render();
+    });
+
+    // shared by Save and Save & start; days follow the locker-style
+    // lifecycle (key dropped when emptied)
+    const persist = () => {
       draft.name = root.querySelector('#plan-name').value.trim();
+      if (!draft.days?.length) delete draft.days;
       if (!draft.items.length) {
         root.querySelector('#plan-msg').textContent = 'Add at least one machine first.';
-        return;
+        return false;
       }
       savePlan(draft);
-      onClose(`Plan ${draft.name ? `"${draft.name}" ` : ''}saved.`);
+      return true;
+    };
+
+    root.querySelector('#plan-save').addEventListener('click', () => {
+      if (persist()) onClose(`Plan ${draft.name ? `"${draft.name}" ` : ''}saved.`);
+    });
+
+    // hands the saved plan back so train.js starts it — plan.js cannot
+    // import startWorkoutFrom without creating an import cycle
+    root.querySelector('#plan-start').addEventListener('click', () => {
+      if (persist()) onClose('', draft);
     });
 
     const delBtn = root.querySelector('#plan-delete');

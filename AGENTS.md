@@ -43,9 +43,11 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   Other lazy migrations live in `getGym()` (outline, meta). Pick lists:
   `MUSCLE_GROUPS`, `COMMON_SETTINGS`, `ZONE_LABELS` (its 'Cardio' string
   is a room label — unrelated to the `machine.cardio` flag). Stored plans
-  live under `gymii.<pid>.plans`: `{id, name, items:[{machineId,
+  live under `gymii.<pid>.plans`: `{id, name, days?, items:[{machineId,
   exercise|null, target?}]}` with target `{sets,reps,weight}` or
-  `{distance,seconds}`; part of backups, wiped with the profile.
+  `{distance,seconds}`; `days` is getDay()-coded weekday ints
+  (locker-style: dropped when emptied), today's plans sort first on the
+  start screen; part of backups, wiped with the profile.
   `planFromImport()` resolves an AI `workout-plan` file (machines by num,
   unknown nums → `skipped`) without persisting.
 - `js/app.js` — hash-router, renders views into `#view`. The `#studio`

@@ -110,7 +110,16 @@ const stubEl = () => ({
   addEventListener(type, fn) { this.listeners[type] = fn; },
   value: '', innerHTML: '', textContent: '',
   querySelector: () => stubEl(), querySelectorAll: () => [],
-  classList: { toggle() {}, add() {}, contains: () => false },
+  // stateful so twoTapConfirm's arm/confirm cycle works in tests
+  classList: (() => {
+    const set = new Set();
+    return {
+      add: (c) => set.add(c),
+      remove: (c) => set.delete(c),
+      toggle: (c) => (set.has(c) ? set.delete(c) : set.add(c)),
+      contains: (c) => set.has(c),
+    };
+  })(),
   dataset: {}, style: {},
   attrs: {},
   setAttribute(k, v) { this.attrs[k] = v; },
@@ -217,6 +226,69 @@ assert.ok(root.innerHTML.includes('data-wid="w-legs"'), 'unnamed routine keeps i
 assert.ok(!root.innerHTML.includes('data-wid="w-push"'),
   'routine matching a plan name is owned by the plan row');
 assert.ok(root.innerHTML.includes('last: '), 'plan row shows when it was last done');
+
+// --- days: import sanitizing, builder chips, Save & start ---
+
+const { plan: dayPlan } = store.planFromImport({
+  app: 'gymii', kind: 'workout-plan', name: 'D', days: [4, 1, 9, 4, -1, 2.5],
+  items: [{ num: 1 }],
+});
+assert.deepEqual(dayPlan.days, [1, 4], 'days dedupe, sort and drop junk');
+assert.ok(!('days' in store.planFromImport({ items: [{ num: 1 }] }).plan),
+  'no days key when absent');
+
+store.savePlans([]);
+store.saveWorkouts([]); // deterministic start screen for the blocks below
+byId.clear();
+renderTrain(root);
+root.querySelector('#plan-new').listeners.click();
+root.querySelector('#machine-chips').listeners.click(fakeClick({ dataset: { id: 'm1' } }));
+const today = new Date().getDay();
+root.querySelector('#day-chips').listeners.click(fakeClick({ dataset: { day: String(today) } }));
+root.querySelector('#plan-name').value = 'Today plan';
+root.querySelector('#plan-start').listeners.click();
+assert.equal(store.getPlans().length, 1, 'Save & start persists the plan');
+assert.deepEqual(store.getPlans()[0].days, [today], 'tapped day chip sticks');
+active = store.getActive();
+assert.ok(active, 'Save & start opens a workout right away');
+assert.equal(active.name, 'Today plan');
+assert.deepEqual(active.plan[0].target, { sets: 3, reps: 10, weight: 20 },
+  'Save & start carries the target');
+store.clearActive();
+
+// today's plan floats above an untagged one stored earlier
+store.savePlans([
+  { id: 'pa', name: 'Anyday', items: [{ machineId: 'm1', exercise: null }] },
+  { id: 'pb', name: 'Dayplan', days: [today], items: [{ machineId: 'm2', exercise: null }] },
+]);
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.indexOf('Dayplan') < root.innerHTML.indexOf('Anyday'),
+  "today's plan sorts to the top");
+assert.ok(root.innerHTML.includes('· today'), 'today badge renders');
+
+// --- finishing reports target completion ---
+
+store.saveActive({
+  v: 2, id: 'w-finish', startedAt: 1755000000000,
+  plan: [{ machineId: 'm1', exercise: null, target: { sets: 3, reps: 10, weight: 50 } }],
+  currentMachineId: null, currentExercise: null,
+  entries: [{
+    machineId: 'm1', num: 1, label: 'Chest press', settings: {},
+    sets: [
+      { reps: 10, weight: 50, at: 1755000001000 },
+      { reps: 10, weight: 50, at: 1755000002000 },
+    ],
+  }],
+});
+byId.clear();
+renderTrain(root); // overview
+const finishBtn = root.querySelector('#finish');
+finishBtn.listeners.click(); // arm
+finishBtn.listeners.click(); // confirm
+assert.equal(store.getActive(), null, 'finish clears the active workout');
+assert.ok(root.innerHTML.includes('2/3 target sets'), 'finish message tallies target sets');
+store.saveWorkouts([]);
 
 // --- onboarding points fresh starters at planning ---
 
