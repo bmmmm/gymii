@@ -37,6 +37,13 @@ export function renderSettings(root) {
     </section>
 
     <section class="card">
+      <h2>Studio</h2>
+      <a class="btn" href="#studio">Open the Studio</a>
+      <p class="muted">Draw the floor plan, number the machines and edit their
+        muscles, settings and exercises.</p>
+    </section>
+
+    <section class="card">
       <h2>Gyms</h2>
       <div class="chip-select" id="profile-chips">
         ${profiles.list.map((p) => `<button type="button" class="chip${p.id === profiles.activeId

@@ -41,7 +41,10 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   Other lazy migrations live in `getGym()` (outline, meta). Pick lists:
   `MUSCLE_GROUPS`, `COMMON_SETTINGS`, `ZONE_LABELS` (its 'Cardio' string
   is a room label — unrelated to the `machine.cardio` flag).
-- `js/app.js` — hash-router, renders views into `#view`.
+- `js/app.js` — hash-router, renders views into `#view`. The `#studio`
+  route is deliberately NOT in the tabbar (the map is a setup tool, not a
+  daily surface — user decision); it is reached via links in onboarding
+  and Settings. Don't re-add the tab.
 - `js/studio.js` — floor-plan editor. `drawGym()` is the shared renderer
   (train mini-maps use it too). Polygon outline with vertex/midpoint
   editing; `FIXTURES` registry; `WALL_SNAPPED` fixtures (entrance/door/
