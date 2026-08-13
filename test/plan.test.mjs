@@ -169,6 +169,8 @@ active = store.getActive();
 assert.equal(active.name, 'Push day', 'starting a plan carries its name');
 assert.deepEqual(active.plan[0].target, { sets: 3, reps: 10, weight: 20 });
 assert.ok(root.innerHTML.includes('Target: 3 × 10 @ 20 kg'), 'log header shows the target');
+assert.ok(root.innerHTML.includes('· set 1/3'), 'header counts the upcoming target set');
+assert.ok(root.innerHTML.includes('✓ Log set 1/3 — 20 kg × 10'), 'one-tap button says what it logs');
 assert.ok(root.innerHTML.includes('id="set-weight" type="number" inputmode="decimal" value="20"'),
   'first set prefills from the target');
 
@@ -179,6 +181,8 @@ root.querySelector('#set-rest').value = '0';
 root.querySelector('#log-set').listeners.click();
 assert.ok(root.innerHTML.includes('id="set-weight" type="number" inputmode="decimal" value="15"'),
   'prefill follows the logged set, not the target');
+assert.ok(root.innerHTML.includes('✓ Log set 2/3 — 15 kg × 8'),
+  'one-tap button advances and follows the logged set');
 
 // overview counts progress against the target
 root.querySelector('#change-machine').listeners.click();
@@ -202,6 +206,28 @@ store.saveActive({
 byId.clear();
 renderTrain(root);
 assert.ok(root.innerHTML.includes('Next: #1'), 'a 1/3 station stays an open Next stop');
+store.clearActive();
+
+// once the target is met, Next takes over as the primary action
+store.saveActive({
+  v: 2, id: 'w-next-primary', startedAt: 1755000000000,
+  plan: [
+    { machineId: 'm1', exercise: null, target: { sets: 1, reps: 10, weight: 50 } },
+    { machineId: 'm2', exercise: null },
+  ],
+  currentMachineId: 'm1', currentExercise: null,
+  entries: [{
+    machineId: 'm1', num: 1, label: 'Chest press', settings: {},
+    sets: [{ reps: 10, weight: 50, at: 1755000001000 }],
+  }],
+});
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('btn-primary btn-big">Next: #3'),
+  'a met target promotes Next to the primary action');
+assert.ok(root.innerHTML.includes('· ✓ done'), 'header marks the met target');
+assert.ok(!root.innerHTML.includes('btn btn-primary btn-big">✓ Log set'),
+  'the log button steps back once the target is met');
 store.clearActive();
 
 // --- start screen: a named plan owns its routine (no duplicate repeat row) ---
@@ -266,6 +292,29 @@ renderTrain(root);
 assert.ok(root.innerHTML.indexOf('Dayplan') < root.innerHTML.indexOf('Anyday'),
   "today's plan sorts to the top");
 assert.ok(root.innerHTML.includes('· today'), 'today badge renders');
+
+// --- plan-first: the relevant plan owns the big start button ---
+
+assert.ok(root.innerHTML.includes('id="plan-primary"'),
+  "today's plan gets the primary start button");
+root.querySelector('#plan-primary').listeners.click();
+active = store.getActive();
+assert.equal(active.name, 'Dayplan', 'the primary button starts the relevant plan');
+store.clearActive();
+
+// repeat drops when the last workout came from the primary plan
+store.saveWorkouts([{
+  id: 'w-anyday', startedAt: 1755300000000, finishedAt: 1755301000000, name: 'Anyday',
+  entries: [{ machineId: 'm1', num: 1, label: 'Chest press', settings: {}, sets: [{ reps: 10, weight: 50 }] }],
+}]);
+store.savePlans([{ id: 'pa', name: 'Anyday', items: [{ machineId: 'm1', exercise: null }] }]);
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('id="plan-primary"'),
+  'the last-done plan is primary even without a weekday tag');
+assert.ok(!root.innerHTML.includes('id="repeat"'),
+  'repeat drops when it would start the primary plan anyway');
+store.saveWorkouts([]);
 
 // --- finishing reports target completion ---
 

@@ -71,10 +71,17 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   newest set `at`). Slots started from a stored plan carry its target:
   the log header shows it, the first-set prefill uses it (real logged sets
   then outrank it), and `slotDone` counts sets against `target.sets`, so
-  "Next:" pulls the walk back to unfinished targets. The start screen lists
-  stored plans (Start/Edit) above history-derived routines and SKIPS
-  derived rows whose workout name matches a plan name — a named plan owns
-  its routine. The plan builder (`js/plan.js`, muscle-filtered machine
+  "Next:" pulls the walk back to unfinished targets. The plan follower's
+  happy path is one tap per set: the log button always names what it logs
+  ("✓ Log set 2/3 — 50 kg × 10", steppers update it live), and once a
+  slot's target is met the Next button takes over as the primary action
+  (log button demoted). `targetTally()` reports plan-wide progress on the
+  overview line and in the finish message. The start screen is plan-first:
+  the most relevant plan (today's weekday, else last done) gets the big
+  primary button; "Repeat last workout" moves below it and drops entirely
+  when the last workout came from that plan. Stored plans list (Start/Edit)
+  above history-derived routines, and derived rows whose workout name
+  matches a plan name are SKIPPED — a named plan owns its routine. The plan builder (`js/plan.js`, muscle-filtered machine
   picking, per-item targets, reorder) renders inside the Train tab via
   module state (`openPlanBuilder()` — used by ai.js for import review); an
   active workout always outranks it.

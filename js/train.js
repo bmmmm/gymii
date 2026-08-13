@@ -161,10 +161,25 @@ function renderStart(root, gym, message) {
   const isToday = (p) => (p.days?.includes(today) ? 1 : 0);
   const sortedPlans = plans.slice().sort((a, b) => isToday(b) - isToday(a));
 
+  // Plan-first: for a plan follower the most relevant plan IS the workout
+  // — today's weekday match, else the most recently done one. It gets the
+  // big button; "Repeat last workout" yields, and drops entirely when the
+  // last workout came from that same plan (it would start the same thing).
+  const primaryPlan = sortedPlans.find((p) => isToday(p))
+    ?? sortedPlans.slice().sort((a, b) =>
+      (planLastDone(b)?.startedAt ?? 0) - (planLastDone(a)?.startedAt ?? 0))[0]
+    ?? null;
+  const repeatIsPrimaryPlan = !!(primaryPlan?.name && last?.name === primaryPlan.name);
+  const primaryDone = primaryPlan ? planLastDone(primaryPlan) : null;
+
   root.innerHTML = `
     <h1>Train</h1>
     ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
-    ${last ? `<button id="repeat" class="btn btn-primary btn-big">Repeat last workout
+    ${primaryPlan ? `<button id="plan-primary" class="btn btn-primary btn-big">▶ Start
+      ${primaryPlan.name ? esc(primaryPlan.name) : 'your plan'}
+      <span class="sub">${isToday(primaryPlan) ? 'today · ' : ''}${planChain(primaryPlan, gym)}${primaryDone
+    ? ` · last: ${new Date(primaryDone.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span></button>` : ''}
+    ${last && !repeatIsPrimaryPlan ? `<button id="repeat" class="btn ${primaryPlan ? '' : 'btn-primary '}btn-big">Repeat last workout
       <span class="sub">${new Date(last.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
       · ${last.name ? `${esc(last.name)} · ` : ''}${machineChain(last)}</span></button>` : ''}
     <section class="card">
@@ -211,6 +226,16 @@ function renderStart(root, gym, message) {
         from the workout overview.</p>
     </section>`;
 
+  const startPlan = (plan) => {
+    startWorkoutFrom({
+      ...(plan.name ? { name: plan.name } : {}),
+      entries: plan.items,
+    });
+    renderTrain(root);
+  };
+
+  root.querySelector('#plan-primary')?.addEventListener('click', () => startPlan(primaryPlan));
+
   root.querySelector('#repeat')?.addEventListener('click', () => {
     startWorkoutFrom(last);
     renderTrain(root);
@@ -228,11 +253,7 @@ function renderStart(root, gym, message) {
       renderTrain(root);
       return;
     }
-    startWorkoutFrom({
-      ...(plan.name ? { name: plan.name } : {}),
-      entries: plan.items,
-    });
-    renderTrain(root);
+    startPlan(plan);
   });
 
   root.querySelector('#plan-new').addEventListener('click', () => {
@@ -475,6 +496,16 @@ const slotDone = (active, slot) => (slot.target?.sets
   ? slotSetCount(active, slot) >= slot.target.sets
   : slotEntries(active, slot).some((e) => e.sets.length));
 
+// Target progress across the whole plan — the overview line and the
+// finish message share it. total 0 = no targeted slots.
+function targetTally(active) {
+  const goals = active.plan.filter((p) => p.target?.sets);
+  return {
+    total: goals.reduce((n, p) => n + p.target.sets, 0),
+    hit: goals.reduce((n, p) => n + Math.min(slotSetCount(active, p), p.target.sets), 0),
+  };
+}
+
 function renderOverview(root, gym, active) {
   const s = getSettings();
   const sets = active.entries.reduce((n, e) => n + e.sets.length, 0);
@@ -511,7 +542,10 @@ function renderOverview(root, gym, active) {
 
   root.innerHTML = `
     <h1>Workout</h1>
-    <p class="muted">${mins} min · ${sets} set${sets === 1 ? '' : 's'} · ${workoutTotals(active, s)}</p>
+    <p class="muted">${mins} min · ${sets} set${sets === 1 ? '' : 's'} · ${workoutTotals(active, s)}${(() => {
+    const tally = targetTally(active);
+    return tally.total ? ` · ${tally.hit}/${tally.total} target sets` : '';
+  })()}</p>
     <section class="card">
       <h2>Name</h2>
       <div class="row">
@@ -731,7 +765,22 @@ function renderLog(root, gym, active) {
     && (cardio ? rawTarget.distance != null : rawTarget.reps != null) ? rawTarget : null;
   const def = pickPending ? null : nextSetDefaults(entry, lastSets, type, s, target);
   const restSeconds = machine.restSeconds ?? s.restSeconds;
-  const planPos = `${planSlotIndex(active, machine.id, exercise) + 1}/${active.plan.length}`;
+  const slotIdx = planSlotIndex(active, machine.id, exercise);
+  const planPos = `${slotIdx + 1}/${active.plan.length}`;
+  // one-tap flow state: which target set is up, and is the target met —
+  // once it is, the Next button takes over as the primary action
+  const currentSlot = slotIdx === -1 ? null : active.plan[slotIdx];
+  const targetDone = !!(target && currentSlot && slotDone(active, currentSlot));
+  const setPos = target && currentSlot
+    ? Math.min(slotSetCount(active, currentSlot) + 1, target.sets) : null;
+  // the log button always says what one tap will log
+  const setLabel = (d) => (cardio
+    ? `${d.distance} ${du} · ${fmtDuration(d.seconds)}`
+    : type === 'bodyweight'
+      ? (d.weight ? `BW+${d.weight} ${s.unit} × ${d.reps}` : `BW × ${d.reps}`)
+      : `${d.weight} ${s.unit} × ${d.reps}`);
+  const logLabel = (d) =>
+    `✓ Log set${target && !targetDone ? ` ${setPos}/${target.sets}` : ''} — ${setLabel(d)}`;
   const nextSlot = nextOpenSlot(active, machine.id, exercise);
   const nextMachine = nextSlot ? gym.machines.find((m) => m.id === nextSlot.machineId) : null;
   // offered only when it differs from the plan's next (excludeMachineId)
@@ -766,7 +815,8 @@ function renderLog(root, gym, active) {
     : lastSets
       ? `Last: ${setsSummary(lastSets.sets, s, !!lastSets.bodyweight)}`
       : `First time on this ${exercise ? 'exercise' : 'machine'}`}</div>
-        ${target ? `<div class="muted">Target: ${targetStr(target, type, s)}</div>` : ''}
+        ${target ? `<div class="muted">Target: ${targetStr(target, type, s)}${targetDone
+    ? ' · ✓ done' : ` · set ${setPos}/${target.sets}`}</div>` : ''}
         ${machine.muscles?.length ? `<div class="muted">${machine.muscles.map(esc).join(' · ')}</div>` : ''}
         ${machine.docUrl ? `<a class="doc-link" href="${esc(machine.docUrl)}"
           target="_blank" rel="noopener">Machine docs ↗</a>` : ''}
@@ -824,7 +874,7 @@ function renderLog(root, gym, active) {
         ${stepperField('Weight', 'set-weight', { step: s.weightStep, min: 0, value: def.weight })}
         ${stepperField('Reps', 'set-reps', { step: 1, min: 1, value: def.reps, mode: 'numeric' })}`}
         ${stepperField('Rest (s)', 'set-rest', { step: 15, min: 0, value: restSeconds, mode: 'numeric' })}
-        <button id="log-set" class="btn btn-primary btn-big">✓ Log set</button>
+        <button id="log-set" class="btn ${targetDone && nextMachine ? '' : 'btn-primary '}btn-big">${logLabel(def)}</button>
       </div>
     </section>`}
 
@@ -836,7 +886,7 @@ function renderLog(root, gym, active) {
 
     ${nextMachine
     ? `<div class="next-row">
-        <button id="next-machine" class="btn btn-next btn-big">Next: #${nextMachine.num}
+        <button id="next-machine" class="btn ${targetDone ? 'btn-primary' : 'btn-next'} btn-big">Next: #${nextMachine.num}
           ${esc(nextMachine.label)}${nextSlot.exercise ? ` · ${esc(nextSlot.exercise)}` : ''} →</button>
         <button type="button" id="locate-next" class="btn btn-next btn-big locate-next"
           aria-label="Show the next machine on the map">📍</button>
@@ -895,6 +945,26 @@ function renderLog(root, gym, active) {
     renderLog(root, gym, active);
     startRest(rest);
   });
+
+  // the steppers update the one-tap label live, so the button never lies
+  if (!pickPending) {
+    const refreshLogLabel = () => {
+      const btn = root.querySelector('#log-set');
+      if (!btn) return;
+      const d = cardio
+        ? {
+          distance: Math.max(0, parseFloat(root.querySelector('#set-distance').value) || 0),
+          seconds: Math.max(0, Math.round((parseFloat(root.querySelector('#set-time').value) || 0) * 60)),
+        }
+        : {
+          weight: Math.max(0, parseFloat(root.querySelector('#set-weight').value) || 0),
+          reps: Math.max(1, Math.round(parseFloat(root.querySelector('#set-reps').value) || 1)),
+        };
+      btn.textContent = logLabel(d);
+    };
+    (cardio ? ['#set-distance', '#set-time'] : ['#set-weight', '#set-reps']).forEach((sel) =>
+      root.querySelector(sel)?.addEventListener('change', refreshLogLabel));
+  }
 
   root.querySelector('.quick-switch')?.addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
@@ -969,10 +1039,7 @@ const setsSummary = (sets, s, bodyweight = false) => {
 
 function finish(root, active) {
   // target tally must run BEFORE finishWorkout clears the active state
-  const goalSlots = active.plan.filter((p) => p.target?.sets);
-  const goalTotal = goalSlots.reduce((n, p) => n + p.target.sets, 0);
-  const goalHit = goalSlots.reduce(
-    (n, p) => n + Math.min(slotSetCount(active, p), p.target.sets), 0);
+  const { total: goalTotal, hit: goalHit } = targetTally(active);
   const saved = finishWorkout(active);
   if (!saved) {
     renderTrain(root, 'Workout discarded — no sets were logged.');

@@ -19,9 +19,9 @@ even a cookie banner.
   coverage row tracks which muscles you've hit today.
 - 📋 **Plans** — build a session in advance: pick machines or exercises
   (filter by muscle if you like), set target sets × reps × weight, then just
-  tick it off — the workout keeps pulling you back to unfinished targets.
-  Tag weekdays and today's plan floats to the top. Your LLM can draft a
-  plan too; paste it in for review.
+  tick it off: today's plan is the big start button, every set is one tap
+  ("✓ Log set 2/3 — 50 kg × 10"), and the workout keeps pulling you back to
+  unfinished targets. Your LLM can draft a plan too; paste it in for review.
 - ⏱️ **Rest timer** — starts itself, remembers per machine, keeps the screen
   awake, beeps when you're up.
 - 📈 **History** — training heatmap, progress chart, one-tap repeat, and past
