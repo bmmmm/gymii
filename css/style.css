@@ -16,6 +16,12 @@
 
 html, body { margin: 0; height: 100%; }
 
+/* Fast repeated taps (steppers, chips, ±15s) must not trigger the mobile
+   double-tap zoom. Set on the root so near-miss taps beside a button
+   can't zoom either — scrolling and pinch zoom stay available, and the
+   floor map's own touch-action: none still wins (intersection). */
+html { touch-action: manipulation; }
+
 body {
   font-family: system-ui, -apple-system, sans-serif;
   background: var(--bg);
