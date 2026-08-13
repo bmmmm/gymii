@@ -411,6 +411,17 @@ function machinePicker(container, gym, onPick) {
   });
 
   applyMapState();
+
+  // small outside API: the overview's muscle-coverage chips drive the
+  // picker's filter ("Legs still open" → tap → leg machines listed here)
+  return {
+    setMuscle(muscle) {
+      if (!muscleSelect) return;
+      muscleSelect.value = muscle;
+      applyMuscleFilter();
+      container.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    },
+  };
 }
 
 // Fullscreen read-only floor map with one machine highlighted — answers
@@ -459,6 +470,16 @@ function renderOverview(root, gym, active) {
   const sets = active.entries.reduce((n, e) => n + e.sets.length, 0);
   const mins = Math.max(1, Math.round((Date.now() - active.startedAt) / 60000));
 
+  // Muscle coverage today: muscles of every machine with ≥1 set this
+  // session, read live from the gym (entries don't snapshot muscles;
+  // deleted machines contribute none). The chips double as navigation —
+  // tapping one drives the picker's muscle filter below.
+  const allMuscles = [...new Set(gym.machines.flatMap((m) => m.muscles || []))]
+    .sort((a, b) => a.localeCompare(b));
+  const trained = new Set(active.entries
+    .filter((e) => e.sets.length)
+    .flatMap((e) => gym.machines.find((m) => m.id === e.machineId)?.muscles ?? []));
+
   const rows = active.plan.map((slot, i) => {
     const machine = gym.machines.find((m) => m.id === slot.machineId);
     const entries = slotEntries(active, slot);
@@ -503,6 +524,15 @@ function renderOverview(root, gym, active) {
       <h2>Machines</h2>
       ${rows || '<p class="muted">No machines yet — pick your first one below.</p>'}
     </section>
+    ${allMuscles.length ? `
+    <section class="card">
+      <h2>Muscles today</h2>
+      <div class="chip-select" id="muscle-coverage">
+        ${allMuscles.map((m) => `<button type="button" class="chip${trained.has(m)
+    ? ' sel done' : ''}" data-muscle="${esc(m)}">${esc(m)}</button>`).join('')}
+      </div>
+      <p class="muted">Tap an open muscle to find a machine for it below.</p>
+    </section>` : ''}
     <section class="card">
       <h2>Add machine</h2>
       <div id="picker"></div>
@@ -529,7 +559,7 @@ function renderOverview(root, gym, active) {
     });
   });
 
-  machinePicker(root.querySelector('#picker'), gym, (machineId) => {
+  const picker = machinePicker(root.querySelector('#picker'), gym, (machineId) => {
     if (!active.plan.some((p) => p.machineId === machineId)) {
       active.plan.push({ machineId, exercise: null });
     }
@@ -537,6 +567,11 @@ function renderOverview(root, gym, active) {
     active.currentExercise = null;
     saveActive(active);
     renderTrain(root);
+  });
+
+  root.querySelector('#muscle-coverage')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (chip) picker.setMuscle(chip.dataset.muscle);
   });
 
   // two-tap guard: finishing only happens once, at the very end

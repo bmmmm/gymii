@@ -255,4 +255,31 @@ byId.clear();
 renderTrain(root);
 assert.ok(!root.innerHTML.includes('Busy?'), 'no nearby line when only the next slot is open');
 
+// --- muscle coverage on the overview ---
+// muscles of machines with sets this session read live from the gym;
+// covered chips carry sel+done, open ones stay plain
+gym.machines.find((m) => m.id === 'm1').muscles = ['Chest'];
+gym.machines.find((m) => m.id === 'm2').muscles = ['Lower back'];
+gym.machines.find((m) => m.id === 'near').muscles = ['Shoulders'];
+store.saveGym(gym);
+
+store.saveActive({
+  v: 2, id: 'w-coverage', startedAt: 1755000000000,
+  plan: [{ machineId: 'm1', exercise: null }, { machineId: 'm2', exercise: null }],
+  currentMachineId: null, currentExercise: null,
+  entries: [
+    { machineId: 'm1', num: 1, label: 'Chest press', settings: {}, sets: [{ reps: 8, weight: 10 }] },
+    { machineId: 'm2', num: 3, label: 'Back extension', settings: {}, sets: [] },
+  ],
+});
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('Muscles today'), 'overview renders the coverage card');
+assert.ok(root.innerHTML.includes('chip sel done" data-muscle="Chest"'),
+  'a muscle trained this session is marked covered');
+assert.ok(root.innerHTML.includes('chip" data-muscle="Lower back"'),
+  'a machine without sets leaves its muscle open');
+assert.ok(root.innerHTML.includes('chip" data-muscle="Shoulders"'),
+  'unvisited machines leave their muscles open');
+
 console.log('train plan construction: all assertions passed');

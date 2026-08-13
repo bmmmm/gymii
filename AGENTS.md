@@ -89,7 +89,10 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   `nearbyAlternative()` renders a "Busy? #N … is nearby" button under the
   next-row: the physically closest OTHER open station (machine centers,
   current + plan-next excluded) as the busy-machine escape hatch —
-  display-only, the skipped slot resurfaces via the wrap-around. Set-arithmetic must guard
+  display-only, the skipped slot resurfaces via the wrap-around.
+  The overview's "Muscles today" chips (muscles of machines with sets
+  this session, read live from the gym) double as navigation: a tap
+  calls the picker's `setMuscle()` to filter machines for that muscle. Set-arithmetic must guard
   against other shapes (`st.reps * st.weight || 0`). No machines = an
   onboarding screen (studio / quick start / template), and the picker
   offers create-on-miss for unknown numbers via `store.addMachine()` —
