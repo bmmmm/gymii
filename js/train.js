@@ -1,21 +1,35 @@
 import {
   getGym, saveGym, getSettings, saveSettings, getActive, saveActive, finishWorkout,
-  lastEntryFor, getWorkouts, uid, usageByMachine, distUnit, newGym, addMachine,
+  lastEntryFor, getWorkouts, getPlans, uid, usageByMachine, distUnit, newGym, addMachine,
 } from './store.js';
 import { drawGym, usagePayload, findMachineByNum } from './studio.js';
-import { esc, fmtDuration, workoutTotals, setStr, twoTapConfirm } from './ui.js';
+import { renderPlanBuilder } from './plan.js';
+import { esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField } from './ui.js';
 
 // Active workout shape:
-//   { v: 2, id, startedAt, plan: [{machineId, exercise|null}…],
+//   { v: 2, id, startedAt, plan: [{machineId, exercise|null, target?}…],
 //     currentMachineId|null, currentExercise|null, entries: [] }
 // plan is the guided order — one slot per (machine, exercise) pair when
 // repeating a workout (so "Next:" walks every exercise of a multi-exercise
 // station), growing as machines are opened in a free session. exercise null
 // means the slot covers the whole station. currentMachineId null shows the
-// workout overview hub instead of a machine's logging screen.
+// workout overview hub instead of a machine's logging screen. Slots started
+// from a stored plan may carry a target ({sets,reps,weight} or
+// {distance,seconds}) — older/free slots simply lack the key.
 // Each entry.sets item ({ reps, weight } or { distance, seconds }) also
 // carries `at` — epoch ms stamped via `Date.now()` when the set is logged.
 // Sets logged before this feature lack `at`; consumers must guard for it.
+
+// Train-tab internal screen state: when set, the start screen yields to
+// the plan builder ({ planId|null, notice }). An active workout still
+// outranks it — a mid-workout AI import just saves the plan silently.
+let builder = null;
+
+// Lets ai.js hand an imported plan over for review before switching the
+// hash to #train (module state survives; the app never reloads between tabs).
+export function openPlanBuilder(planId, notice = '') {
+  builder = { planId, notice };
+}
 
 export function renderTrain(root, message = '') {
   const gym = getGym();
@@ -24,6 +38,7 @@ export function renderTrain(root, message = '') {
   // mid-workout by an import or a studio edit, and the quick start must
   // never overwrite logged sets.
   if (!gym || (!active && !gym.machines.length)) {
+    builder = null; // a wiped gym invalidates a pending builder screen
     renderOnboarding(root, message);
     return;
   }
@@ -39,6 +54,11 @@ export function renderTrain(root, message = '') {
     }
     if (active.currentMachineId) renderLog(root, gym, active);
     else renderOverview(root, gym, active);
+  } else if (builder) {
+    renderPlanBuilder(root, builder, (message2 = '') => {
+      builder = null;
+      renderTrain(root, message2);
+    });
   } else {
     renderStart(root, gym, message);
   }
@@ -58,7 +78,8 @@ export function startWorkoutFrom(source, firstMachineId = null) {
       const machine = gym?.machines.find((m) => m.id === e.machineId);
       if (!machine) return null;
       const exercise = machine.exercises?.includes(e.exercise) ? e.exercise : null;
-      return { machineId: e.machineId, exercise };
+      // a stored plan's items carry their target through to the slot
+      return { machineId: e.machineId, exercise, ...(e.target ? { target: e.target } : {}) };
     })
     .filter(Boolean);
   const plan = pairs
@@ -86,10 +107,20 @@ const machineChain = (workout) =>
 
 // --- start screen ---
 
+// Distinct machine nums of a plan, in item order — the plan-list twin of
+// machineChain (which reads a workout's entries).
+const planChain = (plan, gym) => [...new Set(plan.items
+  .map((it) => gym.machines.find((m) => m.id === it.machineId))
+  .filter(Boolean).map((m) => `#${m.num}`))].join(' → ');
+
 function renderStart(root, gym, message) {
   const workouts = getWorkouts();
   const last = workouts[workouts.length - 1];
   const s = getSettings();
+  const plans = getPlans();
+  // A named plan OWNS its routine: workouts logged from it carry its name,
+  // and their derived start rows would duplicate the plan's own row.
+  const planNames = new Set(plans.map((p) => p.name).filter(Boolean));
 
   // Easy starting points: the latest workout gets the big button, and
   // every DIFFERENT machine set in history (a push/pull/legs rotation,
@@ -104,11 +135,16 @@ function renderStart(root, gym, message) {
   const routines = [];
   const seen = new Set(last ? [routineKey(last)] : []);
   for (let i = workouts.length - 2; i >= 0 && routines.length < 4; i--) {
-    const key = routineKey(workouts[i]);
-    if (seen.has(key)) continue;
+    const w = workouts[i];
+    const key = routineKey(w);
+    if (seen.has(key) || (w.name && planNames.has(w.name))) continue;
     seen.add(key);
-    routines.push(workouts[i]);
+    routines.push(w);
   }
+
+  // "last done" for a plan comes from history via its name
+  const planLastDone = (p) => (p.name
+    ? workouts.findLast((w) => w.name === p.name) ?? null : null);
 
   root.innerHTML = `
     <h1>Train</h1>
@@ -116,6 +152,27 @@ function renderStart(root, gym, message) {
     ${last ? `<button id="repeat" class="btn btn-primary btn-big">Repeat last workout
       <span class="sub">${new Date(last.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
       · ${last.name ? `${esc(last.name)} · ` : ''}${machineChain(last)}</span></button>` : ''}
+    <section class="card">
+      <h2>Planned workouts</h2>
+      <div id="plan-list">
+        ${plans.map((p) => {
+    const done = planLastDone(p);
+    const machines = new Set(p.items.map((it) => it.machineId)).size;
+    return `<div class="recent-row">
+          <div class="recent-info">
+            <strong>${p.name ? esc(p.name) : planChain(p, gym) || 'Unnamed plan'}</strong>
+            <span class="muted">${p.name ? `${planChain(p, gym)} · ` : ''}${machines} machine${machines === 1 ? '' : 's'}${done
+    ? ` · last: ${new Date(done.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>
+          </div>
+          <button class="btn btn-inline plan-edit" data-pid="${p.id}">Edit</button>
+          <button class="btn btn-inline plan-start" data-pid="${p.id}">Start</button>
+        </div>`;
+  }).join('')}
+      </div>
+      <button id="plan-new" class="btn">+ Plan a workout</button>
+      ${plans.length ? '' : `<p class="muted">Build a session in advance — pick machines
+        by muscle, set targets, start it any day. Or ask your AI for one on the AI tab.</p>`}
+    </section>
     ${routines.length ? `
     <section class="card">
       <h2>Start another routine</h2>
@@ -138,6 +195,30 @@ function renderStart(root, gym, message) {
 
   root.querySelector('#repeat')?.addEventListener('click', () => {
     startWorkoutFrom(last);
+    renderTrain(root);
+  });
+
+  // delegated: the stubbed test DOM (and less wiring) both prefer one
+  // listener on the list over one per row
+  root.querySelector('#plan-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('.plan-start, .plan-edit');
+    if (!btn) return;
+    const plan = plans.find((p) => p.id === btn.dataset.pid);
+    if (!plan) return;
+    if (btn.classList.contains('plan-edit')) {
+      builder = { planId: plan.id, notice: '' };
+      renderTrain(root);
+      return;
+    }
+    startWorkoutFrom({
+      ...(plan.name ? { name: plan.name } : {}),
+      entries: plan.items,
+    });
+    renderTrain(root);
+  });
+
+  root.querySelector('#plan-new').addEventListener('click', () => {
+    builder = { planId: null, notice: '' };
     renderTrain(root);
   });
 
@@ -364,8 +445,14 @@ const entryFor = (active, machineId, exercise = null) =>
 const slotEntries = (active, slot) =>
   active.entries.filter((e) => e.machineId === slot.machineId
     && (!slot.exercise || (e.exercise ?? null) === slot.exercise));
-const slotDone = (active, slot) =>
-  slotEntries(active, slot).some((e) => e.sets.length);
+const slotSetCount = (active, slot) =>
+  slotEntries(active, slot).reduce((n, e) => n + e.sets.length, 0);
+// Done means any set logged — or, when the slot carries a plan target,
+// the target's set count reached: the "Next" walk then keeps pulling the
+// workout back to stations with unfinished targets.
+const slotDone = (active, slot) => (slot.target?.sets
+  ? slotSetCount(active, slot) >= slot.target.sets
+  : slotEntries(active, slot).some((e) => e.sets.length));
 
 function renderOverview(root, gym, active) {
   const s = getSettings();
@@ -380,12 +467,15 @@ function renderOverview(root, gym, active) {
     const label = machine?.label ?? entries[0].label;
     const slotSets = entries.reduce((n, e) => n + e.sets.length, 0);
     const done = slotDone(active, slot);
+    const goal = slot.target?.sets;
+    // with a target the status counts progress against it ("1/3 sets")
+    const status = !slotSets && !done ? 'open'
+      : `${done ? '✓ ' : ''}${slotSets}${goal ? `/${goal}` : ''} set${(goal ?? slotSets) === 1 ? '' : 's'}`;
     return `<button class="plan-row" data-i="${i}" ${machine ? '' : 'disabled'}>
       <span class="machine-badge sm">${num}</span>
       <span class="plan-label">${esc(label)}${slot.exercise
         ? ` <span class="muted">· ${esc(slot.exercise)}</span>` : ''}</span>
-      <span class="plan-status${done ? ' done' : ''}">${done
-        ? `✓ ${slotSets} set${slotSets === 1 ? '' : 's'}` : 'open'}</span>
+      <span class="plan-status${done ? ' done' : ''}">${status}</span>
     </button>`;
   }).join('');
 
@@ -478,6 +568,19 @@ function planSlotIndex(active, machineId, exercise = null) {
     : active.plan.findIndex((p) => p.machineId === machineId);
 }
 
+// The plan target that applies at this logging position, if any.
+const planTargetFor = (active, machineId, exercise = null) => {
+  const idx = planSlotIndex(active, machineId, exercise);
+  return idx === -1 ? null : active.plan[idx].target ?? null;
+};
+
+// "3 × 10 @ 50 kg" / "3 × 10 @ BW+5 kg" / "1000 m · 10:00"
+const targetStr = (t, type, s) => (type === 'cardio'
+  ? `${t.distance} ${distUnit(s)} · ${fmtDuration(t.seconds)}`
+  : type === 'bodyweight'
+    ? `${t.sets} × ${t.reps}${t.weight ? ` @ BW+${t.weight} ${s.unit}` : ''}`
+    : `${t.sets} × ${t.reps} @ ${t.weight} ${s.unit}`);
+
 // --- logging screen ---
 
 // Resolves which entry the logging screen edits. At multi-exercise
@@ -552,7 +655,12 @@ function renderLog(root, gym, active) {
   const lastSets = last
     && !!last.cardio === !!entry?.cardio
     && !!last.bodyweight === !!entry?.bodyweight ? last : null;
-  const def = pickPending ? null : nextSetDefaults(entry, lastSets, type, s);
+  // Plan target for this slot — dropped when its shape no longer matches
+  // the machine's type (flag toggled since the plan was made).
+  const rawTarget = pickPending ? null : planTargetFor(active, machine.id, exercise);
+  const target = rawTarget
+    && (cardio ? rawTarget.distance != null : rawTarget.reps != null) ? rawTarget : null;
+  const def = pickPending ? null : nextSetDefaults(entry, lastSets, type, s, target);
   const restSeconds = machine.restSeconds ?? s.restSeconds;
   const planPos = `${planSlotIndex(active, machine.id, exercise) + 1}/${active.plan.length}`;
   const nextSlot = nextOpenSlot(active, machine.id, exercise);
@@ -587,6 +695,7 @@ function renderLog(root, gym, active) {
     : lastSets
       ? `Last: ${setsSummary(lastSets.sets, s, !!lastSets.bodyweight)}`
       : `First time on this ${exercise ? 'exercise' : 'machine'}`}</div>
+        ${target ? `<div class="muted">Target: ${targetStr(target, type, s)}</div>` : ''}
         ${machine.muscles?.length ? `<div class="muted">${machine.muscles.map(esc).join(' · ')}</div>` : ''}
         ${machine.docUrl ? `<a class="doc-link" href="${esc(machine.docUrl)}"
           target="_blank" rel="noopener">Machine docs ↗</a>` : ''}
@@ -745,21 +854,20 @@ function renderLog(root, gym, active) {
   });
 }
 
-// One labeled stepper row for the logging screen — renderLog needs three
-// per branch and the markup is identical apart from label/id/step.
-const stepperField = (label, id, { step, min, value, mode = 'decimal' }) => `
-  <div class="spread"><span class="label">${label}</span>
-    <div class="stepper" data-step="${step}" data-min="${min}">
-      <button type="button" class="step-down" aria-label="decrease ${label.toLowerCase()}">−</button>
-      <input id="${id}" type="number" inputmode="${mode}" value="${value}">
-      <button type="button" class="step-up" aria-label="increase ${label.toLowerCase()}">+</button>
-    </div>
-  </div>`;
-
 // Default for the next set: same set number last time, then the set just
-// done this session, then the last set of the previous session. `last`
-// must already be type-matched to the entry (caller gates on the flags).
-function nextSetDefaults(entry, last, type, s) {
+// done this session, then the last set of the previous session. `last` and
+// `target` must already be type-matched to the entry (caller gates on the
+// flags). A plan target is the goal for THIS session: it beats history as
+// the first-set prefill, but never what was actually just lifted — after a
+// deviation (50 instead of the planned 55) the prefill follows the real
+// working weight.
+function nextSetDefaults(entry, last, type, s, target = null) {
+  if (target) {
+    if (entry.sets.length) return entry.sets[entry.sets.length - 1];
+    return type === 'cardio'
+      ? { distance: target.distance, seconds: target.seconds }
+      : { reps: target.reps, weight: target.weight };
+  }
   const i = entry.sets.length;
   if (last?.sets?.[i]) return last.sets[i];
   if (entry.sets.length) return entry.sets[entry.sets.length - 1];

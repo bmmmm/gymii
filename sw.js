@@ -2,11 +2,11 @@
 // files (no stale-module hell, no cache-name bump per deploy); an offline
 // user gets whatever was last fetched successfully. Relative URLs keep the
 // app subpath-safe (e.g. GitHub Pages project sites).
-const CACHE = 'gymii-v2'; // bumped: SHELL gained templates/*.json
+const CACHE = 'gymii-v3'; // bumped: SHELL gained js/plan.js
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest',
   'css/style.css',
-  'js/app.js', 'js/store.js', 'js/train.js', 'js/studio.js', 'js/history.js',
+  'js/app.js', 'js/store.js', 'js/train.js', 'js/plan.js', 'js/studio.js', 'js/history.js',
   'js/ai.js', 'js/settings.js', 'js/ui.js', 'js/chart.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-512-maskable.png',
   'icons/apple-touch-icon.png',

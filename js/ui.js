@@ -85,6 +85,18 @@ export function twoTapConfirm(btn, armedLabel, restLabel) {
   return true;
 }
 
+// One labeled stepper row — the logging screen and the plan builder both
+// render several and the markup is identical apart from label/id/step.
+// Pairs with initSteppers()'s delegated +/− handling.
+export const stepperField = (label, id, { step, min, value, mode = 'decimal' }) => `
+  <div class="spread"><span class="label">${label}</span>
+    <div class="stepper" data-step="${step}" data-min="${min}">
+      <button type="button" class="step-down" aria-label="decrease ${label.toLowerCase()}">−</button>
+      <input id="${id}" type="number" inputmode="${mode}" value="${value}">
+      <button type="button" class="step-up" aria-label="increase ${label.toLowerCase()}">+</button>
+    </div>
+  </div>`;
+
 // One set, rendered compactly; bodyweight shares {reps,weight}, so its
 // flag is passed in rather than sniffed from the shape.
 export const setStr = (st, settings, bodyweight = false) => (st.distance != null

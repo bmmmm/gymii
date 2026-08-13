@@ -92,7 +92,7 @@ export function deleteProfile(id) {
   profiles.list = profiles.list.filter((p) => p.id !== id);
   if (profiles.activeId === id) profiles.activeId = profiles.list[0].id;
   write(KEYS.profiles, profiles);
-  ['gym', 'workouts', 'active'].forEach((part) => localStorage.removeItem(scopedKey(id, part)));
+  ['gym', 'workouts', 'active', 'plans'].forEach((part) => localStorage.removeItem(scopedKey(id, part)));
   return true;
 }
 
@@ -221,6 +221,35 @@ export function lastEntryFor(machineId, exercise = null) {
   return null;
 }
 
+// --- workout plans ---
+// A plan is an explicitly saved routine: ordered machine slots plus an
+// optional per-slot target. Starting one feeds it straight into the guided
+// flow (train.js startWorkoutFrom), so plans and repeats share one
+// execution path. Shape:
+//   { id, name, items: [{ machineId, exercise|null,
+//     target?: {sets,reps,weight} | {distance,seconds} }] }
+
+export function getPlans() {
+  return read(scopedKey(activeProfileId(), 'plans'), []);
+}
+
+export function savePlans(list) {
+  write(scopedKey(activeProfileId(), 'plans'), list);
+}
+
+// Upserts by id so the builder saves new and edited plans alike.
+export function savePlan(plan) {
+  const list = getPlans();
+  const idx = list.findIndex((p) => p.id === plan.id);
+  if (idx === -1) list.push(plan); else list[idx] = plan;
+  savePlans(list);
+  return plan;
+}
+
+export function deletePlan(id) {
+  savePlans(getPlans().filter((p) => p.id !== id));
+}
+
 // --- active (in-progress) workout, saved after every set for crash safety ---
 
 export function getActive() {
@@ -326,6 +355,7 @@ export function exportBackup() {
     v: 1,
     gym: getGym(),
     workouts: getWorkouts(),
+    plans: getPlans(),
     settings: getSettings(),
   };
 }
@@ -341,7 +371,39 @@ function isValidGym(gym) {
       && gym.outline.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))));
 }
 
-// Returns the imported kind ('gym-template' | 'backup'), throws on bad input.
+// Resolves an LLM-produced workout-plan file against the current gym.
+// Machines are referenced by their visible num — the only stable handle an
+// LLM sees in the AI export. Unknown nums land in `skipped` instead of
+// failing the whole import: the answer may arrive hours after the export,
+// and the gym can have changed in between. Does not persist anything.
+export function planFromImport(data) {
+  const gym = getGym();
+  if (!gym) throw new Error('No gym yet — build or import one first');
+  if (!Array.isArray(data.items) || !data.items.length) throw new Error('Plan has no items');
+  const int = (v, min, fb) => (Number.isFinite(v) ? Math.max(min, Math.round(v)) : fb);
+  const pos = (v, fb) => (Number.isFinite(v) && v >= 0 ? v : fb);
+  const skipped = [];
+  const items = [];
+  data.items.forEach((raw) => {
+    const machine = gym.machines.find((m) => m.num === raw.num);
+    if (!machine) { skipped.push(raw.num ?? '?'); return; }
+    const exercise = machine.exercises?.includes(raw.exercise) ? raw.exercise : null;
+    const target = machine.cardio
+      ? (raw.distance != null || raw.seconds != null
+        ? { distance: pos(raw.distance, 1000), seconds: int(raw.seconds, 0, 600) } : null)
+      : (raw.sets != null || raw.reps != null || raw.weight != null
+        ? { sets: int(raw.sets, 1, 3), reps: int(raw.reps, 1, 10), weight: pos(raw.weight, 0) } : null);
+    items.push({ machineId: machine.id, exercise, ...(target ? { target } : {}) });
+  });
+  if (!items.length) throw new Error('No machines matched this gym');
+  return {
+    plan: { id: uid(), name: String(data.name || '').trim(), items },
+    skipped,
+  };
+}
+
+// Returns the imported kind ('gym-template' | 'backup' | 'workout-plan'),
+// throws on bad input.
 export function importData(data) {
   if (!data || data.app !== 'gymii') throw new Error('Not a gymii file');
   if (data.kind === 'gym-template') {
@@ -353,8 +415,15 @@ export function importData(data) {
     if (!isValidGym(data.gym) || !Array.isArray(data.workouts)) throw new Error('Invalid backup');
     saveGym(data.gym);
     saveWorkouts(data.workouts);
+    if (Array.isArray(data.plans)) {
+      savePlans(data.plans.filter((p) => p && p.id && Array.isArray(p.items)));
+    }
     saveSettings({ ...getSettings(), ...data.settings });
     return 'backup';
+  }
+  if (data.kind === 'workout-plan') {
+    savePlan(planFromImport(data).plan);
+    return 'workout-plan';
   }
   throw new Error('Unrecognized file kind');
 }
@@ -362,7 +431,7 @@ export function importData(data) {
 // Full factory reset: every profile's data, the registry, and settings.
 export function clearAll() {
   const profiles = read(KEYS.profiles, null);
-  profiles?.list.forEach((p) => ['gym', 'workouts', 'active']
+  profiles?.list.forEach((p) => ['gym', 'workouts', 'active', 'plans']
     .forEach((part) => localStorage.removeItem(scopedKey(p.id, part))));
   [KEYS.profiles, KEYS.settings, 'gymii.gym', 'gymii.workouts', 'gymii.active']
     .forEach((k) => localStorage.removeItem(k));

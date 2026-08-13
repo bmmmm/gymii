@@ -145,7 +145,9 @@ export function renderSettings(root) {
     if (!file) return;
     try {
       const kind = importData(JSON.parse(await file.text()));
-      msg.textContent = kind === 'backup' ? 'Backup imported.' : 'Gym template imported.';
+      msg.textContent = kind === 'backup' ? 'Backup imported.'
+        : kind === 'workout-plan' ? 'Workout plan imported — find it on the Train tab.'
+          : 'Gym template imported.';
     } catch (err) {
       msg.textContent = `Import failed: ${err.message}`;
     }

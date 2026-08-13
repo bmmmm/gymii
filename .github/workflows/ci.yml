@@ -21,6 +21,7 @@ jobs:
           node-version: '24'
       - run: node test/store.test.mjs
       - run: node test/train.test.mjs
+      - run: node test/plan.test.mjs
       - run: node test/studio.test.mjs
 
   # A runtime asset missing from the sw.js SHELL list breaks the app OFFLINE
