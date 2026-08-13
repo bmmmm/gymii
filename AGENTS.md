@@ -98,8 +98,9 @@ Push both or the mirror drifts: `git push origin main && git push github main`.
 Dependabot/CodeQL PRs on GitHub are signals only — fix locally and push to
 both remotes, never merge in the GitHub UI.
 
-`.github/workflows/ci.yml` runs `node test/store.test.mjs` and cross-checks the
-`sw.js` SHELL list against `git ls-files`, then deploys the repo root to Pages
+`.github/workflows/ci.yml` runs all three logic tests (`test/*.test.mjs`) and
+cross-checks the `sw.js` SHELL list against `git ls-files`, then deploys the
+repo root to Pages
 (<https://bmmmm.github.io/gymii/>) once both pass on main. `security.yml`
 (gitleaks + forbidden files + token grep) and `shellcheck.yml` (only on
 `scripts/**`) round out the checkers. The site lives on a project subpath, so
