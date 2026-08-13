@@ -264,6 +264,13 @@ function renderOnboarding(root, message) {
       <p class="muted">Load a ready-made gym from the
         <a href="#studio">Studio's template library</a>, or import a backup in
         <a href="#settings">Settings</a>.</p>
+    </section>
+    <section class="card">
+      <h2>Plan ahead</h2>
+      <p class="muted">As soon as your gym has its first machine, this screen
+        adds planned workouts: build a session in advance — machines by muscle,
+        target sets × reps × weight — or paste a plan your AI drafted on the
+        <a href="#ai">AI tab</a>.</p>
     </section>`;
 
   const start = () => {

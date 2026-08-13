@@ -79,7 +79,8 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   `active.currentExercise` tracks the picked one and follows the slot on
   Next:/overview-row switches (null when arriving via the picker). Set-arithmetic must guard
   against other shapes (`st.reps * st.weight || 0`). No machines = an
-  onboarding screen (studio / quick start / template), and the picker
+  onboarding screen (studio / quick start / template / plan-ahead
+  pointer), and the picker
   offers create-on-miss for unknown numbers via `store.addMachine()` —
   training never requires a studio visit first.
 - `js/history.js` — month heatmap (per-machine filter), progress chart
