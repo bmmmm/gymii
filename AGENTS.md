@@ -14,6 +14,9 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   interactions are best tested with scripted PointerEvents + localStorage
   asserts — pixel coordinates shift with window size. `setPointerCapture`
   is wrapped in try/catch so synthetic events work.
+- `navigator.wakeLock` cannot be verified via claude-in-chrome (the
+  automation window is hidden → NotAllowedError); verify the denial path
+  live and the acquire/release logic by review.
 
 ## Architecture
 
