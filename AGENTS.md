@@ -9,9 +9,11 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   `Cache-Control: no-store`; plain `http.server` made Chrome serve stale
   modules — don't go back to it).
 - Logic tests: `node test/store.test.mjs` (stubs localStorage, covers store
-  roundtrips, outline migration, template validation, locker carry-over) and
-  `node test/train.test.mjs` (guided-plan construction; train.js imports
-  fine in Node as long as no module touches the DOM at top level).
+  roundtrips, outline migration, template validation, locker carry-over),
+  `node test/train.test.mjs` (guided-plan construction) and
+  `node test/plan.test.mjs` (stored plans, AI plan import, target flow);
+  train.js imports fine in Node as long as no module touches the DOM at
+  top level.
 - UI changes: verify in a real browser (claude-in-chrome). Editor
   interactions are best tested with scripted PointerEvents + localStorage
   asserts — pixel coordinates shift with window size. `setPointerCapture`
@@ -40,7 +42,12 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   station into per-exercise entries — `lastEntryFor(machineId, exercise)`.
   Other lazy migrations live in `getGym()` (outline, meta). Pick lists:
   `MUSCLE_GROUPS`, `COMMON_SETTINGS`, `ZONE_LABELS` (its 'Cardio' string
-  is a room label — unrelated to the `machine.cardio` flag).
+  is a room label — unrelated to the `machine.cardio` flag). Stored plans
+  live under `gymii.<pid>.plans`: `{id, name, items:[{machineId,
+  exercise|null, target?}]}` with target `{sets,reps,weight}` or
+  `{distance,seconds}`; part of backups, wiped with the profile.
+  `planFromImport()` resolves an AI `workout-plan` file (machines by num,
+  unknown nums → `skipped`) without persisting.
 - `js/app.js` — hash-router, renders views into `#view`.
 - `js/studio.js` — floor-plan editor. `drawGym()` is the shared renderer
   (train mini-maps use it too). Polygon outline with vertex/midpoint
@@ -49,11 +56,21 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   Undo/redo = snapshot history via the local `save()` wrapper — every
   mutation must go through `save()`, never `saveGym()` directly.
 - `js/train.js` — guided workout: `active.plan` is a list of slots
-  `{machineId, exercise|null}` (null = whole station) — a repeat plans one
-  slot per (machine, exercise) pair so "Next:" walks every exercise of a
-  multi-exercise station; overview hub, per-machine `restSeconds`, locker
-  number, two-tap finish guard. Quick-switch chips on the log screen jump
-  to the two most recently trained OTHER stations (by newest set `at`).
+  `{machineId, exercise|null, target?}` (null = whole station) — a repeat
+  plans one slot per (machine, exercise) pair so "Next:" walks every
+  exercise of a multi-exercise station; overview hub, per-machine
+  `restSeconds`, locker number, two-tap finish guard. Quick-switch chips on
+  the log screen jump to the two most recently trained OTHER stations (by
+  newest set `at`). Slots started from a stored plan carry its target:
+  the log header shows it, the first-set prefill uses it (real logged sets
+  then outrank it), and `slotDone` counts sets against `target.sets`, so
+  "Next:" pulls the walk back to unfinished targets. The start screen lists
+  stored plans (Start/Edit) above history-derived routines and SKIPS
+  derived rows whose workout name matches a plan name — a named plan owns
+  its routine. The plan builder (`js/plan.js`, muscle-filtered machine
+  picking, per-item targets, reorder) renders inside the Train tab via
+  module state (`openPlanBuilder()` — used by ai.js for import review); an
+  active workout always outranks it.
   `machine.cardio` flips the log screen to
   distance+time, `machine.bodyweight` to reps + extra weight; type flags
   and `exercise` are SNAPSHOTTED onto the entry (like num/label) —
@@ -70,6 +87,9 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
 - `js/ai.js` — copy prompt+data / paste-import. Deliberately NO AI API.
   Export set tuples gain a third element (seconds offset from the
   workout's startedAt) when the set has `at`; old sets stay 2-tuples.
+  Pasting a `workout-plan` JSON saves the plan and opens the builder for
+  review (mid-workout it just saves); the default prompt tells the LLM the
+  exact plan shape to answer with.
 - `sw.js` + `manifest.webmanifest` — PWA. Network-first with cache
   fallback (online always fresh, no cache bump per deploy). IMPORTANT:
   new static files (js modules, css, icons) must be added to the SHELL
@@ -98,7 +118,7 @@ Push both or the mirror drifts: `git push origin main && git push github main`.
 Dependabot/CodeQL PRs on GitHub are signals only — fix locally and push to
 both remotes, never merge in the GitHub UI.
 
-`.github/workflows/ci.yml` runs all three logic tests (`test/*.test.mjs`) and
+`.github/workflows/ci.yml` runs all four logic tests (`test/*.test.mjs`) and
 cross-checks the `sw.js` SHELL list against `git ls-files`, then deploys the
 repo root to Pages
 (<https://bmmmm.github.io/gymii/>) once both pass on main. `security.yml`

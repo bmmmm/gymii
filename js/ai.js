@@ -2,8 +2,12 @@
 // the user copies data out and pastes results back in, keeping full
 // control over where their data goes.
 
-import { getGym, getWorkouts, getSettings, saveSettings, importData, distUnit } from './store.js';
-import { esc, twoTapConfirm } from './ui.js';
+import {
+  getGym, getWorkouts, getSettings, saveSettings, importData, distUnit,
+  getActive, planFromImport, savePlan,
+} from './store.js';
+import { openPlanBuilder } from './train.js';
+import { twoTapConfirm } from './ui.js';
 
 const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; an "exercise" field names one movement at a multi-exercise station like a free-weight area; a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis).
 
@@ -11,7 +15,11 @@ Analyze my progress: trends per machine, plateaus, and muscle-group imbalances. 
 
 Using the timing offsets: join each entry's num against the gym's machines list to get its muscles, and flag same-muscle-group sets spaced too closely together — unless the alternation looks deliberate (a consistent A↔B or A→B→C rhythm reads as a superset/circuit, which is fine and worth calling out as such). Also comment on idle gaps between stations and on the overall density of the workout.
 
-If you propose changes to my gym or machines, reply with a valid gymii gym-template JSON (exactly the structure the app exports) so I can paste it straight back into gymii.`;
+If you propose changes to my gym or machines, reply with a valid gymii gym-template JSON (exactly the structure the app exports) so I can paste it straight back into gymii.
+
+If I ask you to PLAN a workout (e.g. "plan me a chest & shoulders session", possibly excluding some machines), pick suitable machines via their muscles field and reply with a gymii workout-plan JSON I can paste back:
+{"app":"gymii","kind":"workout-plan","name":"<short name>","items":[{"num":<machine num>,"sets":3,"reps":10,"weight":50}]}
+Use each machine's num exactly as listed, weights in my unit derived from my history (a slight progression where it looks earned), add "exercise" only for a movement at a multi-exercise station, and use {"num":…,"distance":…,"seconds":…} for cardio machines.`;
 
 export function renderAi(root) {
   const settings = getSettings();
@@ -35,7 +43,7 @@ export function renderAi(root) {
 
     <section class="card">
       <h2>Import from AI</h2>
-      <p class="muted">Paste a gymii gym-template or backup JSON produced by your LLM.</p>
+      <p class="muted">Paste a gymii gym-template, backup or workout-plan JSON produced by your LLM.</p>
       <label class="stack">
         <textarea id="ai-import" rows="6"
           placeholder='{"app": "gymii", "kind": "gym-template", …}'></textarea></label>
@@ -82,7 +90,24 @@ export function renderAi(root) {
     const raw = root.querySelector('#ai-import').value.trim();
     if (!raw) return;
     try {
-      const kind = importData(JSON.parse(raw));
+      const data = JSON.parse(raw);
+      if (data?.app === 'gymii' && data.kind === 'workout-plan') {
+        // A plan import is a proposal, not a fact: save it, then hand it
+        // to the builder for review (exclude machines, adjust targets) —
+        // unless a workout is running, which outranks the builder screen.
+        const { plan, skipped } = planFromImport(data);
+        savePlan(plan);
+        const skipNote = skipped.length
+          ? ` (${skipped.length} unknown machine${skipped.length === 1 ? '' : 's'} skipped: #${skipped.join(', #')})` : '';
+        if (getActive()) {
+          importMsg.textContent = `Plan saved${skipNote} — find it on the Train tab after your workout.`;
+        } else {
+          openPlanBuilder(plan.id, `Imported from AI${skipNote} — review, adjust, save.`);
+          location.hash = '#train';
+        }
+        return;
+      }
+      const kind = importData(data);
       importMsg.textContent = kind === 'backup'
         ? 'Backup imported — check Studio and History.'
         : 'Gym template imported — check Studio.';

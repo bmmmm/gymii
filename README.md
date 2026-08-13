@@ -15,6 +15,10 @@ even a cookie banner.
   muscle. Last session's numbers prefill every set. Cardio stations log
   distance + time, bodyweight stations reps + extra weight, and free-weight
   areas keep separate histories per named exercise.
+- 📋 **Plans** — build a session in advance: pick machines by muscle group,
+  set target sets × reps × weight, then just tick it off — the workout keeps
+  pulling you back to unfinished targets. Or let your LLM draft the plan and
+  paste it in for review.
 - ⏱️ **Rest timer** — starts itself, remembers per machine, keeps the screen
   awake, beeps when you're up.
 - 📈 **History** — training heatmap, progress chart, one-tap repeat, and past

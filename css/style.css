@@ -371,6 +371,18 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .recent-row .recent-info .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-row .btn-inline { flex-shrink: 0; }
 
+/* plan builder: one editable item per machine (reorder, remove, targets) */
+.plan-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.plan-item:last-child { border-bottom: 0; }
+.plan-item-head { display: flex; align-items: center; gap: 10px; }
+.plan-item-head .plan-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.plan-item-actions { display: flex; flex-shrink: 0; }
+.plan-item-actions .x { color: var(--muted); background: none; border: 0; font-size: 16px; padding: 6px 8px; cursor: pointer; }
+.plan-item .chip-select { margin: 8px 0 2px; }
+.plan-targets { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.plan-targets .spread { align-items: center; }
+.plan-targets .label { font-size: 14px; color: var(--muted); width: 96px; }
+
 .set-row {
   display: flex;
   align-items: center;
