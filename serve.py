@@ -4,6 +4,7 @@ changes always show up on a normal reload (ES modules are cached hard
 otherwise). Not needed in production — GitHub Pages handles caching."""
 
 import http.server
+import sys
 
 
 class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
@@ -13,4 +14,6 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    http.server.test(HandlerClass=NoCacheHandler, port=8437)
+    # optional port arg so parallel checkouts can serve side by side
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8437
+    http.server.test(HandlerClass=NoCacheHandler, port=port)

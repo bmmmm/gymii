@@ -5,7 +5,7 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
 
 ## Run & verify
 
-- Dev server: `python3 serve.py` → http://localhost:8437 (sends
+- Dev server: `python3 serve.py [port]` → http://localhost:8437 (sends
   `Cache-Control: no-store`; plain `http.server` made Chrome serve stale
   modules — don't go back to it).
 - Logic tests: `node test/store.test.mjs` (stubs localStorage, covers store
