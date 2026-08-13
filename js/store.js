@@ -199,9 +199,10 @@ export function updateWorkout(patch) {
     return null;
   }
   const next = { ...list[idx], ...patch, entries };
-  // a spread merge can't express key removal — an emptied locker would
-  // otherwise silently resurrect from the stored workout
+  // a spread merge can't express key removal — an emptied locker or name
+  // would otherwise silently resurrect from the stored workout
   if (!patch.locker) delete next.locker;
+  if (!patch.name) delete next.name;
   list[idx] = next;
   saveWorkouts(list);
   return next;
@@ -245,6 +246,7 @@ export function finishWorkout(active) {
     finishedAt: Date.now(),
     entries,
     ...(active.locker ? { locker: active.locker } : {}),
+    ...(active.name ? { name: active.name } : {}),
   };
   const list = getWorkouts();
   list.push(workout);

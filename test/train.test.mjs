@@ -69,6 +69,13 @@ assert.deepEqual(active.plan, [{ machineId: 'm1', exercise: null }]);
 assert.equal(active.currentMachineId, 'm1');
 assert.strictEqual(active.currentExercise, null);
 
+// an optional workout name is pre-seeded from the source, so repeating a
+// named routine keeps its identity instead of splitting off an unnamed half
+startWorkoutFrom({ name: 'Push day', entries: [entry('m1')] });
+assert.equal(store.getActive().name, 'Push day', 'repeat carries the source workout name');
+startWorkoutFrom({ entries: [entry('m1')] });
+assert.strictEqual(store.getActive().name, undefined, 'unnamed sources start unnamed');
+
 // --- logging-screen render smoke ---
 // renderLog once referenced a variable that a refactor had moved out of
 // scope, throwing for EVERY machine; a bare innerHTML render catches that

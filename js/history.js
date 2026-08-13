@@ -126,6 +126,7 @@ export function renderHistory(root) {
     }
     if (e.target.closest('.edit-save') && editDraft) {
       if (!editDraft.locker) delete editDraft.locker;
+      if (!editDraft.name) delete editDraft.name;
       updateWorkout(editDraft);
       renderHistory(root); // heatmap/chart/options close over the old snapshot
       return;
@@ -161,6 +162,8 @@ export function renderHistory(root) {
       editDraft.entries[+t.dataset.ei].sets[+t.dataset.si].seconds = Math.round(v * 60);
     } else if (t.classList.contains('edit-locker')) {
       editDraft.locker = t.value.trim();
+    } else if (t.classList.contains('edit-name')) {
+      editDraft.name = t.value.trim();
     }
   });
 
@@ -295,7 +298,7 @@ function workoutHtml(w, s) {
     <summary>
       <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>
         <span class="muted">${fmtTime(w.startedAt)} · ${minsOf(w)} min</span></div>
-      <div class="muted">${chain}</div>
+      <div class="muted">${w.name ? `<strong>${esc(w.name)}</strong> · ` : ''}${chain}</div>
       <div class="muted">${sets} set${sets === 1 ? '' : 's'} · ${workoutTotals(w, s)}${w.locker
         ? ` · 🔒 ${esc(w.locker)}` : ''}</div>
     </summary>
@@ -341,6 +344,8 @@ function editWorkoutHtml(w, s) {
             <button class="x set-del" data-ei="${ei}" data-si="${si}" aria-label="Remove set ${si + 1}">✕</button>
           </div>`).join('') || '<p class="muted">No sets left — removed on save.</p>'}
       </div>`).join('')}
+    <label class="field"><span>Name</span>
+      <input type="text" class="edit-name" value="${esc(w.name || '')}" placeholder="none"></label>
     <label class="field"><span>Locker</span>
       <input type="text" class="edit-locker" value="${esc(w.locker || '')}" placeholder="none"></label>
     <div class="row">

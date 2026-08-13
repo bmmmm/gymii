@@ -71,6 +71,9 @@ export function startWorkoutFrom(source, firstMachineId = null) {
   }
   saveActive({
     v: 2, id: uid(), startedAt: Date.now(),
+    // repeating a named workout keeps its identity — without this the
+    // routine group would split into a named and an unnamed half
+    ...(source?.name ? { name: source.name } : {}),
     plan,
     currentMachineId: firstMachineId ?? plan[0]?.machineId ?? null,
     currentExercise: firstMachineId ? null : plan[0]?.exercise ?? null,
@@ -93,7 +96,11 @@ function renderStart(root, gym, message) {
   // say) gets its own start row — routines emerge from the log, no
   // manual routine management. Keyed on machine IDs, not the displayed
   // #num chain, so renumbering in the studio doesn't split a routine.
-  const routineKey = (w) => [...new Set(w.entries.map((e) => e.machineId))].join('|');
+  // An optional workout name outranks that chain: two routines on the
+  // same machines but with different exercises stay apart once named.
+  const routineKey = (w) => (w.name
+    ? `name:${w.name}`
+    : [...new Set(w.entries.map((e) => e.machineId))].join('|'));
   const routines = [];
   const seen = new Set(last ? [routineKey(last)] : []);
   for (let i = workouts.length - 2; i >= 0 && routines.length < 4; i--) {
@@ -108,15 +115,15 @@ function renderStart(root, gym, message) {
     ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
     ${last ? `<button id="repeat" class="btn btn-primary btn-big">Repeat last workout
       <span class="sub">${new Date(last.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-      · ${machineChain(last)}</span></button>` : ''}
+      · ${last.name ? `${esc(last.name)} · ` : ''}${machineChain(last)}</span></button>` : ''}
     ${routines.length ? `
     <section class="card">
       <h2>Start another routine</h2>
       ${routines.map((w) => `
         <div class="recent-row">
           <div class="recent-info">
-            <strong>${machineChain(w)}</strong>
-            <span class="muted">last: ${new Date(w.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+            <strong>${w.name ? esc(w.name) : machineChain(w)}</strong>
+            <span class="muted">${w.name ? `${machineChain(w)} · ` : ''}last: ${new Date(w.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
               · ${workoutTotals(w, s)}</span>
           </div>
           <button class="btn btn-inline repeat-w" data-wid="${w.id}">Repeat</button>
@@ -330,6 +337,15 @@ function renderOverview(root, gym, active) {
     <h1>Workout</h1>
     <p class="muted">${mins} min · ${sets} set${sets === 1 ? '' : 's'} · ${workoutTotals(active, s)}</p>
     <section class="card">
+      <h2>Name</h2>
+      <div class="row">
+        <input id="workout-name" type="text" placeholder="e.g. Push day"
+          value="${esc(active.name ?? '')}">
+      </div>
+      <p class="muted">Optional — a named workout gets its own start row, so
+        two routines on the same machines stay apart.</p>
+    </section>
+    <section class="card">
       <h2>Locker</h2>
       <div class="row">
         <input id="locker-num" type="text" inputmode="numeric" placeholder="Locker #"
@@ -346,6 +362,11 @@ function renderOverview(root, gym, active) {
       <div id="picker"></div>
     </section>
     <button id="finish" class="btn">Finish workout</button>`;
+
+  root.querySelector('#workout-name').addEventListener('change', (e) => {
+    active.name = e.target.value.trim();
+    saveActive(active);
+  });
 
   root.querySelector('#locker-num').addEventListener('change', (e) => {
     active.locker = e.target.value.trim();

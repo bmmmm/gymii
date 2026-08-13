@@ -30,9 +30,11 @@ store.saveActive({
 });
 const activeBefore = store.getActive();
 activeBefore.locker = '23';
+activeBefore.name = 'Push day';
 const saved = store.finishWorkout(activeBefore);
 assert.equal(saved.entries.length, 1, 'set-less entries dropped');
 assert.equal(saved.locker, '23', 'locker number carried into history');
+assert.equal(saved.name, 'Push day', 'workout name carried into history');
 assert.equal(store.getActive(), null, 'active cleared after finish');
 assert.equal(store.getWorkouts().length, 1);
 
@@ -113,6 +115,10 @@ assert.equal(store.getWorkouts()[0].entries.length, 1, 'zero-set entries dropped
 assert.equal(store.getWorkouts()[0].entries[0].sets[0].weight, 35);
 const cleared = store.updateWorkout({ ...store.getWorkouts()[0], locker: '' });
 assert.strictEqual(cleared.locker, undefined, 'an emptied locker stays gone (spread merge trap)');
+const named = store.updateWorkout({ ...store.getWorkouts()[0], name: 'Push day' });
+assert.equal(named.name, 'Push day', 'update stores an optional workout name');
+const unnamed = store.updateWorkout({ ...store.getWorkouts()[0], name: '' });
+assert.strictEqual(unnamed.name, undefined, 'an emptied name stays gone (spread merge trap)');
 assert.equal(store.updateWorkout({ id: 'wb', entries: [{ machineId: 'm2', num: 2, label: 'B', settings: {}, sets: [] }] }),
   null, 'update with only empty entries removes the workout');
 assert.equal(store.getWorkouts().length, 0);
@@ -181,6 +187,7 @@ store.saveActive({
 });
 const cardioSaved = store.finishWorkout(store.getActive());
 assert.equal(cardioSaved.entries[1].cardio, true, 'cardio flag survives finish');
+assert.ok(!('name' in cardioSaved), 'an unnamed workout carries no name field');
 assert.deepEqual(cardioSaved.entries[1].sets[0], { distance: 5000, seconds: 1800 });
 
 store.setUnit('lbs');
