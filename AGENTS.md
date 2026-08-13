@@ -30,7 +30,11 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   unit — `setUnit()` converts ALL profiles' data in one shot. Set shapes:
   strength `{reps, weight}`, cardio `{distance, seconds}` (distance in the
   display unit, m/mi via `distUnit()`; seconds unit-less), bodyweight
-  reuses `{reps, weight}` with weight = ADDED weight. Machine type flags
+  reuses `{reps, weight}` with weight = ADDED weight. Live-logged sets also
+  carry `at` (epoch ms, stamped at log time) — older sets lack it, every
+  consumer must guard. Workouts may carry an optional `name`
+  (locker-style lifecycle: dropped when emptied; start screen groups
+  routines by name when present). Machine type flags
   `cardio`/`bodyweight` are mutually exclusive and absent for strength;
   optional `machine.exercises: [string]` (deleted when emptied) splits a
   station into per-exercise entries — `lastEntryFor(machineId, exercise)`.
@@ -48,7 +52,9 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   `{machineId, exercise|null}` (null = whole station) — a repeat plans one
   slot per (machine, exercise) pair so "Next:" walks every exercise of a
   multi-exercise station; overview hub, per-machine `restSeconds`, locker
-  number, two-tap finish guard. `machine.cardio` flips the log screen to
+  number, two-tap finish guard. Quick-switch chips on the log screen jump
+  to the two most recently trained OTHER stations (by newest set `at`).
+  `machine.cardio` flips the log screen to
   distance+time, `machine.bodyweight` to reps + extra weight; type flags
   and `exercise` are SNAPSHOTTED onto the entry (like num/label) —
   history/edit/chart/AI read the entry, never the live machine.
@@ -62,6 +68,8 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
 - `js/history.js` — month heatmap (per-machine filter), progress chart
   (`js/chart.js`), workout list with repeat.
 - `js/ai.js` — copy prompt+data / paste-import. Deliberately NO AI API.
+  Export set tuples gain a third element (seconds offset from the
+  workout's startedAt) when the set has `at`; old sets stay 2-tuples.
 - `sw.js` + `manifest.webmanifest` — PWA. Network-first with cache
   fallback (online always fresh, no cache bump per deploy). IMPORTANT:
   new static files (js modules, css, icons) must be added to the SHELL
