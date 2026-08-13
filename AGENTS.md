@@ -63,7 +63,12 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   history/edit/chart/AI read the entry, never the live machine.
   Multi-exercise stations hold one entry per (machineId, exercise);
   `active.currentExercise` tracks the picked one and follows the slot on
-  Next:/overview-row switches (null when arriving via the picker). Set-arithmetic must guard
+  Next:/overview-row switches (null when arriving via the picker).
+  The picker's mini-map is collapsed by default (`settings.pickerMap`,
+  toggled + persisted via the 🗺 Map chip; Colors/Usage hide with it, the
+  map draws lazily on first expand). 📍 buttons on the log screen
+  (machine head + next-row) open `showMapOverlay()` — a fullscreen
+  read-only map, target machine pulsing, others dimmed, any tap closes. Set-arithmetic must guard
   against other shapes (`st.reps * st.weight || 0`). No machines = an
   onboarding screen (studio / quick start / template), and the picker
   offers create-on-miss for unknown numbers via `store.addMachine()` —

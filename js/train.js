@@ -202,7 +202,10 @@ function renderOnboarding(root, message) {
   });
 }
 
-// Number input, muscle filter and tappable mini-map; calls onPick(machineId).
+// Number input, muscle filter and a tappable mini-map; calls
+// onPick(machineId). The map is collapsed by default (settings.pickerMap)
+// — number and muscle are the picker's primary inputs, the map is the
+// on-demand answer to "where?", not the main navigation surface.
 function machinePicker(container, gym, onPick) {
   const allMuscles = [...new Set(gym.machines.flatMap((m) => m.muscles || []))]
     .sort((a, b) => a.localeCompare(b));
@@ -220,21 +223,50 @@ function machinePicker(container, gym, onPick) {
     <div class="pick-chips"></div>` : ''}
     <div class="map-wrap"><svg xmlns="http://www.w3.org/2000/svg"></svg></div>
     <div class="map-mode pick-mode">
+      <button type="button" class="chip map-toggle">🗺 Map</button>
       <button type="button" class="chip" data-mode="custom">Colors</button>
       <button type="button" class="chip" data-mode="usage">Usage</button>
     </div>
-    <p class="pick-err muted">Enter a machine number or tap one on the map.</p>`;
+    <p class="pick-err muted">Enter a machine number — or pick by muscle or map.</p>`;
 
   const svg = container.querySelector('svg');
-  const drawMap = () => drawGym(svg, gym, {
-    usage: getSettings().mapColors === 'usage' ? usagePayload(usageByMachine()) : null,
-  });
-  drawMap();
+  // drawn lazily on first expand — most picks go via number or muscle
+  let drawn = false;
+  const drawMap = () => {
+    drawGym(svg, gym, {
+      usage: getSettings().mapColors === 'usage' ? usagePayload(usageByMachine()) : null,
+    });
+    drawn = true;
+  };
 
   const modeBar = container.querySelector('.pick-mode');
-  const updateModeBar = () => modeBar.querySelectorAll('.chip').forEach((c) =>
+  const updateModeBar = () => modeBar.querySelectorAll('.chip[data-mode]').forEach((c) =>
     c.classList.toggle('sel', (c.dataset.mode === 'usage') === (getSettings().mapColors === 'usage')));
   updateModeBar();
+
+  // Collapse state lives in settings (one global preference, both picker
+  // instances follow it). Colors/Usage only make sense with a visible map.
+  const mapWrap = container.querySelector('.map-wrap');
+  const mapToggle = modeBar.querySelector('.map-toggle');
+  const applyMapState = () => {
+    const shown = getSettings().pickerMap === 'shown';
+    mapWrap.style.display = shown ? '' : 'none';
+    modeBar.querySelectorAll('.chip[data-mode]').forEach((c) => {
+      c.style.display = shown ? '' : 'none';
+    });
+    mapToggle.classList.toggle('sel', shown);
+    if (shown && !drawn) {
+      drawMap();
+      applyMuscleFilter(); // map may open with a muscle filter already set
+    }
+  };
+  mapToggle.addEventListener('click', () => {
+    saveSettings({
+      ...getSettings(),
+      pickerMap: getSettings().pickerMap === 'shown' ? 'hidden' : 'shown',
+    });
+    applyMapState();
+  });
 
   const input = container.querySelector('.pick-num');
   const err = container.querySelector('.pick-err');
@@ -289,13 +321,37 @@ function machinePicker(container, gym, onPick) {
   });
 
   modeBar.addEventListener('click', (e) => {
-    const chip = e.target.closest('.chip');
+    const chip = e.target.closest('.chip[data-mode]'); // not the map toggle
     if (!chip) return;
     saveSettings({ ...getSettings(), mapColors: chip.dataset.mode });
     updateModeBar();
     drawMap();
     applyMuscleFilter(); // redraw resets the dimming, so re-apply it
   });
+
+  applyMapState();
+}
+
+// Fullscreen read-only floor map with one machine highlighted — answers
+// "where is it?", the map's one job during training. Any tap closes it.
+function showMapOverlay(gym, machine) {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay map-overlay';
+  overlay.innerHTML = `
+    <div class="machine-head">
+      <span class="machine-badge">${machine.num}</span>
+      <div class="title">${esc(machine.label)}</div>
+    </div>
+    <div class="map-wrap"><svg xmlns="http://www.w3.org/2000/svg"></svg></div>
+    <div class="muted">Tap anywhere to close</div>`;
+  document.body.appendChild(overlay);
+  const svg = overlay.querySelector('svg');
+  drawGym(svg, gym, {});
+  svg.querySelectorAll('.machine').forEach((g) => {
+    if (g.dataset.id === machine.id) g.classList.add('locate');
+    else g.style.opacity = '0.35';
+  });
+  overlay.addEventListener('click', () => overlay.remove());
 }
 
 // --- workout overview hub ---
@@ -535,6 +591,8 @@ function renderLog(root, gym, active) {
         ${machine.docUrl ? `<a class="doc-link" href="${esc(machine.docUrl)}"
           target="_blank" rel="noopener">Machine docs ↗</a>` : ''}
       </div>
+      <button type="button" id="locate-current" class="locate-btn"
+        aria-label="Show this machine on the map">📍</button>
     </div>
 
     ${exercises.length ? `
@@ -597,8 +655,12 @@ function renderLog(root, gym, active) {
     </div>` : ''}
 
     ${nextMachine
-    ? `<button id="next-machine" class="btn btn-next btn-big">Next: #${nextMachine.num}
-        ${esc(nextMachine.label)}${nextSlot.exercise ? ` · ${esc(nextSlot.exercise)}` : ''} →</button>
+    ? `<div class="next-row">
+        <button id="next-machine" class="btn btn-next btn-big">Next: #${nextMachine.num}
+          ${esc(nextMachine.label)}${nextSlot.exercise ? ` · ${esc(nextSlot.exercise)}` : ''} →</button>
+        <button type="button" id="locate-next" class="btn btn-next btn-big locate-next"
+          aria-label="Show the next machine on the map">📍</button>
+      </div>
       <button id="change-machine" class="btn">Change machine / overview</button>`
     : '<button id="change-machine" class="btn btn-next btn-big">Workout overview →</button>'}
   `;
@@ -662,6 +724,11 @@ function renderLog(root, gym, active) {
     saveActive(active);
     renderTrain(root);
   });
+
+  root.querySelector('#locate-current').addEventListener('click',
+    () => showMapOverlay(gym, machine));
+  root.querySelector('#locate-next')?.addEventListener('click',
+    () => showMapOverlay(gym, nextMachine));
 
   root.querySelector('#next-machine')?.addEventListener('click', () => {
     active.currentMachineId = nextSlot.machineId;
