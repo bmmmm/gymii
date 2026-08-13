@@ -5,9 +5,11 @@
 import { getGym, getWorkouts, getSettings, saveSettings, importData, distUnit } from './store.js';
 import { esc, twoTapConfirm } from './ui.js';
 
-const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; an "exercise" field names one movement at a multi-exercise station like a free-weight area).
+const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; an "exercise" field names one movement at a multi-exercise station like a free-weight area; a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis).
 
 Analyze my progress: trends per machine, plateaus, and muscle-group imbalances. Then suggest concrete targets for my next workout — weight × reps per machine — and one or two practical tips.
+
+Using the timing offsets: join each entry's num against the gym's machines list to get its muscles, and flag same-muscle-group sets spaced too closely together — unless the alternation looks deliberate (a consistent A↔B or A→B→C rhythm reads as a superset/circuit, which is fine and worth calling out as such). Also comment on idle gaps between stations and on the overall density of the workout.
 
 If you propose changes to my gym or machines, reply with a valid gymii gym-template JSON (exactly the structure the app exports) so I can paste it straight back into gymii.`;
 
@@ -92,7 +94,7 @@ export function renderAi(root) {
 }
 
 // Compact, LLM-friendly snapshot: machines + full log, no floor layout.
-function buildAiExport() {
+export function buildAiExport() {
   const gym = getGym();
   const settings = getSettings();
   return JSON.stringify({
@@ -100,7 +102,9 @@ function buildAiExport() {
     kind: 'ai-export',
     unit: settings.unit,
     note: `sets are [weight, reps]; entries with cardio:true use [distance, seconds], distance in ${
-      distUnit(settings)}; bodyweight:true entries log ADDED weight (0 = bodyweight only)`,
+      distUnit(settings)}; bodyweight:true entries log ADDED weight (0 = bodyweight only); ` +
+      'a third element, when present, is seconds since the workout started (sets logged before ' +
+      'timing was added lack it)',
     gym: gym ? {
       name: gym.name,
       machines: gym.machines.map((m) => ({
@@ -124,7 +128,11 @@ function buildAiExport() {
         ...(e.bodyweight ? { bodyweight: true } : {}),
         ...(Object.keys(e.settings || {}).some((k) => String(e.settings[k]).trim() !== '')
           ? { settings: e.settings } : {}),
-        sets: e.sets.map((st) => (e.cardio ? [st.distance, st.seconds] : [st.weight, st.reps])),
+        sets: e.sets.map((st) => {
+          const base = e.cardio ? [st.distance, st.seconds] : [st.weight, st.reps];
+          if (st.at == null) return base;
+          return [...base, Math.round((st.at - w.startedAt) / 1000)];
+        }),
       })),
     })),
   }, null, 1);
