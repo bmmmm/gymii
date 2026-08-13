@@ -77,16 +77,28 @@ const OUTLINE_ID = 'outline';
 export function drawGym(svg, gym, {
   selectedId = null, editor = false, selectedVertex = null, usage = null,
 } = {}) {
-  svg.setAttribute('viewBox', `0 0 ${gym.grid.w} ${gym.grid.h}`);
-  svg.style.aspectRatio = `${gym.grid.w} / ${gym.grid.h}`;
+  // Margin around the floor: outline handles and wall-snapped fixtures
+  // straddle the boundary — without it they are clipped and only
+  // half-tappable exactly where the SVG ends. The viewer needs just
+  // enough to not clip doors/windows; the editor needs finger room.
+  const pad = editor ? 2.5 : 1;
+  const vw = gym.grid.w + 2 * pad;
+  const vh = gym.grid.h + 2 * pad;
+  svg.setAttribute('viewBox', `${-pad} ${-pad} ${vw} ${vh}`);
+  svg.style.aspectRatio = `${vw} / ${vh}`;
   const selected = selectedId && selectedId !== OUTLINE_ID ? findItem(gym, selectedId) : null;
   // the outline's tap target sits ABOVE zones/walls (which often touch the
-  // outer wall) but below machines and the editing handles
+  // outer wall) but below wall-snapped fixtures (doors/windows live ON the
+  // outline — under it they'd be impossible to tap), machines and the
+  // editing handles
+  const wallPieces = gym.shapes.filter((s) => WALL_SNAPPED.has(s.fixture));
+  const floorPieces = gym.shapes.filter((s) => !WALL_SNAPPED.has(s.fixture));
   svg.innerHTML =
     outlineFloorSvg(gym.outline) +
     (editor ? gridSvg(gym.grid) : '') +
-    gym.shapes.map(shapeSvg).join('') +
+    floorPieces.map(shapeSvg).join('') +
     (editor ? outlineHitSvg(gym.outline) : '') +
+    wallPieces.map(shapeSvg).join('') +
     gym.machines.map((m) => machineSvg(m, usage)).join('') +
     (editor && selected ? selectionSvg(selected) : '') +
     (editor && selectedId === OUTLINE_ID ? outlineHandlesSvg(gym.outline, selectedVertex) : '');
@@ -110,14 +122,20 @@ function outlineHitSvg(outline) {
 }
 
 // Corner handles plus hollow midpoint dots that insert a new corner.
+// Each visible handle is paired with a bigger invisible hit area (same
+// data attribute, so the pointer handler doesn't care which one is hit);
+// vertex hits render last and therefore win over midpoint hits nearby.
 function outlineHandlesSvg(outline, selectedVertex) {
   const mids = outline.map((p, i) => {
     const q = outline[(i + 1) % outline.length];
-    return `<circle class="midpoint" data-mid="${i}"
-      cx="${(p.x + q.x) / 2}" cy="${(p.y + q.y) / 2}" r="0.65"/>`;
+    const cx = (p.x + q.x) / 2;
+    const cy = (p.y + q.y) / 2;
+    return `<circle class="midpoint" data-mid="${i}" cx="${cx}" cy="${cy}" r="0.8"/>
+      <circle class="hit-area" data-mid="${i}" cx="${cx}" cy="${cy}" r="1.8"/>`;
   }).join('');
   const verts = outline.map((p, i) => `<rect class="vertex${i === selectedVertex ? ' sel' : ''}"
-    data-vertex="${i}" x="${p.x - 0.8}" y="${p.y - 0.8}" width="1.6" height="1.6" rx="0.3"/>`).join('');
+      data-vertex="${i}" x="${p.x - 1}" y="${p.y - 1}" width="2" height="2" rx="0.3"/>
+    <rect class="hit-area" data-vertex="${i}" x="${p.x - 2}" y="${p.y - 2}" width="4" height="4"/>`).join('');
   return mids + verts;
 }
 
@@ -207,7 +225,7 @@ function doorSvg(s) {
   const fy = s.flipV ? -1 : 1;
   return `<g class="shape" data-id="${s.id}" transform="rotate(${s.rot || 0} ${cx} ${cy})
       translate(${cx} ${cy}) scale(${fx} ${fy}) translate(${-cx} ${-cy})">
-    <rect class="door-hit hit" x="${hx}" y="${cy - 0.8}" width="${w}" height="1.6"/>
+    <rect class="door-hit hit" x="${hx}" y="${cy - 1.3}" width="${w}" height="2.6"/>
     <rect class="door-gap" x="${hx}" y="${cy - 0.4}" width="${w}" height="0.8"/>
     <path class="door-arc" d="M ${hx} ${cy - w} A ${w} ${w} 0 0 1 ${cx + w / 2} ${cy}"/>
     <line class="door-leaf" x1="${hx}" y1="${cy}" x2="${hx}" y2="${cy - w}"/>
@@ -222,7 +240,7 @@ function entranceSvg(s) {
   const fy = s.flipV ? -1 : 1;
   return `<g class="shape" data-id="${s.id}" transform="rotate(${s.rot || 0} ${cx} ${cy})
       translate(${cx} ${cy}) scale(1 ${fy}) translate(${-cx} ${-cy})">
-    <rect class="door-hit hit" x="${s.x}" y="${cy - 0.9}" width="${s.w}" height="1.8"/>
+    <rect class="door-hit hit" x="${s.x}" y="${cy - 1.3}" width="${s.w}" height="2.6"/>
     <rect class="door-gap" x="${s.x}" y="${cy - 0.45}" width="${s.w}" height="0.9"/>
     <path class="entrance-arrow" d="M ${cx} ${cy + 1.7} L ${cx} ${cy - 1.3}
       M ${cx - 0.7} ${cy - 0.5} L ${cx} ${cy - 1.3} L ${cx + 0.7} ${cy - 0.5}"/>
@@ -234,7 +252,7 @@ function windowSvg(s) {
   const cx = s.x + s.w / 2;
   const cy = s.y + s.h / 2;
   return `<g class="shape" data-id="${s.id}" transform="rotate(${s.rot || 0} ${cx} ${cy})">
-    <rect class="door-hit hit" x="${s.x}" y="${cy - 0.7}" width="${s.w}" height="1.4"/>
+    <rect class="door-hit hit" x="${s.x}" y="${cy - 1.3}" width="${s.w}" height="2.6"/>
     <rect class="window-gap" x="${s.x}" y="${cy - 0.35}" width="${s.w}" height="0.7"/>
     <line class="window-line" x1="${s.x}" y1="${cy - 0.18}" x2="${s.x + s.w}" y2="${cy - 0.18}"/>
     <line class="window-line" x1="${s.x}" y1="${cy + 0.18}" x2="${s.x + s.w}" y2="${cy + 0.18}"/>
@@ -264,7 +282,9 @@ function selectionSvg(item) {
   return `<rect class="selected-outline" x="${b.x - 0.4}" y="${b.y - 0.4}"
       width="${b.w + 0.8}" height="${b.h + 0.8}" pointer-events="none"/>
     <rect class="handle" data-id="${item.id}" data-handle="1"
-      x="${hx - 0.9}" y="${hy - 0.9}" width="1.8" height="1.8" rx="0.3"/>`;
+      x="${hx - 1}" y="${hy - 1}" width="2" height="2" rx="0.3"/>
+    <rect class="hit-area" data-id="${item.id}" data-handle="1"
+      x="${hx - 2}" y="${hy - 2}" width="4" height="4"/>`;
 }
 
 // --- editor view ---

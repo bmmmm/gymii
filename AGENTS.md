@@ -74,6 +74,9 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
 - Destructive/final actions: hidden + two-tap guard (never `confirm()` —
   it blocks browser automation). Frequent actions visually dominant.
 - Enumerable input = tappable chips, never free text (typo avoidance).
+- Numeric inputs arm for overwrite on focus — old value greyed out in the
+  placeholder as "(40)", empty field types fresh, blur without input
+  restores it (`initNumericOverwrite()` in ui.js, delegated globally).
 - View toggles live ON the object they affect (e.g. Colors/Usage on the
   map), persisted in settings — not buried in the Settings tab.
 - Chart/map colors must pass the dataviz palette validator against

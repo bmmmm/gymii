@@ -175,6 +175,9 @@ input[type="number"], input[type="text"] {
   min-width: 0;
 }
 
+/* iOS auto-zooms into focused fields below 16px — never go under it */
+input[type="number"], input[type="text"], select, textarea { font-size: max(16px, 1em); }
+
 input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 
 .field input[type="text"] { flex: 1; max-width: 62%; }
@@ -292,6 +295,10 @@ svg .machine-box { fill: var(--accent-dim); stroke: var(--accent); stroke-width:
 svg .machine-num { fill: #dff5e9; font-weight: 700; font-family: system-ui, -apple-system, sans-serif; }
 svg .selected-outline { fill: none; stroke: #fff; stroke-width: 0.2; stroke-dasharray: 0.7 0.5; }
 svg .handle { fill: #fff; stroke: #0f1216; stroke-width: 0.1; }
+/* invisible enlarged tap targets paired with the small visible handles */
+svg .hit-area { fill: transparent; stroke: none; }
+svg .hit-area[data-vertex] { cursor: grab; }
+svg .hit-area[data-mid] { cursor: copy; }
 svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 
 #props .card { margin-top: 10px; }

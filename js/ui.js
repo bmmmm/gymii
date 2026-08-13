@@ -19,6 +19,30 @@ export function initSteppers() {
   });
 }
 
+// Numeric inputs arm for overwrite on focus: the current value moves into
+// the placeholder — greyed out as "(40)" for orientation — so the number
+// pad starts on an empty field instead of appending digits to the old
+// value. Leaving the field without typing restores it. Delegated like the
+// steppers; blur fires before a stepper's click, so +/− still see a value.
+export function initNumericOverwrite() {
+  document.addEventListener('focusin', (e) => {
+    const inp = e.target;
+    if (inp.tagName !== 'INPUT' || inp.type !== 'number' || inp.value === '') return;
+    inp.dataset.prevValue = inp.value;
+    inp.dataset.prevPlaceholder = inp.placeholder;
+    inp.placeholder = `(${inp.value})`;
+    inp.value = '';
+  });
+  document.addEventListener('focusout', (e) => {
+    const inp = e.target;
+    if (inp.tagName !== 'INPUT' || inp.dataset.prevValue === undefined) return;
+    if (inp.value === '') inp.value = inp.dataset.prevValue;
+    inp.placeholder = inp.dataset.prevPlaceholder;
+    delete inp.dataset.prevValue;
+    delete inp.dataset.prevPlaceholder;
+  });
+}
+
 export function download(filename, data) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');

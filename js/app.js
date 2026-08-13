@@ -3,7 +3,7 @@ import { renderStudio } from './studio.js';
 import { renderHistory } from './history.js';
 import { renderAi } from './ai.js';
 import { renderSettings } from './settings.js';
-import { initSteppers } from './ui.js';
+import { initSteppers, initNumericOverwrite } from './ui.js';
 
 const routes = {
   train: renderTrain,
@@ -26,6 +26,7 @@ function route() {
 }
 
 initSteppers();
+initNumericOverwrite();
 window.addEventListener('hashchange', route);
 route();
 
