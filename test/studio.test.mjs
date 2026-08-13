@@ -126,6 +126,20 @@ assert.ok(!svg.innerHTML.includes('handle'), 'no handles in the mini-map');
 const miniDoorHit = tagsWith(svg.innerHTML, 'tap-hit').find((p) => !attr(p, 'data-id'));
 assert.ok(close(num(miniDoorHit, 'height'), 2.6), 'mini-map keeps the fixed-unit door strip');
 
+// --- "where is it?" highlight: target pulses, every other machine dims ---
+svg = fakeSvg();
+drawGym(svg, gym, { highlightId: 'm1' });
+assert.ok(svg.innerHTML.includes('class="machine locate" data-id="m1"'),
+  'highlight target carries the locate class');
+assert.equal(tagsWith(svg.innerHTML, 'machine').filter((g) => attr(g, 'opacity') === '0.35').length,
+  gym.machines.length - 1, 'all non-target machines dim');
+assert.equal((svg.innerHTML.match(/stroke:#fff/g) || []).length, 1,
+  'exactly the target gets the white stroke');
+svg = fakeSvg();
+drawGym(svg, gym, {});
+assert.ok(!svg.innerHTML.includes('locate') && !svg.innerHTML.includes('opacity="0.35"'),
+  'no highlight artifacts without highlightId');
+
 // --- zero-width fallback: sizes stay finite ---
 svg = fakeSvg();
 svg.getBoundingClientRect = () => ({ width: 0 });

@@ -1,6 +1,7 @@
 import {
   getGym, saveGym, getSettings, saveSettings, getActive, saveActive, finishWorkout,
-  lastEntryFor, getWorkouts, getPlans, uid, usageByMachine, distUnit, newGym, addMachine,
+  lastEntryFor, getWorkouts, getPlans, uid, usageByMachine, gymMuscles, distUnit,
+  newGym, addMachine,
 } from './store.js';
 import { drawGym, usagePayload, findMachineByNum } from './studio.js';
 import { renderPlanBuilder } from './plan.js';
@@ -288,8 +289,7 @@ function renderOnboarding(root, message) {
 // — number and muscle are the picker's primary inputs, the map is the
 // on-demand answer to "where?", not the main navigation surface.
 function machinePicker(container, gym, onPick) {
-  const allMuscles = [...new Set(gym.machines.flatMap((m) => m.muscles || []))]
-    .sort((a, b) => a.localeCompare(b));
+  const allMuscles = gymMuscles(gym);
 
   container.innerHTML = `
     <div class="row">
@@ -312,13 +312,9 @@ function machinePicker(container, gym, onPick) {
 
   const svg = container.querySelector('svg');
   // drawn lazily on first expand — most picks go via number or muscle
-  let drawn = false;
-  const drawMap = () => {
-    drawGym(svg, gym, {
-      usage: getSettings().mapColors === 'usage' ? usagePayload(usageByMachine()) : null,
-    });
-    drawn = true;
-  };
+  const drawMap = () => drawGym(svg, gym, {
+    usage: getSettings().mapColors === 'usage' ? usagePayload(usageByMachine()) : null,
+  });
 
   const modeBar = container.querySelector('.pick-mode');
   const updateModeBar = () => modeBar.querySelectorAll('.chip[data-mode]').forEach((c) =>
@@ -336,16 +332,14 @@ function machinePicker(container, gym, onPick) {
       c.style.display = shown ? '' : 'none';
     });
     mapToggle.classList.toggle('sel', shown);
-    if (shown && !drawn) {
+    if (shown && !svg.childElementCount) { // not drawn yet
       drawMap();
       applyMuscleFilter(); // map may open with a muscle filter already set
     }
   };
   mapToggle.addEventListener('click', () => {
-    saveSettings({
-      ...getSettings(),
-      pickerMap: getSettings().pickerMap === 'shown' ? 'hidden' : 'shown',
-    });
+    const cur = getSettings();
+    saveSettings({ ...cur, pickerMap: cur.pickerMap === 'shown' ? 'hidden' : 'shown' });
     applyMapState();
   });
 
@@ -437,12 +431,7 @@ function showMapOverlay(gym, machine) {
     <div class="map-wrap"><svg xmlns="http://www.w3.org/2000/svg"></svg></div>
     <div class="muted">Tap anywhere to close</div>`;
   document.body.appendChild(overlay);
-  const svg = overlay.querySelector('svg');
-  drawGym(svg, gym, {});
-  svg.querySelectorAll('.machine').forEach((g) => {
-    if (g.dataset.id === machine.id) g.classList.add('locate');
-    else g.style.opacity = '0.35';
-  });
+  drawGym(overlay.querySelector('svg'), gym, { highlightId: machine.id });
   overlay.addEventListener('click', () => overlay.remove());
 }
 
@@ -474,8 +463,7 @@ function renderOverview(root, gym, active) {
   // session, read live from the gym (entries don't snapshot muscles;
   // deleted machines contribute none). The chips double as navigation —
   // tapping one drives the picker's muscle filter below.
-  const allMuscles = [...new Set(gym.machines.flatMap((m) => m.muscles || []))]
-    .sort((a, b) => a.localeCompare(b));
+  const allMuscles = gymMuscles(gym);
   const trained = new Set(active.entries
     .filter((e) => e.sets.length)
     .flatMap((e) => gym.machines.find((m) => m.id === e.machineId)?.muscles ?? []));

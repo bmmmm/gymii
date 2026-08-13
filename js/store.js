@@ -329,6 +329,11 @@ export function setUnit(unit) {
   saveSettings({ ...s, unit, weightStep: Math.max(0.5, roundW(s.weightStep)) });
 }
 
+// Sorted list of every muscle assigned across the gym's machines — feeds
+// the picker's filter, the overview's coverage chips and the plan builder.
+export const gymMuscles = (gym) => [...new Set(gym.machines.flatMap((m) => m.muscles || []))]
+  .sort((a, b) => a.localeCompare(b));
+
 // Total sets per machine across all history — feeds the usage map view.
 export function usageByMachine() {
   const usage = new Map();

@@ -53,7 +53,9 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   daily surface — user decision); it is reached via links in onboarding
   and Settings. Don't re-add the tab.
 - `js/studio.js` — floor-plan editor. `drawGym()` is the shared renderer
-  (train mini-maps use it too). Polygon outline with vertex/midpoint
+  (train mini-maps use it too); its `highlightId` opt marks one machine
+  `.locate` (white stroke, CSS pulse) and dims the rest — visual machine
+  state belongs here, never as post-render DOM pokes in train.js. Polygon outline with vertex/midpoint
   editing; `FIXTURES` registry; `WALL_SNAPPED` fixtures (entrance/door/
   window) glue to the nearest wall segment with rotation + flips.
   Undo/redo = snapshot history via the local `save()` wrapper — every

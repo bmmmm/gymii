@@ -5,7 +5,7 @@
 
 import {
   getGym, getPlans, savePlan, deletePlan, lastEntryFor, getSettings,
-  uid, distUnit,
+  uid, distUnit, gymMuscles,
 } from './store.js';
 import { drawGym } from './studio.js';
 import { esc, twoTapConfirm, stepperField } from './ui.js';
@@ -51,8 +51,7 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
     const m = machineFor(it.machineId);
     if (!it.target && m) it.target = targetDefaults(m, it.exercise, s);
   });
-  const allMuscles = [...new Set(gym.machines.flatMap((m) => m.muscles || []))]
-    .sort((a, b) => a.localeCompare(b));
+  const allMuscles = gymMuscles(gym);
 
   const itemRow = (it, i) => {
     const m = machineFor(it.machineId);

@@ -14,7 +14,9 @@ even a cookie banner.
 - 💪 **Train** — repeat a past workout in order, or roam by number, map tap or
   muscle. Last session's numbers prefill every set. Cardio stations log
   distance + time, bodyweight stations reps + extra weight, and free-weight
-  areas keep separate histories per named exercise.
+  areas keep separate histories per named exercise. 📍 shows where the next
+  machine stands, a busy one gets the closest open alternative, and a
+  coverage row tracks which muscles you've hit today.
 - 📋 **Plans** — build a session in advance: pick machines by muscle group,
   set target sets × reps × weight, then just tick it off — the workout keeps
   pulling you back to unfinished targets. Or let your LLM draft the plan and
@@ -45,9 +47,9 @@ anywhere, so export a backup before you switch devices or browsers.
 
 ## Contributing
 
-Vanilla HTML/CSS/JS (ES modules), zero dependencies. Tests:
-`node test/store.test.mjs`. Notes for contributors and agents live in
-[AGENTS.md](AGENTS.md).
+Vanilla HTML/CSS/JS (ES modules), zero dependencies. Tests: one file per
+module — `node test/store.test.mjs` (same for train, studio, plan). Notes
+for contributors and agents live in [AGENTS.md](AGENTS.md).
 
 Got a floor plan of your gym? Templates are meant to be shared —
 `templates/index.json` is the manifest, pull requests welcome.

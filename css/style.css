@@ -433,14 +433,20 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .map-wrap svg { display: block; width: 100%; }
 .map-wrap .machine-box { cursor: pointer; }
 
-/* 📍 "where is it?" triggers — open the fullscreen map overlay */
+/* 📍 "where is it?" triggers — open the fullscreen map overlay.
+   min 44px box follows the touch-target guideline used across the app. */
 .locate-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
   margin-left: auto;
   background: none;
   border: 1px solid var(--border);
   border-radius: 10px;
   font-size: 17px;
-  padding: 9px 11px;
+  padding: 0;
   cursor: pointer;
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
@@ -482,13 +488,11 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .map-overlay { gap: 16px; }
 .map-overlay .map-wrap { width: 100%; max-width: 528px; margin: 0; }
 
-/* keyframes carry the stroke too: inline machine colors (style="…") would
-   beat a plain rule, but CSS animations outrank inline styles */
+/* the white stroke itself comes inline from machineSvg's highlightId */
 svg .machine.locate .machine-box { animation: locate-pulse 1.1s ease-in-out infinite; }
 
 @keyframes locate-pulse {
-  0%, 100% { stroke: #fff; stroke-width: 0.2; stroke-opacity: 1; }
-  50% { stroke: #fff; stroke-width: 1; stroke-opacity: 0.35; }
+  50% { stroke-width: 1; stroke-opacity: 0.35; }
 }
 
 /* --- history --- */

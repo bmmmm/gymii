@@ -97,6 +97,7 @@ function pxPerUnit(svg, viewBoxWidth) {
 
 export function drawGym(svg, gym, {
   selectedId = null, editor = false, selectedVertex = null, usage = null,
+  highlightId = null,
 } = {}) {
   // Margin around the floor: outline handles and wall-snapped fixtures
   // straddle the boundary — without it they are clipped and only
@@ -131,7 +132,7 @@ export function drawGym(svg, gym, {
     (editor ? outlineHitSvg(gym.outline) : '') +
     wallPieces.map((s) => shapeSvg(s, shapePpu)).join('') +
     (editor ? hitPadSvg(padded, ppu) : '') +
-    gym.machines.map((m) => machineSvg(m, usage)).join('') +
+    gym.machines.map((m) => machineSvg(m, usage, highlightId)).join('') +
     (editor && selected ? selectionSvg(selected, ppu, gym.grid, pad) : '') +
     (editor && selectedId === OUTLINE_ID ? outlineHandlesSvg(gym.outline, selectedVertex, ppu, gym.grid, pad) : '');
 }
@@ -274,28 +275,34 @@ function shapeSvg(s, ppu = null) {
   </g>`;
 }
 
-function machineSvg(m, usage = null) {
+function machineSvg(m, usage = null, highlightId = null) {
   const fs = clamp(Math.min(m.w, m.h) * 0.55, 1.2, 2.4);
-  let boxStyle = '';
+  let box = ''; // style-attribute body of the rect
   let numStyle = '';
   if (usage) {
     // sequential green ramp by all-time sets; unused machines fade out
     const sets = usage.counts.get(m.id) || 0;
     if (!sets) {
-      boxStyle = ' style="fill:#1c232c;stroke:#38424e"';
+      box = 'fill:#1c232c;stroke:#38424e';
       numStyle = ' style="fill:#5f6d7d"';
     } else {
       const t = sets / usage.max;
       const c = t > 0.75 ? '#35a273' : t > 0.5 ? '#2c7d55' : t > 0.25 ? '#23593f' : '#183b2b';
-      boxStyle = ` style="fill:${c};stroke:${c}"`;
+      box = `fill:${c};stroke:${c}`;
       if (t > 0.75) numStyle = ' style="fill:#06130c"';
     }
   } else if (m.color) {
-    boxStyle = ` style="fill:${m.color};stroke:${m.color}"`;
+    box = `fill:${m.color};stroke:${m.color}`;
     numStyle = ' style="fill:#0c1116"';
   }
-  return `<g class="machine" data-id="${m.id}">
-    <rect class="machine-box" x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="0.4"${boxStyle}/>
+  // "where is it?" highlight: the target carries .locate (CSS pulses its
+  // stroke) and an inline white stroke so it wins over custom colors set
+  // just above; every other machine dims
+  const locate = highlightId != null && m.id === highlightId;
+  if (locate) box += `${box ? ';' : ''}stroke:#fff`;
+  const dim = highlightId != null && !locate ? ' opacity="0.35"' : '';
+  return `<g class="machine${locate ? ' locate' : ''}" data-id="${m.id}"${dim}>
+    <rect class="machine-box" x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="0.4"${box ? ` style="${box}"` : ''}/>
     <text class="machine-num" x="${m.x + m.w / 2}" y="${m.y + m.h / 2}" font-size="${fs}"
       text-anchor="middle" dominant-baseline="central" pointer-events="none"${numStyle}>${m.num}</text>
   </g>`;
