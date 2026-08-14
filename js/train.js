@@ -1,7 +1,7 @@
 import {
   getGym, saveGym, getSettings, saveSettings, getActive, saveActive, finishWorkout,
-  lastEntryFor, getWorkouts, getPlans, uid, usageByMachine, gymMuscles, distUnit,
-  newGym, addMachine,
+  lastEntryFor, getWorkouts, getPlans, savePlan, planFromText, uid,
+  usageByMachine, gymMuscles, distUnit, newGym, addMachine,
 } from './store.js';
 import { drawGym, usagePayload, findMachineByNum } from './studio.js';
 import { renderPlanBuilder, DAY_LABELS } from './plan.js';
@@ -37,9 +37,11 @@ export function renderTrain(root, message = '') {
   const active = getActive();
   // An in-progress workout outranks onboarding: machines can be wiped
   // mid-workout by an import or a studio edit, and the quick start must
-  // never overwrite logged sets.
-  if (!gym || (!active && !gym.machines.length)) {
-    builder = null; // a wiped gym invalidates a pending builder screen
+  // never overwrite logged sets. The plan builder outranks it too — a plan
+  // is exactly what someone without a gym starts with — and so does a
+  // SAVED plan: once one exists there is something to start, and sending
+  // its owner back to the first-run screen would hide it.
+  if (!active && !builder && !getPlans().length && (!gym || !gym.machines.length)) {
     renderOnboarding(root, message);
     return;
   }
@@ -53,7 +55,9 @@ export function renderTrain(root, message = '') {
         (typeof p === 'string' ? { machineId: p, exercise: null } : p));
       saveActive(active);
     }
-    if (active.currentMachineId) renderLog(root, gym, active);
+    // an unbound slot answers "which machine is this?" before it can log
+    if (active.binding != null) renderBind(root, gym, active);
+    else if (active.currentMachineId) renderLog(root, gym, active);
     else renderOverview(root, gym, active);
   } else if (builder) {
     // the second onClose arg is a plan to start right away (Save & start —
@@ -62,6 +66,7 @@ export function renderTrain(root, message = '') {
       builder = null;
       if (startPlan) {
         startWorkoutFrom({
+          planId: startPlan.id,
           ...(startPlan.name ? { name: startPlan.name } : {}),
           entries: startPlan.items,
         });
@@ -76,15 +81,30 @@ export function renderTrain(root, message = '') {
 // Start a guided workout from a past one (or empty/free with one machine).
 // Exported so History can offer "repeat this workout" too.
 export function startWorkoutFrom(source, firstMachineId = null) {
-  const gym = getGym();
+  let gym = getGym();
+  // A plan of unbound items can be started before any gym exists; every
+  // screen below this point assumes one, so it gets created empty here
+  // (the studio does the same on first visit) and grows as slots bind.
+  if (!gym) { gym = newGym(); saveGym(gym); }
   // One plan slot per (machine, exercise) pair, deduped — the guided flow
   // then walks every exercise of a multi-exercise station. An exercise the
   // machine no longer offers falls back to a whole-station slot, and such
   // station slots are dropped again when exercise slots for the same
   // machine exist (the overview would double-report their sets).
+  // Unbound items pass through untouched: they carry a name instead of a
+  // machine and are deduped by nothing — two "Leg press" lines are two
+  // real slots until each is bound.
   const pairs = (source?.entries ?? [])
     .map((e) => {
-      const machine = gym?.machines.find((m) => m.id === e.machineId);
+      if (!e.machineId) {
+        return e.name
+          ? {
+            machineId: null, name: e.name, exercise: null,
+            ...(e.num != null ? { num: e.num } : {}),
+            ...(e.target ? { target: e.target } : {}),
+          } : null;
+      }
+      const machine = gym.machines.find((m) => m.id === e.machineId);
       if (!machine) return null;
       const exercise = machine.exercises?.includes(e.exercise) ? e.exercise : null;
       // a stored plan's items carry their target through to the slot
@@ -92,9 +112,9 @@ export function startWorkoutFrom(source, firstMachineId = null) {
     })
     .filter(Boolean);
   const plan = pairs
-    .filter((p, i) => pairs.findIndex(
+    .filter((p, i) => !p.machineId || pairs.findIndex(
       (q) => q.machineId === p.machineId && q.exercise === p.exercise) === i)
-    .filter((p) => p.exercise
+    .filter((p) => !p.machineId || p.exercise
       || !pairs.some((q) => q.machineId === p.machineId && q.exercise));
   if (firstMachineId && !plan.some((p) => p.machineId === firstMachineId)) {
     plan.push({ machineId: firstMachineId, exercise: null });
@@ -104,6 +124,9 @@ export function startWorkoutFrom(source, firstMachineId = null) {
     // repeating a named workout keeps its identity — without this the
     // routine group would split into a named and an unnamed half
     ...(source?.name ? { name: source.name } : {}),
+    // the plan this came from, so a slot bound on the floor can be
+    // written back into it (asked once, not once per session)
+    ...(source?.planId ? { planId: source.planId } : {}),
     plan,
     currentMachineId: firstMachineId ?? plan[0]?.machineId ?? null,
     currentExercise: firstMachineId ? null : plan[0]?.exercise ?? null,
@@ -119,7 +142,7 @@ const machineChain = (workout) =>
 // Distinct machine nums of a plan, in item order — the plan-list twin of
 // machineChain (which reads a workout's entries).
 const planChain = (plan, gym) => [...new Set(plan.items
-  .map((it) => gym.machines.find((m) => m.id === it.machineId))
+  .map((it) => gym?.machines.find((m) => m.id === it.machineId))
   .filter(Boolean).map((m) => `#${m.num}`))].join(' → ');
 
 function renderStart(root, gym, message) {
@@ -187,12 +210,16 @@ function renderStart(root, gym, message) {
       <div id="plan-list">
         ${sortedPlans.map((p) => {
     const done = planLastDone(p);
-    const machines = new Set(p.items.map((it) => it.machineId)).size;
+    // counted as exercises, not machines: an unbound item is a real part
+    // of the plan that simply has no station yet
+    const count = p.items.length;
+    const open = p.items.filter((it) => !it.machineId).length;
     return `<div class="recent-row">
           <div class="recent-info">
             <strong>${p.name ? esc(p.name) : planChain(p, gym) || 'Unnamed plan'}${isToday(p)
     ? ' <span class="muted">· today</span>' : ''}</strong>
-            <span class="muted">${p.name ? `${planChain(p, gym)} · ` : ''}${machines} machine${machines === 1 ? '' : 's'}${p.days?.length
+            <span class="muted">${p.name && planChain(p, gym) ? `${planChain(p, gym)} · ` : ''}${count} exercise${count === 1 ? '' : 's'}${open
+    ? ` · ${open} to assign` : ''}${p.days?.length
     ? ` · ${p.days.map((d) => DAY_LABELS[d]).join(' ')}` : ''}${done
     ? ` · last: ${new Date(done.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>
           </div>
@@ -219,15 +246,29 @@ function renderStart(root, gym, message) {
           <button class="btn btn-inline repeat-w" data-wid="${w.id}">Repeat</button>
         </div>`).join('')}
     </section>` : ''}
+    ${gym?.machines.length ? `
     <section class="card">
       <h2>Start at a machine</h2>
       <div id="picker"></div>
       <p class="muted">Opening a machine starts your workout — finish it any time
         from the workout overview.</p>
-    </section>`;
+    </section>`
+    // no machines yet (a plan-first start): the way in is naming the one
+    // in front of you, exactly as on the first-run screen
+    : `
+    <section class="card">
+      <h2>Start at a machine</h2>
+      <p class="muted">Your gym has no machines yet — name the one in front of
+        you and gymii adds it.</p>
+      <div class="row">
+        <input id="qs-label" type="text" placeholder="e.g. Chest press">
+        <button id="qs-start" class="btn btn-inline">Start</button>
+      </div>
+    </section>`}`;
 
   const startPlan = (plan) => {
     startWorkoutFrom({
+      planId: plan.id,
       ...(plan.name ? { name: plan.name } : {}),
       entries: plan.items,
     });
@@ -270,44 +311,76 @@ function renderStart(root, gym, message) {
     });
   });
 
-  machinePicker(root.querySelector('#picker'), gym, (machineId) => {
-    startWorkoutFrom(null, machineId);
-    renderTrain(root);
-  });
+  if (gym?.machines.length) {
+    machinePicker(root.querySelector('#picker'), gym, (machineId) => {
+      startWorkoutFrom(null, machineId);
+      renderTrain(root);
+    });
+  } else {
+    const start = () => {
+      const label = root.querySelector('#qs-label').value.trim();
+      if (!label) return;
+      const g = getGym() ?? newGym();
+      const machine = addMachine(g, g.machines.length + 1, label);
+      saveGym(g);
+      startWorkoutFrom(null, machine.id);
+      renderTrain(root);
+    };
+    root.querySelector('#qs-start').addEventListener('click', start);
+    root.querySelector('#qs-label').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') start();
+    });
+  }
 }
 
-// First-run screen: three ways in — the studio (the intended path), a
-// quick start that creates the gym and first machine right here, or the
-// template library. Training never requires a studio visit first.
+// First-run screen. ONE action leads: type in the plan you already have —
+// on paper, in a chat, from a trainer — and gymii reads it into exercises
+// that don't need a gym yet. The other two ways in (a machine in front of
+// you right now, drawing the floor plan) stay, one line each. The map is
+// the reward for a gym that exists, never the toll gate before it.
 function renderOnboarding(root, message) {
   root.innerHTML = `
-    <h1>Train</h1>
+    <h1>Welcome to gymii</h1>
     ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
     <section class="card">
-      <h2>Build your gym</h2>
-      <p class="muted">Draw the floor plan and number the machines like the
-        stickers in your gym — training then starts from that map.</p>
-      <a class="btn btn-primary btn-big" href="#studio">Open the Studio</a>
-      <p class="muted">No drawing needed: load a ready-made gym from the
-        <a href="#studio">Studio's template library</a>, or import a backup in
-        <a href="#settings">Settings</a>.</p>
+      <h2>Type in your plan</h2>
+      <p class="muted">One exercise per line, the way it's written on your
+        plan. Machines come later — gymii asks which is which at the gym.</p>
+      <textarea id="ob-plan" rows="5"
+        placeholder="Leg press 3x10 80&#10;Lat pulldown 3x12 45&#10;Chest press 3x8-12 40kg&#10;Treadmill 20min"></textarea>
+      <button id="ob-read" class="btn btn-primary btn-big">Read my plan</button>
+      <p id="ob-msg" class="muted" role="status"></p>
     </section>
     <section class="card">
-      <h2>Quick start</h2>
-      <p class="muted">No time to draw? Name the machine in front of you and
-        start logging — arrange the floor plan later in the Studio.</p>
+      <h2>At the gym right now?</h2>
+      <p class="muted">Name the machine in front of you and start logging.</p>
       <div class="row">
         <input id="qs-label" type="text" placeholder="e.g. Chest press">
         <button id="qs-start" class="btn btn-inline">Start</button>
       </div>
     </section>
-    <section class="card">
-      <h2>Plan ahead</h2>
-      <p class="muted">As soon as your gym has its first machine, this screen
-        adds planned workouts: pick machines or exercises, set target
-        sets × reps × weight, save — then just tick the plan off at the gym.
-        (Your AI can draft one too, via the <a href="#ai">AI tab</a>.)</p>
-    </section>`;
+    <p class="muted">Prefer to set up first? Draw the floor plan or load a
+      ready-made gym in the <a href="#studio">Studio</a>, or import a backup
+      in <a href="#settings">Settings</a>.</p>`;
+
+  const readPlan = () => {
+    const text = root.querySelector('#ob-plan').value;
+    const msg = root.querySelector('#ob-msg');
+    let plan;
+    try {
+      plan = planFromText(text);
+    } catch (err) {
+      msg.textContent = err.message;
+      return;
+    }
+    savePlan(plan);
+    // straight into review: names and targets are editable there, and
+    // machines can be assigned now or left for the gym floor
+    openPlanBuilder(plan.id, `${plan.items.length} exercise${plan.items.length === 1 ? '' : 's'}
+      read — adjust anything, then save.`);
+    renderTrain(root);
+  };
+  root.querySelector('#ob-read').addEventListener('click', readPlan);
 
   const start = () => {
     const label = root.querySelector('#qs-label').value.trim();
@@ -523,7 +596,17 @@ function renderOverview(root, gym, active) {
   const rows = active.plan.map((slot, i) => {
     const machine = gym.machines.find((m) => m.id === slot.machineId);
     const entries = slotEntries(active, slot);
-    if (!machine && !entries.length) return '';
+    // an unbound slot has no machine and no entries yet — it still gets a
+    // row, because assigning it IS the next action
+    if (!machine && !slot.name) {
+      if (!entries.length) return '';
+    } else if (!machine) {
+      return `<button class="plan-row unbound" data-i="${i}">
+        <span class="machine-badge sm">?</span>
+        <span class="plan-label">${esc(slot.name)}</span>
+        <span class="plan-status">assign</span>
+      </button>`;
+    }
     const num = machine?.num ?? entries[0].num;
     const label = machine?.label ?? entries[0].label;
     const slotSets = entries.reduce((n, e) => n + e.sets.length, 0);
@@ -564,8 +647,8 @@ function renderOverview(root, gym, active) {
       <p class="muted">Note where your stuff is — handy if the key goes missing.</p>
     </section>
     <section class="card">
-      <h2>Machines</h2>
-      ${rows || '<p class="muted">No machines yet — pick your first one below.</p>'}
+      <h2>Exercises</h2>
+      ${rows || '<p class="muted">Nothing logged yet — pick your first machine below.</p>'}
     </section>
     ${allMuscles.length ? `
     <section class="card">
@@ -594,7 +677,14 @@ function renderOverview(root, gym, active) {
 
   root.querySelectorAll('.plan-row').forEach((row) => {
     row.addEventListener('click', () => {
-      const slot = active.plan[parseInt(row.dataset.i, 10)];
+      const i = parseInt(row.dataset.i, 10);
+      const slot = active.plan[i];
+      if (!slot.machineId) { // unbound — ask which machine before logging
+        active.binding = i;
+        saveActive(active);
+        renderTrain(root);
+        return;
+      }
       active.currentMachineId = slot.machineId;
       active.currentExercise = slot.exercise;
       saveActive(active);
@@ -625,6 +715,112 @@ function renderOverview(root, gym, active) {
       : 'Tap again to discard (no sets logged)';
     if (!twoTapConfirm(finishBtn, armedLabel, 'Finish workout')) return;
     finish(root, active);
+  });
+}
+
+// --- binding a planned exercise to a real machine ---
+
+// The moment the gym builds itself. Standing at the station, one number
+// turns "Leg press" from a line in a trainer's note into machine #14 —
+// created under the note's own name when gymii doesn't know that number
+// yet. The binding is written back into the stored plan, so the question
+// is asked once per exercise, not once per session.
+function renderBind(root, gym, active) {
+  const i = active.binding;
+  const slot = active.plan[i];
+  if (!slot || slot.machineId) { // stale (already bound, or plan edited)
+    delete active.binding;
+    saveActive(active);
+    renderTrain(root);
+    return;
+  }
+  const name = slot.name ?? '';
+  const n = name.toLowerCase();
+  const machines = gym.machines.slice().sort((a, b) => a.num - b.num);
+  // stations whose label looks like this exercise come first — in a gym
+  // that already exists, binding a second plan is taps, not typing
+  const likely = machines.filter((m) => {
+    const label = String(m.label || '').toLowerCase();
+    return label && n && (label.includes(n) || n.includes(label));
+  });
+  const chips = (list) => list.map((m) => `<button type="button" class="chip bind-pick"
+    data-id="${m.id}">#${m.num} ${esc(m.label)}</button>`).join('');
+
+  root.innerHTML = `
+    <h1>${esc(name)}</h1>
+    <p class="muted">Which machine is this? Enter the number on it — gymii
+      adds it to your gym under this name.</p>
+    <section class="card">
+      <div class="row">
+        <input id="bind-num" type="number" inputmode="numeric" min="1"
+          placeholder="Machine #" value="${slot.num ?? ''}">
+        <button id="bind-go" class="btn btn-primary btn-inline">That's it</button>
+      </div>
+    </section>
+    ${likely.length ? `
+    <section class="card">
+      <h2>Looks like</h2>
+      <div class="chip-select" id="bind-likely">${chips(likely)}</div>
+    </section>` : ''}
+    ${machines.length ? `
+    <section class="card">
+      <h2>Or pick from your gym</h2>
+      <div class="chip-select" id="bind-all">${chips(machines)}</div>
+    </section>` : ''}
+    <button id="bind-skip" class="btn">Skip for now</button>`;
+
+  const bindSlot = (machine) => {
+    slot.machineId = machine.id;
+    delete slot.name;
+    delete slot.num;
+    // a station of the other type can't honour this target's shape
+    if (!!machine.cardio !== (slot.target?.distance != null)) delete slot.target;
+    // write the binding back into the stored plan: asked once, not every
+    // session (matched by name — the item this slot was built from)
+    if (active.planId) {
+      const plan = getPlans().find((p) => p.id === active.planId);
+      const item = plan?.items.find((it) => !it.machineId && it.name === name);
+      if (item) {
+        item.machineId = machine.id;
+        delete item.name;
+        delete item.num;
+        if (!!machine.cardio !== (item.target?.distance != null)) delete item.target;
+        savePlan(plan);
+      }
+    }
+    delete active.binding;
+    active.currentMachineId = machine.id;
+    active.currentExercise = null;
+    saveActive(active);
+    renderTrain(root);
+  };
+
+  root.querySelector('#bind-go').addEventListener('click', () => {
+    const wanted = Math.round(parseFloat(root.querySelector('#bind-num').value) || 0);
+    if (wanted < 1) return;
+    let machine = findMachineByNum(gym, wanted);
+    if (!machine) {
+      machine = addMachine(gym, wanted, name || `Machine ${wanted}`);
+      // the note already said what kind of station this is ("20min" reads
+      // as cardio) — a machine born here inherits that, or its target
+      // would be dropped as the wrong shape the moment it binds
+      if (slot.target?.distance != null) machine.cardio = true;
+    }
+    saveGym(gym);
+    bindSlot(machine);
+  });
+
+  root.querySelectorAll('.bind-pick').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const machine = gym.machines.find((m) => m.id === chip.dataset.id);
+      if (machine) bindSlot(machine);
+    });
+  });
+
+  root.querySelector('#bind-skip').addEventListener('click', () => {
+    delete active.binding;
+    saveActive(active);
+    renderTrain(root);
   });
 }
 
@@ -771,8 +967,11 @@ function renderLog(root, gym, active) {
   // once it is, the Next button takes over as the primary action
   const currentSlot = slotIdx === -1 ? null : active.plan[slotIdx];
   const targetDone = !!(target && currentSlot && slotDone(active, currentSlot));
-  const setPos = target && currentSlot
-    ? Math.min(slotSetCount(active, currentSlot) + 1, target.sets) : null;
+  // only a {sets,reps,weight} target can be counted off — a cardio target
+  // is one bout, not a tally, and has no `sets` to count against
+  const setGoal = target?.sets ?? null;
+  const setPos = setGoal && currentSlot
+    ? Math.min(slotSetCount(active, currentSlot) + 1, setGoal) : null;
   // the log button always says what one tap will log
   const setLabel = (d) => (cardio
     ? `${d.distance} ${du} · ${fmtDuration(d.seconds)}`
@@ -780,9 +979,13 @@ function renderLog(root, gym, active) {
       ? (d.weight ? `BW+${d.weight} ${s.unit} × ${d.reps}` : `BW × ${d.reps}`)
       : `${d.weight} ${s.unit} × ${d.reps}`);
   const logLabel = (d) =>
-    `✓ Log set${target && !targetDone ? ` ${setPos}/${target.sets}` : ''} — ${setLabel(d)}`;
+    `✓ Log set${setGoal && !targetDone ? ` ${setPos}/${setGoal}` : ''} — ${setLabel(d)}`;
   const nextSlot = nextOpenSlot(active, machine.id, exercise);
-  const nextMachine = nextSlot ? gym.machines.find((m) => m.id === nextSlot.machineId) : null;
+  const nextMachine = nextSlot?.machineId
+    ? gym.machines.find((m) => m.id === nextSlot.machineId) : null;
+  // an unbound next stop is still a next stop — it just asks which
+  // machine it is before it can log anything
+  const nextUnbound = !nextMachine && nextSlot?.name ? nextSlot : null;
   // offered only when it differs from the plan's next (excludeMachineId)
   const nearby = nextMachine ? nearbyAlternative(active, gym, machine, nextMachine.id) : null;
 
@@ -816,7 +1019,7 @@ function renderLog(root, gym, active) {
       ? `Last: ${setsSummary(lastSets.sets, s, !!lastSets.bodyweight)}`
       : `First time on this ${exercise ? 'exercise' : 'machine'}`}</div>
         ${target ? `<div class="muted">Target: ${targetStr(target, type, s)}${targetDone
-    ? ' · ✓ done' : ` · set ${setPos}/${target.sets}`}</div>` : ''}
+    ? ' · ✓ done' : setGoal ? ` · set ${setPos}/${setGoal}` : ''}</div>` : ''}
         ${machine.muscles?.length ? `<div class="muted">${machine.muscles.map(esc).join(' · ')}</div>` : ''}
         ${machine.docUrl ? `<a class="doc-link" href="${esc(machine.docUrl)}"
           target="_blank" rel="noopener">Machine docs ↗</a>` : ''}
@@ -894,7 +1097,11 @@ function renderLog(root, gym, active) {
       ${nearby ? `<button id="nearby-machine" class="btn">Busy? #${nearby.machine.num}
         ${esc(nearby.machine.label)} is nearby →</button>` : ''}
       <button id="change-machine" class="btn">Change machine / overview</button>`
-    : '<button id="change-machine" class="btn btn-next btn-big">Workout overview →</button>'}
+    : nextUnbound
+      ? `<button id="next-unbound" class="btn ${targetDone ? 'btn-primary' : 'btn-next'} btn-big">Next:
+          ${esc(nextUnbound.name)} <span class="sub">tap to say which machine</span></button>
+        <button id="change-machine" class="btn">Change machine / overview</button>`
+      : '<button id="change-machine" class="btn btn-next btn-big">Workout overview →</button>'}
   `;
 
   root.querySelector('#exercise-chips')?.addEventListener('click', (e) => {
@@ -993,6 +1200,12 @@ function renderLog(root, gym, active) {
   root.querySelector('#next-machine')?.addEventListener('click', () => {
     active.currentMachineId = nextSlot.machineId;
     active.currentExercise = nextSlot.exercise;
+    saveActive(active);
+    renderTrain(root);
+  });
+
+  root.querySelector('#next-unbound')?.addEventListener('click', () => {
+    active.binding = active.plan.indexOf(nextUnbound);
     saveActive(active);
     renderTrain(root);
   });

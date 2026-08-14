@@ -222,12 +222,20 @@ export function lastEntryFor(machineId, exercise = null) {
 }
 
 // --- workout plans ---
-// A plan is an explicitly saved routine: ordered machine slots plus an
-// optional per-slot target. Starting one feeds it straight into the guided
-// flow (train.js startWorkoutFrom), so plans and repeats share one
-// execution path. Shape:
-//   { id, name, items: [{ machineId, exercise|null,
+// A plan is an explicitly saved routine: ordered slots plus an optional
+// per-slot target. Starting one feeds it straight into the guided flow
+// (train.js startWorkoutFrom), so plans and repeats share one execution
+// path. Shape:
+//   { id, name, items: [{ machineId?, name?, num?, exercise|null,
 //     target?: {sets,reps,weight} | {distance,seconds} }] }
+// INVARIANT: an item carries a machineId (bound — it knows which station)
+// or a name (unbound — it knows the movement but not the station yet), or
+// both. Unbound items are what lets a plan exist before the gym does: a
+// trainer's note is typed in, and each item binds to a machine the first
+// time it is trained (train.js renderBind). `num` on an unbound item is a
+// hint from the source note, not a binding — it prefills the bind prompt.
+// A bound item's type comes from its machine; an unbound one's from the
+// shape of its target (distance/seconds = cardio).
 
 export function getPlans() {
   return read(scopedKey(activeProfileId(), 'plans'), []);
@@ -376,31 +384,181 @@ function isValidGym(gym) {
       && gym.outline.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))));
 }
 
-// Resolves an LLM-produced workout-plan file against the current gym.
-// Machines are referenced by their visible num — the only stable handle an
-// LLM sees in the AI export. Unknown nums land in `skipped` instead of
-// failing the whole import: the answer may arrive hours after the export,
-// and the gym can have changed in between. Does not persist anything.
-export function planFromImport(data) {
-  const gym = getGym();
-  if (!gym) throw new Error('No gym yet — build or import one first');
-  if (!Array.isArray(data.items) || !data.items.length) throw new Error('Plan has no items');
+// --- plan text: the trainer's note ---
+// A plan arrives as LINES, not as a form — "Leg press 3x10 80", "#7 Chest
+// press 3x8-12 40kg", "Treadmill 20min". Reading them is what makes a plan
+// possible before a gym exists. Cutting order matters: set and weight
+// terms come out FIRST, so a leftover leading number ("7. Leg press") is
+// unambiguously a machine num and "20min Treadmill" never reads its 20 as
+// one. Only a MARKED number (#7, 7., 7)) counts — a bare leading digit
+// stays part of the name, where "45 degree leg press" belongs.
+
+// sets × reps, with an optional rep range ("3x8-12" targets the low end —
+// the number you are sure to hit is the better prefill).
+const SETS_REPS = /(\d+)\s*(?:sets?)?\s*[x×*]\s*(\d+)(?:\s*[-–—]\s*\d+)?\s*(?:reps?)?/i;
+// weight right after the sets term ("3x10 80", "3x10x80", "3x10 @ 40kg")
+const TRAILING_WEIGHT = /^\s*(?:@|x|×|\*|-|with)?\s*(\d+(?:[.,]\d+)?)\s*(kgs?|lbs?|pounds?)?\b/i;
+// …or anywhere, when it names its unit ("Chest press 40kg 3x10")
+const UNIT_WEIGHT = /(\d+(?:[.,]\d+)?)\s*(kgs?|lbs?|pounds?)\b/i;
+const DURATION = /(\d+(?:[.,]\d+)?)\s*(h|hrs?|hours?|min(?:ute)?s?|sec(?:ond)?s?)\b/i;
+const DISTANCE = /(\d+(?:[.,]\d+)?)\s*(km|mi|miles?|m)\b/i;
+const MARKED_NUM = /^(?:(?:nr|no)\.?\s*)?(?:#\s*(\d{1,3})|(\d{1,3})\s*[.)])\s*/i;
+const LB_PER_KG = 2.2046226218;
+
+const num = (raw) => parseFloat(String(raw).replace(',', '.'));
+
+// Weights and distances are stored in the display unit, so a note written
+// in the other one converts on the way in (mirrors setUnit's rounding).
+function toDisplayWeight(value, unit, settings) {
+  if (!unit) return value;
+  const imperial = /^(lbs?|pounds?)$/i.test(unit);
+  if (imperial === (settings.unit === 'lbs')) return value;
+  return Math.round((imperial ? value / LB_PER_KG : value * LB_PER_KG) * 2) / 2;
+}
+
+function toDisplayDistance(value, unit, settings) {
+  const meters = /^km$/i.test(unit) ? value * 1000
+    : /^m$/i.test(unit) ? value : value * 1609.344;
+  return settings.unit === 'kg'
+    ? Math.round(meters)
+    : Math.round((meters / 1609.344) * 100) / 100;
+}
+
+// Reads one line into a raw item ({ name, num?, target? }), or null when
+// there is nothing to train on it (blank lines, "Day A:" headings, a bare
+// set term with no movement to attach it to).
+export function parsePlanLine(line, settings = getSettings()) {
+  let rest = String(line).trim();
+  if (!rest || /:$/.test(rest)) return null;
+
+  let target = null;
+  const sr = SETS_REPS.exec(rest);
+  if (sr) {
+    const after = rest.slice(sr.index + sr[0].length);
+    const tw = TRAILING_WEIGHT.exec(after);
+    const uw = tw ? null : UNIT_WEIGHT.exec(rest);
+    const w = tw ?? uw;
+    target = {
+      sets: Math.max(1, parseInt(sr[1], 10)),
+      reps: Math.max(1, parseInt(sr[2], 10)),
+      weight: w ? Math.max(0, toDisplayWeight(num(w[1]), w[2], settings)) : 0,
+    };
+    rest = (rest.slice(0, sr.index) + after.slice(tw ? tw[0].length : 0))
+      .replace(uw ? uw[0] : '', '');
+  } else {
+    // no sets term — a duration or a distance makes it a cardio item
+    const dur = DURATION.exec(rest);
+    const dist = DISTANCE.exec(rest);
+    if (dur || dist) {
+      const secs = dur ? num(dur[1]) * (/^(h|hrs?|hours?)$/i.test(dur[2]) ? 3600
+        : /^sec/i.test(dur[2]) ? 1 : 60) : 0;
+      target = {
+        distance: dist ? toDisplayDistance(num(dist[1]), dist[2], settings) : 0,
+        seconds: Math.round(secs),
+      };
+      rest = rest.replace(dur ? dur[0] : '', '').replace(dist ? dist[0] : '', '');
+    }
+  }
+
+  let machineNum = null;
+  const marked = MARKED_NUM.exec(rest.trim());
+  if (marked) {
+    machineNum = parseInt(marked[1] ?? marked[2], 10);
+    rest = rest.trim().slice(marked[0].length);
+  }
+
+  // strip the punctuation that separated the terms we just cut out
+  const name = rest.replace(/[\s,;:@×*x-]+$/i, '').replace(/^[\s,;:@-]+/, '')
+    .replace(/\s+/g, ' ').trim();
+  if (!name) return null;
+  return { name, ...(machineNum ? { num: machineNum } : {}), ...(target ? { target } : {}) };
+}
+
+// The whole note at once. Lines that carry nothing trainable are dropped.
+export function parsePlanText(text, settings = getSettings()) {
+  return String(text).split('\n')
+    .map((line) => parsePlanLine(line, settings))
+    .filter(Boolean);
+}
+
+// Binds one raw item to a machine when the gym allows it: a known num
+// wins, else an exact label match, else a SINGLE substring match (an
+// ambiguous one would bind the wrong station, so it stays unbound). What
+// cannot bind keeps its name and num — an unbound item is a full citizen,
+// not a failed one.
+function resolveItem(raw, gym) {
+  const name = String(raw.name || '').trim();
+  const machines = gym?.machines ?? [];
+  let machine = raw.num != null ? machines.find((m) => m.num === raw.num) : null;
+  if (!machine && name) {
+    const n = name.toLowerCase();
+    const matches = machines.filter((m) => String(m.label || '').toLowerCase() === n);
+    const loose = matches.length ? matches : machines.filter((m) => {
+      const label = String(m.label || '').toLowerCase();
+      return label && (label.includes(n) || n.includes(label));
+    });
+    if (loose.length === 1) [machine] = loose;
+  }
+  return { machine, name: name || (raw.num != null ? `Machine ${raw.num}` : '') };
+}
+
+// Shapes a raw target against the item's type. Bound items take their type
+// from the machine, unbound ones from the target's own shape.
+function normalizeTarget(raw, cardio) {
   const int = (v, min, fb) => (Number.isFinite(v) ? Math.max(min, Math.round(v)) : fb);
   const pos = (v, fb) => (Number.isFinite(v) && v >= 0 ? v : fb);
-  const skipped = [];
-  const items = [];
-  data.items.forEach((raw) => {
-    const machine = gym.machines.find((m) => m.num === raw.num);
-    if (!machine) { skipped.push(raw.num ?? '?'); return; }
-    const exercise = machine.exercises?.includes(raw.exercise) ? raw.exercise : null;
-    const target = machine.cardio
-      ? (raw.distance != null || raw.seconds != null
-        ? { distance: pos(raw.distance, 1000), seconds: int(raw.seconds, 0, 600) } : null)
-      : (raw.sets != null || raw.reps != null || raw.weight != null
-        ? { sets: int(raw.sets, 1, 3), reps: int(raw.reps, 1, 10), weight: pos(raw.weight, 0) } : null);
-    items.push({ machineId: machine.id, exercise, ...(target ? { target } : {}) });
-  });
-  if (!items.length) throw new Error('No machines matched this gym');
+  if (cardio) {
+    return raw.distance != null || raw.seconds != null
+      ? { distance: pos(raw.distance, 1000), seconds: int(raw.seconds, 0, 600) } : null;
+  }
+  return raw.sets != null || raw.reps != null || raw.weight != null
+    ? { sets: int(raw.sets, 1, 3), reps: int(raw.reps, 1, 10), weight: pos(raw.weight, 0) } : null;
+}
+
+// Turns raw items ({num?, name?, exercise?, target?} — from an LLM file or
+// a typed note) into plan items, binding what the gym already knows.
+export function planItemsFrom(rawItems, gym) {
+  return rawItems.map((raw) => {
+    const { machine, name } = resolveItem(raw, gym);
+    const flat = raw.target ? { ...raw, ...raw.target } : raw;
+    const cardio = machine ? !!machine.cardio : flat.distance != null || flat.seconds != null;
+    const target = normalizeTarget(flat, cardio);
+    if (machine) {
+      const exercise = machine.exercises?.includes(raw.exercise) ? raw.exercise : null;
+      return { machineId: machine.id, exercise, ...(target ? { target } : {}) };
+    }
+    // neither a station nor a name: nothing to train and nothing to bind
+    if (!name) return null;
+    return {
+      machineId: null, name, exercise: null,
+      ...(raw.num != null ? { num: raw.num } : {}),
+      ...(target ? { target } : {}),
+    };
+  }).filter(Boolean);
+}
+
+export const isUnbound = (item) => !item.machineId;
+
+// Reads a plan out of a typed note. No gym needed — that is the point.
+export function planFromText(text, name = '', settings = getSettings()) {
+  const raw = parsePlanText(text, settings);
+  if (!raw.length) throw new Error('No exercises found — one per line, e.g. "Leg press 3x10 80"');
+  return {
+    id: uid(),
+    name: String(name || '').trim(),
+    items: planItemsFrom(raw, getGym()),
+  };
+}
+
+// Resolves an LLM-produced workout-plan file against the current gym.
+// Machines are referenced by their visible num — the only stable handle an
+// LLM sees in the AI export. A num the gym doesn't know does NOT drop the
+// item any more: the answer may arrive hours after the export (or before
+// the gym exists at all), so it lands unbound and binds on first use.
+// Does not persist anything.
+export function planFromImport(data) {
+  if (!Array.isArray(data.items) || !data.items.length) throw new Error('Plan has no items');
+  const items = planItemsFrom(data.items, getGym());
   const days = Array.isArray(data.days)
     ? [...new Set(data.days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))]
       .sort((a, b) => a - b)
@@ -412,7 +570,7 @@ export function planFromImport(data) {
       ...(days.length ? { days } : {}),
       items,
     },
-    skipped,
+    unbound: items.filter(isUnbound).map((it) => it.name),
   };
 }
 

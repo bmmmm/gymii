@@ -19,7 +19,8 @@ If you propose changes to my gym or machines, reply with a valid gymii gym-templ
 
 If I ask you to PLAN a workout (e.g. "plan me a chest & shoulders session", possibly excluding some machines), pick suitable machines via their muscles field and reply with a gymii workout-plan JSON I can paste back:
 {"app":"gymii","kind":"workout-plan","name":"<short name>","items":[{"num":<machine num>,"sets":3,"reps":10,"weight":50}]}
-Use each machine's num exactly as listed, weights in my unit derived from my history (a slight progression where it looks earned), add "exercise" only for a movement at a multi-exercise station, and use {"num":…,"distance":…,"seconds":…} for cardio machines. An optional top-level "days":[1,4] tags weekdays (0 = Sunday).`;
+Use each machine's num exactly as listed, weights in my unit derived from my history (a slight progression where it looks earned), add "exercise" only for a movement at a multi-exercise station, and use {"num":…,"distance":…,"seconds":…} for cardio machines. An optional top-level "days":[1,4] tags weekdays (0 = Sunday).
+For a movement my gym has no machine for, give {"name":"<exercise name>","sets":3,"reps":10,"weight":50} instead of a num — gymii keeps it and asks me which machine it is at the gym.`;
 
 export function renderAi(root) {
   const settings = getSettings();
@@ -95,10 +96,12 @@ export function renderAi(root) {
         // A plan import is a proposal, not a fact: save it, then hand it
         // to the builder for review (exclude machines, adjust targets) —
         // unless a workout is running, which outranks the builder screen.
-        const { plan, skipped } = planFromImport(data);
+        const { plan, unbound } = planFromImport(data);
         savePlan(plan);
-        const skipNote = skipped.length
-          ? ` (${skipped.length} unknown machine${skipped.length === 1 ? '' : 's'} skipped: #${skipped.join(', #')})` : '';
+        // machines the gym doesn't know are kept, not dropped — they bind
+        // on the gym floor the first time they come up
+        const skipNote = unbound.length
+          ? ` (${unbound.length} exercise${unbound.length === 1 ? '' : 's'} still need a machine: ${unbound.join(', ')})` : '';
         if (getActive()) {
           importMsg.textContent = `Plan saved${skipNote} — find it on the Train tab after your workout.`;
         } else {

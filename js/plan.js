@@ -2,10 +2,14 @@
 // muscle, order them, set per-machine targets. It renders inside the Train
 // tab (train.js owns the open/close state). Nothing persists until Save,
 // so an imported AI draft can be reviewed and trimmed before it sticks.
+//
+// It runs WITHOUT a gym: items typed from a trainer's note start unbound
+// (a name and a target, no machine) and bind here or on the gym floor.
 
 import {
-  getGym, getPlans, savePlan, deletePlan, lastEntryFor, getSettings,
-  uid, distUnit, gymMuscles,
+  getGym, saveGym, newGym, addMachine, getPlans, savePlan, deletePlan,
+  lastEntryFor, getSettings, uid, distUnit, gymMuscles, isUnbound,
+  parsePlanText, planItemsFrom,
 } from './store.js';
 import { drawGym } from './studio.js';
 import { esc, twoTapConfirm, stepperField } from './ui.js';
@@ -18,7 +22,11 @@ const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 // Seeds a fresh item's target from the last session on that machine so a
 // new plan starts from reality, not from zero. Cross-type history (the
 // machine's type flag changed since) is ignored, like renderLog does.
+// machine null = an unbound item: no history to seed from, so the target
+// falls back to the plain strength default (cardio unbound items keep the
+// shape their note gave them).
 function targetDefaults(machine, exercise, s) {
+  if (!machine) return { sets: 3, reps: 10, weight: 20 };
   const last = lastEntryFor(machine.id, exercise ?? null);
   const typed = last
     && !!last.cardio === !!machine.cardio
@@ -37,9 +45,13 @@ function targetDefaults(machine, exercise, s) {
   };
 }
 
+// An item's type without needing its machine: bound items follow the
+// station, unbound ones the shape their target arrived in.
+const itemIsCardio = (item, machine) =>
+  (machine ? !!machine.cardio : item.target?.distance != null);
+
 export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onClose) {
-  const gym = getGym();
-  if (!gym) { onClose(''); return; }
+  let gym = getGym(); // may be null — a plan can exist before the gym does
   const s = getSettings();
   const du = distUnit(s);
   const stored = planId ? getPlans().find((p) => p.id === planId) : null;
@@ -48,19 +60,34 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
     ? JSON.parse(JSON.stringify(stored))
     : { id: uid(), name: '', items: [] };
   let muscle = ''; // active muscle filter, '' = all
+  let binding = null; // index of the item whose bind prompt is open
 
-  const machineFor = (id) => gym.machines.find((m) => m.id === id);
-  // imported items may arrive target-less — give them one so the steppers
-  // have something to edit
-  draft.items.forEach((it) => {
-    const m = machineFor(it.machineId);
-    if (!it.target && m) it.target = targetDefaults(m, it.exercise, s);
-  });
-  const allMuscles = gymMuscles(gym);
+  const machineFor = (id) => (id ? gym?.machines.find((m) => m.id === id) : null);
+
+  // The bind prompt: which station is this movement? A known num binds, an
+  // unknown one creates the machine under the item's own name — the gym
+  // grows out of the plan instead of gating it.
+  const bindBox = (it, i) => {
+    const candidates = (gym?.machines ?? []).slice().sort((a, b) => a.num - b.num);
+    return `<div class="plan-bind">
+      <div class="row">
+        <input class="bind-num" type="number" inputmode="numeric" min="1"
+          placeholder="Machine #" value="${it.num ?? ''}">
+        <button type="button" class="btn btn-inline bind-go" data-i="${i}">Assign</button>
+      </div>
+      ${candidates.length ? `<div class="chip-select bind-chips">
+        ${candidates.map((m) => `<button type="button" class="chip bind-pick"
+          data-i="${i}" data-id="${m.id}">#${m.num} ${esc(m.label)}</button>`).join('')}
+      </div>` : ''}
+      <p class="muted">Enter the number on the machine — gymii creates
+        &ldquo;${esc(it.name || 'it')}&rdquo; under that number if it doesn't know it yet.</p>
+      <button type="button" class="btn bind-cancel">Cancel</button>
+    </div>`;
+  };
 
   const itemRow = (it, i) => {
     const m = machineFor(it.machineId);
-    if (!m) {
+    if (!m && !isUnbound(it)) {
       // stale item (machine deleted since the plan was saved/imported)
       return `<div class="plan-item">
         <div class="plan-item-head">
@@ -73,38 +100,50 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
       </div>`;
     }
     const t = it.target;
-    return `<div class="plan-item">
+    const label = m ? m.label : it.name;
+    const cardio = itemIsCardio(it, m);
+    return `<div class="plan-item${m ? '' : ' unbound'}">
       <div class="plan-item-head">
-        <span class="machine-badge sm">${m.num}</span>
-        <span class="plan-label">${esc(m.label)}</span>
+        <span class="machine-badge sm">${m ? m.num : '?'}</span>
+        <span class="plan-label">${esc(label)}</span>
         <span class="plan-item-actions">
-          <button type="button" class="x it-up" data-i="${i}" aria-label="Move ${esc(m.label)} up">↑</button>
-          <button type="button" class="x it-down" data-i="${i}" aria-label="Move ${esc(m.label)} down">↓</button>
-          <button type="button" class="x it-remove" data-i="${i}" aria-label="Remove ${esc(m.label)}">✕</button>
+          <button type="button" class="x it-up" data-i="${i}" aria-label="Move ${esc(label)} up">↑</button>
+          <button type="button" class="x it-down" data-i="${i}" aria-label="Move ${esc(label)} down">↓</button>
+          <button type="button" class="x it-remove" data-i="${i}" aria-label="Remove ${esc(label)}">✕</button>
         </span>
       </div>
-      ${m.exercises?.length ? `
+      ${m ? '' : `<button type="button" class="btn btn-inline it-bind" data-i="${i}">📍 Assign machine</button>`}
+      ${binding === i ? bindBox(it, i) : ''}
+      ${m?.exercises?.length ? `
       <div class="chip-select">
         ${m.exercises.map((x) => `<button type="button" class="chip it-exercise${it.exercise === x ? ' sel' : ''}"
           data-i="${i}" data-exercise="${esc(x)}">${esc(x)}</button>`).join('')}
       </div>` : ''}
       <div class="plan-targets">
-        ${m.cardio ? `
+        ${cardio ? `
         ${stepperField(`Distance (${du})`, `t-distance-${i}`, { step: s.unit === 'kg' ? 100 : 0.1, min: 0, value: t.distance })}
         ${stepperField('Time (min)', `t-time-${i}`, { step: 1, min: 0, value: Math.round((t.seconds / 60) * 100) / 100 })}`
     : `
         ${stepperField('Sets', `t-sets-${i}`, { step: 1, min: 1, value: t.sets, mode: 'numeric' })}
         ${stepperField('Reps', `t-reps-${i}`, { step: 1, min: 1, value: t.reps, mode: 'numeric' })}
-        ${stepperField(m.bodyweight ? 'Extra weight' : 'Weight', `t-weight-${i}`, { step: s.weightStep, min: 0, value: t.weight })}`}
+        ${stepperField(m?.bodyweight ? 'Extra weight' : 'Weight', `t-weight-${i}`, { step: s.weightStep, min: 0, value: t.weight })}`}
       </div>
     </div>`;
   };
 
   function render() {
-    const inPlan = new Set(draft.items.map((it) => it.machineId));
+    // imported, pasted and typed items may arrive target-less — give them
+    // one so the steppers always have something to edit
+    draft.items.forEach((it) => {
+      if (!it.target) it.target = targetDefaults(machineFor(it.machineId), it.exercise, s);
+    });
+    const machines = gym?.machines ?? [];
+    const allMuscles = gym ? gymMuscles(gym) : [];
+    const inPlan = new Set(draft.items.map((it) => it.machineId).filter(Boolean));
+    const unboundCount = draft.items.filter(isUnbound).length;
     const filtered = (muscle
-      ? gym.machines.filter((m) => (m.muscles || []).includes(muscle))
-      : gym.machines).slice().sort((a, b) => a.num - b.num);
+      ? machines.filter((m) => (m.muscles || []).includes(muscle))
+      : machines).slice().sort((a, b) => a.num - b.num);
 
     root.innerHTML = `
       <h1>${stored ? 'Edit plan' : 'Plan workout'}</h1>
@@ -126,13 +165,26 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
         <p class="muted">Optional — today's plans sort to the top of the start screen.</p>
       </section>
       <section class="card">
-        <h2>Machines &amp; targets</h2>
+        <h2>Exercises &amp; targets</h2>
         <div id="plan-items">
-          ${draft.items.map(itemRow).join('') || '<p class="muted">No machines yet — add some below.</p>'}
+          ${draft.items.map(itemRow).join('') || '<p class="muted">Nothing planned yet — add exercises below.</p>'}
         </div>
+        ${unboundCount ? `<p class="muted">${unboundCount} exercise${unboundCount === 1 ? '' : 's'}
+          without a machine — assign ${unboundCount === 1 ? 'it' : 'them'} here, or let gymii
+          ask at the gym when you get there.</p>` : ''}
       </section>
       <section class="card">
-        <h2>Add machines</h2>
+        <h2>Add an exercise</h2>
+        <div class="row">
+          <input id="add-line" type="text" placeholder="e.g. Leg press 3x10 80">
+          <button type="button" id="add-line-go" class="btn btn-inline">Add</button>
+        </div>
+        <p class="muted">One line, like your plan is written: sets × reps and a
+          weight, or a time like <em>20min</em> for cardio. No machine needed yet.</p>
+      </section>
+      ${machines.length ? `
+      <section class="card">
+        <h2>Add from your gym</h2>
         ${allMuscles.length ? `
         <div class="chip-select" id="muscle-chips">
           <button type="button" class="chip${muscle === '' ? ' sel' : ''}" data-muscle="">All</button>
@@ -146,20 +198,22 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
         </div>
         <div class="map-wrap"><svg xmlns="http://www.w3.org/2000/svg"></svg></div>
         <p class="muted">Tap a machine — chip or map — to add or remove it.</p>
-      </section>
+      </section>` : ''}
       <button id="plan-save" class="btn btn-primary btn-big">Save plan</button>
       <button id="plan-start" class="btn btn-next btn-big">Save &amp; start workout</button>
       ${stored ? '<button id="plan-delete" class="btn btn-danger">Delete plan</button>' : ''}
       <button id="plan-cancel" class="btn">Cancel</button>
       <p id="plan-msg" class="muted" role="status"></p>`;
 
-    const svg = root.querySelector('svg');
-    drawGym(svg, gym, {});
-    if (muscle) { // dim non-matching machines like the picker's filter
-      const ids = new Set(filtered.map((m) => m.id));
-      svg.querySelectorAll('.machine').forEach((g) => {
-        g.style.opacity = ids.has(g.dataset.id) ? '' : '0.22';
-      });
+    const svg = machines.length ? root.querySelector('svg') : null;
+    if (svg) {
+      drawGym(svg, gym, {});
+      if (muscle) { // dim non-matching machines like the picker's filter
+        const ids = new Set(filtered.map((m) => m.id));
+        svg.querySelectorAll('.machine').forEach((g) => {
+          g.style.opacity = ids.has(g.dataset.id) ? '' : '0.22';
+        });
+      }
     }
 
     root.querySelector('#plan-name').addEventListener('change', (e) => {
@@ -176,14 +230,58 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
       render();
     };
 
+    // Binds an unbound item to a station, creating the gym and/or the
+    // machine when the number is new: the gym grows out of the plan
+    // instead of gating it. The new machine takes the item's own name, so
+    // it never lands as a nameless "Machine 14".
+    const bindItem = (i, machineId, wantedNum) => {
+      const it = draft.items[i];
+      if (!it) return;
+      let machine = machineId ? machineFor(machineId) : null;
+      if (!machine && wantedNum > 0) {
+        gym = gym ?? newGym();
+        machine = gym.machines.find((m) => m.num === wantedNum);
+        if (!machine) {
+          machine = addMachine(gym, wantedNum, it.name || `Machine ${wantedNum}`);
+          // the note already said what kind of station this is ("20min"
+          // reads as cardio) — a machine born here inherits that, or its
+          // target would be dropped as the wrong shape right away
+          if (it.target?.distance != null) machine.cardio = true;
+        }
+        saveGym(gym);
+      }
+      if (!machine) return;
+      it.machineId = machine.id;
+      delete it.name;
+      delete it.num;
+      // a station of the other type needs a target of that shape
+      if (!!machine.cardio !== (it.target?.distance != null)) {
+        it.target = targetDefaults(machine, it.exercise, s);
+      }
+      binding = null;
+      render();
+    };
+
     root.querySelector('#plan-items').addEventListener('click', (e) => {
-      const btn = e.target.closest('.it-remove, .it-up, .it-down, .it-exercise');
+      const btn = e.target.closest(
+        '.it-remove, .it-up, .it-down, .it-exercise, .it-bind, .bind-go, .bind-pick, .bind-cancel');
       if (!btn) return;
+      if (btn.classList.contains('bind-cancel')) { binding = null; render(); return; }
       const i = parseInt(btn.dataset.i, 10);
       const it = draft.items[i];
       if (!it) return;
-      if (btn.classList.contains('it-remove')) {
+      if (btn.classList.contains('it-bind')) {
+        binding = binding === i ? null : i;
+      } else if (btn.classList.contains('bind-pick')) {
+        bindItem(i, btn.dataset.id, 0);
+        return;
+      } else if (btn.classList.contains('bind-go')) {
+        const field = root.querySelector('.bind-num');
+        bindItem(i, null, Math.round(parseFloat(field?.value) || 0));
+        return;
+      } else if (btn.classList.contains('it-remove')) {
         draft.items.splice(i, 1);
+        binding = null;
       } else if (btn.classList.contains('it-up') || btn.classList.contains('it-down')) {
         const j = i + (btn.classList.contains('it-up') ? -1 : 1);
         if (j < 0 || j >= draft.items.length) return;
@@ -219,14 +317,33 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
       render();
     });
 
-    root.querySelector('#machine-chips').addEventListener('click', (e) => {
+    root.querySelector('#machine-chips')?.addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
       if (chip) toggleMachine(chip.dataset.id);
     });
 
-    svg.addEventListener('click', (e) => {
+    svg?.addEventListener('click', (e) => {
       const g = e.target.closest('.machine');
       if (g) toggleMachine(g.dataset.id);
+    });
+
+    // One typed line = one exercise, the same grammar the onboarding note
+    // uses — so a plan can be extended without ever touching a machine list.
+    const addLine = () => {
+      const field = root.querySelector('#add-line');
+      const raw = parsePlanText(field.value, s);
+      if (!raw.length) {
+        root.querySelector('#plan-msg').textContent =
+          'Nothing to add — try "Leg press 3x10 80" or "Treadmill 20min".';
+        return;
+      }
+      draft.items.push(...planItemsFrom(raw, gym));
+      field.value = '';
+      render();
+    };
+    root.querySelector('#add-line-go').addEventListener('click', addLine);
+    root.querySelector('#add-line').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') addLine();
     });
 
     root.querySelector('#day-chips').addEventListener('click', (e) => {
@@ -245,7 +362,7 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
       draft.name = root.querySelector('#plan-name').value.trim();
       if (!draft.days?.length) delete draft.days;
       if (!draft.items.length) {
-        root.querySelector('#plan-msg').textContent = 'Add at least one machine first.';
+        root.querySelector('#plan-msg').textContent = 'Add at least one exercise first.';
         return false;
       }
       savePlan(draft);

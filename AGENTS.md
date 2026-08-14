@@ -43,13 +43,27 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   Other lazy migrations live in `getGym()` (outline, meta). Pick lists:
   `MUSCLE_GROUPS`, `COMMON_SETTINGS`, `ZONE_LABELS` (its 'Cardio' string
   is a room label — unrelated to the `machine.cardio` flag). Stored plans
-  live under `gymii.<pid>.plans`: `{id, name, days?, items:[{machineId,
-  exercise|null, target?}]}` with target `{sets,reps,weight}` or
-  `{distance,seconds}`; `days` is getDay()-coded weekday ints
+  live under `gymii.<pid>.plans`: `{id, name, days?, items:[{machineId?,
+  name?, num?, exercise|null, target?}]}` with target `{sets,reps,weight}`
+  or `{distance,seconds}`; `days` is getDay()-coded weekday ints
   (locker-style: dropped when emptied), today's plans sort first on the
   start screen; part of backups, wiped with the profile.
-  `planFromImport()` resolves an AI `workout-plan` file (machines by num,
-  unknown nums → `skipped`) without persisting.
+  PLAN ITEM INVARIANT: an item carries a `machineId` (bound) or a `name`
+  (UNBOUND — the movement is known, the station isn't). Unbound items are
+  what lets a plan exist before a gym does; `num` on one is a hint from
+  its source note that prefills the bind prompt, never a binding. A bound
+  item's type comes from its machine, an unbound one's from its target
+  shape (`distance` ⇒ cardio) — `isUnbound()` is the check.
+  `parsePlanLine()`/`parsePlanText()` read a trainer's note ("Leg press
+  3x10 80", "#7 Chest press 3x8-12 40kg", "Treadmill 20min"): set and
+  weight terms are cut FIRST so a leftover leading number is unambiguous,
+  and only a MARKED num (`#7`, `7.`, `7)`) counts — "45 degree leg press"
+  keeps its 45. Rep ranges target the low end; foreign units convert.
+  `planItemsFrom()` binds raw items against a gym (num, then exact label,
+  then a SINGLE substring match) and leaves the rest unbound;
+  `planFromText()` and `planFromImport()` both go through it, so a typed
+  note and an AI `workout-plan` file behave identically. planFromImport
+  returns `{plan, unbound}` — an unknown num no longer drops its item.
 - `js/app.js` — hash-router, renders views into `#view`. The `#studio`
   route is deliberately NOT in the tabbar (the map is a setup tool, not a
   daily surface — user decision); it is reached via links in onboarding
@@ -84,7 +98,17 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   matches a plan name are SKIPPED — a named plan owns its routine. The plan builder (`js/plan.js`, muscle-filtered machine
   picking, per-item targets, reorder) renders inside the Train tab via
   module state (`openPlanBuilder()` — used by ai.js for import review); an
-  active workout always outranks it.
+  active workout always outranks it. The builder runs WITHOUT a gym —
+  unbound items get a `📍 Assign machine` prompt (number field prefilled
+  from `item.num`, plus chips for existing machines) and a one-line
+  `Add an exercise` field that parses the same note grammar.
+  A slot whose `machineId` is null renders `renderBind()` instead of the
+  log screen (`active.binding` = its plan index): one question, one
+  number. An unknown number CREATES the machine under the item's own name
+  (and marks it `cardio` when the target says so, or the target would be
+  dropped as the wrong shape), so the gym grows out of the plan instead
+  of gating it. The binding is written back into the stored plan via
+  `active.planId` — asked once per exercise, not once per session.
   `machine.cardio` flips the log screen to
   distance+time, `machine.bodyweight` to reps + extra weight; type flags
   and `exercise` are SNAPSHOTTED onto the entry (like num/label) —
@@ -104,11 +128,16 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   The overview's "Muscles today" chips (muscles of machines with sets
   this session, read live from the gym) double as navigation: a tap
   calls the picker's `setMuscle()` to filter machines for that muscle. Set-arithmetic must guard
-  against other shapes (`st.reps * st.weight || 0`). No machines = an
-  onboarding screen (build-your-gym incl. template/backup links / quick
-  start / plan-ahead pointer), and the picker
-  offers create-on-miss for unknown numbers via `store.addMachine()` —
-  training never requires a studio visit first.
+  against other shapes (`st.reps * st.weight || 0`); only a `target.sets`
+  target counts sets off (`setGoal`) — a cardio target is one bout, not a
+  tally. Nothing to start = an onboarding screen led by ONE action: type
+  in the plan you already have (`planFromText`), with quick start on a
+  line below it and the Studio as a text link. The map is the reward for
+  a gym that exists, never the toll gate before it — a saved plan also
+  outranks onboarding, and the start screen falls back to quick start
+  when the gym has no machines. The picker offers create-on-miss for
+  unknown numbers via `store.addMachine()` — training never requires a
+  studio visit first.
 - `js/history.js` — month heatmap (per-machine filter), progress chart
   (`js/chart.js`), workout list with repeat.
 - `js/ai.js` — copy prompt+data / paste-import. Deliberately NO AI API.

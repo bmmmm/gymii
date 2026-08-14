@@ -356,6 +356,17 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .plan-row .plan-status { color: var(--muted); font-size: 13px; flex-shrink: 0; }
 .plan-row .plan-status.done { color: var(--accent); }
 
+/* an exercise that has no machine yet: dashed badge, "assign" as the call
+   to action — open work, not an error */
+.plan-row.unbound .machine-badge,
+.plan-item.unbound .machine-badge {
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+}
+
+.plan-row.unbound .plan-status { color: var(--accent); }
+
 /* recent workouts on the start screen */
 .recent-row {
   display: flex;
@@ -379,6 +390,17 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .plan-item-actions { display: flex; flex-shrink: 0; }
 .plan-item-actions .x { color: var(--muted); background: none; border: 0; font-size: 16px; padding: 6px 8px; cursor: pointer; }
 .plan-item .chip-select { margin: 8px 0 2px; }
+.plan-item .it-bind { margin: 8px 0 0; }
+/* the bind prompt, inline under the item it belongs to */
+.plan-bind {
+  margin: 8px 0 2px;
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+
+.plan-bind .chip-select { margin: 8px 0; max-height: 132px; overflow-y: auto; }
+.plan-bind .btn { margin-top: 4px; }
 .plan-targets { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .plan-targets .spread { align-items: center; }
 .plan-targets .label { font-size: 14px; color: var(--muted); width: 96px; }
