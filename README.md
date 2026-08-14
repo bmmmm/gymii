@@ -1,6 +1,7 @@
 # gymii 🏋️
 
-Draw your gym. Number the machines. Log your sets. Watch the numbers climb.
+Type in your plan. Log your sets. Watch the numbers climb. Your gym draws
+itself along the way.
 
 Everything lives in your browser — no account, no backend, no tracking, not
 even a cookie banner.
@@ -10,22 +11,29 @@ even a cookie banner.
 ## What's inside
 
 - 🗺️ **Studio** — a real floor-plan editor: walls, zones, doors, mirrors,
-  lockers, and machines you can tap. Undo/redo included.
+  lockers, and machines you can tap. Undo/redo included. Optional: draw it
+  once your gym is in there and gymii can point you at the next machine.
 - 💪 **Train** — repeat a past workout in order, or roam by number, map tap or
   muscle. Last session's numbers prefill every set. Cardio stations log
   distance + time, bodyweight stations reps + extra weight, and free-weight
   areas keep separate histories per named exercise. 📍 shows where the next
   machine stands, a busy one gets the closest open alternative, and a
   coverage row tracks which muscles you've hit today.
-- 📋 **Plans** — build a session in advance: pick machines or exercises
-  (filter by muscle if you like), set target sets × reps × weight, then just
+- 📋 **Plans** — start with the plan you already have: type it in the way
+  it's written (`Leg press 3x10 80`, `#7 Chest press 3x8-12 40kg`,
+  `Treadmill 20min`) and gymii reads it — no gym needed yet. At the machine
+  it asks once which one this is, creates it under that name, and remembers.
+  Edit as a list of steppers or as plain text, whichever is faster. Then just
   tick it off: today's plan is the big start button, every set is one tap
   ("✓ Log set 2/3 — 50 kg × 10"), and the workout keeps pulling you back to
-  unfinished targets. Your LLM can draft a plan too; paste it in for review.
+  unfinished targets. Your LLM can draft one too; paste it in for review.
 - ⏱️ **Rest timer** — starts itself, remembers per machine, keeps the screen
   awake, beeps when you're up.
-- 📈 **History** — training heatmap, progress chart, one-tap repeat, and past
-  workouts can be edited inline or deleted.
+- 📈 **History** — training heatmap, progress chart, one-tap repeat. Name a
+  workout (gymii suggests one from the muscles you trained) and one tap
+  filters everything down to it. Past workouts are fully editable — add or
+  remove sets and machines, fix the date — and one you trained without your
+  phone can be typed in after the fact.
 - 🏨 **Profiles & units** — home gym, hotel gym, whatever. kg or lbs, switched
   in one go.
 - 📦 **Templates** — export your gym as JSON, import someone else's.
