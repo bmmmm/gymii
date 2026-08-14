@@ -9,7 +9,7 @@
 import {
   getGym, saveGym, newGym, addMachine, getPlans, savePlan, deletePlan,
   lastEntryFor, getSettings, uid, distUnit, gymMuscles, isUnbound,
-  parsePlanText, planItemsFrom,
+  parsePlanText, planItemsFrom, planToText,
 } from './store.js';
 import { drawGym } from './studio.js';
 import { esc, twoTapConfirm, stepperField } from './ui.js';
@@ -61,6 +61,11 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
     : { id: uid(), name: '', items: [] };
   let muscle = ''; // active muscle filter, '' = all
   let binding = null; // index of the item whose bind prompt is open
+  // Two views of ONE plan: the list is precise (steppers, chips, binding),
+  // the text is fast (reorder by moving a line, drop one by deleting it).
+  // Switching either way goes through the parser/serialiser pair, so the
+  // note stays the source of truth while it is on screen.
+  let view = 'list';
 
   const machineFor = (id) => (id ? gym?.machines.find((m) => m.id === id) : null);
 
@@ -166,13 +171,23 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
       </section>
       <section class="card">
         <h2>Exercises &amp; targets</h2>
+        <div class="chip-select" id="view-chips">
+          <button type="button" class="chip${view === 'list' ? ' sel' : ''}" data-view="list">List</button>
+          <button type="button" class="chip${view === 'text' ? ' sel' : ''}" data-view="text">Text</button>
+        </div>
+        ${view === 'text' ? `
+        <textarea id="plan-text" rows="10"></textarea>
+        <p class="muted">One exercise per line. Move a line to reorder, delete
+          one to drop it. A <em>#number</em> keeps it tied to that machine.</p>`
+    : `
         <div id="plan-items">
           ${draft.items.map(itemRow).join('') || '<p class="muted">Nothing planned yet — add exercises below.</p>'}
         </div>
         ${unboundCount ? `<p class="muted">${unboundCount} exercise${unboundCount === 1 ? '' : 's'}
           without a machine — assign ${unboundCount === 1 ? 'it' : 'them'} here, or let gymii
-          ask at the gym when you get there.</p>` : ''}
+          ask at the gym when you get there.</p>` : ''}`}
       </section>
+      ${view === 'text' ? '' : `
       <section class="card">
         <h2>Add an exercise</h2>
         <div class="row">
@@ -181,8 +196,8 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
         </div>
         <p class="muted">One line, like your plan is written: sets × reps and a
           weight, or a time like <em>20min</em> for cardio. No machine needed yet.</p>
-      </section>
-      ${machines.length ? `
+      </section>`}
+      ${view === 'list' && machines.length ? `
       <section class="card">
         <h2>Add from your gym</h2>
         ${allMuscles.length ? `
@@ -205,7 +220,12 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
       <button id="plan-cancel" class="btn">Cancel</button>
       <p id="plan-msg" class="muted" role="status"></p>`;
 
-    const svg = machines.length ? root.querySelector('svg') : null;
+    // textarea content goes in via value, never innerHTML — user data can
+    // never break out of the markup that way
+    const textArea = root.querySelector('#plan-text');
+    if (textArea) textArea.value = planToText(draft.items, gym, s);
+
+    const svg = view === 'list' && machines.length ? root.querySelector('svg') : null;
     if (svg) {
       drawGym(svg, gym, {});
       if (muscle) { // dim non-matching machines like the picker's filter
@@ -218,6 +238,31 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
 
     root.querySelector('#plan-name').addEventListener('change', (e) => {
       draft.name = e.target.value.trim();
+    });
+
+    // Pulls the text view back into items. Returns false (and says why)
+    // only when there IS text but none of it reads as an exercise —
+    // emptying the note deliberately is a valid edit, caught by persist.
+    const fromText = () => {
+      const ta = root.querySelector('#plan-text');
+      if (!ta) return true;
+      const raw = parsePlanText(ta.value, s);
+      if (!raw.length && ta.value.trim()) {
+        root.querySelector('#plan-msg').textContent =
+          'No exercise found in that text — one per line, e.g. "Leg press 3x10 80".';
+        return false;
+      }
+      draft.items = planItemsFrom(raw, gym);
+      return true;
+    };
+
+    root.querySelector('#view-chips').addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip || chip.dataset.view === view) return;
+      if (view === 'text' && !fromText()) return;
+      view = chip.dataset.view;
+      binding = null;
+      render();
     });
 
     const toggleMachine = (id) => {
@@ -262,7 +307,7 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
       render();
     };
 
-    root.querySelector('#plan-items').addEventListener('click', (e) => {
+    root.querySelector('#plan-items')?.addEventListener('click', (e) => {
       const btn = e.target.closest(
         '.it-remove, .it-up, .it-down, .it-exercise, .it-bind, .bind-go, .bind-pick, .bind-cancel');
       if (!btn) return;
@@ -297,7 +342,7 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
       render();
     });
 
-    root.querySelector('#plan-items').addEventListener('change', (e) => {
+    root.querySelector('#plan-items')?.addEventListener('change', (e) => {
       const match = /^t-(sets|reps|weight|distance|time)-(\d+)$/.exec(e.target.id || '');
       if (!match) return;
       const t = draft.items[Number(match[2])]?.target;
@@ -341,8 +386,8 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
       field.value = '';
       render();
     };
-    root.querySelector('#add-line-go').addEventListener('click', addLine);
-    root.querySelector('#add-line').addEventListener('keydown', (e) => {
+    root.querySelector('#add-line-go')?.addEventListener('click', addLine);
+    root.querySelector('#add-line')?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') addLine();
     });
 
@@ -359,6 +404,7 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
     // shared by Save and Save & start; days follow the locker-style
     // lifecycle (key dropped when emptied)
     const persist = () => {
+      if (!fromText()) return false; // text view is authoritative while open
       draft.name = root.querySelector('#plan-name').value.trim();
       if (!draft.days?.length) delete draft.days;
       if (!draft.items.length) {

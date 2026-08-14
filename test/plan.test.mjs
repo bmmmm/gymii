@@ -390,6 +390,39 @@ assert.equal(store.parsePlanLine('Bench 3x10 100lb', s).target.weight, 45.5,
 assert.equal(store.parsePlanText('Leg press 3x10 80\n\nDay B:\nTreadmill 20min', s).length, 2,
   'parsePlanText drops blanks and headings');
 
+// --- text view: planToText is the exact inverse of parsePlanText ---
+
+const roundTripItems = [
+  { machineId: 'm1', exercise: null, target: { sets: 3, reps: 10, weight: 80 } },
+  { machineId: 'db', exercise: 'Biceps curls', target: { sets: 4, reps: 12, weight: 15 } },
+  { machineId: 'c1', exercise: null, target: { distance: 2000, seconds: 900 } },
+  { machineId: null, name: 'Cable crossover', exercise: null, num: 21, target: { sets: 3, reps: 12, weight: 25 } },
+  { machineId: null, name: 'Plank', exercise: null },
+];
+const note = store.planToText(roundTripItems, gym, s);
+assert.equal(note, [
+  '#1 Chest press 3x10 80',
+  '#2 Dumbbells: Biceps curls 4x12 15',
+  '#4 Treadmill 2000m 15min',
+  '#21 Cable crossover 3x12 25',
+  'Plank',
+].join('\n'), 'items serialise to the note they would have been written as');
+assert.deepEqual(store.planItemsFrom(store.parsePlanText(note, s), gym), roundTripItems,
+  'and read back into exactly the same items');
+
+// a bare weight of 0 is left out and comes back as 0
+assert.equal(store.planToText([{ machineId: 'm1', exercise: null, target: { sets: 3, reps: 10, weight: 0 } }], gym, s),
+  '#1 Chest press 3x10', 'a zero weight is not written out');
+
+// only a marked num unlocks the "station: exercise" reading — otherwise
+// the colon stays part of the name instead of eating half of it
+assert.deepEqual(store.parsePlanLine('Day A: Leg press 3x10', s),
+  { name: 'Day A: Leg press', target: { sets: 3, reps: 10, weight: 0 } },
+  'without a #num a colon does not split off an exercise');
+assert.deepEqual(store.parsePlanLine('#2 Dumbbells: Shoulder press 3x10 20', s),
+  { name: 'Dumbbells', num: 2, exercise: 'Shoulder press', target: { sets: 3, reps: 10, weight: 20 } },
+  'with a #num it names a movement at that station');
+
 // --- onboarding: the typed plan is the way in, before any gym exists ---
 
 store.createProfile('Fresh gym'); // empty profile -> onboarding screen

@@ -64,6 +64,11 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   `planFromText()` and `planFromImport()` both go through it, so a typed
   note and an AI `workout-plan` file behave identically. planFromImport
   returns `{plan, unbound}` — an unknown num no longer drops its item.
+  `planToText()` is the exact inverse of `parsePlanText()` (bound items
+  lead with `#num`, which is what makes the round-trip bind again) and
+  backs the builder's Text view. `#2 Dumbbells: Biceps curls` names a
+  movement AT a station — only a marked num unlocks that reading, or
+  "Day A: Leg press" would lose half its name to a false heading.
 - `js/app.js` — hash-router, renders views into `#view`. The `#studio`
   route is deliberately NOT in the tabbar (the map is a setup tool, not a
   daily surface — user decision); it is reached via links in onboarding
@@ -102,6 +107,9 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   unbound items get a `📍 Assign machine` prompt (number field prefilled
   from `item.num`, plus chips for existing machines) and a one-line
   `Add an exercise` field that parses the same note grammar.
+  List/Text chips switch between the stepper list and the plain note
+  (`planToText`/`parsePlanText`); every switch AND `persist()` go through
+  `fromText()`, so the text is authoritative while it is on screen.
   A slot whose `machineId` is null renders `renderBind()` instead of the
   log screen (`active.binding` = its plan index): one question, one
   number. An unknown number CREATES the machine under the item's own name

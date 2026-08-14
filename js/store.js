@@ -468,10 +468,24 @@ export function parsePlanLine(line, settings = getSettings()) {
   }
 
   // strip the punctuation that separated the terms we just cut out
-  const name = rest.replace(/[\s,;:@×*x-]+$/i, '').replace(/^[\s,;:@-]+/, '')
+  let name = rest.replace(/[\s,;:@×*x-]+$/i, '').replace(/^[\s,;:@-]+/, '')
     .replace(/\s+/g, ' ').trim();
+  // "#2 Dumbbells: Biceps curls" names a movement AT a station. Only a
+  // MARKED num unlocks this reading — otherwise "Day A: Leg press" would
+  // lose its exercise to a heading that merely looks like one.
+  let exercise = null;
+  if (machineNum && name.includes(':')) {
+    const [head, ...tail] = name.split(':');
+    const rhs = tail.join(':').trim();
+    if (head.trim() && rhs) { name = head.trim(); exercise = rhs; }
+  }
   if (!name) return null;
-  return { name, ...(machineNum ? { num: machineNum } : {}), ...(target ? { target } : {}) };
+  return {
+    name,
+    ...(machineNum ? { num: machineNum } : {}),
+    ...(exercise ? { exercise } : {}),
+    ...(target ? { target } : {}),
+  };
 }
 
 // The whole note at once. Lines that carry nothing trainable are dropped.
@@ -538,6 +552,30 @@ export function planItemsFrom(rawItems, gym) {
 }
 
 export const isUnbound = (item) => !item.machineId;
+
+// The note a plan would have been written as — the exact inverse of
+// parsePlanText, so the builder can offer text and list as two views of
+// one plan. Bound items lead with their #num, which is what makes the
+// round-trip bind again on the way back in.
+export function planToText(items, gym, settings = getSettings()) {
+  const du = distUnit(settings);
+  return items.map((it) => {
+    const machine = it.machineId ? gym?.machines.find((m) => m.id === it.machineId) : null;
+    if (!machine && !isUnbound(it)) return null; // machine deleted since
+    const num = machine?.num ?? it.num ?? null;
+    const label = machine ? machine.label : it.name;
+    const head = `${num ? `#${num} ` : ''}${label}${it.exercise ? `: ${it.exercise}` : ''}`;
+    const t = it.target;
+    if (!t) return head;
+    if (t.distance != null) {
+      const dist = t.distance ? ` ${t.distance}${du}` : '';
+      const time = t.seconds
+        ? ` ${t.seconds % 60 ? `${t.seconds}s` : `${t.seconds / 60}min`}` : '';
+      return `${head}${dist}${time}`;
+    }
+    return `${head} ${t.sets}x${t.reps}${t.weight ? ` ${t.weight}` : ''}`;
+  }).filter(Boolean).join('\n');
+}
 
 // Reads a plan out of a typed note. No gym needed — that is the point.
 export function planFromText(text, name = '', settings = getSettings()) {
