@@ -2,6 +2,7 @@ import {
   getGym, saveGym, getSettings, saveSettings, getActive, saveActive, finishWorkout,
   lastEntryFor, getWorkouts, getPlans, savePlan, planFromText, uid,
   usageByMachine, gymMuscles, distUnit, newGym, addMachine,
+  suggestWorkoutNames, recentWorkoutNames,
 } from './store.js';
 import { drawGym, usagePayload, findMachineByNum } from './studio.js';
 import { renderPlanBuilder, DAY_LABELS } from './plan.js';
@@ -593,6 +594,16 @@ function renderOverview(root, gym, active) {
     .filter((e) => e.sets.length)
     .flatMap((e) => gym.machines.find((m) => m.id === e.machineId)?.muscles ?? []));
 
+  // Name suggestions: what was actually trained (one id per logged set,
+  // so the dominant region wins) plus the names already in use. Offered
+  // here rather than at Finish — this is the screen you pass through on
+  // the way out, so naming costs a tap, not a step.
+  const nameChips = [...new Set([
+    ...suggestWorkoutNames(
+      active.entries.flatMap((e) => e.sets.map(() => e.machineId)), gym),
+    ...recentWorkoutNames(),
+  ])].slice(0, 5);
+
   const rows = active.plan.map((slot, i) => {
     const machine = gym.machines.find((m) => m.id === slot.machineId);
     const entries = slotEntries(active, slot);
@@ -635,8 +646,13 @@ function renderOverview(root, gym, active) {
         <input id="workout-name" type="text" placeholder="e.g. Push day"
           value="${esc(active.name ?? '')}">
       </div>
-      <p class="muted">Optional — a named workout gets its own start row, so
-        two routines on the same machines stay apart.</p>
+      ${nameChips.length ? `
+      <div class="chip-select" id="name-chips">
+        ${nameChips.map((n) => `<button type="button" class="chip${active.name === n ? ' sel' : ''}"
+          data-name="${esc(n)}">${esc(n)}</button>`).join('')}
+      </div>` : ''}
+      <p class="muted">A named workout gets its own start row, so two routines
+        on the same machines stay apart — and it stays findable in History.</p>
     </section>
     <section class="card">
       <h2>Locker</h2>
@@ -668,6 +684,15 @@ function renderOverview(root, gym, active) {
   root.querySelector('#workout-name').addEventListener('change', (e) => {
     active.name = e.target.value.trim();
     saveActive(active);
+  });
+
+  // tapping a chip names the workout; tapping the selected one clears it
+  root.querySelector('#name-chips')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    active.name = active.name === chip.dataset.name ? '' : chip.dataset.name;
+    saveActive(active);
+    renderTrain(root);
   });
 
   root.querySelector('#locker-num').addEventListener('change', (e) => {

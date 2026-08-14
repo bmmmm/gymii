@@ -390,6 +390,42 @@ assert.equal(store.parsePlanLine('Bench 3x10 100lb', s).target.weight, 45.5,
 assert.equal(store.parsePlanText('Leg press 3x10 80\n\nDay B:\nTreadmill 20min', s).length, 2,
   'parsePlanText drops blanks and headings');
 
+// --- name suggestions: derived from what was trained, not asked for ---
+
+const nameGym = store.newGym('Naming gym');
+[
+  ['p1', 1, 'Chest press', ['Chest']],
+  ['p2', 2, 'Shoulder press', ['Shoulders']],
+  ['p3', 3, 'Triceps pushdown', ['Triceps']],
+  ['l1', 4, 'Leg press', ['Quads', 'Glutes']],
+  ['l2', 5, 'Leg curl', ['Hamstrings']],
+  ['b1', 6, 'Row', ['Lats', 'Upper back']],
+].forEach(([id, n, label, muscles]) => nameGym.machines.push({
+  id, num: n, label, x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles,
+}));
+
+assert.ok(store.suggestWorkoutNames(['p1', 'p2', 'p3'], nameGym).includes('Push day'),
+  'chest + shoulders + triceps reads as a push day');
+assert.ok(store.suggestWorkoutNames(['l1', 'l2'], nameGym).includes('Leg day'),
+  'a legs-only session reads as a leg day');
+assert.ok(store.suggestWorkoutNames(['b1'], nameGym).includes('Pull day'),
+  'lats + upper back read as a pull day');
+assert.deepEqual(store.suggestWorkoutNames(['p1', 'l1'], nameGym), ['Chest', 'Chest & Legs'],
+  'a mixed session falls back to its regions, never to a wrong split');
+assert.deepEqual(store.suggestWorkoutNames([], nameGym), [], 'nothing trained, nothing to suggest');
+assert.deepEqual(store.suggestWorkoutNames(['nope'], nameGym), [],
+  'machines without muscles suggest nothing');
+
+store.saveWorkouts([
+  { id: 'n1', startedAt: 1, name: 'Old one', entries: [] },
+  { id: 'n2', startedAt: 2, entries: [] },
+  { id: 'n3', startedAt: 3, name: 'Push day', entries: [] },
+  { id: 'n4', startedAt: 4, name: 'Push day', entries: [] },
+]);
+assert.deepEqual(store.recentWorkoutNames(), ['Push day', 'Old one'],
+  'names already in use come back newest first, deduped');
+store.saveWorkouts([]);
+
 // --- text view: planToText is the exact inverse of parsePlanText ---
 
 const roundTripItems = [

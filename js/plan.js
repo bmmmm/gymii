@@ -9,7 +9,8 @@
 import {
   getGym, saveGym, newGym, addMachine, getPlans, savePlan, deletePlan,
   lastEntryFor, getSettings, uid, distUnit, gymMuscles, isUnbound,
-  parsePlanText, planItemsFrom, planToText,
+  parsePlanText, planItemsFrom, planToText, suggestWorkoutNames,
+  recentWorkoutNames,
 } from './store.js';
 import { drawGym } from './studio.js';
 import { esc, twoTapConfirm, stepperField } from './ui.js';
@@ -146,6 +147,12 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
     const allMuscles = gym ? gymMuscles(gym) : [];
     const inPlan = new Set(draft.items.map((it) => it.machineId).filter(Boolean));
     const unboundCount = draft.items.filter(isUnbound).length;
+    // what this plan trains, plus names already in use — a nameless plan
+    // is a plan nobody finds again
+    const nameChips = [...new Set([
+      ...suggestWorkoutNames(draft.items.map((it) => it.machineId).filter(Boolean), gym),
+      ...recentWorkoutNames(),
+    ])].slice(0, 5);
     const filtered = (muscle
       ? machines.filter((m) => (m.muscles || []).includes(muscle))
       : machines).slice().sort((a, b) => a.num - b.num);
@@ -158,6 +165,11 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
         <div class="row">
           <input id="plan-name" type="text" placeholder="e.g. Push day" value="${esc(draft.name)}">
         </div>
+        ${nameChips.length ? `
+        <div class="chip-select" id="name-chips">
+          ${nameChips.map((n) => `<button type="button" class="chip${draft.name === n ? ' sel' : ''}"
+            data-name="${esc(n)}">${esc(n)}</button>`).join('')}
+        </div>` : ''}
         <p class="muted">A named plan owns its routine on the start screen —
           workouts you log from it group under this name.</p>
       </section>
@@ -238,6 +250,14 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
 
     root.querySelector('#plan-name').addEventListener('change', (e) => {
       draft.name = e.target.value.trim();
+    });
+
+    // tapping a chip names the plan; tapping the selected one clears it
+    root.querySelector('#name-chips')?.addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      draft.name = draft.name === chip.dataset.name ? '' : chip.dataset.name;
+      render();
     });
 
     // Pulls the text view back into items. Returns false (and says why)

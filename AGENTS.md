@@ -40,7 +40,14 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   `cardio`/`bodyweight` are mutually exclusive and absent for strength;
   optional `machine.exercises: [string]` (deleted when emptied) splits a
   station into per-exercise entries — `lastEntryFor(machineId, exercise)`.
-  Other lazy migrations live in `getGym()` (outline, meta). Pick lists:
+  Other lazy migrations live in `getGym()` (outline, meta).
+  `suggestWorkoutNames(machineIds, gym)` proposes names from what was
+  trained (each machine contributes ONE unit split across its muscles, so
+  a three-muscle station can't outvote two others; a Push/Pull/Leg split
+  needs a ≥70% share, else it falls back to region names) and
+  `recentWorkoutNames()` returns the names already in use — together they
+  fill the name chips on the overview and in the builder. A name is
+  proposed, never asked for. Pick lists:
   `MUSCLE_GROUPS`, `COMMON_SETTINGS`, `ZONE_LABELS` (its 'Cardio' string
   is a room label — unrelated to the `machine.cardio` flag). Stored plans
   live under `gymii.<pid>.plans`: `{id, name, days?, items:[{machineId?,

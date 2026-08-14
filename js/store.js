@@ -342,6 +342,83 @@ export function setUnit(unit) {
 export const gymMuscles = (gym) => [...new Set(gym.machines.flatMap((m) => m.muscles || []))]
   .sort((a, b) => a.localeCompare(b));
 
+// --- naming a workout ---
+// A name is what makes a session findable later, so gymii proposes one
+// instead of asking for one: the muscles of the machines actually trained
+// say what this workout was. Chips, not free text — the house rule for
+// anything enumerable, and one tap beats typing "Push day" for the ninth
+// time. Free text stays available for everything these can't guess.
+
+const MUSCLE_REGION = {
+  Chest: 'Chest',
+  'Upper back': 'Back',
+  'Lower back': 'Back',
+  Lats: 'Back',
+  Traps: 'Back',
+  Shoulders: 'Shoulders',
+  Biceps: 'Arms',
+  Triceps: 'Arms',
+  Forearms: 'Arms',
+  Abs: 'Core',
+  Obliques: 'Core',
+  Quads: 'Legs',
+  Hamstrings: 'Legs',
+  Glutes: 'Legs',
+  Calves: 'Legs',
+  Adductors: 'Legs',
+  Abductors: 'Legs',
+  'Full body': 'Full body',
+};
+const PUSH = new Set(['Chest', 'Shoulders', 'Triceps']);
+const PULL = new Set(['Lats', 'Upper back', 'Lower back', 'Traps', 'Biceps']);
+
+// Names this set of machines could plausibly go by, most specific first.
+// Pass one id per set (or per plan item) — repeats are the weighting.
+export function suggestWorkoutNames(machineIds, gym) {
+  const hits = new Map(); // muscle -> weight
+  let total = 0;
+  machineIds.forEach((id) => {
+    const machine = gym?.machines.find((m) => m.id === id);
+    const muscles = machine?.muscles ?? [];
+    if (!muscles.length) return;
+    // each machine contributes ONE unit, split across its muscles — a
+    // station tagged with three leg muscles must not outvote two others
+    const unit = 1 / muscles.length;
+    muscles.forEach((mu) => hits.set(mu, (hits.get(mu) || 0) + unit));
+    total += 1;
+  });
+  if (!total) return [];
+  const share = (group) => [...hits]
+    .reduce((n, [mu, c]) => n + (group.has(mu) ? c : 0), 0) / total;
+  const regions = new Map();
+  hits.forEach((c, mu) => {
+    const region = MUSCLE_REGION[mu];
+    if (region) regions.set(region, (regions.get(region) || 0) + c);
+  });
+  const ranked = [...regions].sort((a, b) => b[1] - a[1]).map(([r]) => r);
+  const names = [];
+  // a classic split only when the session really is one — a stray
+  // machine from another region should not rename the whole workout
+  if (share(PUSH) >= 0.7) names.push('Push day');
+  if (share(PULL) >= 0.7) names.push('Pull day');
+  if ((regions.get('Legs') ?? 0) / total >= 0.7) names.push('Leg day');
+  if (ranked[0]) names.push(ranked[0]);
+  if (ranked[1]) names.push(`${ranked[0]} & ${ranked[1]}`);
+  return [...new Set(names)].slice(0, 4);
+}
+
+// Names already in use, newest first — reusing one keeps a routine
+// together on the start screen instead of splitting it in two.
+export function recentWorkoutNames(limit = 3) {
+  const workouts = getWorkouts();
+  const names = [];
+  for (let i = workouts.length - 1; i >= 0 && names.length < limit; i--) {
+    const name = workouts[i].name;
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
 // Total sets per machine across all history — feeds the usage map view.
 export function usageByMachine() {
   const usage = new Map();
