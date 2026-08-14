@@ -156,10 +156,14 @@ renderTrain(root);
 assert.ok(root.innerHTML.includes('Planned workouts'), 'start screen has the plans section');
 assert.ok(root.innerHTML.includes('Plan a workout'), 'and the create button');
 
-// open the builder, add a machine via its chip, name it, save
+// open the builder — a plan from scratch starts as a blank note
 root.querySelector('#plan-new').listeners.click();
 assert.ok(root.innerHTML.includes('Plan workout'), 'builder opens');
-assert.ok(root.innerHTML.includes('Add an exercise'), 'builder shows the typed-line adder');
+assert.ok(root.innerHTML.includes('id="plan-text"'), 'a new plan opens in the text view');
+
+// switch to the list to pick machines the tappable way
+root.querySelector('#view-chips').listeners.click(fakeClick({ dataset: { view: 'list' } }));
+assert.ok(root.innerHTML.includes('Add an exercise'), 'the list shows the typed-line adder');
 assert.ok(root.innerHTML.includes('Add from your gym'), 'and the machine adder');
 assert.ok(root.innerHTML.includes('#1 Chest press'), 'machine chips render');
 assert.ok(root.innerHTML.includes('Chest'), 'muscle filter chips render');
@@ -284,6 +288,9 @@ store.saveWorkouts([]); // deterministic start screen for the blocks below
 byId.clear();
 renderTrain(root);
 root.querySelector('#plan-new').listeners.click();
+// the stub DOM hands back every selector, rendered or not — switch to the
+// list explicitly so this walks the same path a real builder would
+root.querySelector('#view-chips').listeners.click(fakeClick({ dataset: { view: 'list' } }));
 root.querySelector('#machine-chips').listeners.click(fakeClick({ dataset: { id: 'm1' } }));
 const today = new Date().getDay();
 root.querySelector('#day-chips').listeners.click(fakeClick({ dataset: { day: String(today) } }));

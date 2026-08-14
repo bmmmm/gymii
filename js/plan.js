@@ -66,7 +66,10 @@ export function renderPlanBuilder(root, { planId = null, notice = '' } = {}, onC
   // the text is fast (reorder by moving a line, drop one by deleting it).
   // Switching either way goes through the parser/serialiser pair, so the
   // note stays the source of truth while it is on screen.
-  let view = 'list';
+  // A plan from scratch opens in Text — writing one down IS typing it out;
+  // anything already stored (edit, AI import, a note just read) opens as a
+  // list, because that is a review, not a blank page.
+  let view = planId ? 'list' : 'text';
 
   const machineFor = (id) => (id ? gym?.machines.find((m) => m.id === id) : null);
 

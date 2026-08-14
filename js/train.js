@@ -201,8 +201,14 @@ function renderStart(root, gym, message) {
     ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
     ${primaryPlan ? `<button id="plan-primary" class="btn btn-primary btn-big">▶ Start
       ${primaryPlan.name ? esc(primaryPlan.name) : 'your plan'}
-      <span class="sub">${isToday(primaryPlan) ? 'today · ' : ''}${planChain(primaryPlan, gym)}${primaryDone
-    ? ` · last: ${new Date(primaryDone.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span></button>` : ''}
+      <span class="sub">${[
+    isToday(primaryPlan) ? 'today' : '',
+    planChain(primaryPlan, gym),
+    primaryPlan.items.filter((it) => !it.machineId).length
+      ? `${primaryPlan.items.filter((it) => !it.machineId).length} to assign` : '',
+    primaryDone
+      ? `last: ${new Date(primaryDone.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : '',
+  ].filter(Boolean).join(' · ')}</span></button>` : ''}
     ${last && !repeatIsPrimaryPlan ? `<button id="repeat" class="btn ${primaryPlan ? '' : 'btn-primary '}btn-big">Repeat last workout
       <span class="sub">${new Date(last.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
       · ${last.name ? `${esc(last.name)} · ` : ''}${machineChain(last)}</span></button>` : ''}
@@ -898,9 +904,12 @@ const planTargetFor = (active, machineId, exercise = null) => {
   return idx === -1 ? null : active.plan[idx].target ?? null;
 };
 
-// "3 × 10 @ 50 kg" / "3 × 10 @ BW+5 kg" / "1000 m · 10:00"
+// "3 × 10 @ 50 kg" / "3 × 10 @ BW+5 kg" / "1000 m · 10:00" / "20:00"
+// A cardio target may name only one of the two — "Treadmill 20min" sets no
+// distance, and "0 m ·" in front of it is noise, not information.
 const targetStr = (t, type, s) => (type === 'cardio'
-  ? `${t.distance} ${distUnit(s)} · ${fmtDuration(t.seconds)}`
+  ? [t.distance ? `${t.distance} ${distUnit(s)}` : '',
+    t.seconds ? fmtDuration(t.seconds) : ''].filter(Boolean).join(' · ') || '—'
   : type === 'bodyweight'
     ? `${t.sets} × ${t.reps}${t.weight ? ` @ BW+${t.weight} ${s.unit}` : ''}`
     : `${t.sets} × ${t.reps} @ ${t.weight} ${s.unit}`);
