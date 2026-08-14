@@ -8,12 +8,16 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
 - Dev server: `python3 serve.py [port]` → http://localhost:8437 (sends
   `Cache-Control: no-store`; plain `http.server` made Chrome serve stale
   modules — don't go back to it).
-- Logic tests: `node test/store.test.mjs` (stubs localStorage, covers store
-  roundtrips, outline migration, template validation, locker carry-over),
-  `node test/train.test.mjs` (guided-plan construction) and
-  `node test/plan.test.mjs` (stored plans, AI plan import, target flow);
-  train.js imports fine in Node as long as no module touches the DOM at
-  top level.
+- Logic tests: `for f in test/*.test.mjs; do node "$f"; done` — CI runs the
+  glob, so a new `test/<module>.test.mjs` is picked up without a workflow
+  edit. `store` (localStorage stub, store roundtrips, outline migration,
+  template validation, locker carry-over), `train` (guided-plan
+  construction), `plan` (stored plans, the note parser/serialiser, AI
+  import, binding, targets), `history` (name filter, full editor,
+  back-logging), `studio` (editor rendering, collision). Modules import
+  fine in Node as long as none touches the DOM at top level; the stub DOM
+  hands back EVERY selector, rendered or not, so a test must drive view
+  switches explicitly rather than assume a branch was skipped.
 - UI changes: verify in a real browser (claude-in-chrome). Editor
   interactions are best tested with scripted PointerEvents + localStorage
   asserts — pixel coordinates shift with window size. `setPointerCapture`

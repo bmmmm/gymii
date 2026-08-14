@@ -19,10 +19,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - run: node test/store.test.mjs
-      - run: node test/train.test.mjs
-      - run: node test/plan.test.mjs
-      - run: node test/studio.test.mjs
+      # every test/*.test.mjs runs — a new module's tests must not need a
+      # workflow edit to be taken seriously
+      - run: for f in test/*.test.mjs; do echo "== $f"; node "$f" || exit 1; done
 
   # A runtime asset missing from the sw.js SHELL list breaks the app OFFLINE
   # only — invisible in every normal test. icons/icon.svg is the source the

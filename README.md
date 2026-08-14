@@ -57,8 +57,8 @@ anywhere, so export a backup before you switch devices or browsers.
 ## Contributing
 
 Vanilla HTML/CSS/JS (ES modules), zero dependencies. Tests: one file per
-module — `node test/store.test.mjs` (same for train, studio, plan). Notes
-for contributors and agents live in [AGENTS.md](AGENTS.md).
+module — `for f in test/*.test.mjs; do node "$f"; done`. Notes for
+contributors and agents live in [AGENTS.md](AGENTS.md).
 
 Got a floor plan of your gym? Templates are meant to be shared —
 `templates/index.json` is the manifest, pull requests welcome.
