@@ -176,8 +176,14 @@ export function getWorkouts() {
   return read(scopedKey(activeProfileId(), 'workouts'), []);
 }
 
+// Chronological order is an INVARIANT of this list: "repeat last workout"
+// reads the tail, lastEntryFor walks it backwards, and history renders it
+// reversed. Logging a session after the fact or editing a workout's date
+// would otherwise silently misplace it, so sorting happens here — once,
+// for every writer — instead of at each call site.
 export function saveWorkouts(list) {
-  write(scopedKey(activeProfileId(), 'workouts'), list);
+  write(scopedKey(activeProfileId(), 'workouts'),
+    list.slice().sort((a, b) => a.startedAt - b.startedAt));
 }
 
 // Deletes a workout by id; no-op if unknown.
@@ -663,6 +669,57 @@ export function planFromText(text, name = '', settings = getSettings()) {
     name: String(name || '').trim(),
     items: planItemsFrom(raw, getGym()),
   };
+}
+
+// Builds a PAST workout out of the same note grammar — the session you
+// forgot to log is a plan that already happened, so "3x10 80" means three
+// sets of ten at eighty rather than a target of them. Lines naming a num
+// the gym doesn't know create that machine (same deal as binding on the
+// floor); lines with no findable machine are reported, not invented, so
+// nothing lands in the gym that the note didn't actually name.
+// Returns { workout, skipped } and persists ONLY the gym, not the workout.
+export function workoutFromText(text, startedAt, settings = getSettings()) {
+  const raw = parsePlanText(text, settings);
+  if (!raw.length) throw new Error('No exercises found — one per line, e.g. "#14 Leg press 3x10 80"');
+  const gym = getGym() ?? newGym();
+  const entries = [];
+  const skipped = [];
+  raw.forEach((item) => {
+    const [resolved] = planItemsFrom([item], gym);
+    if (!resolved) return;
+    let machine = resolved.machineId
+      ? gym.machines.find((m) => m.id === resolved.machineId) : null;
+    if (!machine && item.num) {
+      machine = addMachine(gym, item.num, item.name);
+      if (item.target?.distance != null) machine.cardio = true;
+    }
+    if (!machine) { skipped.push(item.name); return; }
+    const t = resolved.target;
+    const sets = [];
+    if (t?.distance != null) {
+      sets.push({ distance: t.distance, seconds: t.seconds });
+    } else {
+      const count = t?.sets ?? 1;
+      for (let i = 0; i < count; i++) sets.push({ reps: t?.reps ?? 10, weight: t?.weight ?? 0 });
+    }
+    entries.push({
+      machineId: machine.id,
+      num: machine.num,
+      label: machine.label,
+      ...(machine.cardio ? { cardio: true } : {}),
+      ...(machine.bodyweight ? { bodyweight: true } : {}),
+      ...(resolved.exercise ? { exercise: resolved.exercise } : {}),
+      settings: {},
+      sets,
+    });
+  });
+  if (!entries.length) {
+    throw new Error('No line named a machine gymii knows — put a #number in front of one');
+  }
+  saveGym(gym);
+  // no finishedAt: the duration of a workout logged after the fact is
+  // simply unknown, and every consumer already guards for its absence
+  return { workout: { id: uid(), startedAt, entries }, skipped };
 }
 
 // Resolves an LLM-produced workout-plan file against the current gym.

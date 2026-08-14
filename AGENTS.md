@@ -33,8 +33,12 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   strength `{reps, weight}`, cardio `{distance, seconds}` (distance in the
   display unit, m/mi via `distUnit()`; seconds unit-less), bodyweight
   reuses `{reps, weight}` with weight = ADDED weight. Live-logged sets also
-  carry `at` (epoch ms, stamped at log time) — older sets lack it, every
-  consumer must guard. Workouts may carry an optional `name`
+  carry `at` (epoch ms, stamped at log time) — older sets lack it, and so
+  must sets added by editing or back-logging; every consumer must guard.
+  `saveWorkouts()` sorts by `startedAt`: chronological order is an
+  INVARIANT (repeat-last reads the tail, `lastEntryFor` walks it
+  backwards, history renders it reversed), and back-logging a session or
+  editing a date would silently break it. Workouts may carry an optional `name`
   (locker-style lifecycle: dropped when emptied; start screen groups
   routines by name when present). Machine type flags
   `cardio`/`bodyweight` are mutually exclusive and absent for strength;
@@ -154,7 +158,16 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   unknown numbers via `store.addMachine()` — training never requires a
   studio visit first.
 - `js/history.js` — month heatmap (per-machine filter), progress chart
-  (`js/chart.js`), workout list with repeat. Workout-name chips at the top
+  (`js/chart.js`), workout list with repeat, and full editing: per-set
+  values, `+ Set` (copies the previous one, minus its `at` — it was not
+  logged live), `+ Machine` (snapshots num/label/type flags like the log
+  screen), remove set or whole station, date + time (finishedAt moves
+  with the start, keeping the duration) and name chips. `Log a past
+  workout` reads the same note grammar via `workoutFromText()` — a past
+  workout IS a plan that already happened, so `3x10 80` becomes three
+  real sets — and reopens the result in edit mode (`openEditId`). It
+  shows even on the empty screen: coming over from paper starts there.
+  Workout-name chips at the top
   filter EVERYTHING: `workouts` is narrowed once, right after `getWorkouts()`,
   so heatmap, chart, machine lists and the list all follow. The filter is
   module state (`nameFilter`) because a save or delete re-renders the whole

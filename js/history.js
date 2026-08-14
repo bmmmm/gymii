@@ -1,5 +1,6 @@
 import {
-  getGym, getWorkouts, getSettings, getActive, deleteWorkout, updateWorkout, distUnit,
+  getGym, getWorkouts, saveWorkouts, getSettings, getActive, deleteWorkout,
+  updateWorkout, distUnit, workoutFromText, suggestWorkoutNames, recentWorkoutNames,
 } from './store.js';
 import { esc, fmtDate, fmtTime, workoutTotals, setStr, twoTapConfirm } from './ui.js';
 import { lineChart } from './chart.js';
@@ -8,6 +9,8 @@ import { startWorkoutFrom } from './train.js';
 // Active workout-name filter ('' = all). Module state, so it survives the
 // full re-render that a save or a delete triggers.
 let nameFilter = '';
+// Set when a workout should come back up in edit mode after the re-render.
+let openEditId = null;
 
 export function renderHistory(root) {
   const all = getWorkouts();
@@ -22,18 +25,22 @@ export function renderHistory(root) {
   // everything below reads `workouts` — filtering here filters the
   // heatmap, the chart, the machine lists and the workout list at once
   const workouts = nameFilter ? all.filter((w) => w.name === nameFilter) : all;
+  const s = getSettings();
+  const unit = s.unit;
+  const gym = getGym();
+
+  // Nothing logged yet still gets the past-workout form: someone moving
+  // over from paper starts by typing in the weeks they already trained.
   if (!all.length) {
     root.innerHTML = `<h1>History</h1>
       <div class="empty"><div class="big">📈</div>
         <p>No workouts yet.</p>
         <p>Finish your first <a href="#train">workout</a> and it shows up here.</p>
-      </div>`;
+      </div>
+      ${pastCardHtml()}`;
+    wirePastLog(root, s);
     return;
   }
-
-  const s = getSettings();
-  const unit = s.unit;
-  const gym = getGym();
 
   // Stations — and, at multi-exercise stations, each exercise — seen in
   // history, labeled with their current gym name when still present.
@@ -95,10 +102,13 @@ export function renderHistory(root) {
       </select>
       <div class="chart-wrap" id="chart"></div>
     </section>
+    ${pastCardHtml()}
     <section class="card">
       <h2>Workouts${nameFilter ? ` — ${esc(nameFilter)}` : ''}</h2>
       <div id="workout-list"></div>
     </section>`;
+
+  wirePastLog(root, s);
 
   root.querySelector('#name-filter')?.addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
@@ -108,12 +118,16 @@ export function renderHistory(root) {
   });
 
   // One card at a time can be in edit mode; the draft is a deep clone so
-  // Cancel never touches stored data.
-  let editDraft = null;
+  // Cancel never touches stored data. A freshly logged past workout opens
+  // in edit mode straight away (openEditId), so its details can be checked
+  // and named while the session is still in mind.
+  let editDraft = openEditId
+    ? JSON.parse(JSON.stringify(workouts.find((w) => w.id === openEditId) ?? null)) : null;
+  openEditId = null;
   const list = root.querySelector('#workout-list');
   const renderList = () => {
     list.innerHTML = workouts.slice().reverse()
-      .map((w) => (editDraft?.id === w.id ? editWorkoutHtml(editDraft, s) : workoutHtml(w, s)))
+      .map((w) => (editDraft?.id === w.id ? editWorkoutHtml(editDraft, s, gym) : workoutHtml(w, s)))
       .join('');
   };
   renderList();
@@ -149,6 +163,54 @@ export function renderHistory(root) {
     const setDel = e.target.closest('.set-del');
     if (setDel && editDraft) {
       editDraft.entries[+setDel.dataset.ei].sets.splice(+setDel.dataset.si, 1);
+      renderList();
+      return;
+    }
+
+    // A forgotten set is the common repair, so it copies the previous one
+    // — `at` is dropped: this set was not logged live and nothing may
+    // claim otherwise (the quick-switch chips rank on that stamp).
+    const setAdd = e.target.closest('.set-add');
+    if (setAdd && editDraft) {
+      const entry = editDraft.entries[+setAdd.dataset.ei];
+      const last = entry.sets[entry.sets.length - 1];
+      const { at, ...copy } = last ?? {};
+      entry.sets.push(last ? copy
+        : entry.cardio ? { distance: 0, seconds: 0 } : { reps: 10, weight: 0 });
+      renderList();
+      return;
+    }
+
+    const entryDel = e.target.closest('.entry-del');
+    if (entryDel && editDraft) {
+      editDraft.entries.splice(+entryDel.dataset.ei, 1);
+      renderList();
+      return;
+    }
+
+    // A machine forgotten entirely. Type flags and num/label are
+    // snapshotted onto the entry exactly like the live logging screen does.
+    if (e.target.closest('.entry-add') && editDraft) {
+      const pick = e.target.closest('details').querySelector('.entry-pick');
+      const machine = gym?.machines.find((m) => m.id === pick?.value);
+      if (machine) {
+        editDraft.entries.push({
+          machineId: machine.id,
+          num: machine.num,
+          label: machine.label,
+          ...(machine.cardio ? { cardio: true } : {}),
+          ...(machine.bodyweight ? { bodyweight: true } : {}),
+          settings: {},
+          sets: [machine.cardio ? { distance: 0, seconds: 0 } : { reps: 10, weight: 0 }],
+        });
+        renderList();
+      }
+      return;
+    }
+
+    const nameChip = e.target.closest('.edit-name-chips .chip');
+    if (nameChip && editDraft) {
+      editDraft.name = editDraft.name === nameChip.dataset.name ? '' : nameChip.dataset.name;
       renderList();
       return;
     }
@@ -192,6 +254,17 @@ export function renderHistory(root) {
       editDraft.locker = t.value.trim();
     } else if (t.classList.contains('edit-name')) {
       editDraft.name = t.value.trim();
+    } else if (t.classList.contains('edit-date') || t.classList.contains('edit-time')) {
+      // both fields are read together; the workout keeps its duration by
+      // moving finishedAt with the start
+      const card = t.closest('details');
+      const [y, mo, d] = (card.querySelector('.edit-date').value || '').split('-').map(Number);
+      const [hh, mm] = (card.querySelector('.edit-time').value || '00:00').split(':').map(Number);
+      if (!y || !mo || !d) return;
+      const next = new Date(y, mo - 1, d, hh || 0, mm || 0).getTime();
+      const delta = next - editDraft.startedAt;
+      editDraft.startedAt = next;
+      if (editDraft.finishedAt) editDraft.finishedAt += delta;
     }
   });
 
@@ -343,18 +416,92 @@ function workoutHtml(w, s) {
   </details>`;
 }
 
-function editWorkoutHtml(w, s) {
+// "Log a past workout" — the session you trained without your phone.
+// Same note grammar as a plan, because a past workout IS a plan that
+// already happened; shown even when history is empty, since coming over
+// from paper starts by typing in the weeks you already trained.
+function pastCardHtml() {
+  return `<section class="card">
+    <h2>Log a past workout</h2>
+    <p class="muted">Trained without your phone? Write it the way your plan
+      reads — <em>#14 Leg press 3x10 80</em> logs three sets of ten at 80.
+      The <em>#number</em> says which machine.</p>
+    <div class="row">
+      <label class="field"><span>Date</span>
+        <input type="date" id="past-date" value="${dateValue(Date.now())}"></label>
+      <label class="field"><span>Time</span>
+        <input type="time" id="past-time" value="18:00"></label>
+    </div>
+    <textarea id="past-text" rows="4"
+      placeholder="#14 Leg press 3x10 80&#10;#3 Lat pulldown 3x12 45"></textarea>
+    <button id="past-log" class="btn">Log it</button>
+    <p id="past-msg" class="muted" role="status"></p>
+  </section>`;
+}
+
+function wirePastLog(root, s) {
+  root.querySelector('#past-log').addEventListener('click', () => {
+    const msg = root.querySelector('#past-msg');
+    const [y, mo, d] = (root.querySelector('#past-date').value || '').split('-').map(Number);
+    const [hh, mm] = (root.querySelector('#past-time').value || '18:00').split(':').map(Number);
+    if (!y || !mo || !d) { msg.textContent = 'Pick a date first.'; return; }
+    try {
+      const { workout, skipped } = workoutFromText(
+        root.querySelector('#past-text').value,
+        new Date(y, mo - 1, d, hh || 0, mm || 0).getTime(), s);
+      saveWorkouts([...getWorkouts(), workout]); // saveWorkouts keeps order
+      nameFilter = ''; // a workout just logged must not vanish behind a filter
+      openEditId = workout.id; // reopen it for a once-over and a name
+      renderHistory(root);
+      if (skipped.length) {
+        root.querySelector('#past-msg').textContent = `Logged — ${skipped.length} line${
+          skipped.length === 1 ? '' : 's'} had no machine gymii could find (${skipped.join(', ')}).`;
+      }
+    } catch (err) {
+      msg.textContent = err.message;
+    }
+  });
+}
+
+// Local-time values for the date/time inputs — toISOString would shift a
+// late-evening workout onto the previous day for anyone west of UTC.
+const pad2 = (n) => String(n).padStart(2, '0');
+const dateValue = (ts) => {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+const timeValue = (ts) => {
+  const d = new Date(ts);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+
+function editWorkoutHtml(w, s, gym) {
   const sets = setCount(w);
   const du = distUnit(s);
+  const inWorkout = new Set(w.entries.map((e) => e.machineId));
+  const addable = (gym?.machines ?? []).filter((m) => !inWorkout.has(m.id))
+    .slice().sort((a, b) => a.num - b.num);
+  const nameChips = [...new Set([
+    ...suggestWorkoutNames(w.entries.flatMap((e) => e.sets.map(() => e.machineId)), gym),
+    ...recentWorkoutNames(),
+  ])].slice(0, 5);
   return `<details class="workout" open>
     <summary>
       <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>
         <span class="muted">${fmtTime(w.startedAt)} · ${minsOf(w)} min</span></div>
       <div class="muted">Editing — ${sets} set${sets === 1 ? '' : 's'} · ${workoutTotals(w, s)}</div>
     </summary>
+    <div class="row">
+      <label class="field"><span>Date</span>
+        <input type="date" class="edit-date" value="${dateValue(w.startedAt)}"></label>
+      <label class="field"><span>Time</span>
+        <input type="time" class="edit-time" value="${timeValue(w.startedAt)}"></label>
+    </div>
     ${w.entries.map((e, ei) => `
       <div class="entry-line">
-        <div>${entryTitle(e)}</div>
+        <div class="spread"><div>${entryTitle(e)}</div>
+          <button class="x entry-del" data-ei="${ei}"
+            aria-label="Remove ${esc(e.label)} from this workout">✕</button></div>
         ${e.sets.map((st, si) => `
           <div class="set-row">
             <span>Set ${si + 1}</span>
@@ -371,9 +518,21 @@ function editWorkoutHtml(w, s) {
             </span>
             <button class="x set-del" data-ei="${ei}" data-si="${si}" aria-label="Remove set ${si + 1}">✕</button>
           </div>`).join('') || '<p class="muted">No sets left — removed on save.</p>'}
+        <button class="btn btn-inline set-add" data-ei="${ei}">+ Set</button>
       </div>`).join('')}
+    ${addable.length ? `
+    <div class="row">
+      <select class="entry-pick" aria-label="Machine to add">
+        ${addable.map((m) => `<option value="${m.id}">#${m.num} ${esc(m.label)}</option>`).join('')}
+      </select>
+      <button class="btn btn-inline entry-add">+ Machine</button>
+    </div>` : ''}
     <label class="field"><span>Name</span>
       <input type="text" class="edit-name" value="${esc(w.name || '')}" placeholder="none"></label>
+    ${nameChips.length ? `<div class="chip-select edit-name-chips">
+      ${nameChips.map((n) => `<button type="button" class="chip${w.name === n ? ' sel' : ''}"
+        data-name="${esc(n)}">${esc(n)}</button>`).join('')}
+    </div>` : ''}
     <label class="field"><span>Locker</span>
       <input type="text" class="edit-locker" value="${esc(w.locker || '')}" placeholder="none"></label>
     <div class="row">

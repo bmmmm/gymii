@@ -512,4 +512,37 @@ assert.equal(store.getPlans()[0].items[0].machineId, created.id,
   'the binding is written back into the stored plan');
 assert.ok(!('name' in store.getPlans()[0].items[0]), 'a bound item drops its name');
 
+// --- logging a workout that already happened ---
+
+store.clearActive();
+store.saveWorkouts([]);
+const past = store.workoutFromText(
+  '#14 Leg press 3x10 85\n#42 Pec deck 2x12 30\nSome unknown thing 3x10\nRowing 2km 10min',
+  Date.UTC(2026, 7, 4, 17), s);
+assert.deepEqual(past.skipped, ['Some unknown thing', 'Rowing'],
+  'lines naming no findable machine are reported, never invented');
+assert.deepEqual(past.workout.entries.map((e) => [e.num, e.label, e.sets.length]), [
+  [14, 'Leg press', 3],
+  [42, 'Pec deck', 2],
+], 'a target of 3x10 becomes three real sets');
+assert.deepEqual(past.workout.entries[0].sets[0], { reps: 10, weight: 85 },
+  'each set carries the reps and weight from the note');
+assert.ok(!('at' in past.workout.entries[0].sets[0]),
+  'a set logged after the fact never claims a live timestamp');
+assert.ok(!('finishedAt' in past.workout), 'an unknown duration stays unknown');
+assert.ok(store.getGym().machines.some((m) => m.num === 42 && m.label === 'Pec deck'),
+  'an unknown #num creates that machine, like binding does');
+assert.throws(() => store.workoutFromText('nothing here 3x', Date.now(), s), /No line named a machine/);
+assert.throws(() => store.workoutFromText('', Date.now(), s), /No exercises found/);
+
+// history stays chronological no matter which order writers use
+store.saveWorkouts([
+  { id: 'late', startedAt: 3000, entries: [] },
+  { id: 'early', startedAt: 1000, entries: [] },
+  { id: 'mid', startedAt: 2000, entries: [] },
+]);
+assert.deepEqual(store.getWorkouts().map((w) => w.id), ['early', 'mid', 'late'],
+  'saveWorkouts sorts by startedAt, so a back-dated workout lands in place');
+store.saveWorkouts([]);
+
 console.log('workout plans: all assertions passed');
