@@ -8,7 +8,8 @@
 
 import {
   getGym, saveGym, newGym, addMachine, getPlans, savePlan, deletePlan,
-  lastEntryFor, getSettings, uid, distUnit, gymMuscles, isUnbound,
+  lastEntryFor, getSettings, getWorkouts, usualWeekday, uid, distUnit,
+  gymMuscles, isUnbound,
   parsePlanText, planItemsFrom, planToText, suggestWorkoutNames,
   recentWorkoutNames,
 } from './store.js';
@@ -18,6 +19,7 @@ import { esc, twoTapConfirm, stepperField } from './ui.js';
 // Weekday labels indexed by Date#getDay() (0 = Sunday); chips render
 // Monday-first, like gym weeks are planned.
 export const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
 // Seeds a fresh item's target from the last session on that machine so a
@@ -158,6 +160,11 @@ export function renderPlanBuilder(
     const allMuscles = gym ? gymMuscles(gym) : [];
     const inPlan = new Set(draft.items.map((it) => it.machineId).filter(Boolean));
     const unboundCount = draft.items.filter(isUnbound).length;
+    // a rhythm gymii noticed but the plan doesn't state yet — offered, not
+    // applied: the plan says when you INTEND to train, history only says when
+    // you did
+    const usual = usualWeekday(draft, getWorkouts());
+    const rhythm = usual != null && !draft.days?.includes(usual) ? usual : null;
     // what this plan trains, plus names already in use — a nameless plan
     // is a plan nobody finds again
     const nameChips = [...new Set([
@@ -190,7 +197,10 @@ export function renderPlanBuilder(
           ${DAY_ORDER.map((d) => `<button type="button" class="chip${draft.days?.includes(d) ? ' sel' : ''}"
             data-day="${d}">${DAY_LABELS[d]}</button>`).join('')}
         </div>
-        <p class="muted">Optional — today's plans sort to the top of the start screen.</p>
+        ${rhythm != null ? `<p class="muted">You mostly train this on
+          ${DAY_FULL[rhythm]}s. <button type="button" id="day-rhythm" class="linkish">Set
+          ${DAY_LABELS[rhythm]}</button></p>`
+    : '<p class="muted">Optional — a tagged plan tells the start screen what today is for.</p>'}
       </section>
       <section class="card">
         <h2>Exercises &amp; targets</h2>
@@ -420,6 +430,11 @@ export function renderPlanBuilder(
     root.querySelector('#add-line-go')?.addEventListener('click', addLine);
     root.querySelector('#add-line')?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') addLine();
+    });
+
+    root.querySelector('#day-rhythm')?.addEventListener('click', () => {
+      draft.days = [...new Set([...(draft.days ?? []), rhythm])].sort((a, b) => a - b);
+      render();
     });
 
     root.querySelector('#day-chips').addEventListener('click', (e) => {

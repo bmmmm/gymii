@@ -58,11 +58,26 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   proposed, never asked for. Pick lists:
   `MUSCLE_GROUPS`, `COMMON_SETTINGS`, `ZONE_LABELS` (its 'Cardio' string
   is a room label — unrelated to the `machine.cardio` flag). Stored plans
-  live under `gymii.<pid>.plans`: `{id, name, days?, items:[{machineId?,
-  name?, num?, exercise|null, target?}]}` with target `{sets,reps,weight}`
-  or `{distance,seconds}`; `days` is getDay()-coded weekday ints
-  (locker-style: dropped when emptied), today's plans sort first on the
-  start screen; part of backups, wiped with the profile.
+  live under `gymii.<pid>.plans`: `{id, name, createdAt, days?, skippedOn?,
+  items:[{machineId?, name?, num?, exercise|null, target?}]}` with target
+  `{sets,reps,weight}` or `{distance,seconds}`; `days` is getDay()-coded
+  weekday ints (locker-style: dropped when emptied), today's plans sort
+  first on the start screen; part of backups, wiped with the profile.
+  `savePlan()` stamps `createdAt` on FIRST store only — weekday tracking
+  must not report the Monday before a plan existed as missed; plans from
+  backups carry none and count as always-there. Finished workouts carry
+  `planId` (set by `finishWorkout` from `active.planId`), so "was this
+  plan trained?" is exact; older workouts fall back to a name match.
+  WEEKDAY STATE (`planDayState`, all pure date maths over an injectable
+  `now`, so it tests without waiting for a Tuesday): `due` (today, open),
+  `done` (today, trained), `missed`, `skipped`, `clear`. Two guards keep
+  the tone reporting rather than nagging — a day before `createdAt` was
+  never missed, and `missed` needs the PREVIOUS cycle to have been
+  trained, so a plan never started (or dropped weeks ago) goes quiet
+  instead of accusing every week. `skipPlanDay()` writes `skippedOn` for
+  exactly one cycle. `todayStatus()` picks the one thing to say
+  (due ▸ missed ▸ done ▸ rest). `usualWeekday()` spots a rhythm (≥3
+  sessions, ≥60% on one day) for the builder to offer.
   PLAN ITEM INVARIANT: an item carries a `machineId` (bound) or a `name`
   (UNBOUND — the movement is known, the station isn't). Unbound items are
   what lets a plan exist before a gym does; `num` on one is a hint from
@@ -110,9 +125,16 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   ("✓ Log set 2/3 — 50 kg × 10", steppers update it live), and once a
   slot's target is met the Next button takes over as the primary action
   (log button demoted). `targetTally()` reports plan-wide progress on the
-  overview line and in the finish message. The start screen is plan-first:
-  the most relevant plan (today's weekday, else last done) gets the big
-  primary button; "Repeat last workout" moves below it and drops entirely
+  overview line and in the finish message. The start screen opens with ONE
+  stated sentence about today (`statusLine()` over `todayStatus()`): what
+  is on, what was missed (with an inline "Skip this week"), that today's
+  plan is already done, or that it is a rest day and when the next one
+  lands. Saying "nothing today" is a feature, not an empty slot. It is
+  plan-first: the weekday status picks the primary plan (due, else
+  missed) and a DONE plan deliberately hands the big button back rather
+  than pushing the same session twice; with no weekdays anywhere the old
+  fallback applies (most recently done plan).
+  "Repeat last workout" moves below it and drops entirely
   when the last workout came from that plan. Stored plans list above
   history-derived routines. EVERY row is tappable (`.row-open` + chevron —
   a row that looks like a row must not be dead): a plan row opens its

@@ -2,7 +2,7 @@ import {
   getGym, saveGym, getSettings, saveSettings, getActive, saveActive, finishWorkout,
   lastEntryFor, getWorkouts, getPlans, savePlan, planFromText, uid,
   usageByMachine, gymMuscles, distUnit, newGym, addMachine,
-  suggestWorkoutNames, recentWorkoutNames,
+  suggestWorkoutNames, recentWorkoutNames, todayStatus, skipPlanDay,
 } from './store.js';
 import { drawGym, usagePayload, findMachineByNum } from './studio.js';
 import { renderPlanBuilder, DAY_LABELS } from './plan.js';
@@ -157,6 +157,36 @@ export function startWorkoutFrom(source, firstMachineId = null) {
 const machineChain = (workout) =>
   [...new Set(workout.entries.map((e) => `#${e.num}`))].join(' → ');
 
+const weekdayName = (date) => date.toLocaleDateString('en-GB', { weekday: 'long' });
+
+// "what today is about", in one stated sentence. Never scolds: a missed
+// day is reported like a fact, and a day with nothing on it is told as
+// the good news it is, not as an empty slot.
+function statusLine(status) {
+  const name = status.plan.name ? esc(status.plan.name) : 'Your plan';
+  const soon = (date) => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return date.toDateString() === tomorrow.toDateString()
+      ? 'tomorrow' : `on ${weekdayName(date)}`;
+  };
+  if (status.state === 'due') {
+    return `<p class="day-status">${weekdayName(status.due)} — <strong>${name}</strong> is on.</p>`;
+  }
+  if (status.state === 'done') {
+    return `<p class="day-status done">✓ <strong>${name}</strong> done today.${status.next
+      ? ` Next one ${soon(status.next)}.` : ''}</p>`;
+  }
+  if (status.state === 'missed') {
+    return `<p class="day-status missed"><strong>${name}</strong> was on
+      ${weekdayName(status.due)}.
+      <button type="button" id="skip-day" class="linkish">Skip this week</button></p>`;
+  }
+  // rest
+  return `<p class="day-status">Rest day. <strong>${name}</strong> is next,
+    ${soon(status.next)}.</p>`;
+}
+
 // --- start screen ---
 
 // Distinct machine nums of a plan, in item order — the plan-list twin of
@@ -210,13 +240,20 @@ function renderStart(root, gym, message) {
   const isToday = (p) => (p.days?.includes(today) ? 1 : 0);
   const sortedPlans = plans.slice().sort((a, b) => isToday(b) - isToday(a));
 
-  // Plan-first: for a plan follower the most relevant plan IS the workout
-  // — today's weekday match, else the most recently done one. It gets the
-  // big button; "Repeat last workout" yields, and drops entirely when the
-  // last workout came from that same plan (it would start the same thing).
-  const primaryPlan = sortedPlans.find((p) => isToday(p))
-    ?? sortedPlans.slice().sort((a, b) =>
-      (planLastDone(b)?.startedAt ?? 0) - (planLastDone(a)?.startedAt ?? 0))[0]
+  // What today is about, if any plan carries weekdays at all.
+  const status = todayStatus(plans, workouts);
+
+  // Plan-first: for a plan follower the most relevant plan IS the workout.
+  // The weekday status decides it when there is one — what's due today, or
+  // what was missed this cycle. Otherwise (no weekdays anywhere) it falls
+  // back to the most recently done plan. It gets the big button; "Repeat
+  // last workout" yields, and drops entirely when the last workout came
+  // from that same plan (it would start the same thing).
+  const statusPlan = status && (status.state === 'due' || status.state === 'missed')
+    ? status.plan : null;
+  const primaryPlan = statusPlan
+    ?? (status ? null : sortedPlans.slice().sort((a, b) =>
+      (planLastDone(b)?.startedAt ?? 0) - (planLastDone(a)?.startedAt ?? 0))[0])
     ?? null;
   const repeatIsPrimaryPlan = !!(primaryPlan?.name && last?.name === primaryPlan.name);
   const primaryDone = primaryPlan ? planLastDone(primaryPlan) : null;
@@ -224,6 +261,7 @@ function renderStart(root, gym, message) {
   root.innerHTML = `
     <h1>Train</h1>
     ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
+    ${status ? statusLine(status) : ''}
     ${primaryPlan ? `<button id="plan-primary" class="btn btn-primary btn-big">▶ Start
       ${primaryPlan.name ? esc(primaryPlan.name) : 'your plan'}
       <span class="sub">${[
@@ -314,6 +352,13 @@ function renderStart(root, gym, message) {
   };
 
   root.querySelector('#plan-primary')?.addEventListener('click', () => startPlan(primaryPlan));
+
+  // "not this week" — one tap, no confirmation and no tally: the day stops
+  // being outstanding until that weekday comes round again
+  root.querySelector('#skip-day')?.addEventListener('click', () => {
+    skipPlanDay(status.plan.id);
+    renderTrain(root);
+  });
 
   root.querySelector('#repeat')?.addEventListener('click', () => {
     startWorkoutFrom(last);

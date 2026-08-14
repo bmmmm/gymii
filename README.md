@@ -27,6 +27,12 @@ even a cookie banner.
   tick it off: today's plan is the big start button, every set is one tap
   ("✓ Log set 2/3 — 50 kg × 10"), and the workout keeps pulling you back to
   unfinished targets. Your LLM can draft one too; paste it in for review.
+- 📅 **Weekdays, without the nagging** — tag a plan with the days you train
+  and the start screen says what today is about: what's on, what you already
+  did, or that it's a rest day and when the next one comes. A day that went
+  by is stated once, never tallied, and "skip this week" settles it. gymii
+  also notices when you keep training something on Tuesdays and offers to
+  write that down.
 - ⏱️ **Rest timer** — starts itself, remembers per machine, keeps the screen
   awake, beeps when you're up.
 - 📈 **History** — training heatmap, progress chart, one-tap repeat. Name a

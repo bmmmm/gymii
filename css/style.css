@@ -367,6 +367,29 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 
 .plan-row.unbound .plan-status { color: var(--accent); }
 
+/* what today is about — one stated line above the start button */
+.day-status {
+  margin: 0 0 12px;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.day-status strong { color: var(--text); }
+.day-status.done { color: var(--accent); }
+.day-status.done strong { color: var(--accent); }
+.day-status.missed strong { color: var(--text); }
+
+/* an inline action inside a sentence — a button that reads as a link */
+.linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* recent workouts on the start screen */
 .recent-row {
   display: flex;

@@ -611,6 +611,122 @@ root.querySelector('#plan-list').listeners.click(fakeClick({
   dataset: { pid: store.getPlans()[0].id }, classList: { contains: (c) => c === 'row-open' },
 }));
 assert.ok(root.innerHTML.includes('Edit plan'), 'tapping a plan row edits it');
+root.querySelector('#plan-cancel').listeners.click(); // leave the builder closed
+store.saveWorkouts([]);
+store.savePlans([]);
+
+// --- weekdays: what today is about ---
+
+store.savePlans([]);
+store.saveWorkouts([]);
+// a fixed local noon; weekdays are derived from it so this holds any day
+const noon = new Date(2026, 7, 13, 12, 0, 0);
+const dow = noon.getDay();
+const back = (n) => (dow + 7 - n) % 7;
+const dayMs = 86400000;
+const madeLongAgo = { createdAt: noon.getTime() - 90 * dayMs };
+
+const duePlan = { id: 'pd', name: 'Push day', days: [dow], items: [], ...madeLongAgo };
+assert.equal(store.planDayState(duePlan, [], noon).state, 'due', "today's plan is due");
+assert.equal(store.planDueDay(duePlan, noon).getDay(), dow, 'the due day is today');
+assert.equal(store.planNextDay(duePlan, noon).getDay(), dow,
+  'and the next one is that weekday again');
+
+// trained today -> done, and the sentence turns into a receipt
+const doneToday = [{ id: 'wt', startedAt: noon.getTime() - 3600000, planId: 'pd', entries: [] }];
+assert.equal(store.planDayState(duePlan, doneToday, noon).state, 'done',
+  'a workout logged today closes it out');
+// older workouts have no planId — the name still links them
+assert.equal(store.planDayState(duePlan,
+  [{ id: 'wo', startedAt: noon.getTime() - 3600000, name: 'Push day', entries: [] }], noon).state,
+'done', 'a pre-planId workout is matched by name');
+
+// A day that went by counts as missed only while the rhythm is alive —
+// the cycle before it was trained. Otherwise the plan simply isn't
+// running, and saying "you missed Monday" every week would be nagging.
+const missedPlan = { id: 'pm', name: 'Leg day', days: [back(1)], items: [], ...madeLongAgo };
+const lastCycle = [{ id: 'wp', startedAt: noon.getTime() - 8 * dayMs, planId: 'pm', entries: [] }];
+assert.equal(store.planDayState(missedPlan, lastCycle, noon).state, 'missed',
+  'a day that went by, on a plan that was running');
+assert.equal(store.planDayState(missedPlan, [], noon).state, 'clear',
+  'a plan nobody has started is not "missed" every week');
+assert.equal(store.planDayState(missedPlan,
+  [...lastCycle, { id: 'w', startedAt: noon.getTime() - 2 * 3600000, planId: 'pm', entries: [] }],
+  noon).state, 'clear', 'and it clears once it was trained since');
+
+// a day BEFORE the plan existed was never missed
+assert.equal(store.planDayState(
+  { ...missedPlan, createdAt: noon.getTime() }, [], noon).state, 'clear',
+'a plan created today did not miss yesterday');
+
+// skipping settles this cycle only
+store.savePlans([missedPlan]);
+store.skipPlanDay('pm', noon);
+assert.equal(store.planDayState(store.getPlans()[0], lastCycle, noon).state, 'skipped',
+  'skipped for now');
+const nextWeek = new Date(noon.getTime() + 7 * dayMs);
+const trainedAfterSkip = [{ id: 'ws', startedAt: noon.getTime() + dayMs, planId: 'pm', entries: [] }];
+assert.equal(store.planDayState(store.getPlans()[0], trainedAfterSkip, nextWeek).state, 'missed',
+  'the skip settles one cycle, not a permanent free pass');
+assert.equal(store.planDayState(store.getPlans()[0], lastCycle, nextWeek).state, 'clear',
+  'but a plan left alone after a skip goes quiet rather than nagging on');
+
+// --- todayStatus picks the most actionable plan ---
+
+store.saveWorkouts([]);
+assert.equal(store.todayStatus([], [], noon), null, 'no dated plans, nothing to say');
+assert.equal(store.todayStatus([{ id: 'x', name: 'Untagged', items: [] }], [], noon), null,
+  'plans without weekdays stay silent');
+assert.equal(store.todayStatus([missedPlan, duePlan], [], noon).plan.id, 'pd',
+  "what's due today outranks what was missed");
+assert.equal(store.todayStatus([duePlan], doneToday, noon).state, 'done');
+const restStatus = store.todayStatus(
+  [{ id: 'pr', name: 'Pull day', days: [(dow + 2) % 7], items: [], ...madeLongAgo }], [], noon);
+assert.equal(restStatus.state, 'rest', 'nothing outstanding reads as a rest day');
+assert.equal(restStatus.next.getDay(), (dow + 2) % 7, 'and names when the next one lands');
+
+// --- the rhythm gymii notices ---
+
+const rhythmPlan = { id: 'pr2', name: 'Legs', items: [] };
+const on = (weekday, weeksAgo) => ({
+  id: `r${weekday}-${weeksAgo}`, name: 'Legs',
+  startedAt: noon.getTime() - weeksAgo * 7 * dayMs - ((dow - weekday + 7) % 7) * dayMs,
+  entries: [],
+});
+assert.equal(store.usualWeekday(rhythmPlan, [on(back(1), 1), on(back(1), 2)]), null,
+  'two sessions are not a rhythm');
+const tueish = [on(back(1), 1), on(back(1), 2), on(back(1), 3), on(back(4), 4)];
+assert.equal(store.usualWeekday(rhythmPlan, tueish), back(1),
+  'three of four on the same weekday is');
+assert.equal(store.usualWeekday(rhythmPlan,
+  [on(back(1), 1), on(back(2), 2), on(back(3), 3)]), null,
+'a scattered week suggests nothing');
+
+// --- the start screen says it out loud ---
+
+// renderTrain reads the real clock, so this plan is tagged with the real
+// weekday rather than the fixed one the logic assertions above use
+store.savePlans([{
+  id: 'pd', name: 'Push day', days: [new Date().getDay()], items: [],
+  createdAt: Date.now() - 90 * dayMs,
+}]);
+store.saveWorkouts([]);
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('class="day-status"'), 'the start screen states the day');
+assert.ok(root.innerHTML.includes('<strong>Push day</strong> is on.'), 'naming what is on');
+assert.ok(root.innerHTML.includes('id="plan-primary"'), 'and it owns the big button');
+
+// once trained, the plan stops shouting
+store.saveWorkouts([{
+  id: 'w-today', startedAt: Date.now(), finishedAt: Date.now(), name: 'Push day', planId: 'pd',
+  entries: [{ machineId: 'm1', num: 1, label: 'x', settings: {}, sets: [{ reps: 1, weight: 1 }] }],
+}]);
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('day-status done'), 'a finished plan day reads as done');
+assert.ok(!root.innerHTML.includes('id="plan-primary"'),
+  'and stops holding the primary button hostage');
 store.saveWorkouts([]);
 store.savePlans([]);
 
