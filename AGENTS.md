@@ -154,7 +154,11 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   unknown numbers via `store.addMachine()` — training never requires a
   studio visit first.
 - `js/history.js` — month heatmap (per-machine filter), progress chart
-  (`js/chart.js`), workout list with repeat.
+  (`js/chart.js`), workout list with repeat. Workout-name chips at the top
+  filter EVERYTHING: `workouts` is narrowed once, right after `getWorkouts()`,
+  so heatmap, chart, machine lists and the list all follow. The filter is
+  module state (`nameFilter`) because a save or delete re-renders the whole
+  view, and it self-clears when its last workout is renamed or deleted.
 - `js/ai.js` — copy prompt+data / paste-import. Deliberately NO AI API.
   Export set tuples gain a third element (seconds offset from the
   workout's startedAt) when the set has `at`; old sets stay 2-tuples.

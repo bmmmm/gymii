@@ -5,9 +5,24 @@ import { esc, fmtDate, fmtTime, workoutTotals, setStr, twoTapConfirm } from './u
 import { lineChart } from './chart.js';
 import { startWorkoutFrom } from './train.js';
 
+// Active workout-name filter ('' = all). Module state, so it survives the
+// full re-render that a save or a delete triggers.
+let nameFilter = '';
+
 export function renderHistory(root) {
-  const workouts = getWorkouts();
-  if (!workouts.length) {
+  const all = getWorkouts();
+  // names in use, most-trained first — a name is only a way back in if
+  // you can actually filter by it
+  const nameCounts = new Map();
+  all.forEach((w) => {
+    if (w.name) nameCounts.set(w.name, (nameCounts.get(w.name) || 0) + 1);
+  });
+  if (nameFilter && !nameCounts.has(nameFilter)) nameFilter = ''; // last one renamed/deleted
+  const named = [...nameCounts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  // everything below reads `workouts` — filtering here filters the
+  // heatmap, the chart, the machine lists and the workout list at once
+  const workouts = nameFilter ? all.filter((w) => w.name === nameFilter) : all;
+  if (!all.length) {
     root.innerHTML = `<h1>History</h1>
       <div class="empty"><div class="big">📈</div>
         <p>No workouts yet.</p>
@@ -49,6 +64,12 @@ export function renderHistory(root) {
 
   root.innerHTML = `
     <h1>History</h1>
+    ${named.length ? `
+    <div class="chip-select" id="name-filter">
+      <button type="button" class="chip${nameFilter ? '' : ' sel'}" data-name="">All</button>
+      ${named.map(([n, c]) => `<button type="button" class="chip${nameFilter === n ? ' sel' : ''}"
+        data-name="${esc(n)}">${esc(n)} <span class="muted">· ${c}</span></button>`).join('')}
+    </div>` : ''}
     <section class="card">
       <h2>Training days</h2>
       <div class="hm-head">
@@ -75,9 +96,16 @@ export function renderHistory(root) {
       <div class="chart-wrap" id="chart"></div>
     </section>
     <section class="card">
-      <h2>Workouts</h2>
+      <h2>Workouts${nameFilter ? ` — ${esc(nameFilter)}` : ''}</h2>
       <div id="workout-list"></div>
     </section>`;
+
+  root.querySelector('#name-filter')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    nameFilter = chip.dataset.name;
+    renderHistory(root);
+  });
 
   // One card at a time can be in edit mode; the draft is a deep clone so
   // Cancel never touches stored data.
