@@ -33,6 +33,25 @@ export function openPlanBuilder(planId, notice = '') {
   builder = { planId, notice };
 }
 
+// One plan item per (machine, exercise) pair of a past workout, deduped —
+// the seed for "turn this routine into a plan". Targets are NOT set here;
+// the builder seeds them from the machine's own history, which is exactly
+// what this routine last did.
+function planSeedFrom(workout, gym) {
+  const pairs = workout.entries
+    .filter((e) => e.sets.length)
+    .map((e) => {
+      const machine = gym.machines.find((m) => m.id === e.machineId);
+      return machine ? {
+        machineId: e.machineId,
+        exercise: machine.exercises?.includes(e.exercise) ? e.exercise : null,
+      } : null;
+    })
+    .filter(Boolean);
+  return pairs.filter((p, i) => pairs.findIndex(
+    (q) => q.machineId === p.machineId && q.exercise === p.exercise) === i);
+}
+
 export function renderTrain(root, message = '') {
   const gym = getGym();
   const active = getActive();
@@ -151,9 +170,14 @@ function renderStart(root, gym, message) {
   const last = workouts[workouts.length - 1];
   const s = getSettings();
   const plans = getPlans();
-  // A named plan OWNS its routine: workouts logged from it carry its name,
-  // and their derived start rows would duplicate the plan's own row.
+  // A plan OWNS its routine, so the derived row never duplicates it. Two
+  // ways it can: by name (workouts logged from it carry the plan's name)
+  // or by covering exactly the same machines — which is what happens the
+  // moment a routine is turned INTO a plan.
   const planNames = new Set(plans.map((p) => p.name).filter(Boolean));
+  const machineSetKey = (ids) => [...new Set(ids.filter(Boolean))].sort().join('|');
+  const planMachineSets = new Set(
+    plans.map((p) => machineSetKey(p.items.map((it) => it.machineId))).filter(Boolean));
 
   // Easy starting points: the latest workout gets the big button, and
   // every DIFFERENT machine set in history (a push/pull/legs rotation,
@@ -170,7 +194,8 @@ function renderStart(root, gym, message) {
   for (let i = workouts.length - 2; i >= 0 && routines.length < 4; i--) {
     const w = workouts[i];
     const key = routineKey(w);
-    if (seen.has(key) || (w.name && planNames.has(w.name))) continue;
+    if (seen.has(key) || (w.name && planNames.has(w.name))
+      || planMachineSets.has(machineSetKey(w.entries.map((e) => e.machineId)))) continue;
     seen.add(key);
     routines.push(w);
   }
@@ -222,36 +247,42 @@ function renderStart(root, gym, message) {
     const count = p.items.length;
     const open = p.items.filter((it) => !it.machineId).length;
     return `<div class="recent-row">
-          <div class="recent-info">
+          <button type="button" class="recent-info row-open" data-pid="${p.id}">
             <strong>${p.name ? esc(p.name) : planChain(p, gym) || 'Unnamed plan'}${isToday(p)
     ? ' <span class="muted">· today</span>' : ''}</strong>
             <span class="muted">${p.name && planChain(p, gym) ? `${planChain(p, gym)} · ` : ''}${count} exercise${count === 1 ? '' : 's'}${open
     ? ` · ${open} to assign` : ''}${p.days?.length
     ? ` · ${p.days.map((d) => DAY_LABELS[d]).join(' ')}` : ''}${done
     ? ` · last: ${new Date(done.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>
-          </div>
-          <button class="btn btn-inline plan-edit" data-pid="${p.id}">Edit</button>
+          </button>
+          <span class="row-chevron" aria-hidden="true">›</span>
           <button class="btn btn-inline plan-start" data-pid="${p.id}">Start</button>
         </div>`;
   }).join('')}
       </div>
       <button id="plan-new" class="btn">+ Plan a workout</button>
-      ${plans.length ? '' : `<p class="muted">Build a session in advance — pick machines
-        or exercises, set target sets × reps × weight, start it any day.
+      ${plans.length ? '' : `<p class="muted">Write down the session you already
+        have — one exercise per line — or pick machines by muscle. Set target
+        sets × reps × weight, then start it any day.
         (Your AI can draft one too, via the AI tab.)</p>`}
     </section>
     ${routines.length ? `
     <section class="card">
       <h2>Start another routine</h2>
-      ${routines.map((w) => `
+      <div id="routine-list">
+        ${routines.map((w) => `
         <div class="recent-row">
-          <div class="recent-info">
+          <button type="button" class="recent-info row-open" data-wid="${w.id}">
             <strong>${w.name ? esc(w.name) : machineChain(w)}</strong>
             <span class="muted">${w.name ? `${machineChain(w)} · ` : ''}last: ${new Date(w.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
               · ${workoutTotals(w, s)}</span>
-          </div>
+          </button>
+          <span class="row-chevron" aria-hidden="true">›</span>
           <button class="btn btn-inline repeat-w" data-wid="${w.id}">Repeat</button>
         </div>`).join('')}
+      </div>
+      <p class="muted">These come from what you've logged. Tap one to make it a
+        real plan — targets, a name, weekdays.</p>
     </section>` : ''}
     ${gym?.machines.length ? `
     <section class="card">
@@ -291,12 +322,13 @@ function renderStart(root, gym, message) {
 
   // delegated: the stubbed test DOM (and less wiring) both prefer one
   // listener on the list over one per row
+  // tapping the row itself opens the plan's settings; the button starts it
   root.querySelector('#plan-list').addEventListener('click', (e) => {
-    const btn = e.target.closest('.plan-start, .plan-edit');
+    const btn = e.target.closest('.plan-start, .row-open');
     if (!btn) return;
     const plan = plans.find((p) => p.id === btn.dataset.pid);
     if (!plan) return;
-    if (btn.classList.contains('plan-edit')) {
+    if (btn.classList.contains('row-open')) {
       builder = { planId: plan.id, notice: '' };
       renderTrain(root);
       return;
@@ -309,13 +341,28 @@ function renderStart(root, gym, message) {
     renderTrain(root);
   });
 
-  root.querySelectorAll('.repeat-w').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const workout = workouts.find((w) => w.id === btn.dataset.wid);
-      if (!workout) return;
-      startWorkoutFrom(workout);
+  // A derived routine has no settings of its own — so tapping it opens the
+  // plan builder seeded with its machines. Nothing persists until Save, so
+  // this doubles as "what exactly is this routine?" without committing.
+  root.querySelector('#routine-list')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.repeat-w, .row-open');
+    if (!btn) return;
+    const workout = workouts.find((w) => w.id === btn.dataset.wid);
+    if (!workout) return;
+    if (btn.classList.contains('row-open')) {
+      const seed = planSeedFrom(workout, gym);
+      if (!seed.length) return; // every machine of it has been deleted
+      builder = {
+        planId: null,
+        notice: 'From a routine you already train — set targets, name it, save.',
+        seed,
+        seedName: workout.name ?? '',
+      };
       renderTrain(root);
-    });
+      return;
+    }
+    startWorkoutFrom(workout);
+    renderTrain(root);
   });
 
   if (gym?.machines.length) {

@@ -552,4 +552,66 @@ assert.deepEqual(store.getWorkouts().map((w) => w.id), ['early', 'mid', 'late'],
   'saveWorkouts sorts by startedAt, so a back-dated workout lands in place');
 store.saveWorkouts([]);
 
+// --- a derived routine is not a dead end: tapping it opens its settings ---
+
+store.savePlans([]);
+const freshGym = store.getGym();
+const legId = freshGym.machines.find((m) => m.num === 14).id;
+const pecId = freshGym.machines.find((m) => m.num === 42).id;
+const rEntry = (id, n, label, sets) => ({ machineId: id, num: n, label, settings: {}, sets });
+store.saveWorkouts([
+  {
+    id: 'r-old', startedAt: 1755000000000, finishedAt: 1755003600000,
+    entries: [
+      rEntry(legId, 14, 'Leg press', [{ reps: 10, weight: 90 }, { reps: 10, weight: 90 }]),
+      rEntry(pecId, 42, 'Pec deck', [{ reps: 12, weight: 35 }]),
+    ],
+  },
+  { // the newest workout owns the "Repeat last" button, so it is NOT a routine row
+    id: 'r-new', startedAt: 1755100000000, finishedAt: 1755103600000,
+    entries: [rEntry(legId, 14, 'Leg press', [{ reps: 10, weight: 95 }])],
+  },
+]);
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('id="routine-list"'), 'derived routines get a list');
+assert.ok(root.innerHTML.includes('row-open" data-wid="r-old"'),
+  'the row itself is a button, not dead text');
+assert.ok(root.innerHTML.includes('row-chevron'), 'and it looks tappable');
+
+root.querySelector('#routine-list').listeners.click(fakeClick({
+  dataset: { wid: 'r-old' }, classList: { contains: (c) => c === 'row-open' },
+}));
+assert.ok(root.innerHTML.includes('Plan workout'), 'tapping a routine opens the builder');
+assert.ok(root.innerHTML.includes('From a routine you already train'), 'and says where it came from');
+assert.ok(root.innerHTML.includes('id="t-sets-0"') && root.innerHTML.includes('id="t-sets-1"'),
+  'seeded with both of its machines, targets ready to edit');
+// the routine picks the MACHINES; the targets still come from the newest
+// session on each of them (95, not this routine's older 90) — when
+// planning, your current working weight is the honest starting point
+assert.ok(root.innerHTML.includes('value="95"'),
+  "targets are seeded from each machine's latest session, not the routine's");
+assert.equal(store.getPlans().length, 0, 'nothing is stored until Save');
+
+root.querySelector('#plan-name').value = 'Legs & chest';
+root.querySelector('#plan-save').listeners.click();
+assert.deepEqual(store.getPlans()[0].items.map((it) => it.machineId), [legId, pecId],
+  'saving turns the routine into a real plan, in its own order');
+assert.equal(store.getPlans()[0].name, 'Legs & chest');
+
+// the routine row is gone now: the plan covers exactly those machines, so
+// keeping both would list the same session twice
+byId.clear();
+renderTrain(root);
+assert.ok(!root.innerHTML.includes('data-wid="r-old"'),
+  'a plan made from a routine takes that routine over');
+
+// and a stored plan's row opens it for editing
+root.querySelector('#plan-list').listeners.click(fakeClick({
+  dataset: { pid: store.getPlans()[0].id }, classList: { contains: (c) => c === 'row-open' },
+}));
+assert.ok(root.innerHTML.includes('Edit plan'), 'tapping a plan row edits it');
+store.saveWorkouts([]);
+store.savePlans([]);
+
 console.log('workout plans: all assertions passed');

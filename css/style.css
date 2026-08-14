@@ -378,8 +378,28 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 }
 
 .recent-row:last-child { border-bottom: 0; }
-.recent-row .recent-info { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.recent-row .recent-info {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* it IS a button (tap = open its settings), so strip the chrome and keep
+     the text left-aligned like the div it replaced */
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  margin: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.recent-row .recent-info:active { filter: brightness(1.3); }
 .recent-row .recent-info .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-row .row-chevron { color: var(--muted); flex-shrink: 0; font-size: 18px; }
 .recent-row .btn-inline { flex-shrink: 0; }
 
 /* plan builder: one editable item per machine (reorder, remove, targets) */

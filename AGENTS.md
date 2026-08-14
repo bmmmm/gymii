@@ -113,9 +113,18 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   overview line and in the finish message. The start screen is plan-first:
   the most relevant plan (today's weekday, else last done) gets the big
   primary button; "Repeat last workout" moves below it and drops entirely
-  when the last workout came from that plan. Stored plans list (Start/Edit)
-  above history-derived routines, and derived rows whose workout name
-  matches a plan name are SKIPPED — a named plan owns its routine. The plan builder (`js/plan.js`, muscle-filtered machine
+  when the last workout came from that plan. Stored plans list above
+  history-derived routines. EVERY row is tappable (`.row-open` + chevron —
+  a row that looks like a row must not be dead): a plan row opens its
+  settings (the builder), a derived routine row opens the builder SEEDED
+  from it (`planSeedFrom()` — one item per machine/exercise pair; targets
+  still come from each machine's own latest session, not the routine's,
+  because planning wants the current working weight). Nothing persists
+  until Save, so the seeded builder doubles as "what IS this routine?".
+  A plan then OWNS its routine and the derived row is SKIPPED — matched
+  either by name or by covering exactly the same machine set, which is
+  what turning a routine into a plan produces.
+  The plan builder (`js/plan.js`, muscle-filtered machine
   picking, per-item targets, reorder) renders inside the Train tab via
   module state (`openPlanBuilder()` — used by ai.js for import review); an
   active workout always outranks it. The builder runs WITHOUT a gym —
