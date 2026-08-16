@@ -6,6 +6,13 @@ proposed workout names, the history name filter, and a complete workout
 editor incl. logging a session after the fact. See AGENTS.md for how the
 pieces fit; README for what they do.
 
+Shipped 2026-08-16: "Load test data" (Settings) fills a deterministic Demo
+profile — 16 machines, 8 weeks of history, three weekday plans covering
+due/missed/done — so manual testing never starts from an empty gym; the
+History tab gained a Muscles card (sets per group as tappable bar rows that
+filter the whole view); and setUnit now converts plan targets too (they
+were silently left in the old unit).
+
 ## Open
 
 - **Plans in the AI export.** `buildAiExport()` still ships gym + history

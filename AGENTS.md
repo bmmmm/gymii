@@ -13,8 +13,10 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   edit. `store` (localStorage stub, store roundtrips, outline migration,
   template validation, locker carry-over), `train` (guided-plan
   construction), `plan` (stored plans, the note parser/serialiser, AI
-  import, binding, targets), `history` (name filter, full editor,
-  back-logging), `studio` (editor rendering, collision). Modules import
+  import, binding, targets), `history` (name filter, muscle card + filter,
+  full editor, back-logging), `studio` (editor rendering, collision),
+  `demo` (generator determinism, entry invariants, weekday plan states,
+  unit conversion, load-replaces-profile). Modules import
   fine in Node as long as none touches the DOM at top level; the stub DOM
   hands back EVERY selector, rendered or not, so a test must drive view
   switches explicitly rather than assume a branch was skipped.
@@ -207,6 +209,25 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   so heatmap, chart, machine lists and the list all follow. The filter is
   module state (`nameFilter`) because a save or delete re-renders the whole
   view, and it self-clears when its last workout is renamed or deleted.
+  The Muscles card (store's `usageByMuscle`/`workoutsWithMuscle`) shows
+  sets per muscle group as tappable bar rows that set a second filter
+  (`muscleFilter`, ANDed after the name filter, same lifecycle incl.
+  self-clear and the past-log reset). Muscles resolve against the LIVE gym
+  — entries don't snapshot them — and a set on a two-muscle station counts
+  fully for both (usage is attribution; only naming votes split 1/n). The
+  filter narrows WHOLE workouts, never entries, so the editor's Save can't
+  drop non-matching stations; the card itself is computed over the
+  name-only list so every muscle stays reachable while one is selected.
+- `js/demo.js` — "Load test data" (Settings card): fills a separate "Demo"
+  profile with a 16-machine gym (the example template plus cardio,
+  bodyweight and a multi-exercise station), ~8 weeks of Push/Pull/Legs
+  history and three weekday plans built so `due`, `missed` and `done` all
+  show at once, relative to the injected `now`. Fully deterministic —
+  fixed `demo-*` ids, seeded PRNG, no `uid()`/`Date.now()` inside
+  `buildDemoData` — so a reload REPLACES the Demo profile instead of
+  duplicating it. Data is authored in kg/metres and converted in one pass
+  when the display unit is lbs (plan targets included). Generated sets
+  never carry `at` (they were not logged live).
 - `js/ai.js` — copy prompt+data / paste-import. Deliberately NO AI API.
   Export set tuples gain a third element (seconds offset from the
   workout's startedAt) when the set has `at`; old sets stay 2-tuples.

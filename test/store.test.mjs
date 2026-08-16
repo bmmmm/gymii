@@ -257,4 +257,58 @@ assert.equal(store.getGym().machines.length, 11);
 assert.ok(store.getGym().machines.some((m) => (m.muscles || []).includes('Lower back')),
   'example template has a lower-back machine');
 
+// usageByMuscle / workoutsWithMuscle — muscles resolve against the LIVE
+// gym; a set on a two-muscle station counts fully for both (no 1/n split)
+const mGym = store.newGym('Muscle gym');
+mGym.machines.push(
+  { id: 'm1', num: 1, label: 'Leg press', x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Quads', 'Glutes'] },
+  { id: 'm2', num: 2, label: 'Lat pulldown', x: 6, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Lats'] },
+  { id: 'm3', num: 3, label: 'Mystery', x: 12, y: 0, w: 4, h: 3, settingsFields: [], muscles: [] },
+);
+const mWorkouts = [
+  { id: 'mw1', startedAt: 1000, finishedAt: 2000, entries: [
+    { machineId: 'm1', num: 1, label: 'Leg press', settings: {}, sets: [{ reps: 10, weight: 100 }, { reps: 10, weight: 100 }] },
+    { machineId: 'm3', num: 3, label: 'Mystery', settings: {}, sets: [{ reps: 10, weight: 20 }] },
+  ] },
+  { id: 'mw2', startedAt: 3000, finishedAt: 4000, entries: [
+    { machineId: 'm1', num: 1, label: 'Leg press', settings: {}, sets: [{ reps: 8, weight: 105 }] },
+    { machineId: 'm2', num: 2, label: 'Lat pulldown', settings: {}, sets: [{ reps: 10, weight: 50 }] },
+    { machineId: 'gone', num: 9, label: 'Deleted machine', settings: {}, sets: [{ reps: 10, weight: 30 }] },
+  ] },
+];
+const usage = store.usageByMuscle(mWorkouts, mGym);
+assert.equal(usage.get('Quads').sets, 3, 'both leg-press entries counted');
+assert.equal(usage.get('Glutes').sets, 3, 'second muscle gets the FULL count, not half');
+assert.deepEqual(usage.get('Quads'), { sets: 3, workouts: 2, lastAt: 3000 });
+assert.deepEqual(usage.get('Lats'), { sets: 1, workouts: 1, lastAt: 3000 });
+assert.ok(!usage.has(undefined) && usage.size === 3, 'untagged and deleted machines attribute nothing');
+assert.equal(store.usageByMuscle([], mGym).size, 0);
+assert.equal(store.usageByMuscle(mWorkouts, null).size, 0, 'no gym, no muscles');
+
+// setUnit must convert plan targets along with the sets — they are stored
+// in the display unit like everything else
+store.savePlan({
+  id: 'unit-plan', name: 'Unit plan',
+  items: [
+    { machineId: 'm1', exercise: null, target: { sets: 3, reps: 10, weight: 80 } },
+    { machineId: 'm2', exercise: null, target: { distance: 3000, seconds: 900 } },
+  ],
+});
+store.setUnit('lbs');
+const lbsPlan = store.getPlans().find((p) => p.id === 'unit-plan');
+assert.equal(lbsPlan.items[0].target.weight, Math.round(80 * 2.2046226218 * 2) / 2,
+  'weight target converted to lbs');
+assert.equal(lbsPlan.items[1].target.distance, 1.86, 'distance target converted to miles');
+assert.equal(lbsPlan.items[1].target.seconds, 900, 'seconds stay unit-less');
+store.setUnit('kg');
+assert.equal(store.getPlans().find((p) => p.id === 'unit-plan').items[0].target.weight, 80,
+  'the kg → lbs → kg roundtrip lands back on the value');
+store.deletePlan('unit-plan');
+
+const lats = store.workoutsWithMuscle(mWorkouts, mGym, 'Lats');
+assert.deepEqual(lats.map((w) => w.id), ['mw2']);
+assert.equal(lats[0].entries.length, 3, 'the WHOLE workout survives, entries untouched');
+assert.deepEqual(store.workoutsWithMuscle(mWorkouts, mGym, 'Chest'), []);
+assert.deepEqual(store.workoutsWithMuscle(mWorkouts, null, 'Lats'), []);
+
 console.log('store roundtrip: all assertions passed');

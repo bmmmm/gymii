@@ -191,4 +191,85 @@ root.querySelector('#past-text').value = '#3 Lat pulldown 4x12 50';
 root.querySelector('#past-log').listeners.click();
 assert.equal(store.getWorkouts().length, 1, 'logging works from the empty screen too');
 
+// --- the muscle card: usage bars that ARE the filter ---
+
+store.saveWorkouts([
+  {
+    id: 'mw1', startedAt: Date.UTC(2026, 7, 1, 10), finishedAt: Date.UTC(2026, 7, 1, 11), name: 'Leg day',
+    entries: [entry('m1', 14, 'Leg press', [{ reps: 10, weight: 80 }, { reps: 10, weight: 80 }])],
+  },
+  {
+    id: 'mw2', startedAt: Date.UTC(2026, 7, 3, 10), finishedAt: Date.UTC(2026, 7, 3, 11), name: 'Pull day',
+    entries: [entry('m2', 3, 'Lat pulldown', [{ reps: 12, weight: 47.5 }])],
+  },
+]);
+
+render();
+assert.ok(root.innerHTML.includes('id="muscle-list"'), 'the muscle card renders');
+assert.ok(root.innerHTML.includes('Quads') && root.innerHTML.includes('Lats'),
+  'every gym muscle gets a row');
+assert.ok(root.innerHTML.includes('bar-fill'), 'rows carry usage bars');
+
+// tapping a row narrows the WHOLE view, like the name filter does
+root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Lats' }));
+assert.ok(root.innerHTML.includes('Workouts — Lats'), 'the heading names the muscle');
+assert.ok(!options().includes('#14 Leg press'),
+  'machine selects follow the muscle filter too');
+assert.ok(root.innerHTML.includes('All muscles'), 'an explicit way out renders');
+
+// the same row again clears it
+root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Lats' }));
+assert.ok(!root.innerHTML.includes('Workouts — Lats'), 're-tap clears the filter');
+assert.ok(options().includes('#14 Leg press'), 'and the full view comes back');
+
+// name × muscle can produce nothing — the list says so, and the card still
+// lists every muscle so the filter is never a dead end
+root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: 'Pull day' }));
+root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Quads' }));
+assert.ok(list().innerHTML.includes('No workouts match this filter.'),
+  'an empty combination is stated, not blank');
+assert.ok(root.innerHTML.includes('data-muscle="Lats"'),
+  'other muscles stay reachable while one is selected');
+root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: '' }));
+
+// editing under an active filter must keep the WHOLE workout — the filter
+// narrows workouts, never their entries. A mixed workout is both the
+// reason the filter matches and the thing a narrowed save would maim.
+store.saveWorkouts([...store.getWorkouts(), {
+  id: 'mw3', startedAt: Date.UTC(2026, 7, 4, 10), finishedAt: Date.UTC(2026, 7, 4, 11), name: 'Full body',
+  entries: [
+    entry('m1', 14, 'Leg press', [{ reps: 10, weight: 82.5 }]),
+    entry('m2', 3, 'Lat pulldown', [{ reps: 12, weight: 45 }]),
+  ],
+}]);
+render();
+root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Quads' }));
+list().listeners.click(clickOn('.edit-w', { wid: 'mw3' }));
+list().listeners.click(clickOn('.set-add', { ei: '0' }));
+list().listeners.click(clickOn('.edit-save'));
+const savedFiltered = store.getWorkouts().find((w) => w.id === 'mw3');
+assert.equal(savedFiltered.entries.length, 2,
+  'a save under a muscle filter keeps the entries that did not match');
+root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Quads' }));
+
+// a freshly logged past workout resets the muscle filter, or it could
+// vanish behind it and never open in edit mode
+root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Lats' }));
+root.querySelector('#past-date').value = '2026-08-04';
+root.querySelector('#past-time').value = '09:00';
+root.querySelector('#past-text').value = '#14 Leg press 3x10 90';
+root.querySelector('#past-log').listeners.click();
+assert.ok(list().innerHTML.includes('edit-save'),
+  'the logged workout opens in edit mode despite the previous filter');
+
+// the filter clears itself when its muscle leaves the gym, and orphaned
+// sets are counted instead of silently dropped
+root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Lats' }));
+assert.ok(root.innerHTML.includes('Workouts — Lats'));
+store.saveGym({ ...store.getGym(), machines: store.getGym().machines.filter((m) => m.id !== 'm2') });
+render();
+assert.ok(!root.innerHTML.includes('Workouts — Lats'), 'a stranded muscle filter resets');
+assert.ok(root.innerHTML.includes("can't be attributed"),
+  'sets of a deleted machine are reported, not hidden');
+
 console.log('history: all assertions passed');

@@ -626,6 +626,36 @@ details.workout summary::-webkit-details-marker { display: none; }
 
 #hm-machine { margin-bottom: 4px; }
 
+/* muscle usage: one tappable row per group, bar LENGTH carries the value
+   (single accent — hue would just duplicate the channel) */
+.muscle-row {
+  width: 100%;
+  display: block;
+  padding: 9px 4px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.muscle-row:last-child { border-bottom: 0; }
+.muscle-row:active { filter: brightness(1.3); }
+.muscle-row.sel { background: var(--accent-dim); border-radius: 8px; }
+.muscle-row .m-count { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.bar-track {
+  display: block; /* spans collapse to height 0 otherwise */
+  height: 6px;
+  margin-top: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+/* bar color #35a273 validated against surface #171c22 (see chart colors) */
+.bar-fill { display: block; height: 100%; background: #35a273; border-radius: 3px; }
+
 .chart-wrap { position: relative; margin-top: 10px; }
 .chart-wrap svg { display: block; width: 100%; }
 

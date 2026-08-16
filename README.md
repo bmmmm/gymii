@@ -37,12 +37,16 @@ even a cookie banner.
   awake, beeps when you're up.
 - 📈 **History** — training heatmap, progress chart, one-tap repeat. Name a
   workout (gymii suggests one from the muscles you trained) and one tap
-  filters everything down to it. Past workouts are fully editable — add or
+  filters everything down to it. A muscle card shows how many sets each
+  group got — tap a row and the whole view narrows to that muscle, neglected
+  groups collect at the bottom. Past workouts are fully editable — add or
   remove sets and machines, fix the date — and one you trained without your
   phone can be typed in after the fact.
 - 🏨 **Profiles & units** — home gym, hotel gym, whatever. kg or lbs, switched
   in one go.
-- 📦 **Templates** — export your gym as JSON, import someone else's.
+- 📦 **Templates** — export your gym as JSON, import someone else's. Want to
+  poke around first? Settings → "Load test data" fills a separate Demo gym
+  with eight weeks of history and three plans — your own gyms stay untouched.
 - 🤖 **AI, on your terms** — copy a prompt plus your data into any LLM you
   trust, paste the answer back. gymii never talks to an AI service itself.
 

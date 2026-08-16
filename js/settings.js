@@ -4,6 +4,7 @@ import {
   exportGymTemplate, exportBackup, importData, clearAll,
 } from './store.js';
 import { download, esc, twoTapConfirm } from './ui.js';
+import { loadDemoData, DEMO_PROFILE_NAME } from './demo.js';
 
 export function renderSettings(root) {
   const s = getSettings();
@@ -68,6 +69,16 @@ export function renderSettings(root) {
       <button id="import-btn" class="btn">Import file…</button>
       <input id="import-file" type="file" accept=".json,application/json" hidden>
       <p id="data-msg" class="muted" role="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>Test data</h2>
+      <button id="demo-load" class="btn">${profiles.list.some((p) => p.name === DEMO_PROFILE_NAME)
+        ? 'Reload test data' : 'Load test data'}</button>
+      <p id="demo-msg" class="muted" role="status"></p>
+      <p class="muted">Fills a separate Demo gym with a floor plan, eight weeks of
+        history and three plans, then switches to it. Your own gyms stay untouched —
+        remove it again with "Delete this gym" above.</p>
     </section>
 
     <section class="card">
@@ -152,6 +163,19 @@ export function renderSettings(root) {
       msg.textContent = `Import failed: ${err.message}`;
     }
     e.target.value = '';
+  });
+
+  const demoBtn = root.querySelector('#demo-load');
+  demoBtn.addEventListener('click', () => {
+    // replacing an existing Demo gym discards its edits — guard that, but
+    // not the harmless first load
+    const exists = getProfiles().list.some((p) => p.name === DEMO_PROFILE_NAME);
+    if (exists && !twoTapConfirm(demoBtn,
+      'Tap again to replace the Demo gym', 'Reload test data')) return;
+    const r = loadDemoData();
+    renderSettings(root); // re-render swaps the DOM, so write the message after
+    root.querySelector('#demo-msg').textContent =
+      `Demo gym loaded — ${r.machines} machines, ${r.workouts} workouts, ${r.plans} plans.`;
   });
 
   // Two-step confirm instead of a blocking confirm() dialog.

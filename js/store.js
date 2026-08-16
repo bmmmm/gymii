@@ -464,6 +464,17 @@ export function setUnit(unit) {
       convertSets(active.entries);
       write(scopedKey(p.id, 'active'), active);
     }
+
+    // plan targets are stored in the display unit too — leaving them out
+    // would silently turn a 80 kg target into an 80 lbs one
+    const plans = read(scopedKey(p.id, 'plans'), []);
+    if (plans.length) {
+      plans.forEach((pl) => pl.items?.forEach((it) => {
+        if (it.target?.weight != null) it.target.weight = roundW(it.target.weight);
+        if (it.target?.distance != null) it.target.distance = roundD(it.target.distance);
+      }));
+      write(scopedKey(p.id, 'plans'), plans);
+    }
   });
 
   saveSettings({ ...s, unit, weightStep: Math.max(0.5, roundW(s.weightStep)) });
@@ -558,6 +569,41 @@ export function usageByMachine() {
     usage.set(e.machineId, (usage.get(e.machineId) || 0) + e.sets.length);
   }));
   return usage;
+}
+
+// Muscles live on the MACHINE, never on the entry, so history resolves
+// them against the gym as it is today — a deleted or untagged machine
+// simply contributes to no muscle.
+const muscleIndex = (gym) => new Map((gym?.machines ?? []).map((m) => [m.id, m.muscles ?? []]));
+
+// Sets per muscle over `workouts` (the caller passes its filtered list).
+// A set on a two-muscle station counts fully for BOTH: this answers "how
+// many sets worked this muscle", not "what should this session be called"
+// — suggestWorkoutNames splits 1/n because naming is a vote, usage isn't.
+// → Map<muscle, {sets, workouts, lastAt}>
+export function usageByMuscle(workouts, gym) {
+  const muscles = muscleIndex(gym);
+  const usage = new Map();
+  workouts.forEach((w) => {
+    const seen = new Set(); // count each workout once per muscle
+    w.entries.forEach((e) => muscles.get(e.machineId)?.forEach((mu) => {
+      const u = usage.get(mu) ?? { sets: 0, workouts: 0, lastAt: 0 };
+      u.sets += e.sets.length;
+      if (!seen.has(mu)) { u.workouts += 1; seen.add(mu); }
+      u.lastAt = Math.max(u.lastAt, w.startedAt);
+      usage.set(mu, u);
+    }));
+  });
+  return usage;
+}
+
+// The workouts that touched `muscle` — WHOLE workouts on purpose: history
+// edits a full workout, so narrowing entries would let Save silently drop
+// the stations that didn't match.
+export function workoutsWithMuscle(workouts, gym, muscle) {
+  const muscles = muscleIndex(gym);
+  return workouts.filter((w) =>
+    w.entries.some((e) => muscles.get(e.machineId)?.includes(muscle)));
 }
 
 export function saveSettings(settings) {

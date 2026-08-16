@@ -1,6 +1,7 @@
 import {
   getGym, getWorkouts, saveWorkouts, getSettings, getActive, deleteWorkout,
   updateWorkout, distUnit, workoutFromText, suggestWorkoutNames, recentWorkoutNames,
+  gymMuscles, usageByMuscle, workoutsWithMuscle,
 } from './store.js';
 import { esc, fmtDate, fmtTime, workoutTotals, setStr, twoTapConfirm } from './ui.js';
 import { lineChart } from './chart.js';
@@ -9,6 +10,8 @@ import { startWorkoutFrom } from './train.js';
 // Active workout-name filter ('' = all). Module state, so it survives the
 // full re-render that a save or a delete triggers.
 let nameFilter = '';
+// Active muscle-group filter ('' = all), same lifecycle as nameFilter.
+let muscleFilter = '';
 // Set when a workout should come back up in edit mode after the re-render.
 let openEditId = null;
 
@@ -23,11 +26,18 @@ export function renderHistory(root) {
   if (nameFilter && !nameCounts.has(nameFilter)) nameFilter = ''; // last one renamed/deleted
   const named = [...nameCounts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   // everything below reads `workouts` — filtering here filters the
-  // heatmap, the chart, the machine lists and the workout list at once
-  const workouts = nameFilter ? all.filter((w) => w.name === nameFilter) : all;
+  // heatmap, the chart, the machine lists and the workout list at once.
+  // Two filters compose: name first, then muscle. The Muscles card reads
+  // the name-only list so a muscle tap can always reach every other muscle.
+  const byName = nameFilter ? all.filter((w) => w.name === nameFilter) : all;
   const s = getSettings();
   const unit = s.unit;
   const gym = getGym();
+  // muscles resolve against the LIVE gym — a deleted machine or a gym
+  // switch can strand the filter, so it clears itself like nameFilter does
+  const allMuscles = gym ? gymMuscles(gym) : [];
+  if (muscleFilter && !allMuscles.includes(muscleFilter)) muscleFilter = '';
+  const workouts = muscleFilter ? workoutsWithMuscle(byName, gym, muscleFilter) : byName;
 
   // Nothing logged yet still gets the past-workout form: someone moving
   // over from paper starts by typing in the weeks they already trained.
@@ -69,6 +79,42 @@ export function renderHistory(root) {
   const entryMatches = (e, sel) =>
     e.machineId === sel.machineId && (e.exercise ?? null) === sel.exercise;
 
+  // Usage per muscle group over the name-filtered list — every row is also
+  // the filter for that muscle. Computing over `byName` (not `workouts`) is
+  // what keeps other muscles reachable while one is selected.
+  const muscleCardHtml = () => {
+    if (!allMuscles.length) return '';
+    const usage = usageByMuscle(byName, gym);
+    const rows = allMuscles
+      .map((mu) => ({ mu, ...(usage.get(mu) ?? { sets: 0, workouts: 0 }) }))
+      .sort((a, b) => b.sets - a.sets || a.mu.localeCompare(b.mu));
+    const max = rows[0]?.sets || 1;
+    // sets whose machine is gone or untagged — count them, or the card
+    // silently disagrees with the workout list's totals
+    const tagged = new Set(gym.machines.filter((m) => m.muscles?.length).map((m) => m.id));
+    const lost = byName.reduce((n, w) => n + w.entries.reduce(
+      (k, e) => k + (tagged.has(e.machineId) ? 0 : e.sets.length), 0), 0);
+    const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    return `
+    <section class="card">
+      <h2>Muscles</h2>
+      <div id="muscle-list">
+        ${muscleFilter ? `<button type="button" class="muscle-row" data-muscle="">All muscles</button>` : ''}
+        ${rows.map((r) => `
+        <button type="button" class="muscle-row${muscleFilter === r.mu ? ' sel' : ''}"
+          data-muscle="${esc(r.mu)}" aria-pressed="${muscleFilter === r.mu}">
+          <span class="spread"><span>${esc(r.mu)}</span>
+            <span class="m-count">${plural(r.sets, 'set')}${r.workouts
+              ? ` · ${plural(r.workouts, 'workout')}` : ''}</span></span>
+          <span class="bar-track"><span class="bar-fill"
+            style="width:${Math.round((r.sets / max) * 100)}%"></span></span>
+        </button>`).join('')}
+      </div>
+      ${lost ? `<p class="muted">${plural(lost, 'set')} can't be attributed —
+        their machine is gone or has no muscles tagged.</p>` : ''}
+    </section>`;
+  };
+
   root.innerHTML = `
     <h1>History</h1>
     ${named.length ? `
@@ -77,6 +123,7 @@ export function renderHistory(root) {
       ${named.map(([n, c]) => `<button type="button" class="chip${nameFilter === n ? ' sel' : ''}"
         data-name="${esc(n)}">${esc(n)} <span class="muted">· ${c}</span></button>`).join('')}
     </div>` : ''}
+    ${muscleCardHtml()}
     <section class="card">
       <h2>Training days</h2>
       <div class="hm-head">
@@ -104,7 +151,8 @@ export function renderHistory(root) {
     </section>
     ${pastCardHtml()}
     <section class="card">
-      <h2>Workouts${nameFilter ? ` — ${esc(nameFilter)}` : ''}</h2>
+      <h2>Workouts${nameFilter ? ` — ${esc(nameFilter)}` : ''}${
+        muscleFilter ? ` — ${esc(muscleFilter)}` : ''}</h2>
       <div id="workout-list"></div>
     </section>`;
 
@@ -117,6 +165,15 @@ export function renderHistory(root) {
     renderHistory(root);
   });
 
+  // one delegated listener: a muscle row toggles its filter
+  root.querySelector('#muscle-list')?.addEventListener('click', (e) => {
+    const row = e.target.closest('.muscle-row');
+    if (!row) return;
+    const m = row.dataset.muscle;
+    muscleFilter = m && m !== muscleFilter ? m : '';
+    renderHistory(root);
+  });
+
   // One card at a time can be in edit mode; the draft is a deep clone so
   // Cancel never touches stored data. A freshly logged past workout opens
   // in edit mode straight away (openEditId), so its details can be checked
@@ -126,9 +183,10 @@ export function renderHistory(root) {
   openEditId = null;
   const list = root.querySelector('#workout-list');
   const renderList = () => {
-    list.innerHTML = workouts.slice().reverse()
+    // reachable only by combining the name and muscle filters
+    list.innerHTML = workouts.length ? workouts.slice().reverse()
       .map((w) => (editDraft?.id === w.id ? editWorkoutHtml(editDraft, s, gym) : workoutHtml(w, s)))
-      .join('');
+      .join('') : '<p class="muted">No workouts match this filter.</p>';
   };
   renderList();
 
@@ -451,6 +509,7 @@ function wirePastLog(root, s) {
         new Date(y, mo - 1, d, hh || 0, mm || 0).getTime(), s);
       saveWorkouts([...getWorkouts(), workout]); // saveWorkouts keeps order
       nameFilter = ''; // a workout just logged must not vanish behind a filter
+      muscleFilter = '';
       openEditId = workout.id; // reopen it for a once-over and a name
       renderHistory(root);
       if (skipped.length) {
