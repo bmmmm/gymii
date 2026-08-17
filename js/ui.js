@@ -189,16 +189,20 @@ const soundUrl = (name) => {
 // Must be called from inside a user gesture: iOS only lets a media element
 // START in one, but an element that has once played in a gesture may be
 // replayed programmatically later — startRest() primes here in the log-set
-// click so the timer can fire ~90s after the tap. The immediate pause keeps
-// the prime inaudible (the attack's first samples are silent anyway).
-export function primeAudio(name = 'double') {
+// click so the timer can fire ~90s after the tap. The prime plays a short
+// SILENT wav (a zero-frequency note renders pure zeros) to completion:
+// pausing the real sound mid-play raced the play() promise and audibly
+// leaked its first note; silent content cannot leak, whatever lands when.
+let silenceUrl = null;
+export function primeAudio() {
   try {
     if (!soundEl) soundEl = new Audio();
-    soundEl.src = soundUrl(name);
-    soundEl.play().then(() => {
-      soundEl.pause();
-      soundEl.currentTime = 0;
-    }).catch(() => {});
+    if (!silenceUrl) {
+      silenceUrl = URL.createObjectURL(
+        new Blob([renderWav([[0, 0]])], { type: 'audio/wav' }));
+    }
+    soundEl.src = silenceUrl;
+    soundEl.play().catch(() => {});
     return soundEl;
   } catch {
     return null; // audio is best-effort

@@ -28,6 +28,14 @@ export function renderSettings(root) {
             class="chip${s.timerSound === key ? ' sel' : ''}" data-sound="${key}">${snd.label}</button>`).join('')}
         </div>
       </div>
+      <div class="field-block"><span>Keep screen awake during workout break</span>
+        <div class="chip-select" id="awake-chips">
+          <button type="button" class="chip${s.keepAwake ? ' sel' : ''}"
+            id="keep-awake">${s.keepAwake ? 'On' : 'Off'}</button>
+        </div>
+        <p class="muted">Holds the screen on for the length of the break only, then
+          lets it sleep again. Needs a browser that offers a screen wake lock.</p>
+      </div>
       <div class="field-block"><span>Units</span>
         <div class="chip-select" id="unit-chips">
           <button type="button" class="chip${s.unit === 'kg' ? ' sel' : ''}" data-unit="kg">kg · m</button>
@@ -121,6 +129,11 @@ export function renderSettings(root) {
       saveSettings({ ...getSettings(), timerSound: chip.dataset.sound });
       renderSettings(root);
     }
+  });
+
+  root.querySelector('#keep-awake').addEventListener('click', () => {
+    saveSettings({ ...getSettings(), keepAwake: !getSettings().keepAwake });
+    renderSettings(root);
   });
 
   root.querySelector('#unit-chips').addEventListener('click', (e) => {

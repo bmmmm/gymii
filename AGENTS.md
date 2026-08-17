@@ -154,10 +154,13 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   WebAudio with the ring/silent switch but treats media playback like
   music (YouTube keeps playing on silent), so the tones are rendered
   into tiny WAV blobs at runtime (`renderWav`, cached per sound — no
-  audio assets ship) and played like a track. `primeAudio(name)` must
-  run inside a user gesture — `startRest()` (the log-set click) primes
-  with a play-then-pause so the element may be replayed when the timer
-  fires ~90s later. The tone is `settings.timerSound`, picked from the
+  audio assets ship) and played like a track. `primeAudio()` must
+  run inside a user gesture — `startRest()` (the log-set click) primes so
+  the element may be replayed when the timer fires ~90s later. It plays a
+  SILENT wav (a zero-frequency note renders pure zeros, asserted in the
+  tests): the earlier play-then-pause raced the `play()` promise and
+  audibly leaked the first note, so a tone fired right after "Log set"
+  and again at zero. The sound must only play at zero. The tone is `settings.timerSound`, picked from the
   data-driven `TIMER_SOUNDS` via `playTimerSound()` — the Settings chips
   preview each sound on tap (the tap is the gesture).
   `nextSetDefaults` is exported for the logic tests (same precedent as
@@ -302,8 +305,10 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   list in `sw.js` — EXCEPT template files: they are on-demand content the
   fetch handler caches on first load, only `templates/index.json` is
   precached (so a community template PR never touches sw.js). Rest timer
-  holds a screen wake lock (auto re-acquired on visibilitychange; denial
-  is silently ignored).
+  holds a screen wake lock for the length of the break when
+  `settings.keepAwake` is on (default; toggled in Settings → Workout) —
+  auto re-acquired on visibilitychange, released on close, denial
+  silently ignored.
 
 ## Conventions (user-set, follow them)
 

@@ -1399,8 +1399,10 @@ function finish(root, active) {
 
 function startRest(secs) {
   if (!secs) return; // 0 = rest timer off
-  // prime while the tap that logged the set is still the gesture
-  primeAudio(getSettings().timerSound);
+  // Prime silently while the tap that logged the set is still the gesture —
+  // the sound itself only plays when the countdown reaches zero.
+  primeAudio();
+  const keepAwake = getSettings().keepAwake;
 
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
@@ -1418,8 +1420,9 @@ function startRest(secs) {
   let done = false;
   const cd = overlay.querySelector('#cd');
 
-  // Keep the screen on while resting. The browser auto-releases the lock
-  // when the tab is hidden, so re-acquire on return. Guard against the
+  // Keep the screen on while resting — only for the length of the break,
+  // and only when settings.keepAwake says so. The browser auto-releases the
+  // lock when the tab is hidden, so re-acquire on return. Guard against the
   // request being in flight (visibilitychange re-entry) and against the
   // overlay closing before the request resolves — an unreleased sentinel
   // would keep the screen awake forever.
@@ -1427,7 +1430,7 @@ function startRest(secs) {
   let wakeLockPending = false;
   let closed = false;
   const requestWakeLock = async () => {
-    if (wakeLock || wakeLockPending) return;
+    if (!keepAwake || wakeLock || wakeLockPending) return;
     wakeLockPending = true;
     try {
       const sentinel = await navigator.wakeLock?.request('screen');

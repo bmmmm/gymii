@@ -446,6 +446,18 @@ let nonzero = false;
 for (let i = 0; i < 2000 && !nonzero; i++) nonzero = wav.getInt16(44 + i * 2, true) !== 0;
 assert.ok(nonzero, 'the wav actually carries signal');
 
+// The gesture prime plays SILENCE, so it can never leak an audible note the
+// way pausing a real sound mid-play did (a tone fired right after "Log set",
+// then again at zero). A zero-frequency note must render pure zeros.
+const silent = new DataView(ui.renderWav([[0, 0]]));
+let silentPeak = 0;
+for (let i = 0; i < (silent.byteLength - 44) / 2; i++) {
+  silentPeak = Math.max(silentPeak, Math.abs(silent.getInt16(44 + i * 2, true)));
+}
+assert.equal(silentPeak, 0, 'the priming wav is pure silence');
+
+assert.equal(store.getSettings().keepAwake, true, 'screen stays awake by default');
+
 // no Audio element in Node — playback must stay a silent no-op, never throw
 ui.playTimerSound('double');
 ui.playTimerSound('no-such-sound');

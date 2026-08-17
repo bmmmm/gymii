@@ -478,7 +478,7 @@ export function finishWorkout(active) {
 export function getSettings() {
   return {
     v: 1, restSeconds: 90, weightStep: 2.5, unit: 'kg', mapColors: 'custom', pickerMap: 'hidden',
-    timerSound: 'double',
+    timerSound: 'double', keepAwake: true,
     ...read(KEYS.settings, {}),
   };
 }
