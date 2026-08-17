@@ -202,23 +202,11 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   A plan then OWNS its routine and the derived row is SKIPPED — matched
   either by name or by covering exactly the same machine set, which is
   what turning a routine into a plan produces.
-  The plan builder (`js/plan.js`, muscle-filtered machine
-  picking, per-item targets, reorder) renders inside the Train tab via
-  module state (`openPlanBuilder()` — used by ai.js for import review); an
-  active workout always outranks it. The builder runs WITHOUT a gym —
-  unbound items get a `📍 Assign machine` prompt (number field prefilled
-  from `item.num`, plus chips for existing machines) and a one-line
-  `Add an exercise` field that parses the same note grammar.
-  List/Text chips switch between the stepper list and the plain note
-  (`planToText`/`parsePlanText`); every switch AND `persist()` go through
-  `fromText()`, so the text is authoritative while it is on screen.
   A slot whose `machineId` is null renders `renderBind()` instead of the
-  log screen (`active.binding` = its plan index): one question, one
-  number. An unknown number CREATES the machine under the item's own name
-  (and marks it `cardio` when the target says so, or the target would be
-  dropped as the wrong shape), so the gym grows out of the plan instead
-  of gating it. The binding is written back into the stored plan via
-  `active.planId` — asked once per exercise, not once per session.
+  log screen (`active.binding` = its plan index): one question, one number,
+  bound via store's `bindOrCreateMachine` — so the gym grows out of the
+  plan instead of gating it. The binding is written back into the stored
+  plan via `active.planId` — asked once per exercise, not once per session.
   `machine.cardio` flips the log screen to
   distance+time, `machine.bodyweight` to reps + extra weight; type flags
   and `exercise` are SNAPSHOTTED onto the entry (like num/label) —
@@ -248,6 +236,19 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   when the gym has no machines. The picker offers create-on-miss for
   unknown numbers via `store.addMachine()` — training never requires a
   studio visit first.
+- `js/plan.js` — the plan builder: muscle-filtered machine picking, per-item
+  targets, reorder, weekday chips. It renders INSIDE the Train tab via
+  train.js's module state (`openPlanBuilder()`, which ai.js uses for import
+  review); an active workout always outranks it. It runs WITHOUT a gym:
+  unbound items get a `📍 Assign machine` prompt (number field prefilled
+  from `item.num`, plus chips for the machines that exist), binding through
+  store's `bindOrCreateMachine`, and a one-line `Add an exercise` field
+  parsing the same note grammar as the onboarding note. List/Text chips
+  switch between the stepper list and the plain note
+  (`planToText`/`parsePlanText`); every switch AND `persist()` go through
+  `fromText()`, so the text is authoritative while it is on screen. Nothing
+  persists until Save — which is what lets an imported AI draft, or a
+  routine seeded from history, be reviewed and trimmed before it sticks.
 - `js/history.js` — month heatmap (per-machine filter), progress chart
   (`js/chart.js`), workout list with repeat, and full editing: per-set
   values, `+ Set` (copies the previous one, minus its `at` — it was not
@@ -363,26 +364,10 @@ Push both or the mirror drifts: `git push origin main && git push github main`.
 Dependabot/CodeQL PRs on GitHub are signals only — fix locally and push to
 both remotes, never merge in the GitHub UI.
 
-`.github/workflows/ci.yml` runs all logic tests (`test/*.test.mjs`) and
-cross-checks the `sw.js` SHELL list against `git ls-files`, then deploys the
-repo root to Pages
-(<https://bmmmm.github.io/gymii/>) once both pass on main. `security.yml`
-(gitleaks + forbidden files + token grep) and `shellcheck.yml` (only on
-`scripts/**`) round out the checkers. The site lives on a project subpath, so
-every asset reference must stay RELATIVE (`css/style.css`, not
-`/css/style.css`) — index.html, manifest and the SHELL list already are.
-
-When a Pages deploy fails, dispatch a fresh run
-(`gh workflow run ci.yml --ref main`) — never `gh run rerun --failed`. The
-replay uploads a second `github-pages` artifact into the same run and
-`deploy-pages` then aborts on "Multiple artifacts named github-pages", which
-looks like a workflow bug and isn't.
-
-Community templates: `templates/index.json` is the manifest "database"
-(id, name, country, city, file); `test/templates.test.mjs` is the gate —
-every entry must exist, import cleanly and have ≥1 machine, every file must
-be listed. Intake: the "Submit a gym template" issue form (non-git users
-paste their export; a maintainer makes the PR) or a two-file PR
-(`.github/PULL_REQUEST_TEMPLATE.md` has the checklist). Community PRs are
-adopted like Dependabot ones: apply locally, gate on the tests, push BOTH
-remotes, close the PR with a comment — never merge in the GitHub UI.
+CI runs the logic tests plus a `sw.js` SHELL cross-check and deploys Pages
+from main; every asset reference must stay RELATIVE (project subpath).
+Community template PRs are adopted locally like Dependabot ones, never merged
+in the UI. The mechanics — workflow names, the Pages "Multiple artifacts"
+trap, the template manifest and its gate — live in
+[docs/publishing.md](docs/publishing.md); read it when the work IS about CI,
+a release or a template PR.
