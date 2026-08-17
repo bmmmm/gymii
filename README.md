@@ -11,14 +11,16 @@ even a cookie banner.
 ## What's inside
 
 - 🗺️ **Studio** — a real floor-plan editor: walls, zones, doors, mirrors,
-  lockers, and machines you can tap. Undo/redo included. Optional: draw it
-  once your gym is in there and gymii can point you at the next machine.
+  lockers, and machines you can tap. Undo/redo included, and typing a machine
+  number lights it up on the plan. Optional: draw it once your gym is in there
+  and gymii can point you at the next machine.
 - 💪 **Train** — repeat a past workout in order, or roam by number, map tap or
   muscle. Last session's numbers prefill every set. Cardio stations log
   distance + time, bodyweight stations reps + extra weight, and free-weight
   areas keep separate histories per named exercise. 📍 shows where the next
   machine stands, a busy one gets the closest open alternative, and a
-  coverage row tracks which muscles you've hit today.
+  coverage row tracks which muscles you've hit today. Your locker number has a
+  home too — noted at the start, out of the way once you're logging.
 - 📋 **Plans** — start with the plan you already have: type it in the way
   it's written (`Leg press 3x10 80`, `#7 Chest press 3x8-12 40kg`,
   `Treadmill 20min`) and gymii reads it — no gym needed yet. At the machine
@@ -33,8 +35,12 @@ even a cookie banner.
   by is stated once, never tallied, and "skip this week" settles it. gymii
   also notices when you keep training something on Tuesdays and offers to
   write that down.
-- ⏱️ **Rest timer** — starts itself, remembers per machine, keeps the screen
-  awake, beeps when you're up.
+- ⏱️ **Rest timer** — starts itself and remembers per machine. The screen
+  stays awake (just the break, or the whole workout — your call) and dims
+  itself so a dark gym stays dark: the countdown ticks one brighter beat per
+  second, any touch brings it back, and the last seconds are bright again.
+  Four tones to pick from, each one audible before you commit — and they play
+  like music, so an iPhone's silent switch doesn't swallow them.
 - 📈 **History** — training heatmap, progress chart, one-tap repeat. Name a
   workout (gymii suggests one from the muscles you trained) and one tap
   filters everything down to it. A muscle card shows how many sets each
@@ -66,8 +72,8 @@ anywhere, so export a backup before you switch devices or browsers.
 
 ## Contributing
 
-Vanilla HTML/CSS/JS (ES modules), zero dependencies. Tests: one file per
-module — `for f in test/*.test.mjs; do node "$f"; done`. Notes for
+Vanilla HTML/CSS/JS (ES modules), zero dependencies. Tests are plain `node`,
+no runner — `for f in test/*.test.mjs; do node "$f"; done`. Notes for
 contributors and agents live in [AGENTS.md](AGENTS.md).
 
 Got a floor plan of your gym? Templates are meant to be shared — export it
