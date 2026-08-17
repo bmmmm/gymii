@@ -54,7 +54,7 @@ const MACHINES = [
   ['leg-curl', 7, 'Leg curl', 18, 12, 5, 4, ['Seat', 'Ankle pad'], ['Hamstrings']],
   ['pec-deck', 8, 'Pec deck', 25, 12, 5, 4, ['Seat', 'Arm pads'], ['Chest']],
   ['cable-tower', 9, 'Cable tower', 4, 20, 5, 4, ['Pulley height'], ['Full body'],
-    { color: '#3f7fd1' }], // one of studio's ITEM_COLORS
+    { color: '#3f7fd1' }], // one of map's ITEM_COLORS
   ['abdominal-crunch', 10, 'Abdominal crunch', 11, 20, 5, 4, ['Seat'], ['Abs']],
   ['back-extension', 11, 'Back extension', 18, 20, 5, 4, ['Pad height'], ['Lower back', 'Glutes']],
   ['demo-treadmill', 12, 'Treadmill', 36, 23, 3, 6, ['Incline'], ['Quads', 'Calves'],

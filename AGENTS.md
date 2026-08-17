@@ -88,6 +88,20 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   its source note that prefills the bind prompt, never a binding. A bound
   item's type comes from its machine, an unbound one's from its target
   shape (`distance` ⇒ cardio) — `isUnbound()` is the check.
+  SHARED INVARIANTS live as store helpers — extend these, never re-inline
+  a copy: `bindOrCreateMachine(gym, num, name, target)` (an unknown num
+  creates the machine under the item's own name, fallback `Machine ${num}`,
+  and inherits `cardio: true` from a distance-shaped target; persists
+  nothing — callers keep their own saveGym timing; used by train's
+  renderBind, the builder's bind and `workoutFromText`), `newEntry(machine,
+  exercise, sets)` (THE entry snapshot shape incl. type flags; callers add
+  settings prefills themselves) and `nameChipsFor(machineIds, gym,
+  limit = 5)` (suggested + recent names, deduped — train/history pass one
+  id per logged set for weighting, the builder passes item machineIds).
+  `setUnit()` also converts a RUNNING workout's plan-slot targets
+  (`active.plan[i].target` — startWorkoutFrom copies targets onto slots),
+  not just stored plans; leaving them out silently turned an 80 kg goal
+  into an 80 lbs one mid-session.
   `parsePlanLine()`/`parsePlanText()` read a trainer's note ("Leg press
   3x10 80", "#7 Chest press 3x8-12 40kg", "Treadmill 20min"): set and
   weight terms are cut FIRST so a leftover leading number is unambiguous,
@@ -107,19 +121,41 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   route is deliberately NOT in the tabbar (the map is a setup tool, not a
   daily surface — user decision); it is reached via links in onboarding
   and Settings. Don't re-add the tab.
-- `js/studio.js` — floor-plan editor. `drawGym()` is the shared renderer
-  (train mini-maps use it too); its `highlightId` opt marks one machine
-  `.locate` (white stroke, CSS pulse) and dims the rest — visual machine
-  state belongs here, never as post-render DOM pokes in train.js. Polygon outline with vertex/midpoint
-  editing; `FIXTURES` registry; `WALL_SNAPPED` fixtures (entrance/door/
-  window) glue to the nearest wall segment with rotation + flips.
-  Undo/redo = snapshot history via the local `save()` wrapper — every
-  mutation must go through `save()`, never `saveGym()` directly.
+- `js/map.js` — the shared floor-map renderer, split out of the editor so
+  train.js/plan.js never import from studio.js. `drawGym()` draws every
+  map surface (editor, train mini-maps, builder); its `highlightId` opt
+  marks one machine `.locate` (white stroke, CSS pulse) and dims the rest
+  — visual machine state belongs here, never as post-render DOM pokes in
+  train.js. Also exports `findMachineByNum`, the collision helpers
+  (`overlapsSolid`/`fits`/`freeSpot`), `snapDoorToWall`, `FIXTURES`,
+  `WALL_SNAPPED`, `ITEM_COLORS`. Its only import is `esc` from ui.js —
+  keep it free of store/studio imports so the cycle cannot reappear.
+- `js/studio.js` — floor-plan editor (renderer imported from map.js).
+  Polygon outline with vertex/midpoint editing; wall-snapped fixtures
+  (entrance/door/window) glue to the nearest wall segment with rotation +
+  flips. Find-by-number row above the map: a hit selects the machine
+  (props open) and pulses it via `highlightId`; the next pointerdown on
+  the map clears the pulse. Undo/redo = snapshot history via the local
+  `save()` wrapper — every mutation must go through `save()`, never
+  `saveGym()` directly.
 - `js/train.js` — guided workout: `active.plan` is a list of slots
   `{machineId, exercise|null, target?}` (null = whole station) — a repeat
   plans one slot per (machine, exercise) pair so "Next:" walks every
   exercise of a multi-exercise station; overview hub, per-machine
-  `restSeconds`, locker number, two-tap finish guard. Quick-switch chips on
+  `restSeconds`, locker number, two-tap finish guard. The locker card
+  leads only while NO set is logged yet; afterwards it collapses to a
+  `details.locker` row at the bottom of the overview (directly above
+  Finish) so the focus stays on the next machine — exactly one
+  `#locker-num` input exists in either state, the log-screen 🔒 header
+  badge is unaffected. Quick start (`#qs-label`/`#qs-start`) is wired once
+  via `wireQuickStart()` — onboarding and the no-machines start screen
+  share it, incl. the logged-sets backstop. The rest beep reuses ONE
+  module-level AudioContext, created/resumed inside `startRest()` (the
+  log-set click, a real gesture) and never closed — iOS suspends contexts
+  born outside a gesture, so creating it at timer end means silence.
+  `nextSetDefaults` is exported for the logic tests (same precedent as
+  `nearbyAlternative`); its behavior contract is pinned by the
+  "prefill matrix" block in test/train.test.mjs. Quick-switch chips on
   the log screen jump to the two most recently trained OTHER stations (by
   newest set `at`). Slots started from a stored plan carry its target:
   the log header shows it, the first-set prefill uses it (real logged sets
@@ -206,6 +242,11 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   workout IS a plan that already happened, so `3x10 80` becomes three
   real sets — and reopens the result in edit mode (`openEditId`). It
   shows even on the empty screen: coming over from paper starts there.
+  Shared display helpers live in ui.js: `pad2`/`dateValue`/`timeValue`
+  build LOCAL-time input values (toISOString is UTC and shifts a
+  past-midnight workout onto the previous day — ai.js dates its export
+  via `dateValue` for the same reason) and `machineChain` is the deduping
+  "#1 → #3" chain used by the start screen and the workout list alike.
   Workout-name chips at the top
   filter EVERYTHING: `workouts` is narrowed once, right after `getWorkouts()`,
   so heatmap, chart, machine lists and the list all follow. The filter is
@@ -279,7 +320,7 @@ Push both or the mirror drifts: `git push origin main && git push github main`.
 Dependabot/CodeQL PRs on GitHub are signals only — fix locally and push to
 both remotes, never merge in the GitHub UI.
 
-`.github/workflows/ci.yml` runs all four logic tests (`test/*.test.mjs`) and
+`.github/workflows/ci.yml` runs all logic tests (`test/*.test.mjs`) and
 cross-checks the `sw.js` SHELL list against `git ls-files`, then deploys the
 repo root to Pages
 (<https://bmmmm.github.io/gymii/>) once both pass on main. `security.yml`

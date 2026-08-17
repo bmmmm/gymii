@@ -30,6 +30,21 @@ template" issue form (paste the export, no git needed) plus PR template,
 CONTRIBUTING.md and SECURITY.md (private vulnerability reporting enabled);
 the Studio template browser links to the form ("Share your gym").
 
+Also 2026-08-17 — orchestrated sweep (4 waves, 6 agents, all merged
+green): the locker card steps aside once the first set is logged
+(collapsed details row above Finish — focus stays on the next machine);
+the rest beep reuses an AudioContext created inside the log-set gesture
+(iOS suspends gesture-less contexts — the timer was silent there); the
+Studio finds a machine by number (select + locate pulse); the AI export
+dates workouts in local time (was UTC — off-by-one past midnight); and a
+real setUnit bug is fixed: a RUNNING workout's plan-slot targets kept
+their number across a unit switch (80 kg goal became an 80 lbs one
+mid-session). Plus consolidation: store helpers `bindOrCreateMachine` /
+`newEntry` / `nameChipsFor`, shared ui.js date/chain helpers, the map
+renderer extracted to `js/map.js` (sw.js cache v6), a "prefill matrix"
+test block pinning the prefill contract, and the typed-0 weight-step
+edge.
+
 ## Open
 
 - **Verify the issue forms in a signed-in browser.** The chooser
@@ -39,6 +54,15 @@ the Studio template browser links to the form ("Share your gym").
   (GraphQL `issueTemplates` returns `[]` even for working YAML forms;
   the chooser is login-gated) — it needs real clicks, then close the
   test issue.
+- **Browser/device smoke of the 2026-08-17 sweep.** Locker collapse
+  (spacing + summary tap target — the CSS has not been seen rendered),
+  the Studio find-by-number pulse, and the rest beep on a real iPhone
+  (the AudioContext fix is review-verified only; Node/automation cannot
+  prove audible output).
+- **test/map.test.mjs split.** test/studio.test.mjs now covers both the
+  renderer (map.js) and the editor; if the test layout should mirror the
+  module split, its renderer/collision half moves out. Cosmetic — the
+  file passes as one.
 - **Unbound items and the muscle filter.** An exercise with no machine has
   no muscles either, so it is invisible to the builder's muscle chips and
   contributes nothing to name suggestions until it binds. Fine as-is; only
