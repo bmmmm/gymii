@@ -1549,8 +1549,16 @@ function startRest(secs) {
   lockForBreak = getSettings().keepAwake !== 'off';
   syncWakeLock();
 
+  // Both timers are held so they can be taken back: the countdown may be
+  // revived by a ±15s tap (see adjust), and a stale removal would otherwise
+  // cut the next jerk short or close a running timer.
+  let closeTimer = null;
+  let litTimer = null;
+
   const close = () => {
     clearInterval(interval);
+    clearTimeout(closeTimer);
+    clearTimeout(litTimer);
     lockForBreak = false;
     syncWakeLock(); // a 'workout'-scoped lock survives this
     overlay.remove();
@@ -1562,20 +1570,36 @@ function startRest(secs) {
     if (rem !== shownRem) { // a second passed: jerk the countdown brighter
       shownRem = rem;
       cd.classList.add('lit');
-      setTimeout(() => cd.classList.remove('lit'), DIM_LIT_MS);
+      clearTimeout(litTimer); // one pending removal, so every jerk lasts its full length
+      litTimer = setTimeout(() => cd.classList.remove('lit'), DIM_LIT_MS);
     }
     if (rem === 0 && !done) {
       done = true;
       cd.classList.add('done');
       playTimerSound(getSettings().timerSound);
       navigator.vibrate?.(200);
-      setTimeout(close, 900);
+      closeTimer = setTimeout(close, 900);
     }
   };
   const interval = setInterval(tick, 200);
   tick();
 
+  // ±15s. Giving a finished timer more time REVIVES it — the overlay lingers
+  // ~900ms after the tone, and a tap in that window used to extend a
+  // countdown that was already scheduled to close (the extra time was
+  // silently thrown away, and the new zero would never have sounded).
+  const adjust = (ms) => {
+    endsAt += ms;
+    if (done && endsAt > Date.now()) {
+      clearTimeout(closeTimer);
+      closeTimer = null;
+      done = false;
+      cd.classList.remove('done');
+    }
+    tick();
+  };
+
   overlay.querySelector('#rest-skip').addEventListener('click', close);
-  overlay.querySelector('#rest-minus').addEventListener('click', () => { endsAt -= 15000; tick(); });
-  overlay.querySelector('#rest-plus').addEventListener('click', () => { endsAt += 15000; tick(); });
+  overlay.querySelector('#rest-minus').addEventListener('click', () => adjust(-15000));
+  overlay.querySelector('#rest-plus').addEventListener('click', () => adjust(15000));
 }

@@ -323,7 +323,12 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   rest overlay via `.dim`, and the countdown ticks — each passing second
   adds `.lit` for ~130 ms, which signals a live timer at a fraction of
   the lit area. A touch buys 4 s of full brightness, the last 5 s never
-  dim, and the same chips sit in the overlay itself.
+  dim, and the same chips sit in the overlay itself. ±15s goes through
+  `adjust()`: giving a FINISHED timer more time revives it (cancels the
+  pending close, clears `done`, so the new zero sounds again) — the overlay
+  lingers ~900 ms after the tone, and a tap in that window used to extend a
+  countdown that was already scheduled to close. Both the close and the
+  jerk-removal timers are held and cleared, never left to stack.
 
 ## Conventions (user-set, follow them)
 
