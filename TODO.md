@@ -56,7 +56,10 @@ edge.
   test issue.
 - **Browser smoke of the 2026-08-17 sweep.** Locker collapse (spacing +
   summary tap target — the CSS has not been seen rendered) and the
-  Studio find-by-number pulse. The timer sounds are DONE: verified on a
+  Studio find-by-number pulse, plus how the dimmed rest screen *feels* —
+  the per-second brightness jerk is timing, which no test judges (does the
+  clock stay readable at 22%, is the 130 ms flash too subtle in daylight?).
+  The timer sounds are DONE: verified on a
   real iPhone 2026-08-17, audible with the ring/silent switch ON — the
   media-element path (runtime-rendered WAV blobs) does what it was
   built for.

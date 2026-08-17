@@ -29,6 +29,12 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
 - `navigator.wakeLock` cannot be verified via claude-in-chrome (the
   automation window is hidden → NotAllowedError); verify the denial path
   live and the acquire/release logic by review.
+- Node ≥21 ships a global `navigator` (without `wakeLock`, `vibrate` or
+  `Audio`), so a headless guard must test the specific API — `typeof
+  navigator === 'undefined'` is false here and asserting it fails. `document`
+  genuinely is undefined: an unguarded `document.*` throws a ReferenceError
+  no try/catch around a browser API will catch, which is what makes it the
+  gate worth probing.
 
 ## Architecture
 
