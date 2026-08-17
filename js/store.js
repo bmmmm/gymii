@@ -475,12 +475,21 @@ export function finishWorkout(active) {
 
 // --- settings ---
 
+// `keepAwake` names the SCOPE of the screen wake lock: 'break' (the rest
+// timer only, default), 'workout' (the whole session — costs battery, so
+// never the default) or 'off'. `timerDim` is when the rest screen dims
+// itself: '10s' (default), 'now' or 'off'.
 export function getSettings() {
-  return {
+  const settings = {
     v: 1, restSeconds: 90, weightStep: 2.5, unit: 'kg', mapColors: 'custom', pickerMap: 'hidden',
-    timerSound: 'double', keepAwake: true,
+    timerSound: 'double', keepAwake: 'break', timerDim: '10s',
     ...read(KEYS.settings, {}),
   };
+  // keepAwake was a boolean before it grew a scope — migrate stored ones
+  // lazily (true meant "during the break", false meant "never")
+  if (settings.keepAwake === true) settings.keepAwake = 'break';
+  else if (settings.keepAwake === false) settings.keepAwake = 'off';
+  return settings;
 }
 
 // Distances pair with the weight unit: meters in metric, miles in imperial.

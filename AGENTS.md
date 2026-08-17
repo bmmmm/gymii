@@ -304,11 +304,20 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   new static files (js modules, css, icons) must be added to the SHELL
   list in `sw.js` — EXCEPT template files: they are on-demand content the
   fetch handler caches on first load, only `templates/index.json` is
-  precached (so a community template PR never touches sw.js). Rest timer
-  holds a screen wake lock for the length of the break when
-  `settings.keepAwake` is on (default; toggled in Settings → Workout) —
-  auto re-acquired on visibilitychange, released on close, denial
-  silently ignored.
+  precached (so a community template PR never touches sw.js). `settings.keepAwake` names the
+  screen wake lock's SCOPE: `break` (default), `workout` (held while an
+  active workout exists — battery cost, never the default) or `off`; a
+  stored pre-scope boolean migrates in `getSettings()`. The lock lives in
+  a module-level manager in train.js (two independent reasons —
+  break/workout — reconciled via `syncWakeLock()`, so a re-render
+  mid-break cannot drop it), is re-acquired on visibilitychange and
+  released when nothing wants it; denial is silently ignored. There is no
+  web API for device BRIGHTNESS, so dimming can only ever mean our own
+  pixels: `settings.timerDim` (`10s` default, `now`, `off`) darkens the
+  rest overlay via `.dim`, and the countdown ticks — each passing second
+  adds `.lit` for ~130 ms, which signals a live timer at a fraction of
+  the lit area. A touch buys 4 s of full brightness, the last 5 s never
+  dim, and the same chips sit in the overlay itself.
 
 ## Conventions (user-set, follow them)
 

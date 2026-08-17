@@ -58,6 +58,11 @@ function planSeedFrom(workout, gym) {
 export function renderTrain(root, message = '') {
   const gym = getGym();
   const active = getActive();
+  // 'workout' scope: the lock lives exactly as long as the workout does.
+  // renderTrain runs after every state change here, so finishing or
+  // discarding a workout releases it on the next render.
+  lockForWorkout = getSettings().keepAwake === 'workout' && !!active;
+  syncWakeLock();
   // An in-progress workout outranks onboarding: machines can be wiped
   // mid-workout by an import or a studio edit, and the quick start must
   // never overwrite logged sets. The plan builder outranks it too — a plan
@@ -1393,16 +1398,81 @@ function finish(root, active) {
     + `${goalTotal ? `, ${goalHit}/${goalTotal} target sets` : ''}.`);
 }
 
+// --- screen wake lock ---
+// Module-level, because its scope may outlive the rest overlay: with
+// settings.keepAwake = 'workout' the lock is held for the whole session,
+// with 'break' only while the timer runs. Two reasons can want it, so they
+// are tracked separately and reconciled — a re-render mid-break must not
+// drop the break's lock. Guarded for Node (the logic tests have no
+// document/navigator at all).
+let wakeLock = null;
+let wakeLockPending = false;
+let wakeLockWanted = false;
+let wakeLockWired = false;
+let lockForBreak = false;
+let lockForWorkout = false;
+
+async function applyWakeLock() {
+  if (typeof navigator === 'undefined' || !navigator.wakeLock) return;
+  if (!wakeLockWanted) {
+    const held = wakeLock;
+    wakeLock = null;
+    held?.release().catch(() => {});
+    return;
+  }
+  if (wakeLock || wakeLockPending) return;
+  wakeLockPending = true;
+  try {
+    const sentinel = await navigator.wakeLock.request('screen');
+    // the want may have ended while the request was in flight — an
+    // unreleased sentinel would keep the screen awake forever
+    if (!wakeLockWanted) { sentinel.release().catch(() => {}); return; }
+    wakeLock = sentinel;
+    sentinel.addEventListener('release', () => {
+      if (wakeLock === sentinel) wakeLock = null;
+    });
+  } catch { /* unsupported or denied */ } finally {
+    wakeLockPending = false;
+  }
+}
+
+function syncWakeLock() {
+  wakeLockWanted = lockForBreak || lockForWorkout;
+  // the browser drops the lock whenever the tab hides — take it again on
+  // return. Wired once, on first want.
+  if (wakeLockWanted && !wakeLockWired && typeof document !== 'undefined') {
+    wakeLockWired = true;
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') applyWakeLock();
+    });
+  }
+  applyWakeLock();
+}
+
 // --- rest timer ---
 // The audio machinery (shared media element, TIMER_SOUNDS, playTimerSound)
 // lives in ui.js — Settings previews the same sounds with the same code.
+
+// When the rest screen dims itself, in seconds after the break starts.
+// Exported for the logic tests.
+export const dimDelaySeconds = (mode) => (mode === 'off' ? Infinity : mode === 'now' ? 0 : 10);
+
+// A touch brings the screen back to full brightness for this long.
+const DIM_WAKE_MS = 4000;
+// How long a passing second lights the countdown up.
+const DIM_LIT_MS = 130;
+// The last seconds before zero are never dimmed — look up, the tone is next.
+const DIM_ENDGAME_SECS = 5;
 
 function startRest(secs) {
   if (!secs) return; // 0 = rest timer off
   // Prime silently while the tap that logged the set is still the gesture —
   // the sound itself only plays when the countdown reaches zero.
   primeAudio();
-  const keepAwake = getSettings().keepAwake;
+
+  const dimChips = (sel) => [['off', 'Off'], ['10s', '10 s'], ['now', 'Now']]
+    .map(([v, label]) => `<button type="button" class="chip sm${v === sel ? ' sel' : ''}"
+      data-dim="${v}">${label}</button>`).join('');
 
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
@@ -1413,54 +1483,57 @@ function startRest(secs) {
       <button class="btn" id="rest-minus">−15s</button>
       <button class="btn" id="rest-plus">+15s</button>
     </div>
-    <div class="row"><button class="btn btn-primary" id="rest-skip">Skip</button></div>`;
+    <div class="row"><button class="btn btn-primary" id="rest-skip">Skip</button></div>
+    <div class="rest-opts" id="dim-opts">
+      <span class="muted">🌙 Dim</span>${dimChips(getSettings().timerDim)}
+    </div>`;
   document.body.appendChild(overlay);
 
   let endsAt = Date.now() + secs * 1000;
   let done = false;
   const cd = overlay.querySelector('#cd');
 
-  // Keep the screen on while resting — only for the length of the break,
-  // and only when settings.keepAwake says so. The browser auto-releases the
-  // lock when the tab is hidden, so re-acquire on return. Guard against the
-  // request being in flight (visibilitychange re-entry) and against the
-  // overlay closing before the request resolves — an unreleased sentinel
-  // would keep the screen awake forever.
-  let wakeLock = null;
-  let wakeLockPending = false;
-  let closed = false;
-  const requestWakeLock = async () => {
-    if (!keepAwake || wakeLock || wakeLockPending) return;
-    wakeLockPending = true;
-    try {
-      const sentinel = await navigator.wakeLock?.request('screen');
-      if (!sentinel) return;
-      if (closed) { sentinel.release().catch(() => {}); return; }
-      wakeLock = sentinel;
-      sentinel.addEventListener('release', () => {
-        if (wakeLock === sentinel) wakeLock = null;
-      });
-    } catch { /* unsupported or denied */ } finally {
-      wakeLockPending = false;
-    }
-  };
-  const onVisible = () => {
-    if (document.visibilityState === 'visible') requestWakeLock();
-  };
-  requestWakeLock();
-  document.addEventListener('visibilitychange', onVisible);
+  // Dimming: the overlay darkens itself once `dimAt` passes — the screen
+  // stays ON (that is the wake lock's job), it just stops glaring in a dark
+  // gym. The countdown remains readable and TICKS: every passing second
+  // jerks it brighter for a moment, which is what says the timer is alive
+  // without lighting the whole screen. Any touch buys DIM_WAKE_MS of full
+  // brightness, and the endgame seconds never dim.
+  let dimAt = Date.now() + dimDelaySeconds(getSettings().timerDim) * 1000;
+  let shownRem = null;
+  const brighten = () => { dimAt = Date.now() + DIM_WAKE_MS; };
+  overlay.addEventListener('pointerdown', brighten);
+
+  overlay.querySelector('#dim-opts').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    saveSettings({ ...getSettings(), timerDim: chip.dataset.dim });
+    overlay.querySelector('#dim-opts').innerHTML =
+      `<span class="muted">🌙 Dim</span>${dimChips(chip.dataset.dim)}`;
+    dimAt = Date.now() + dimDelaySeconds(chip.dataset.dim) * 1000;
+  });
+
+  // The break wants the screen awake unless the setting says never; the
+  // module-level manager owns the lock (with 'workout' scope it is already
+  // held and simply stays).
+  lockForBreak = getSettings().keepAwake !== 'off';
+  syncWakeLock();
 
   const close = () => {
-    closed = true;
     clearInterval(interval);
-    document.removeEventListener('visibilitychange', onVisible);
-    wakeLock?.release().catch(() => {});
-    wakeLock = null;
+    lockForBreak = false;
+    syncWakeLock(); // a 'workout'-scoped lock survives this
     overlay.remove();
   };
   const tick = () => {
     const rem = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
     cd.textContent = fmtDuration(rem);
+    overlay.classList.toggle('dim', Date.now() >= dimAt && rem > DIM_ENDGAME_SECS);
+    if (rem !== shownRem) { // a second passed: jerk the countdown brighter
+      shownRem = rem;
+      cd.classList.add('lit');
+      setTimeout(() => cd.classList.remove('lit'), DIM_LIT_MS);
+    }
     if (rem === 0 && !done) {
       done = true;
       cd.classList.add('done');

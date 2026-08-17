@@ -28,13 +28,26 @@ export function renderSettings(root) {
             class="chip${s.timerSound === key ? ' sel' : ''}" data-sound="${key}">${snd.label}</button>`).join('')}
         </div>
       </div>
-      <div class="field-block"><span>Keep screen awake during workout break</span>
+      <div class="field-block"><span>Keep screen awake</span>
         <div class="chip-select" id="awake-chips">
-          <button type="button" class="chip${s.keepAwake ? ' sel' : ''}"
-            id="keep-awake">${s.keepAwake ? 'On' : 'Off'}</button>
+          ${[['break', 'During the break'], ['workout', 'Whole workout'], ['off', 'Off']]
+    .map(([v, label]) => `<button type="button" class="chip${s.keepAwake === v ? ' sel' : ''}"
+            data-awake="${v}">${label}</button>`).join('')}
         </div>
-        <p class="muted">Holds the screen on for the length of the break only, then
-          lets it sleep again. Needs a browser that offers a screen wake lock.</p>
+        <p class="muted">"During the break" holds the screen on until the rest timer
+          ends, then lets it sleep. "Whole workout" keeps it on until you finish —
+          handy between sets, harder on the battery. Needs a browser that offers a
+          screen wake lock.</p>
+      </div>
+      <div class="field-block"><span>Dim the rest screen</span>
+        <div class="chip-select" id="dim-chips">
+          ${[['off', 'Off'], ['10s', 'After 10 s'], ['now', 'Right away']]
+    .map(([v, label]) => `<button type="button" class="chip${s.timerDim === v ? ' sel' : ''}"
+            data-dim="${v}">${label}</button>`).join('')}
+        </div>
+        <p class="muted">The countdown stays readable and ticks brighter every second;
+          a touch brings it back to full, and the last seconds never dim. Also on the
+          timer itself, so you can tune it mid-break.</p>
       </div>
       <div class="field-block"><span>Units</span>
         <div class="chip-select" id="unit-chips">
@@ -131,8 +144,17 @@ export function renderSettings(root) {
     }
   });
 
-  root.querySelector('#keep-awake').addEventListener('click', () => {
-    saveSettings({ ...getSettings(), keepAwake: !getSettings().keepAwake });
+  root.querySelector('#awake-chips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    saveSettings({ ...getSettings(), keepAwake: chip.dataset.awake });
+    renderSettings(root);
+  });
+
+  root.querySelector('#dim-chips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    saveSettings({ ...getSettings(), timerDim: chip.dataset.dim });
     renderSettings(root);
   });
 

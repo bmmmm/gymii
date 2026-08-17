@@ -12,8 +12,9 @@ globalThis.localStorage = {
 };
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
-const { startWorkoutFrom, renderTrain, nearbyAlternative, nextSetDefaults } =
-  await import(new URL('../js/train.js', import.meta.url).href);
+const {
+  startWorkoutFrom, renderTrain, nearbyAlternative, nextSetDefaults, dimDelaySeconds,
+} = await import(new URL('../js/train.js', import.meta.url).href);
 
 const gym = store.newGym('Test gym');
 gym.machines.push({ id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
@@ -552,5 +553,19 @@ store.setUnit('kg');
 byId.clear();
 renderTrain(root);
 assert.equal(stepper(root.innerHTML, 'set-weight'), '55', 'e: the roundtrip lands back on 55 kg');
+
+// --- rest-screen dimming: when the overlay starts dimming itself ---
+assert.equal(dimDelaySeconds('10s'), 10, 'the default waits 10s before dimming');
+assert.equal(dimDelaySeconds('now'), 0, '"now" dims from the first tick');
+assert.equal(dimDelaySeconds('off'), Infinity, '"off" never dims');
+assert.equal(dimDelaySeconds(undefined), 10, 'an absent setting falls back to 10s');
+// a workout-scoped wake lock must not throw where the API is missing (Node
+// has a navigator but no wakeLock, like older browsers) — renderTrain runs
+// the lock path on every render, and there is no document here either
+assert.equal(globalThis.navigator?.wakeLock, undefined, 'no wakeLock API in this env');
+assert.equal(typeof globalThis.document, 'undefined', 'no document in this env');
+store.saveSettings({ ...store.getSettings(), keepAwake: 'workout' });
+renderTrain(root); // would throw if the lock path were unguarded
+store.saveSettings({ ...store.getSettings(), keepAwake: 'break' });
 
 console.log('train plan construction: all assertions passed');

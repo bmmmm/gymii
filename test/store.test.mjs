@@ -456,7 +456,18 @@ for (let i = 0; i < (silent.byteLength - 44) / 2; i++) {
 }
 assert.equal(silentPeak, 0, 'the priming wav is pure silence');
 
-assert.equal(store.getSettings().keepAwake, true, 'screen stays awake by default');
+// wake-lock scope: 'break' by default, 'workout' never implicitly (battery),
+// and the pre-scope boolean migrates instead of reading as an unknown scope
+assert.equal(store.getSettings().keepAwake, 'break', 'wake lock covers the break by default');
+assert.equal(store.getSettings().timerDim, '10s', 'the rest screen dims after 10s by default');
+const keptSettings = store.getSettings();
+store.saveSettings({ ...keptSettings, keepAwake: true });
+assert.equal(store.getSettings().keepAwake, 'break', 'legacy true migrates to the break scope');
+store.saveSettings({ ...keptSettings, keepAwake: false });
+assert.equal(store.getSettings().keepAwake, 'off', 'legacy false migrates to off');
+store.saveSettings({ ...keptSettings, keepAwake: 'workout' });
+assert.equal(store.getSettings().keepAwake, 'workout', 'an explicit scope survives untouched');
+store.saveSettings(keptSettings);
 
 // no Audio element in Node — playback must stay a silent no-op, never throw
 ui.playTimerSound('double');

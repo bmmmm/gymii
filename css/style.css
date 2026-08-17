@@ -549,6 +549,25 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .overlay .countdown.done { color: var(--accent); }
 .overlay .row { width: 100%; max-width: 360px; }
 
+/* Dimmed rest screen: the display stays ON (the wake lock's job) — this
+   only stops it glaring in a dark gym. The countdown keeps TICKING: each
+   passing second jerks it brighter for a moment (.lit, driven per second
+   from tick()), which reads as "the timer is alive" while the average lit
+   area stays low. Controls fade further back but stay tappable — opacity
+   does not affect hit testing. */
+.overlay .countdown, .overlay > .muted, .overlay .row, .overlay .rest-opts {
+  transition: opacity 320ms ease;
+}
+
+.overlay.dim { background: rgba(4, 5, 7, 0.985); }
+.overlay.dim .countdown { opacity: 0.22; transition: opacity 220ms ease-out; }
+.overlay.dim .countdown.lit { opacity: 0.55; transition-duration: 60ms; }
+.overlay.dim > .muted, .overlay.dim .row, .overlay.dim .rest-opts { opacity: 0.3; }
+
+/* the timer's own settings row — small chips, out of the way */
+.rest-opts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; }
+.chip.sm { padding: 6px 11px; font-size: 12px; }
+
 /* --- map overlay ("where is it?") --- */
 
 .map-overlay { gap: 16px; }
