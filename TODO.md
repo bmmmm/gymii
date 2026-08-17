@@ -45,6 +45,20 @@ renderer extracted to `js/map.js` (sw.js cache v6), a "prefill matrix"
 test block pinning the prefill contract, and the typed-0 weight-step
 edge.
 
+Browser-verified 2026-08-18 (Chrome, 400×800), and one more bug out of it:
+the scroll fix measured A/B — the log button drifted 492→762 px over six
+sets with the correction neutralised, and pins at 552 px with it; a screen
+change resets the scroll (210→0) while logging does not; the locker card
+collapses exactly once a set exists; Studio find-by-number selects and
+pulses (15 of 16 machines dimmed); the rest screen darkens on schedule and
+its jerk ticks at 999–1010 ms. The "+15 s, is that correct?" question then
+exposed a real defect: a finished timer's pending close was never
+cancelled, so extending inside that ~900 ms window was swallowed and the
+new zero would never have sounded — ±15 s now revives the timer, and the
+dim setting's labels name their reference point ("10 s into the break").
+Timer sounds were confirmed on a real iPhone 2026-08-17, audible with the
+ring/silent switch ON.
+
 ## Open
 
 - **Verify the issue forms in a signed-in browser.** The chooser
@@ -54,15 +68,6 @@ edge.
   (GraphQL `issueTemplates` returns `[]` even for working YAML forms;
   the chooser is login-gated) — it needs real clicks, then close the
   test issue.
-- **Browser smoke of the 2026-08-17 sweep.** Locker collapse (spacing +
-  summary tap target — the CSS has not been seen rendered) and the
-  Studio find-by-number pulse, plus how the dimmed rest screen *feels* —
-  the per-second brightness jerk is timing, which no test judges (does the
-  clock stay readable at 22%, is the 130 ms flash too subtle in daylight?).
-  The timer sounds are DONE: verified on a
-  real iPhone 2026-08-17, audible with the ring/silent switch ON — the
-  media-element path (runtime-rendered WAV blobs) does what it was
-  built for.
 - **test/map.test.mjs split.** test/studio.test.mjs now covers both the
   renderer (map.js) and the editor; if the test layout should mirror the
   module split, its renderer/collision half moves out. Cosmetic — the
