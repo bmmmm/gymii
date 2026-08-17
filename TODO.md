@@ -32,6 +32,13 @@ the Studio template browser links to the form ("Share your gym").
 
 ## Open
 
+- **Verify the issue forms in a signed-in browser.** The chooser
+  (`/issues/new/choose`) should show four forms + two contact links with
+  "Blank issue" as maintainers-only, and the template form must block
+  submit while required fields are empty. No API can check this
+  (GraphQL `issueTemplates` returns `[]` even for working YAML forms;
+  the chooser is login-gated) — it needs real clicks, then close the
+  test issue.
 - **Unbound items and the muscle filter.** An exercise with no machine has
   no muscles either, so it is invisible to the builder's muscle chips and
   contributes nothing to name suggestions until it binds. Fine as-is; only
