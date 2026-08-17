@@ -61,6 +61,9 @@ export const fmtTime = (ts) =>
 export const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// "3 sets", "1 workout" — count plus s-pluralized noun, in one spelling.
+export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 export const fmtDuration = (sec) => {
   const s = Math.max(0, Math.round(sec) || 0); // imported data may be fractional/absent
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;

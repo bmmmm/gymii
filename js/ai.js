@@ -7,7 +7,7 @@ import {
   getActive, planFromImport, savePlan,
 } from './store.js';
 import { openPlanBuilder } from './train.js';
-import { twoTapConfirm } from './ui.js';
+import { twoTapConfirm, plural } from './ui.js';
 
 const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; an "exercise" field names one movement at a multi-exercise station like a free-weight area; a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis).
 
@@ -101,7 +101,7 @@ export function renderAi(root) {
         // machines the gym doesn't know are kept, not dropped — they bind
         // on the gym floor the first time they come up
         const skipNote = unbound.length
-          ? ` (${unbound.length} exercise${unbound.length === 1 ? '' : 's'} still need a machine: ${unbound.join(', ')})` : '';
+          ? ` (${plural(unbound.length, 'exercise')} still need a machine: ${unbound.join(', ')})` : '';
         if (getActive()) {
           importMsg.textContent = `Plan saved${skipNote} — find it on the Train tab after your workout.`;
         } else {

@@ -14,7 +14,7 @@ import {
   recentWorkoutNames,
 } from './store.js';
 import { drawGym } from './studio.js';
-import { esc, twoTapConfirm, stepperField } from './ui.js';
+import { esc, twoTapConfirm, stepperField, plural } from './ui.js';
 
 // Weekday labels indexed by Date#getDay() (0 = Sunday); chips render
 // Monday-first, like gym weeks are planned.
@@ -216,7 +216,7 @@ export function renderPlanBuilder(
         <div id="plan-items">
           ${draft.items.map(itemRow).join('') || '<p class="muted">Nothing planned yet — add exercises below.</p>'}
         </div>
-        ${unboundCount ? `<p class="muted">${unboundCount} exercise${unboundCount === 1 ? '' : 's'}
+        ${unboundCount ? `<p class="muted">${plural(unboundCount, 'exercise')}
           without a machine — assign ${unboundCount === 1 ? 'it' : 'them'} here, or let gymii
           ask at the gym when you get there.</p>` : ''}`}
       </section>

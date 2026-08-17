@@ -222,6 +222,16 @@ root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { musc
 assert.ok(!root.innerHTML.includes('Workouts — Lats'), 're-tap clears the filter');
 assert.ok(options().includes('#14 Leg press'), 'and the full view comes back');
 
+// a muscle with zero sets still filters (the "neglected groups" feature) —
+// the Progress picker states its emptiness instead of rendering optionless
+root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Chest' }));
+assert.ok(root.innerHTML.includes('No machines match this filter'),
+  'the chart picker explains an empty machine list');
+// the reset row carries a pressed state like every other row in the group
+assert.ok(/data-muscle=""\s+aria-pressed="false"/.test(root.innerHTML),
+  'the All-muscles reset row announces its unpressed state');
+root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: '' }));
+
 // name × muscle can produce nothing — the list says so, and the card still
 // lists every muscle so the filter is never a dead end
 root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: 'Pull day' }));
@@ -243,7 +253,11 @@ store.saveWorkouts([...store.getWorkouts(), {
   ],
 }]);
 render();
-root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Quads' }));
+// the Quads filter is still active from the block above — prove it before
+// editing, or this test passes without a filter in play at all (a re-tap
+// here would TOGGLE it off and make the assertion below vacuous)
+assert.ok(root.innerHTML.includes('Workouts — Quads'),
+  'the muscle filter is active going into the edit');
 list().listeners.click(clickOn('.edit-w', { wid: 'mw3' }));
 list().listeners.click(clickOn('.set-add', { ei: '0' }));
 list().listeners.click(clickOn('.edit-save'));

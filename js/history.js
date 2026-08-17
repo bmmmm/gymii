@@ -3,7 +3,7 @@ import {
   updateWorkout, distUnit, workoutFromText, suggestWorkoutNames, recentWorkoutNames,
   gymMuscles, usageByMuscle, workoutsWithMuscle,
 } from './store.js';
-import { esc, fmtDate, fmtTime, workoutTotals, setStr, twoTapConfirm } from './ui.js';
+import { esc, fmtDate, fmtTime, workoutTotals, setStr, twoTapConfirm, plural } from './ui.js';
 import { lineChart } from './chart.js';
 import { startWorkoutFrom } from './train.js';
 
@@ -94,12 +94,12 @@ export function renderHistory(root) {
     const tagged = new Set(gym.machines.filter((m) => m.muscles?.length).map((m) => m.id));
     const lost = byName.reduce((n, w) => n + w.entries.reduce(
       (k, e) => k + (tagged.has(e.machineId) ? 0 : e.sets.length), 0), 0);
-    const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
     return `
     <section class="card">
       <h2>Muscles</h2>
       <div id="muscle-list">
-        ${muscleFilter ? `<button type="button" class="muscle-row" data-muscle="">All muscles</button>` : ''}
+        ${muscleFilter ? `<button type="button" class="muscle-row" data-muscle=""
+          aria-pressed="false">All muscles</button>` : ''}
         ${rows.map((r) => `
         <button type="button" class="muscle-row${muscleFilter === r.mu ? ' sel' : ''}"
           data-muscle="${esc(r.mu)}" aria-pressed="${muscleFilter === r.mu}">
@@ -145,7 +145,11 @@ export function renderHistory(root) {
     <section class="card">
       <h2 id="chart-title">Progress</h2>
       <select id="chart-machine" aria-label="Machine">
-        ${options.map(optionHtml).join('')}
+        ${options.length ? options.map(optionHtml).join('')
+    // '' decodes to null and the chart says "No data yet." — the picker
+    // states why it is empty instead of rendering optionless (#hm-machine
+    // never goes empty thanks to its fixed "All machines" option)
+    : '<option value="">No machines match this filter</option>'}
       </select>
       <div class="chart-wrap" id="chart"></div>
     </section>
@@ -384,7 +388,7 @@ export function renderHistory(root) {
         const label = new Date(y, m, dayNum)
           .toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
         hmInfo.textContent = info
-          ? [`${label} — ${info.sets} set${info.sets === 1 ? '' : 's'}`,
+          ? [`${label} — ${plural(info.sets, 'set')}`,
             info.volume ? `${Math.round(info.volume)} ${unit}` : '',
             info.dist ? `${Math.round(info.dist * 100) / 100} ${distUnit(s)}` : '',
             [...info.nums].sort((a, b) => a - b).map((n) => `#${n}`).join(', ')]
@@ -458,7 +462,7 @@ function workoutHtml(w, s) {
       <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>
         <span class="muted">${fmtTime(w.startedAt)} · ${minsOf(w)} min</span></div>
       <div class="muted">${w.name ? `<strong>${esc(w.name)}</strong> · ` : ''}${chain}</div>
-      <div class="muted">${sets} set${sets === 1 ? '' : 's'} · ${workoutTotals(w, s)}${w.locker
+      <div class="muted">${plural(sets, 'set')} · ${workoutTotals(w, s)}${w.locker
         ? ` · 🔒 ${esc(w.locker)}` : ''}</div>
     </summary>
     ${w.entries.map((e) => `
@@ -513,8 +517,8 @@ function wirePastLog(root, s) {
       openEditId = workout.id; // reopen it for a once-over and a name
       renderHistory(root);
       if (skipped.length) {
-        root.querySelector('#past-msg').textContent = `Logged — ${skipped.length} line${
-          skipped.length === 1 ? '' : 's'} had no machine gymii could find (${skipped.join(', ')}).`;
+        root.querySelector('#past-msg').textContent = `Logged — ${plural(skipped.length, 'line')}
+          had no machine gymii could find (${skipped.join(', ')}).`;
       }
     } catch (err) {
       msg.textContent = err.message;
@@ -548,7 +552,7 @@ function editWorkoutHtml(w, s, gym) {
     <summary>
       <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>
         <span class="muted">${fmtTime(w.startedAt)} · ${minsOf(w)} min</span></div>
-      <div class="muted">Editing — ${sets} set${sets === 1 ? '' : 's'} · ${workoutTotals(w, s)}</div>
+      <div class="muted">Editing — ${plural(sets, 'set')} · ${workoutTotals(w, s)}</div>
     </summary>
     <div class="row">
       <label class="field"><span>Date</span>

@@ -6,7 +6,7 @@ import {
 } from './store.js';
 import { drawGym, usagePayload, findMachineByNum } from './studio.js';
 import { renderPlanBuilder, DAY_LABELS } from './plan.js';
-import { esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField } from './ui.js';
+import { esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural } from './ui.js';
 
 // Active workout shape:
 //   { v: 2, id, startedAt, plan: [{machineId, exercise|null, target?}…],
@@ -288,7 +288,7 @@ function renderStart(root, gym, message) {
           <button type="button" class="recent-info row-open" data-pid="${p.id}">
             <strong>${p.name ? esc(p.name) : planChain(p, gym) || 'Unnamed plan'}${isToday(p)
     ? ' <span class="muted">· today</span>' : ''}</strong>
-            <span class="muted">${p.name && planChain(p, gym) ? `${planChain(p, gym)} · ` : ''}${count} exercise${count === 1 ? '' : 's'}${open
+            <span class="muted">${p.name && planChain(p, gym) ? `${planChain(p, gym)} · ` : ''}${plural(count, 'exercise')}${open
     ? ` · ${open} to assign` : ''}${p.days?.length
     ? ` · ${p.days.map((d) => DAY_LABELS[d]).join(' ')}` : ''}${done
     ? ` · last: ${new Date(done.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>
@@ -475,7 +475,7 @@ function renderOnboarding(root, message) {
     savePlan(plan);
     // straight into review: names and targets are editable there, and
     // machines can be assigned now or left for the gym floor
-    openPlanBuilder(plan.id, `${plan.items.length} exercise${plan.items.length === 1 ? '' : 's'}
+    openPlanBuilder(plan.id, `${plural(plan.items.length, 'exercise')}
       read — adjust anything, then save.`);
     renderTrain(root);
   };
@@ -734,7 +734,7 @@ function renderOverview(root, gym, active) {
 
   root.innerHTML = `
     <h1>Workout</h1>
-    <p class="muted">${mins} min · ${sets} set${sets === 1 ? '' : 's'} · ${workoutTotals(active, s)}${(() => {
+    <p class="muted">${mins} min · ${plural(sets, 'set')} · ${workoutTotals(active, s)}${(() => {
     const tally = targetTally(active);
     return tally.total ? ` · ${tally.hit}/${tally.total} target sets` : '';
   })()}</p>
@@ -1387,8 +1387,8 @@ function finish(root, active) {
   const sets = saved.entries.reduce((n, e) => n + e.sets.length, 0);
   // count stations, not entries — a multi-exercise station is one machine
   const stations = new Set(saved.entries.map((e) => e.machineId)).size;
-  renderTrain(root, `Workout saved: ${stations} machine${stations === 1 ? '' : 's'}, `
-    + `${sets} set${sets === 1 ? '' : 's'}, ${workoutTotals(saved, getSettings())} total`
+  renderTrain(root, `Workout saved: ${plural(stations, 'machine')}, `
+    + `${plural(sets, 'set')}, ${workoutTotals(saved, getSettings())} total`
     + `${goalTotal ? `, ${goalHit}/${goalTotal} target sets` : ''}.`);
 }
 
