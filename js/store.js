@@ -917,6 +917,10 @@ export function workoutFromText(text, startedAt, settings = getSettings()) {
 // LLM sees in the AI export. A num the gym doesn't know does NOT drop the
 // item any more: the answer may arrive hours after the export (or before
 // the gym exists at all), so it lands unbound and binds on first use.
+// The plan always gets a FRESH id; when the file carries the id of an
+// existing plan (a revision of an exported one), that id is only REPORTED
+// as `replacesId` — replacing is a destructive choice the caller must
+// confirm, never something a pasted file does on its own.
 // Does not persist anything.
 export function planFromImport(data) {
   if (!Array.isArray(data.items) || !data.items.length) throw new Error('Plan has no items');
@@ -933,6 +937,8 @@ export function planFromImport(data) {
       items,
     },
     unbound: items.filter(isUnbound).map((it) => it.name),
+    replacesId: typeof data.id === 'string' && getPlans().some((p) => p.id === data.id)
+      ? data.id : null,
   };
 }
 

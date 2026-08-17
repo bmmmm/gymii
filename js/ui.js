@@ -85,6 +85,9 @@ export function twoTapConfirm(btn, armedLabel, restLabel) {
   }
   clearTimeout(btn._armTimer);
   btn.classList.remove('armed');
+  // restore the label here too — callers that don't re-render afterwards
+  // would otherwise keep showing the armed text forever
+  btn.textContent = restLabel;
   return true;
 }
 

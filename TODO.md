@@ -13,13 +13,17 @@ History tab gained a Muscles card (sets per group as tappable bar rows that
 filter the whole view); and setUnit now converts plan targets too (they
 were silently left in the old unit).
 
+Shipped 2026-08-17: the AI export carries saved plans (same wire shape the
+prompt teaches for answers, ~5% of a demo-sized export, measured), and a
+pasted answer that keeps an exported plan id replaces that plan in place
+behind a two-tap confirm — "tighten up my push plan" is a real roundtrip
+now instead of a duplicate. Plus a review sweep: the demo profile is
+identified by a `demo` flag instead of its user-editable name (a real gym
+called "Demo" can no longer be overwritten), demo day maths is DST-safe,
+and the unit converters live in store.js once.
+
 ## Open
 
-- **Plans in the AI export.** `buildAiExport()` still ships gym + history
-  only, so "tighten up my push plan" means pasting the plan in by hand.
-  The plan shape is already in the prompt for the answer — the question is
-  whether the request should carry it too, and whether that is worth the
-  extra tokens in every export.
 - **Unbound items and the muscle filter.** An exercise with no machine has
   no muscles either, so it is invisible to the builder's muscle chips and
   contributes nothing to name suggestions until it binds. Fine as-is; only

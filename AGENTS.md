@@ -16,7 +16,8 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   import, binding, targets), `history` (name filter, muscle card + filter,
   full editor, back-logging), `studio` (editor rendering, collision),
   `demo` (generator determinism, entry invariants, weekday plan states,
-  unit conversion, load-replaces-profile). Modules import
+  unit conversion, load-replaces-profile), `ai` (export plans section,
+  paste-back new-vs-replace flow). Modules import
   fine in Node as long as none touches the DOM at top level; the stub DOM
   hands back EVERY selector, rendered or not, so a test must drive view
   switches explicitly rather than assume a branch was skipped.
@@ -237,9 +238,15 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
 - `js/ai.js` — copy prompt+data / paste-import. Deliberately NO AI API.
   Export set tuples gain a third element (seconds offset from the
   workout's startedAt) when the set has `at`; old sets stay 2-tuples.
-  Pasting a `workout-plan` JSON saves the plan and opens the builder for
-  review (mid-workout it just saves); the default prompt tells the LLM the
-  exact plan shape to answer with.
+  Saved plans ride along in the export (same wire shape the prompt
+  teaches for answers, plus their `id`) — measured at ~5% of a demo-sized
+  export, omitted entirely when no plans exist. Pasting a `workout-plan`
+  JSON saves the plan and opens the builder for review (mid-workout it
+  just saves); an answer that KEEPS an exported id is a revision and
+  replaces its original in place — but only behind a two-tap confirm
+  naming the plan (`planFromImport` only reports `replacesId`, it never
+  reuses an id itself; the Settings file-import path always creates new).
+  The default prompt tells the LLM the exact plan shape to answer with.
 - `sw.js` + `manifest.webmanifest` — PWA. Network-first with cache
   fallback (online always fresh, no cache bump per deploy). IMPORTANT:
   new static files (js modules, css, icons) must be added to the SHELL

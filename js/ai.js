@@ -4,7 +4,7 @@
 
 import {
   getGym, getWorkouts, getSettings, saveSettings, importData, distUnit,
-  getActive, planFromImport, savePlan,
+  getActive, getPlans, planFromImport, savePlan,
 } from './store.js';
 import { openPlanBuilder } from './train.js';
 import { twoTapConfirm, plural } from './ui.js';
@@ -20,7 +20,8 @@ If you propose changes to my gym or machines, reply with a valid gymii gym-templ
 If I ask you to PLAN a workout (e.g. "plan me a chest & shoulders session", possibly excluding some machines), pick suitable machines via their muscles field and reply with a gymii workout-plan JSON I can paste back:
 {"app":"gymii","kind":"workout-plan","name":"<short name>","items":[{"num":<machine num>,"sets":3,"reps":10,"weight":50}]}
 Use each machine's num exactly as listed, weights in my unit derived from my history (a slight progression where it looks earned), add "exercise" only for a movement at a multi-exercise station, and use {"num":…,"distance":…,"seconds":…} for cardio machines. An optional top-level "days":[1,4] tags weekdays (0 = Sunday).
-For a movement my gym has no machine for, give {"name":"<exercise name>","sets":3,"reps":10,"weight":50} instead of a num — gymii keeps it and asks me which machine it is at the gym.`;
+For a movement my gym has no machine for, give {"name":"<exercise name>","sets":3,"reps":10,"weight":50} instead of a num — gymii keeps it and asks me which machine it is at the gym.
+My saved plans, when present, are included as "plans" in that same shape. If I ask you to revise one, reply with the full revised plan and KEEP its "id" — that lets gymii update the plan in place (it asks me before replacing). Omit "id" for a brand-new plan.`;
 
 export function renderAi(root) {
   const settings = getSettings();
@@ -87,7 +88,8 @@ export function renderAi(root) {
   });
 
   const importMsg = root.querySelector('#ai-import-msg');
-  root.querySelector('#ai-import-btn').addEventListener('click', () => {
+  const importBtn = root.querySelector('#ai-import-btn');
+  importBtn.addEventListener('click', () => {
     const raw = root.querySelector('#ai-import').value.trim();
     if (!raw) return;
     try {
@@ -96,13 +98,30 @@ export function renderAi(root) {
         // A plan import is a proposal, not a fact: save it, then hand it
         // to the builder for review (exclude machines, adjust targets) —
         // unless a workout is running, which outranks the builder screen.
-        const { plan, unbound } = planFromImport(data);
+        const { plan: parsed, unbound, replacesId } = planFromImport(data);
+        let plan = parsed;
+        if (replacesId) {
+          // a revision of an exported plan — replacing is destructive, so
+          // it two-taps like every other destructive action, named after
+          // the plan that would be overwritten
+          const existing = getPlans().find((p) => p.id === replacesId);
+          if (!twoTapConfirm(importBtn,
+            `Tap again to replace plan "${existing.name || parsed.name || 'unnamed'}"`,
+            'Import pasted JSON')) return;
+          // replace content, keep identity: createdAt survives for
+          // missed-day tracking; days and name survive when the revision
+          // leaves them out
+          plan = {
+            ...existing, ...parsed, id: replacesId, name: parsed.name || existing.name,
+          };
+        }
         savePlan(plan);
         // machines the gym doesn't know are kept, not dropped — they bind
         // on the gym floor the first time they come up
         const skipNote = unbound.length
           ? ` (${plural(unbound.length, 'exercise')} still need a machine: ${unbound.join(', ')})` : '';
         if (getActive()) {
+          dataEl.value = buildAiExport(); // the export carries the plan now
           importMsg.textContent = `Plan saved${skipNote} — find it on the Train tab after your workout.`;
         } else {
           openPlanBuilder(plan.id, `Imported from AI${skipNote} — review, adjust, save.`);
@@ -121,10 +140,12 @@ export function renderAi(root) {
   });
 }
 
-// Compact, LLM-friendly snapshot: machines + full log, no floor layout.
+// Compact, LLM-friendly snapshot: machines + saved plans + full log, no
+// floor layout.
 export function buildAiExport() {
   const gym = getGym();
   const settings = getSettings();
+  const plans = getPlans();
   return JSON.stringify({
     app: 'gymii',
     kind: 'ai-export',
@@ -146,6 +167,24 @@ export function buildAiExport() {
         doc: m.docUrl || undefined,
       })),
     } : null,
+    // saved plans, in the same wire shape the prompt teaches for answers —
+    // the id is what lets a revised plan replace its original on paste-back
+    ...(plans.length ? {
+      plans: plans.map((p) => ({
+        id: p.id,
+        name: p.name,
+        ...(p.days?.length ? { days: p.days } : {}),
+        items: p.items.map((it) => {
+          const m = it.machineId ? gym?.machines.find((x) => x.id === it.machineId) : null;
+          if (it.machineId && !m) return null; // machine deleted since
+          return {
+            ...(m ? { num: m.num } : { name: it.name, ...(it.num ? { num: it.num } : {}) }),
+            ...(it.exercise ? { exercise: it.exercise } : {}),
+            ...(it.target ?? {}),
+          };
+        }).filter(Boolean),
+      })),
+    } : {}),
     workouts: getWorkouts().map((w) => ({
       date: new Date(w.startedAt).toISOString().slice(0, 10),
       entries: w.entries.map((e) => ({
