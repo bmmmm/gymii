@@ -233,6 +233,45 @@ assert.deepEqual(pb.sets.map((st) => st.weight), [0, 22], 'added weight converte
 store.setUnit('kg');
 store.deleteWorkout('ew');
 
+// lastEntryFor scoping — this is what feeds train.js's set prefills, so the
+// rules are pinned here: exercise-scoped in BOTH directions, newest session
+// first (over the chronologically sorted list), and only entries that
+// actually carry sets count.
+const dbEntry = (exercise, sets) => ({
+  machineId: 'db', num: 4, label: 'Dumbbells',
+  ...(exercise === undefined ? {} : { exercise }),
+  settings: {}, sets,
+});
+store.saveWorkouts([
+  // handed over out of order on purpose: the backwards walk relies on
+  // saveWorkouts' chronological sort
+  { id: 's3', startedAt: 3000, finishedAt: 3500, entries: [
+    { machineId: 'other', num: 9, label: 'Rower', settings: {}, sets: [{ reps: 5, weight: 5 }] },
+    dbEntry('Biceps curls', []),
+  ] },
+  { id: 's1', startedAt: 1000, finishedAt: 1500, entries: [
+    dbEntry(undefined, [{ reps: 10, weight: 10 }]), // logged before the station had exercises
+    dbEntry('Biceps curls', [{ reps: 10, weight: 12.5 }]),
+  ] },
+  { id: 's4', startedAt: 4000, finishedAt: 4500, entries: [dbEntry('Biceps curls', [{ reps: 6, weight: 17.5 }])] },
+  { id: 's2', startedAt: 2000, finishedAt: 2500, entries: [dbEntry(null, [{ reps: 8, weight: 15 }])] },
+]);
+assert.deepEqual(store.getWorkouts().map((w) => w.id), ['s1', 's2', 's3', 's4'],
+  'saveWorkouts sorts chronologically — lastEntryFor depends on it');
+assert.equal(store.lastEntryFor('db').sets[0].weight, 15,
+  'bare lookup: an explicit exercise:null counts as bare, and the newest bare session wins');
+assert.equal(store.lastEntryFor('db', undefined).sets[0].weight, 15,
+  'an omitted exercise reads the bare bucket, never a newer exercise entry');
+assert.equal(store.lastEntryFor('db', 'Biceps curls').sets[0].weight, 17.5,
+  'an exercise lookup takes its own newest session');
+store.deleteWorkout('s4');
+assert.deepEqual(store.lastEntryFor('db', 'Biceps curls').sets, [{ reps: 10, weight: 12.5 }],
+  'a newer set-less entry never shadows the last real one');
+assert.strictEqual(store.lastEntryFor('db', 'Shoulder press'), null,
+  'an exercise never trained at this station has no last entry');
+assert.strictEqual(store.lastEntryFor('nope'), null, 'unknown machine: no last entry');
+store.saveWorkouts([]);
+
 // clearAll wipes every gymii key and self-heals into a fresh default profile
 store.clearAll();
 assert.equal([...mem.keys()].filter((k) => k.startsWith('gymii.')).length, 0, 'clearAll leaves no gymii keys');
@@ -294,16 +333,45 @@ store.savePlan({
     { machineId: 'm2', exercise: null, target: { distance: 3000, seconds: 900 } },
   ],
 });
+// …and a RUNNING workout carries its own copy of those targets on its plan
+// slots (train.js startWorkoutFrom), which the log screen's first-set
+// prefill reads — so a mid-session switch has to convert them too
+store.saveActive({
+  v: 2, id: 'unit-active', startedAt: 9000,
+  plan: [
+    { machineId: 'm1', exercise: null, target: { sets: 3, reps: 10, weight: 80 } },
+    { machineId: 'm2', exercise: null, target: { distance: 3000, seconds: 900 } },
+  ],
+  currentMachineId: 'm1', currentExercise: null,
+  entries: [{ machineId: 'm1', num: 1, label: 'Leg press', settings: {}, sets: [{ reps: 10, weight: 75 }] }],
+});
 store.setUnit('lbs');
 const lbsPlan = store.getPlans().find((p) => p.id === 'unit-plan');
 assert.equal(lbsPlan.items[0].target.weight, Math.round(80 * 2.2046226218 * 2) / 2,
   'weight target converted to lbs');
 assert.equal(lbsPlan.items[1].target.distance, 1.86, 'distance target converted to miles');
 assert.equal(lbsPlan.items[1].target.seconds, 900, 'seconds stay unit-less');
+const lbsActive = store.getActive();
+assert.equal(lbsActive.entries[0].sets[0].weight, Math.round(75 * 2.2046226218 * 2) / 2,
+  'the running workout\'s logged sets convert');
+assert.equal(lbsActive.plan[0].target.weight, Math.round(80 * 2.2046226218 * 2) / 2,
+  'the running workout\'s slot target converts too — else 80 kg becomes 80 lbs mid-session');
+assert.equal(lbsActive.plan[1].target.distance, 1.86, 'a cardio slot target converts its distance');
+assert.equal(lbsActive.plan[1].target.seconds, 900, 'and leaves the seconds alone');
 store.setUnit('kg');
 assert.equal(store.getPlans().find((p) => p.id === 'unit-plan').items[0].target.weight, 80,
   'the kg → lbs → kg roundtrip lands back on the value');
+assert.equal(store.getActive().plan[0].target.weight, 80, 'slot targets roundtrip too');
+store.clearActive();
 store.deletePlan('unit-plan');
+
+// pre-plan actives (plan as bare machineId strings, migrated in renderTrain)
+// must survive the same walk
+store.saveActive({ v: 2, id: 'legacy-active', startedAt: 9500, plan: ['m1'], entries: [] });
+store.setUnit('lbs');
+assert.deepEqual(store.getActive().plan, ['m1'], 'a legacy string plan is left alone');
+store.setUnit('kg');
+store.clearActive();
 
 const lats = store.workoutsWithMuscle(mWorkouts, mGym, 'Lats');
 assert.deepEqual(lats.map((w) => w.id), ['mw2']);

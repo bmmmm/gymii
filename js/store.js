@@ -486,6 +486,12 @@ export function setUnit(unit) {
     const active = read(scopedKey(p.id, 'active'), null);
     if (active) {
       convertSets(active.entries);
+      // a running workout's slots carry their OWN copy of the plan targets
+      // (train.js startWorkoutFrom) — the log screen's header and its
+      // first-set prefill read that copy, so skipping it would turn an 80 kg
+      // goal into an 80 lbs one the moment the unit is switched mid-session.
+      // Legacy plans are bare machineId strings; they have no target.
+      active.plan?.forEach((slot) => slot?.target && convert(slot.target));
       write(scopedKey(p.id, 'active'), active);
     }
 

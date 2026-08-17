@@ -12,7 +12,7 @@ globalThis.localStorage = {
 };
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
-const { startWorkoutFrom, renderTrain, nearbyAlternative } =
+const { startWorkoutFrom, renderTrain, nearbyAlternative, nextSetDefaults } =
   await import(new URL('../js/train.js', import.meta.url).href);
 
 const gym = store.newGym('Test gym');
@@ -366,5 +366,191 @@ assert.equal(qsGym.machines.length, 1, 'quick start creates the named machine');
 assert.equal(qsGym.machines[0].label, 'Cable row');
 assert.equal(store.getActive().plan[0].machineId, qsGym.machines[0].id,
   'and starts the workout at it');
+
+// --- prefill matrix ---
+// The "last weight at this machine" contract, pinned case by case:
+//  (a) a plan target vs. a set already logged this session
+//  (b) the no-target fallback chain
+//  (c) exercise scoping (lastEntryFor's own cases live in store.test.mjs)
+//  (d) a previous entry whose type flag was toggled since
+//  (e) prefills after setUnit converted the history
+// nextSetDefaults is pure precedence logic and is exercised directly (it is
+// exported for exactly this, like nearbyAlternative); everything that only
+// exists once resolveEntry ran — the "Last:" header, machine settings
+// carry-over, the rendered stepper values — goes through renderLog.
+
+const kgS = { v: 1, restSeconds: 90, weightStep: 2.5, unit: 'kg' };
+const lbsS = { ...kgS, unit: 'lbs', weightStep: 5.5 };
+// three sets, ramping — so "same set number" and "last set" differ
+const prev = { sets: [{ reps: 12, weight: 40 }, { reps: 10, weight: 45 }, { reps: 8, weight: 50 }] };
+const goal = { sets: 3, reps: 10, weight: 55 };
+
+// (a) the target is the goal for THIS session: it beats history on the
+// first set, but never what was actually just lifted
+assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'strength', kgS, goal),
+  { reps: 10, weight: 55 }, 'a: no sets yet -> the target prefills');
+assert.deepEqual(nextSetDefaults({ sets: [] }, prev, 'strength', kgS, goal),
+  { reps: 10, weight: 55 }, 'a: the target outranks history on the first set');
+assert.deepEqual(nextSetDefaults({ sets: [{ reps: 10, weight: 50 }] }, prev, 'strength', kgS, goal),
+  { reps: 10, weight: 50 }, 'a: a set logged this session outranks the target');
+assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'cardio', kgS, { distance: 3000, seconds: 900 }),
+  { distance: 3000, seconds: 900 }, 'a: a cardio target prefills distance + time');
+assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'bodyweight', kgS, { sets: 3, reps: 12, weight: 5 }),
+  { reps: 12, weight: 5 }, 'a: a bodyweight target prefills reps + added weight');
+
+// (b) without a target: same set number last time, then the set just done,
+// then the static default
+assert.deepEqual(nextSetDefaults({ sets: [] }, prev, 'strength', kgS),
+  { reps: 12, weight: 40 }, 'b: set 1 comes from set 1 of the previous session');
+assert.deepEqual(nextSetDefaults({ sets: [{ reps: 10, weight: 42.5 }] }, prev, 'strength', kgS),
+  { reps: 10, weight: 45 }, 'b: same set number beats the set just logged');
+assert.deepEqual(nextSetDefaults({ sets: prev.sets.slice() }, prev, 'strength', kgS),
+  { reps: 8, weight: 50 }, 'b: past the previous session\'s set count the set just done wins');
+// the chain's fourth step ("the previous session's LAST set") is shadowed by
+// construction — i is entry.sets.length, so an empty entry always asks for
+// last.sets[0], and a non-empty one is served by the step above. Both
+// outcomes are pinned above; there is no input that reaches it.
+assert.deepEqual(nextSetDefaults({ sets: [] }, { sets: [] }, 'strength', kgS),
+  { reps: 10, weight: 20 }, 'b: a set-less previous entry falls through to the static default');
+assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'strength', kgS), { reps: 10, weight: 20 },
+  'b: static strength default');
+assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'bodyweight', kgS), { reps: 10, weight: 0 },
+  'b: static bodyweight default adds no weight');
+assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'cardio', kgS), { distance: 1000, seconds: 600 },
+  'b: static cardio default is 1000 m in metric');
+// (e) the static cardio default is stated in the display unit too
+assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'cardio', lbsS), { distance: 0.5, seconds: 600 },
+  'e: static cardio default is 0.5 mi in imperial');
+
+// --- render-level: header line, settings carry-over, stepper values ---
+store.clearAll();
+const pGym = store.newGym('Prefill gym');
+pGym.machines.push(
+  { id: 'p1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: ['Seat'] },
+  { id: 'pdb', num: 2, label: 'Dumbbells', x: 6, y: 0, w: 4, h: 3, settingsFields: [],
+    exercises: ['Biceps curls', 'Shoulder press'] },
+  // pex LOST its cardio flag in the studio, pbw GAINED a bodyweight one —
+  // either way the stored entry is the wrong shape for this screen now
+  { id: 'pex', num: 3, label: 'Rower', x: 12, y: 0, w: 4, h: 3, settingsFields: ['Level'] },
+  { id: 'pbw', num: 4, label: 'Dip bar', x: 18, y: 0, w: 4, h: 3, settingsFields: [], bodyweight: true },
+  { id: 'pc', num: 5, label: 'Treadmill', x: 24, y: 0, w: 4, h: 3, settingsFields: [], cardio: true },
+);
+store.saveGym(pGym);
+
+store.saveWorkouts([
+  // an older session at the same machine — the prefill must read the LAST
+  // one, not the first one it finds
+  { id: 'h0', startedAt: 100, finishedAt: 200, entries: [
+    { machineId: 'p1', num: 1, label: 'Chest press', settings: { Seat: '2' },
+      sets: [{ reps: 15, weight: 30 }, { reps: 15, weight: 30 }] },
+  ] },
+  { id: 'h1', startedAt: 1000, finishedAt: 2000, entries: [
+    { machineId: 'p1', num: 1, label: 'Chest press', settings: { Seat: '4' },
+      sets: [{ reps: 12, weight: 40 }, { reps: 10, weight: 45 }] },
+    // logged while pex was still a cardio station — settings included
+    { machineId: 'pex', num: 3, label: 'Rower', cardio: true, settings: { Level: '7' },
+      sets: [{ distance: 3000, seconds: 900 }] },
+    // logged before pbw was flagged bodyweight: 30 kg on the bar, not added
+    { machineId: 'pbw', num: 4, label: 'Dip bar', settings: {}, sets: [{ reps: 9, weight: 30 }] },
+  ] },
+  { id: 'h2', startedAt: 3000, finishedAt: 4000, entries: [
+    { machineId: 'pdb', num: 2, label: 'Dumbbells', exercise: 'Biceps curls', settings: {},
+      sets: [{ reps: 10, weight: 12.5 }] },
+    { machineId: 'pdb', num: 2, label: 'Dumbbells', exercise: 'Shoulder press', settings: {},
+      sets: [{ reps: 8, weight: 20 }] },
+  ] },
+]);
+
+// renders the log screen at one (machine, exercise) and hands back the HTML
+const logAt = (machineId, exercise = null, { entries = [], target = null } = {}) => {
+  store.saveActive({
+    v: 2, id: 'w-prefill', startedAt: 5000,
+    plan: [{ machineId, exercise, ...(target ? { target } : {}) }],
+    currentMachineId: machineId, currentExercise: exercise, entries,
+  });
+  byId.clear();
+  renderTrain(root);
+  return root.innerHTML;
+};
+const stepper = (html, id) =>
+  html.match(new RegExp(`id="${id}"[^>]*value="([^"]*)"`))?.[1] ?? null;
+
+// (b) render-level: set 1 prefills from set 1 of the MOST RECENT session
+let html = logAt('p1');
+assert.equal(stepper(html, 'set-weight'), '40', 'b: the log screen prefills last session\'s set 1');
+assert.equal(stepper(html, 'set-reps'), '12');
+assert.ok(html.includes('Last: 40×12, 45×10 kg'), 'b: the header states the whole last session');
+assert.ok(!html.includes('30×15'), 'b: the older session at the same machine is not the one read');
+assert.ok(/data-field="Seat"[\s\S]*?value="4"/.test(html),
+  'b: machine settings come from the same (most recent) entry');
+assert.ok(html.includes('✓ Log set — 40 kg × 12'), 'b: the log button names what it will log');
+
+// (c) exercise scoping: each exercise of a station prefills from its own
+// history, never from its sibling's
+html = logAt('pdb', 'Shoulder press');
+assert.equal(stepper(html, 'set-weight'), '20', 'c: the picked exercise prefills from its own entry');
+assert.ok(html.includes('Last: 20×8 kg') && !html.includes('12.5'),
+  'c: and the header shows that exercise only');
+html = logAt('pdb', 'Biceps curls');
+assert.equal(stepper(html, 'set-weight'), '12.5', 'c: the sibling exercise has its own prefill');
+assert.ok(html.includes('Last: 12.5×10 kg'));
+
+// (d) a previous entry of another type is useless as a prefill and as the
+// "Last:" line — but its machine settings still carry over
+html = logAt('pex');
+assert.ok(html.includes('First time on this machine'),
+  'd: a type-toggled previous entry is not announced as "Last:"');
+assert.ok(!html.includes('Last:'), 'd: no "Last:" line from the other type');
+assert.equal(stepper(html, 'set-weight'), '20', 'd: prefill falls back to the static default');
+assert.equal(stepper(html, 'set-distance'), null, 'd: the entry type rules the screen, not the history');
+assert.ok(/data-field="Level"[\s\S]*?value="7"/.test(html),
+  'd: machine settings DO carry over across a type change');
+// the same in the other direction: strength history at a now-bodyweight bar
+html = logAt('pbw');
+assert.ok(html.includes('First time on this machine') && !html.includes('Last:'),
+  'd: a bodyweight toggle discards the strength history too');
+assert.deepEqual([stepper(html, 'set-reps'), stepper(html, 'set-weight')], ['10', '0'],
+  'd: static bodyweight default instead');
+// and a target whose shape no longer matches the machine is dropped as well
+html = logAt('pc', null, { target: goal });
+assert.ok(!html.includes('Target:'), 'd: a strength target at a cardio machine is dropped');
+assert.deepEqual([stepper(html, 'set-distance'), stepper(html, 'set-time')], ['1000', '10'],
+  'd: cardio falls back to its static default');
+
+// (a) render-level: the target leads, a logged set takes over
+html = logAt('p1', null, { target: goal });
+assert.equal(stepper(html, 'set-weight'), '55', 'a: the target prefills over last session\'s 40');
+assert.ok(html.includes('Target: 3 × 10 @ 55 kg') && html.includes('set 1/3'),
+  'a: the header states the target and the set position');
+assert.ok(html.includes('✓ Log set 1/3 — 55 kg × 10'), 'a: the log button counts against the target');
+html = logAt('p1', null, {
+  target: goal,
+  entries: [{ machineId: 'p1', num: 1, label: 'Chest press', settings: {}, sets: [{ reps: 10, weight: 50 }] }],
+});
+assert.equal(stepper(html, 'set-weight'), '50', 'a: after a deviation the real working weight wins');
+assert.ok(html.includes('✓ Log set 2/3 — 50 kg × 10'));
+
+// (e) prefills follow setUnit's conversion of the history
+store.setUnit('lbs');
+html = logAt('p1');
+assert.equal(stepper(html, 'set-weight'), '88', 'e: 40 kg history prefills as 88 lbs');
+assert.ok(html.includes('Last: 88×12, 99×10 lbs'), 'e: the header follows the conversion');
+store.setUnit('kg');
+html = logAt('p1');
+assert.equal(stepper(html, 'set-weight'), '40', 'e: and back again on the way home');
+
+// a target on a RUNNING workout's slot is its own copy of the plan's — it
+// has to follow the switch too, or the goal silently changes weight class
+logAt('p1', null, { target: goal }); // 55 kg
+store.setUnit('lbs');
+byId.clear();
+renderTrain(root); // re-render the SAME active, converted in place
+html = root.innerHTML;
+assert.equal(stepper(html, 'set-weight'), '121.5', 'e: the running slot target converted with the unit');
+assert.ok(html.includes('Target: 3 × 10 @ 121.5 lbs'), 'e: and the header states the converted goal');
+store.setUnit('kg');
+byId.clear();
+renderTrain(root);
+assert.equal(stepper(root.innerHTML, 'set-weight'), '55', 'e: the roundtrip lands back on 55 kg');
 
 console.log('train plan construction: all assertions passed');

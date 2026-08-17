@@ -1362,7 +1362,10 @@ function renderLog(root, gym, active) {
 // the first-set prefill, but never what was actually just lifted — after a
 // deviation (50 instead of the planned 55) the prefill follows the real
 // working weight.
-function nextSetDefaults(entry, last, type, s, target = null) {
+// Exported for the logic tests (same reason as nearbyAlternative): the
+// precedence matrix is pure logic and pinning it through the stub DOM would
+// only test the renderer.
+export function nextSetDefaults(entry, last, type, s, target = null) {
   if (target) {
     if (entry.sets.length) return entry.sets[entry.sets.length - 1];
     return type === 'cardio'
