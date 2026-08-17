@@ -8,7 +8,7 @@ import { drawGym, usagePayload, findMachineByNum } from './map.js';
 import { renderPlanBuilder, DAY_LABELS } from './plan.js';
 import {
   esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural, machineChain,
-  primeAudio, playTimerSound,
+  primeAudio, playTimerSound, keepInView,
 } from './ui.js';
 
 // Active workout shape:
@@ -55,9 +55,33 @@ function planSeedFrom(workout, gym) {
     (q) => q.machineId === p.machineId && q.exercise === p.exercise) === i);
 }
 
+// Which screen of the Train tab is on show. The tab renders five of them
+// into one container, so a changed key means NAVIGATION (start → log →
+// bind → overview) and the new screen must start at the top; an unchanged
+// key means an in-place update, where the scroll position belongs to the
+// user and must be left alone. Without this you arrive on a fresh screen
+// still scrolled to wherever the previous one stood. Exported for the tests.
+export const screenKey = (active, builder) => {
+  if (active) {
+    if (active.binding != null) return `bind:${active.binding}`;
+    return active.currentMachineId
+      ? `log:${active.currentMachineId}:${active.currentExercise ?? ''}`
+      : 'overview';
+  }
+  return builder ? `builder:${builder.planId ?? 'new'}` : 'start';
+};
+
+let lastScreenKey = null;
+
 export function renderTrain(root, message = '') {
   const gym = getGym();
   const active = getActive();
+  // Reset BEFORE the render: the old (tall) content is still in place, so
+  // the container can actually scroll to the top, and replacing the markup
+  // afterwards leaves it there.
+  const key = screenKey(active, builder);
+  if (key !== lastScreenKey && root.scrollTop) root.scrollTop = 0;
+  lastScreenKey = key;
   // 'workout' scope: the lock lives exactly as long as the workout does.
   // renderTrain runs after every state change here, so finishing or
   // discarding a workout releases it on the next render.
@@ -1047,7 +1071,9 @@ function resolveEntry(machine, active) {
   return { exercises, exercise, pickPending, entry, last };
 }
 
-function renderLog(root, gym, active) {
+// `reveal` names a selector to scroll back into view once the markup is
+// rebuilt — passed by the actions that grow the set list above the inputs.
+function renderLog(root, gym, active, reveal = null) {
   const machine = gym.machines.find((m) => m.id === active.currentMachineId);
   if (!machine) { // machine was deleted in the studio mid-workout
     active.currentMachineId = null;
@@ -1255,7 +1281,7 @@ function renderLog(root, gym, active) {
     if (!btn) return;
     entry.sets.splice(parseInt(btn.dataset.i, 10), 1);
     saveActive(active);
-    renderLog(root, gym, active);
+    renderLog(root, gym, active, '.next-set');
   });
 
   // per-machine rest override, remembered on the machine itself
@@ -1278,7 +1304,9 @@ function renderLog(root, gym, active) {
       entry.sets.push({ reps, weight, at: Date.now() });
     }
     saveActive(active);
-    renderLog(root, gym, active);
+    // the set list just grew a row above the inputs — put them back under
+    // the thumb, so the next set is one tap and not a scroll away
+    renderLog(root, gym, active, '.next-set');
     startRest(rest);
   });
 
@@ -1345,6 +1373,8 @@ function renderLog(root, gym, active) {
     saveActive(active);
     renderTrain(root);
   });
+
+  if (reveal) keepInView(root, reveal);
 }
 
 // Default for the next set: same set number last time, then the set just

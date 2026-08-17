@@ -13,7 +13,7 @@ import {
   parsePlanText, planItemsFrom, planToText, nameChipsFor,
 } from './store.js';
 import { drawGym } from './map.js';
-import { esc, twoTapConfirm, stepperField, plural } from './ui.js';
+import { esc, twoTapConfirm, stepperField, plural, keepInView } from './ui.js';
 
 // Weekday labels indexed by Date#getDay() (0 = Sunday); chips render
 // Monday-first, like gym weeks are planned.
@@ -414,6 +414,9 @@ export function renderPlanBuilder(
       draft.items.push(...planItemsFrom(raw, gym));
       field.value = '';
       render();
+      // the item list above just grew — a note is typed line by line, so
+      // the field has to stay where the thumb left it
+      keepInView(root, '#add-line', { focus: true });
     };
     root.querySelector('#add-line-go')?.addEventListener('click', addLine);
     root.querySelector('#add-line')?.addEventListener('keydown', (e) => {

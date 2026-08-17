@@ -5,7 +5,7 @@ import {
 } from './store.js';
 import {
   esc, fmtDate, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
-  dateValue, timeValue, machineChain,
+  dateValue, timeValue, machineChain, keepInView,
 } from './ui.js';
 import { lineChart } from './chart.js';
 import { startWorkoutFrom } from './train.js';
@@ -243,6 +243,9 @@ export function renderHistory(root) {
       entry.sets.push(last ? copy
         : entry.cardio ? { distance: 0, seconds: 0 } : { reps: 10, weight: 0 });
       renderList();
+      // the new row lands ABOVE this button, so it would walk away while
+      // you fill in a session set by set
+      keepInView(list, `.set-add[data-ei="${setAdd.dataset.ei}"]`);
       return;
     }
 
@@ -262,6 +265,7 @@ export function renderHistory(root) {
         editDraft.entries.push(newEntry(machine, null,
           [machine.cardio ? { distance: 0, seconds: 0 } : { reps: 10, weight: 0 }]));
         renderList();
+        keepInView(list, '.entry-add'); // the new station pushed this row down
       }
       return;
     }

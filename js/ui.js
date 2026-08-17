@@ -128,6 +128,23 @@ export const setStr = (st, settings, bodyweight = false) => (st.distance != null
     ? (st.weight ? `BW+${st.weight}×${st.reps}` : `BW×${st.reps}`)
     : `${st.weight}×${st.reps}`);
 
+// A re-render replaces whole subtrees, so the control you JUST used drifts
+// down whenever the list above it grew by a row — log a set and the log
+// button walks off the bottom of the screen, add a plan line and the input
+// does. Call this after such a render with that control's selector and it
+// lands back in view. Instant, never smooth: this is a place-keeping
+// correction, and an animation here fights the thumb that is already moving.
+// `focus` is for text fields you are likely to fill again (a second plan
+// line, another settings field) — never for number inputs, where it would
+// pop the keyboard and hand the field to initNumericOverwrite empty.
+// Guarded throughout: the logic tests' stub DOM has neither method.
+export function keepInView(root, selector, { focus = false } = {}) {
+  const el = root.querySelector?.(selector);
+  if (!el) return;
+  el.scrollIntoView?.({ block: 'center' });
+  if (focus) el.focus?.();
+}
+
 // --- rest-timer sound ---
 // Played through ONE shared HTMLAudioElement, deliberately NOT WebAudio:
 // iOS mutes WebAudio with the ring/silent switch, but treats media-element

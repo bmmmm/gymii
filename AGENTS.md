@@ -331,6 +331,17 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
 - Destructive/final actions: hidden + two-tap guard (never `confirm()` —
   it blocks browser automation). Frequent actions visually dominant.
 - Enumerable input = tappable chips, never free text (typo avoidance).
+- Keep the control you just used under the thumb. These views re-render by
+  replacing whole subtrees, so any action that grows a list ABOVE its own
+  control pushes that control off-screen (log a set, add a plan line, add a
+  settings field / exercise, `+ Set`, `+ Machine`). Such a handler calls
+  `keepInView(root, selector)` from ui.js after the re-render — instantly,
+  never smooth, and with `focus: true` only for text fields likely to be
+  filled again (never number inputs: the keyboard would pop and
+  `initNumericOverwrite` would hand over an empty field). Navigation is the
+  opposite case: the Train tab renders five screens into one container, so
+  `screenKey()` detects a screen CHANGE and resets the scroll to the top —
+  an unchanged key means an in-place update whose scroll belongs to the user.
 - Numeric inputs arm for overwrite on focus — old value greyed out in the
   placeholder as "(40)", empty field types fresh, blur without input
   restores it (`initNumericOverwrite()` in ui.js, delegated globally).

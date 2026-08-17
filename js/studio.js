@@ -3,7 +3,7 @@ import {
   getSettings, saveSettings, usageByMachine,
   MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS,
 } from './store.js';
-import { esc, download, twoTapConfirm } from './ui.js';
+import { esc, download, twoTapConfirm, keepInView } from './ui.js';
 import {
   drawGym, usagePayload, findMachineByNum, findItem, fits, freeSpot,
   snapDoorToWall, snap, clamp, FIXTURES, WALL_SNAPPED, ITEM_COLORS, OUTLINE_ID,
@@ -631,6 +631,8 @@ export function renderStudio(root) {
         if (!item.settingsFields.includes(v)) item.settingsFields.push(v);
         save();
         renderProps();
+        // the chip row above grew by one — keep the field where it was
+        keepInView(props, '#m-field-custom', { focus: true });
       };
       props.querySelector('#m-field-add').addEventListener('click', addCustomField);
       props.querySelector('#m-field-custom').addEventListener('keydown', (e) => {
@@ -656,6 +658,7 @@ export function renderStudio(root) {
         if (!item.exercises.includes(v)) item.exercises.push(v);
         save();
         renderProps();
+        keepInView(props, '#m-exercise-custom', { focus: true });
       };
       props.querySelector('#m-exercise-add').addEventListener('click', addExercise);
       props.querySelector('#m-exercise-custom').addEventListener('keydown', (e) => {

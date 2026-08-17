@@ -14,6 +14,7 @@ globalThis.localStorage = {
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const {
   startWorkoutFrom, renderTrain, nearbyAlternative, nextSetDefaults, dimDelaySeconds,
+  screenKey,
 } = await import(new URL('../js/train.js', import.meta.url).href);
 
 const gym = store.newGym('Test gym');
@@ -553,6 +554,38 @@ store.setUnit('kg');
 byId.clear();
 renderTrain(root);
 assert.equal(stepper(root.innerHTML, 'set-weight'), '55', 'e: the roundtrip lands back on 55 kg');
+
+// --- keeping the input in view ---
+// screenKey decides scroll-to-top: a different key is navigation between the
+// tab's five screens, the same key is an in-place update whose scroll
+// position belongs to the user (log a set and the view must NOT jump).
+const logging = { currentMachineId: 'm1', currentExercise: null, entries: [], plan: [] };
+assert.equal(screenKey(null, null), 'start');
+assert.equal(screenKey(null, { planId: 'p1' }), 'builder:p1');
+assert.equal(screenKey(null, { planId: null }), 'builder:new');
+assert.equal(screenKey({ ...logging, currentMachineId: null }, null), 'overview');
+assert.equal(screenKey(logging, null), 'log:m1:');
+assert.equal(screenKey({ ...logging, currentExercise: 'Biceps curls' }, null),
+  'log:m1:Biceps curls', 'each exercise at a station is its own screen');
+assert.equal(screenKey({ ...logging, binding: 0 }, null), 'bind:0',
+  'binding index 0 must not read as "no binding"');
+assert.equal(screenKey(logging, null), screenKey({ ...logging }, null),
+  'logging a set leaves the key alone, so the scroll survives');
+// an active workout outranks an open builder, like renderTrain does
+assert.equal(screenKey(logging, { planId: 'p1' }), 'log:m1:');
+
+// the reveal path runs against the real render: the stub DOM has no
+// scrollIntoView, so an unguarded call would throw here
+store.saveActive({
+  v: 2, id: 'w-reveal', startedAt: 1755000000000,
+  plan: [{ machineId: 'm1', exercise: null }],
+  currentMachineId: 'm1', currentExercise: null, entries: [],
+});
+renderTrain(root);
+const logBtn = root.querySelector('#log-set');
+assert.equal(logBtn.scrollIntoView, undefined, 'stub really lacks scrollIntoView');
+logBtn.listeners.click(); // logs a set, then reveals '.next-set'
+assert.equal(store.getActive().entries[0].sets.length, 1, 'the set was logged');
 
 // --- rest-screen dimming: when the overlay starts dimming itself ---
 assert.equal(dimDelaySeconds('10s'), 10, 'the default waits 10s before dimming');
