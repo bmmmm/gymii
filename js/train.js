@@ -8,6 +8,7 @@ import { drawGym, usagePayload, findMachineByNum } from './map.js';
 import { renderPlanBuilder, DAY_LABELS } from './plan.js';
 import {
   esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural, machineChain,
+  primeAudio, playTimerSound,
 } from './ui.js';
 
 // Active workout shape:
@@ -1393,31 +1394,12 @@ function finish(root, active) {
 }
 
 // --- rest timer ---
-
-// One AudioContext for the whole session, never closed.
-let audioCtx = null;
-
-// Hands back the shared context, creating it on first call and nudging it
-// out of `suspended`. MUST be called from inside a user gesture: iOS/Safari
-// only lets a context start (or resume) while a gesture is being handled, so
-// a context first built when the timer fires — ~90s after the tap that
-// logged the set — stays suspended and the rest is silent. startRest() runs
-// in the log-set click, which is that gesture; beep() only reuses it.
-function audio() {
-  try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return null;
-    if (!audioCtx) audioCtx = new Ctx();
-    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-    return audioCtx;
-  } catch {
-    return null; // audio is best-effort
-  }
-}
+// The audio machinery (shared context, TIMER_SOUNDS, playTimerSound) lives
+// in ui.js — Settings previews the same sounds with the same code.
 
 function startRest(secs) {
   if (!secs) return; // 0 = rest timer off
-  audio(); // prime while the tap that logged the set is still the gesture
+  primeAudio(); // prime while the tap that logged the set is still the gesture
 
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
@@ -1478,7 +1460,7 @@ function startRest(secs) {
     if (rem === 0 && !done) {
       done = true;
       cd.classList.add('done');
-      beep();
+      playTimerSound(getSettings().timerSound);
       navigator.vibrate?.(200);
       setTimeout(close, 900);
     }
@@ -1489,29 +1471,4 @@ function startRest(secs) {
   overlay.querySelector('#rest-skip').addEventListener('click', close);
   overlay.querySelector('#rest-minus').addEventListener('click', () => { endsAt -= 15000; tick(); });
   overlay.querySelector('#rest-plus').addEventListener('click', () => { endsAt += 15000; tick(); });
-}
-
-function beep() {
-  const ctx = audio(); // the context startRest primed inside the gesture
-  if (!ctx) return;
-  try {
-    const play = (t, freq) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.001, t);
-      gain.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(t);
-      osc.stop(t + 0.3);
-    };
-    play(ctx.currentTime, 880);
-    play(ctx.currentTime + 0.35, 880);
-    // never closed: the next rest reuses this context, and a fresh one
-    // could not be started outside a gesture anyway
-  } catch {
-    // audio is best-effort; some browsers block it before user interaction
-  }
 }

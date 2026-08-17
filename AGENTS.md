@@ -150,9 +150,12 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   badge is unaffected. Quick start (`#qs-label`/`#qs-start`) is wired once
   via `wireQuickStart()` — onboarding and the no-machines start screen
   share it, incl. the logged-sets backstop. The rest beep reuses ONE
-  module-level AudioContext, created/resumed inside `startRest()` (the
-  log-set click, a real gesture) and never closed — iOS suspends contexts
-  born outside a gesture, so creating it at timer end means silence.
+  shared AudioContext (`primeAudio()` in ui.js), created/resumed inside
+  `startRest()` (the log-set click, a real gesture) and never closed —
+  iOS suspends contexts born outside a gesture, so creating it at timer
+  end means silence. The tone itself is `settings.timerSound`, picked
+  from ui.js's data-driven `TIMER_SOUNDS` via `playTimerSound()` — the
+  Settings chips preview each sound on tap (the tap is the gesture).
   `nextSetDefaults` is exported for the logic tests (same precedent as
   `nearbyAlternative`); its behavior contract is pinned by the
   "prefill matrix" block in test/train.test.mjs. Quick-switch chips on

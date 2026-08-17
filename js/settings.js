@@ -3,7 +3,7 @@ import {
   getProfiles, createProfile, renameProfile, deleteProfile, setActiveProfile, setUnit,
   exportGymTemplate, exportBackup, importData, clearAll,
 } from './store.js';
-import { download, esc, twoTapConfirm } from './ui.js';
+import { download, esc, twoTapConfirm, TIMER_SOUNDS, playTimerSound } from './ui.js';
 import { loadDemoData } from './demo.js';
 
 export function renderSettings(root) {
@@ -22,6 +22,12 @@ export function renderSettings(root) {
           <button type="button" class="step-up" aria-label="increase">+</button>
         </div>
       </label>
+      <div class="field-block"><span>Timer sound — tap to hear it</span>
+        <div class="chip-select" id="sound-chips">
+          ${Object.entries(TIMER_SOUNDS).map(([key, snd]) => `<button type="button"
+            class="chip${s.timerSound === key ? ' sel' : ''}" data-sound="${key}">${snd.label}</button>`).join('')}
+        </div>
+      </div>
       <div class="field-block"><span>Units</span>
         <div class="chip-select" id="unit-chips">
           <button type="button" class="chip${s.unit === 'kg' ? ' sel' : ''}" data-unit="kg">kg · m</button>
@@ -103,6 +109,18 @@ export function renderSettings(root) {
     const v = Math.max(0.5, parseFloat(e.target.value) || 0.5);
     e.target.value = v;
     saveSettings({ ...getSettings(), weightStep: v });
+  });
+
+  // every chip previews its sound — this click IS the gesture the audio
+  // context needs; tapping the selected one just plays it again
+  root.querySelector('#sound-chips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    playTimerSound(chip.dataset.sound);
+    if (chip.dataset.sound !== getSettings().timerSound) {
+      saveSettings({ ...getSettings(), timerSound: chip.dataset.sound });
+      renderSettings(root);
+    }
   });
 
   root.querySelector('#unit-chips').addEventListener('click', (e) => {

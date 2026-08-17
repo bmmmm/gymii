@@ -419,4 +419,20 @@ assert.equal(lats[0].entries.length, 3, 'the WHOLE workout survives, entries unt
 assert.deepEqual(store.workoutsWithMuscle(mWorkouts, mGym, 'Chest'), []);
 assert.deepEqual(store.workoutsWithMuscle(mWorkouts, null, 'Lats'), []);
 
+// --- timer sound: settings default names a real TIMER_SOUNDS entry ---
+const ui = await import(new URL('../js/ui.js', import.meta.url).href);
+assert.equal(store.getSettings().timerSound, 'double', 'timer sound defaults to double');
+assert.ok(ui.TIMER_SOUNDS[store.getSettings().timerSound], 'the default names a real sound');
+for (const [name, snd] of Object.entries(ui.TIMER_SOUNDS)) {
+  assert.ok(snd.label && Array.isArray(snd.notes) && snd.notes.length,
+    `${name} has a label and notes`);
+  snd.notes.forEach(([at, freq]) => {
+    assert.ok(Number.isFinite(at) && at >= 0 && Number.isFinite(freq) && freq > 0,
+      `${name} notes are [offset, hz] pairs`);
+  });
+}
+// no window/AudioContext in Node — both must stay silent no-ops, never throw
+ui.playTimerSound('double');
+ui.playTimerSound('no-such-sound');
+
 console.log('store roundtrip: all assertions passed');

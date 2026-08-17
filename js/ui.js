@@ -128,6 +128,65 @@ export const setStr = (st, settings, bodyweight = false) => (st.distance != null
     ? (st.weight ? `BW+${st.weight}×${st.reps}` : `BW×${st.reps}`)
     : `${st.weight}×${st.reps}`);
 
+// --- rest-timer sound ---
+
+// One AudioContext for the whole session, never closed.
+let audioCtx = null;
+
+// Hands back the shared context, creating it on first call and nudging it
+// out of `suspended`. Must be called from inside a user gesture: iOS/Safari
+// only lets a context start (or resume) while a gesture is being handled,
+// so a context first built when the timer fires — ~90s after the tap that
+// logged the set — stays suspended and the rest is silent. train.js primes
+// it in the log-set click; the Settings preview chips are gestures anyway.
+export function primeAudio() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    if (!audioCtx) audioCtx = new Ctx();
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    return audioCtx;
+  } catch {
+    return null; // audio is best-effort
+  }
+}
+
+// Selectable timer sounds: label + sine notes as [start offset s, Hz].
+// Every note shares one envelope (see playTimerSound), so a sound is pure
+// data — a new entry here shows up in Settings by itself.
+export const TIMER_SOUNDS = {
+  double: { label: 'Double', notes: [[0, 880], [0.35, 880]] },
+  triple: { label: 'Triple', notes: [[0, 880], [0.2, 880], [0.4, 880]] },
+  rise: { label: 'Rise', notes: [[0, 660], [0.18, 880], [0.36, 1100]] },
+  low: { label: 'Low', notes: [[0, 440], [0.35, 440]] },
+};
+
+// Plays a TIMER_SOUNDS entry. Unknown names fall back to `double`, so a
+// stale settings value can never mute the timer.
+export function playTimerSound(name) {
+  const ctx = primeAudio();
+  if (!ctx) return;
+  try {
+    (TIMER_SOUNDS[name] ?? TIMER_SOUNDS.double).notes.forEach(([at, freq]) => {
+      const t = ctx.currentTime + at;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.001, t);
+      gain.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.3);
+    });
+    // the context is never closed: the next play reuses it, and a fresh
+    // one could not be started outside a gesture anyway
+  } catch {
+    // audio is best-effort; some browsers block it before user interaction
+  }
+}
+
 // "500 kg · 3.2 km"-style rollup of a workout's strength volume and cardio
 // distance; parts appear only when non-zero so pure-cardio workouts don't
 // read "0 kg".
