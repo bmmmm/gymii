@@ -4,7 +4,7 @@ import {
   usageByMachine, gymMuscles, distUnit, newGym, addMachine,
   bindOrCreateMachine, newEntry, nameChipsFor, todayStatus, skipPlanDay,
 } from './store.js';
-import { drawGym, usagePayload, findMachineByNum } from './studio.js';
+import { drawGym, usagePayload, findMachineByNum } from './map.js';
 import { renderPlanBuilder, DAY_LABELS } from './plan.js';
 import {
   esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural, machineChain,

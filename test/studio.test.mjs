@@ -1,7 +1,7 @@
-// Logic-level test for studio.js's editor rendering and machine collision
-// rules: finger-sized (px-based) touch targets, invisible tap pads for
-// small items, edge clamping into the padded viewBox, and the
-// machines-never-overlap placement logic.
+// Logic-level test for map.js's rendering and machine collision rules —
+// finger-sized (px-based) touch targets, invisible tap pads for small items,
+// edge clamping into the padded viewBox, the machines-never-overlap
+// placement logic — plus studio.js's editor wiring on top of them.
 // Run with: node test/studio.test.mjs
 import { strict as assert } from 'node:assert';
 
@@ -14,7 +14,7 @@ globalThis.localStorage = {
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const { drawGym, overlapsSolid, fits, freeSpot } =
-  await import(new URL('../js/studio.js', import.meta.url).href);
+  await import(new URL('../js/map.js', import.meta.url).href);
 
 // drawGym renders into whatever quacks like an SVG element, so a plain
 // fake object is enough to assert on the generated markup.

@@ -12,7 +12,7 @@ import {
   gymMuscles, isUnbound,
   parsePlanText, planItemsFrom, planToText, nameChipsFor,
 } from './store.js';
-import { drawGym } from './studio.js';
+import { drawGym } from './map.js';
 import { esc, twoTapConfirm, stepperField, plural } from './ui.js';
 
 // Weekday labels indexed by Date#getDay() (0 = Sunday); chips render
