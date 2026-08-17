@@ -2,6 +2,23 @@
 
 import { distUnit } from './store.js';
 
+// Local-time values for the date/time inputs — toISOString would shift a
+// late-evening workout onto the previous day for anyone west of UTC.
+export const pad2 = (n) => String(n).padStart(2, '0');
+export const dateValue = (ts) => {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+export const timeValue = (ts) => {
+  const d = new Date(ts);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+
+// Distinct machine nums of a workout's entries, in entry order — dedup so a
+// workout with two exercises at one station reads '#16', not '#16 → #16'.
+export const machineChain = (workout) =>
+  [...new Set(workout.entries.map((e) => `#${e.num}`))].join(' → ');
+
 // One delegated handler powers every .stepper on the page:
 // <div class="stepper" data-step="2.5" data-min="0"><button class="step-down">−</button><input><button class="step-up">+</button></div>
 export function initSteppers() {
