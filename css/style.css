@@ -561,6 +561,21 @@ svg .machine.locate .machine-box { animation: locate-pulse 1.1s ease-in-out infi
   50% { stroke-width: 1; stroke-opacity: 0.35; }
 }
 
+/* Collapsed locker row on the workout overview: once sets are logged the
+   locker is a detail, so it reads as one quiet line above Finish — same
+   markerless summary as History's workout rows. */
+details.locker {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2px 14px;
+  margin-bottom: 14px;
+}
+
+details.locker summary { list-style: none; cursor: pointer; padding: 10px 0; color: var(--muted); }
+details.locker summary::-webkit-details-marker { display: none; }
+details.locker .row { margin-bottom: 12px; }
+
 /* --- history --- */
 
 details.workout { border-bottom: 1px solid var(--border); padding: 4px 0; }

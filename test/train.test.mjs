@@ -282,4 +282,89 @@ assert.ok(root.innerHTML.includes('chip" data-muscle="Lower back"'),
 assert.ok(root.innerHTML.includes('chip" data-muscle="Shoulders"'),
   'unvisited machines leave their muscles open');
 
+// --- locker: leads on the way in, collapses once training starts ---
+// The locker only matters at the start of a session; from the first logged
+// set on, the overview belongs to the next machine and the next reps, so the
+// card becomes one row above Finish.
+const lockerActive = (sets) => ({
+  v: 2, id: 'w-locker', startedAt: 1755000000000,
+  plan: [{ machineId: 'm1', exercise: null }],
+  currentMachineId: null, currentExercise: null, locker: '42',
+  entries: [{ machineId: 'm1', num: 1, label: 'Chest press', settings: {}, sets }],
+});
+
+store.saveActive(lockerActive([]));
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('<h2>Locker</h2>'), 'nothing logged yet: the locker card leads');
+assert.ok(!root.innerHTML.includes('details class="locker"'),
+  'no collapsed row while the card is up');
+assert.ok(root.innerHTML.includes('id="locker-num"'), 'the visible input is there to type into');
+root.querySelector('#locker-num').listeners.change({ target: { value: ' 12 ' } });
+assert.equal(store.getActive().locker, '12', 'the card input writes the locker number');
+
+store.saveActive(lockerActive([{ reps: 8, weight: 10 }]));
+byId.clear();
+renderTrain(root);
+const lockerHtml = root.innerHTML;
+assert.ok(!lockerHtml.includes('<h2>Locker</h2>'), 'a logged set collapses the locker card');
+assert.ok(lockerHtml.includes('<details class="locker">'), 'collapsed into a details row');
+assert.ok(lockerHtml.includes('🔒 42'), 'the summary shows the locker number');
+assert.ok(lockerHtml.includes('id="locker-num"'), 'expanding reveals the same input');
+const pos = (needle) => lockerHtml.indexOf(needle);
+assert.ok(pos('<details class="locker">') > pos('<h2>Add machine</h2>')
+  && pos('<details class="locker">') < pos('id="finish"'),
+'the collapsed row sits at the bottom, directly above Finish');
+root.querySelector('#locker-num').listeners.change({ target: { value: ' 7 ' } });
+assert.equal(store.getActive().locker, '7', 'the collapsed input is wired the same way');
+
+// an unset locker still names what the row is for
+const lockerUnset = lockerActive([{ reps: 8, weight: 10 }]);
+delete lockerUnset.locker;
+store.saveActive(lockerUnset);
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('🔒 Locker'), 'an unset locker labels itself');
+
+// --- shared quick start (wireQuickStart) ---
+// The first-run screen and the start screen's no-machines branch offer the
+// same two controls and now share one handler — backstop included: a workout
+// with logged sets that appeared after the render must never be clobbered.
+store.saveGym(store.newGym('Empty gym'));
+store.clearActive();
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('Welcome to gymii'), 'no gym, no plans -> first-run screen');
+
+root.querySelector('#qs-label').value = 'Cable row';
+store.saveActive({
+  v: 2, id: 'w-live', startedAt: 1755000000000,
+  plan: [{ machineId: 'm1', exercise: null }],
+  currentMachineId: null, currentExercise: null,
+  entries: [{
+    machineId: 'm1', num: 1, label: 'Chest press', settings: {},
+    sets: [{ reps: 8, weight: 10 }],
+  }],
+});
+root.querySelector('#qs-start').listeners.click();
+assert.equal(store.getActive().id, 'w-live',
+  'onboarding quick start backs off from a workout with logged sets');
+assert.equal(store.getGym().machines.length, 0, 'and creates no machine when it backs off');
+
+// same wiring on the start screen: a saved plan routes there instead of
+// onboarding, and its no-machines branch quick-starts identically
+store.clearActive();
+store.savePlan(store.planFromText('Leg press 3x10 80'));
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('Start at a machine') && root.innerHTML.includes('id="qs-start"'),
+  'start screen without machines offers quick start');
+root.querySelector('#qs-label').value = 'Cable row';
+root.querySelector('#qs-start').listeners.click();
+const qsGym = store.getGym();
+assert.equal(qsGym.machines.length, 1, 'quick start creates the named machine');
+assert.equal(qsGym.machines[0].label, 'Cable row');
+assert.equal(store.getActive().plan[0].machineId, qsGym.machines[0].id,
+  'and starts the workout at it');
+
 console.log('train plan construction: all assertions passed');

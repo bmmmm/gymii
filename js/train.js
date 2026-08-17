@@ -416,20 +416,30 @@ function renderStart(root, gym, message) {
       renderTrain(root);
     });
   } else {
-    const start = () => {
-      const label = root.querySelector('#qs-label').value.trim();
-      if (!label) return;
-      const g = getGym() ?? newGym();
-      const machine = addMachine(g, g.machines.length + 1, label);
-      saveGym(g);
-      startWorkoutFrom(null, machine.id);
-      renderTrain(root);
-    };
-    root.querySelector('#qs-start').addEventListener('click', start);
-    root.querySelector('#qs-label').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') start();
-    });
+    wireQuickStart(root);
   }
+}
+
+// Quick start: name the machine in front of you, gymii adds it and starts
+// logging there. The start screen (gym without machines) and the first-run
+// screen offer the same two controls, so they share one wiring — the two
+// copies had already drifted apart over the backstop below.
+function wireQuickStart(root) {
+  const start = () => {
+    const label = root.querySelector('#qs-label').value.trim();
+    if (!label) return;
+    // backstop: never clobber a workout that already has logged sets
+    if (getActive()?.entries.some((e) => e.sets.length)) return;
+    const gym = getGym() ?? newGym();
+    const machine = addMachine(gym, gym.machines.length + 1, label);
+    saveGym(gym);
+    startWorkoutFrom(null, machine.id);
+    renderTrain(root);
+  };
+  root.querySelector('#qs-start').addEventListener('click', start);
+  root.querySelector('#qs-label').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') start();
+  });
 }
 
 // First-run screen. ONE action leads: type in the plan you already have —
@@ -481,21 +491,7 @@ function renderOnboarding(root, message) {
   };
   root.querySelector('#ob-read').addEventListener('click', readPlan);
 
-  const start = () => {
-    const label = root.querySelector('#qs-label').value.trim();
-    if (!label) return;
-    // backstop: never clobber a workout that already has logged sets
-    if (getActive()?.entries.some((e) => e.sets.length)) return;
-    const gym = getGym() ?? newGym();
-    const machine = addMachine(gym, gym.machines.length + 1, label);
-    saveGym(gym);
-    startWorkoutFrom(null, machine.id);
-    renderTrain(root);
-  };
-  root.querySelector('#qs-start').addEventListener('click', start);
-  root.querySelector('#qs-label').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') start();
-  });
+  wireQuickStart(root);
 }
 
 // Number input, muscle filter and a tappable mini-map; calls
@@ -702,6 +698,17 @@ function renderOverview(root, gym, active) {
     ...recentWorkoutNames(),
   ])].slice(0, 5);
 
+  // The locker number is a start-of-session errand: you note it once, on
+  // the way in. Once the first set is logged the screen belongs to the next
+  // machine and the next reps, so the card collapses into one row above
+  // Finish — still reachable (and the input identical), just no longer in
+  // the way of the thing being done.
+  const lockerInput = `<div class="row">
+        <input id="locker-num" type="text" inputmode="numeric" placeholder="Locker #"
+          value="${esc(active.locker ?? '')}">
+      </div>`;
+  const lockerLeads = !sets;
+
   const rows = active.plan.map((slot, i) => {
     const machine = gym.machines.find((m) => m.id === slot.machineId);
     const entries = slotEntries(active, slot);
@@ -752,14 +759,12 @@ function renderOverview(root, gym, active) {
       <p class="muted">A named workout gets its own start row, so two routines
         on the same machines stay apart — and it stays findable in History.</p>
     </section>
+    ${lockerLeads ? `
     <section class="card">
       <h2>Locker</h2>
-      <div class="row">
-        <input id="locker-num" type="text" inputmode="numeric" placeholder="Locker #"
-          value="${esc(active.locker ?? '')}">
-      </div>
+      ${lockerInput}
       <p class="muted">Note where your stuff is — handy if the key goes missing.</p>
-    </section>
+    </section>` : ''}
     <section class="card">
       <h2>Exercises</h2>
       ${rows || '<p class="muted">Nothing logged yet — pick your first machine below.</p>'}
@@ -777,6 +782,11 @@ function renderOverview(root, gym, active) {
       <h2>Add machine</h2>
       <div id="picker"></div>
     </section>
+    ${lockerLeads ? '' : `
+    <details class="locker">
+      <summary>🔒 ${active.locker ? esc(active.locker) : 'Locker'}</summary>
+      ${lockerInput}
+    </details>`}
     <button id="finish" class="btn">Finish workout</button>`;
 
   root.querySelector('#workout-name').addEventListener('change', (e) => {
@@ -793,6 +803,8 @@ function renderOverview(root, gym, active) {
     renderTrain(root);
   });
 
+  // one #locker-num either way — the card and the collapsed row render the
+  // same input, so this wiring holds in both states
   root.querySelector('#locker-num').addEventListener('change', (e) => {
     active.locker = e.target.value.trim();
     saveActive(active);
@@ -1394,8 +1406,30 @@ function finish(root, active) {
 
 // --- rest timer ---
 
+// One AudioContext for the whole session, never closed.
+let audioCtx = null;
+
+// Hands back the shared context, creating it on first call and nudging it
+// out of `suspended`. MUST be called from inside a user gesture: iOS/Safari
+// only lets a context start (or resume) while a gesture is being handled, so
+// a context first built when the timer fires — ~90s after the tap that
+// logged the set — stays suspended and the rest is silent. startRest() runs
+// in the log-set click, which is that gesture; beep() only reuses it.
+function audio() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    if (!audioCtx) audioCtx = new Ctx();
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    return audioCtx;
+  } catch {
+    return null; // audio is best-effort
+  }
+}
+
 function startRest(secs) {
   if (!secs) return; // 0 = rest timer off
+  audio(); // prime while the tap that logged the set is still the gesture
 
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
@@ -1470,8 +1504,9 @@ function startRest(secs) {
 }
 
 function beep() {
+  const ctx = audio(); // the context startRest primed inside the gesture
+  if (!ctx) return;
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const play = (t, freq) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -1486,7 +1521,8 @@ function beep() {
     };
     play(ctx.currentTime, 880);
     play(ctx.currentTime + 0.35, 880);
-    setTimeout(() => ctx.close(), 1000);
+    // never closed: the next rest reuses this context, and a fresh one
+    // could not be started outside a gesture anyway
   } catch {
     // audio is best-effort; some browsers block it before user interaction
   }
