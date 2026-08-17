@@ -7,11 +7,10 @@
 // (a name and a target, no machine) and bind here or on the gym floor.
 
 import {
-  getGym, saveGym, newGym, addMachine, getPlans, savePlan, deletePlan,
+  getGym, saveGym, newGym, bindOrCreateMachine, getPlans, savePlan, deletePlan,
   lastEntryFor, getSettings, getWorkouts, usualWeekday, uid, distUnit,
   gymMuscles, isUnbound,
-  parsePlanText, planItemsFrom, planToText, suggestWorkoutNames,
-  recentWorkoutNames,
+  parsePlanText, planItemsFrom, planToText, nameChipsFor,
 } from './store.js';
 import { drawGym } from './studio.js';
 import { esc, twoTapConfirm, stepperField, plural } from './ui.js';
@@ -167,10 +166,7 @@ export function renderPlanBuilder(
     const rhythm = usual != null && !draft.days?.includes(usual) ? usual : null;
     // what this plan trains, plus names already in use — a nameless plan
     // is a plan nobody finds again
-    const nameChips = [...new Set([
-      ...suggestWorkoutNames(draft.items.map((it) => it.machineId).filter(Boolean), gym),
-      ...recentWorkoutNames(),
-    ])].slice(0, 5);
+    const nameChips = nameChipsFor(draft.items.map((it) => it.machineId).filter(Boolean), gym);
     const filtered = (muscle
       ? machines.filter((m) => (m.muscles || []).includes(muscle))
       : machines).slice().sort((a, b) => a.num - b.num);
@@ -317,23 +313,15 @@ export function renderPlanBuilder(
     };
 
     // Binds an unbound item to a station, creating the gym and/or the
-    // machine when the number is new: the gym grows out of the plan
-    // instead of gating it. The new machine takes the item's own name, so
-    // it never lands as a nameless "Machine 14".
+    // machine when the number is new (store's bindOrCreateMachine): the gym
+    // grows out of the plan instead of gating it.
     const bindItem = (i, machineId, wantedNum) => {
       const it = draft.items[i];
       if (!it) return;
       let machine = machineId ? machineFor(machineId) : null;
       if (!machine && wantedNum > 0) {
         gym = gym ?? newGym();
-        machine = gym.machines.find((m) => m.num === wantedNum);
-        if (!machine) {
-          machine = addMachine(gym, wantedNum, it.name || `Machine ${wantedNum}`);
-          // the note already said what kind of station this is ("20min"
-          // reads as cardio) — a machine born here inherits that, or its
-          // target would be dropped as the wrong shape right away
-          if (it.target?.distance != null) machine.cardio = true;
-        }
+        machine = bindOrCreateMachine(gym, wantedNum, it.name, it.target);
         saveGym(gym);
       }
       if (!machine) return;

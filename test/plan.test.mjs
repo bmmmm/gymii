@@ -431,6 +431,24 @@ store.saveWorkouts([
 ]);
 assert.deepEqual(store.recentWorkoutNames(), ['Push day', 'Old one'],
   'names already in use come back newest first, deduped');
+
+// nameChipsFor is what the overview, the history editor and the builder all
+// render: suggestions first, names already in use after, deduped and capped
+assert.deepEqual(store.nameChipsFor(['p1', 'p2', 'p3'], nameGym),
+  ['Push day', 'Chest', 'Chest & Shoulders', 'Old one'],
+  'suggestions lead, recent names fill up, a name in both appears once');
+assert.deepEqual(store.nameChipsFor([], nameGym), ['Push day', 'Old one'],
+  'nothing trained: only the names already in use');
+assert.deepEqual(store.nameChipsFor(['l1', 'l2'], nameGym, 2), ['Leg day', 'Legs'],
+  'the limit cuts the tail, never the suggestions');
+// the weighting the call sites depend on: train/history pass one id PER
+// LOGGED SET, so a station trained three times outvotes a single visit
+assert.deepEqual(store.nameChipsFor(['p1', 'p1', 'p1', 'l1'], nameGym),
+  ['Push day', 'Chest', 'Chest & Legs', 'Old one'],
+  'repeated ids weight the suggestion — three chest sets make it a push day');
+assert.deepEqual(store.nameChipsFor(['p1', 'l1'], nameGym),
+  ['Chest', 'Chest & Legs', 'Push day', 'Old one'],
+  'one id each: no split is claimed, "Push day" only rides in as a recent name');
 store.saveWorkouts([]);
 
 // --- text view: planToText is the exact inverse of parsePlanText ---
@@ -518,6 +536,20 @@ assert.equal(bound.currentMachineId, created.id, 'and logging starts right there
 assert.equal(store.getPlans()[0].items[0].machineId, created.id,
   'the binding is written back into the stored plan');
 assert.ok(!('name' in store.getPlans()[0].items[0]), 'a bound item drops its name');
+
+// the same bind on a cardio line: the station is born cardio, or its
+// distance/time target would be dropped as the wrong shape right away
+bound.binding = 2; // "Treadmill 20min"
+store.saveActive(bound);
+byId.clear();
+renderTrain(root);
+root.querySelector('#bind-num').value = '21';
+root.querySelector('#bind-go').listeners.click();
+const treadmill = store.getGym().machines.find((m) => m.num === 21);
+assert.equal(treadmill.label, 'Treadmill', 'the cardio line names its station too');
+assert.equal(treadmill.cardio, true, 'a distance/time target makes the new station cardio');
+assert.deepEqual(store.getActive().plan[2].target, { distance: 0, seconds: 1200 },
+  'so the target survives the bind instead of being dropped as the wrong shape');
 
 // --- logging a workout that already happened ---
 

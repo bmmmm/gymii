@@ -2,7 +2,7 @@ import {
   getGym, saveGym, getSettings, saveSettings, getActive, saveActive, finishWorkout,
   lastEntryFor, getWorkouts, getPlans, savePlan, planFromText, uid,
   usageByMachine, gymMuscles, distUnit, newGym, addMachine,
-  suggestWorkoutNames, recentWorkoutNames, todayStatus, skipPlanDay,
+  bindOrCreateMachine, newEntry, nameChipsFor, todayStatus, skipPlanDay,
 } from './store.js';
 import { drawGym, usagePayload, findMachineByNum } from './studio.js';
 import { renderPlanBuilder, DAY_LABELS } from './plan.js';
@@ -691,11 +691,8 @@ function renderOverview(root, gym, active) {
   // so the dominant region wins) plus the names already in use. Offered
   // here rather than at Finish — this is the screen you pass through on
   // the way out, so naming costs a tap, not a step.
-  const nameChips = [...new Set([
-    ...suggestWorkoutNames(
-      active.entries.flatMap((e) => e.sets.map(() => e.machineId)), gym),
-    ...recentWorkoutNames(),
-  ])].slice(0, 5);
+  const nameChips = nameChipsFor(
+    active.entries.flatMap((e) => e.sets.map(() => e.machineId)), gym);
 
   // The locker number is a start-of-session errand: you note it once, on
   // the way in. Once the first set is logged the screen belongs to the next
@@ -932,14 +929,9 @@ function renderBind(root, gym, active) {
   root.querySelector('#bind-go').addEventListener('click', () => {
     const wanted = Math.round(parseFloat(root.querySelector('#bind-num').value) || 0);
     if (wanted < 1) return;
-    let machine = findMachineByNum(gym, wanted);
-    if (!machine) {
-      machine = addMachine(gym, wanted, name || `Machine ${wanted}`);
-      // the note already said what kind of station this is ("20min" reads
-      // as cardio) — a machine born here inherits that, or its target
-      // would be dropped as the wrong shape the moment it binds
-      if (slot.target?.distance != null) machine.cardio = true;
-    }
+    // an unknown number creates the station under the item's own name,
+    // inheriting the target's type — see bindOrCreateMachine
+    const machine = bindOrCreateMachine(gym, wanted, name, slot.target);
     saveGym(gym);
     bindSlot(machine);
   });
@@ -1023,9 +1015,9 @@ const targetStr = (t, type, s) => (type === 'cardio'
 // stations (free weights) each exercise gets its own entry; until one is
 // picked (pickPending) there is no entry and no logging UI. Entries are
 // created eagerly so settings edits stick; set-less ones are dropped again
-// when the workout is finished. Type flags and the exercise are
-// snapshotted like num/label so history stays readable if the machine
-// changes. `last` is the previous session's entry for set prefills.
+// when the workout is finished. The snapshot itself (num/label, type flags,
+// exercise) is store's newEntry. `last` is the previous session's entry for
+// set prefills.
 function resolveEntry(machine, active) {
   const exercises = machine.exercises ?? [];
   const exercise = exercises.includes(active.currentExercise) ? active.currentExercise : null;
@@ -1035,13 +1027,7 @@ function resolveEntry(machine, active) {
   const last = lastEntryFor(machine.id, exercise);
   let entry = entryFor(active, machine.id, exercise);
   if (!entry) {
-    entry = {
-      machineId: machine.id, num: machine.num, label: machine.label,
-      ...(machine.cardio ? { cardio: true } : {}),
-      ...(machine.bodyweight ? { bodyweight: true } : {}),
-      ...(exercise ? { exercise } : {}),
-      settings: {}, sets: [],
-    };
+    entry = newEntry(machine, exercise);
     machine.settingsFields.forEach((f) => { entry.settings[f] = last?.settings?.[f] ?? ''; });
     active.entries.push(entry);
     saveActive(active);

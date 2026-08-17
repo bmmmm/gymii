@@ -10,9 +10,10 @@
 import {
   getSettings, getProfiles, createProfile, setActiveProfile, clearActive,
   saveGym, saveWorkouts, savePlans, startOfDay, convertWeight, convertDistance,
+  newEntry,
 } from './store.js';
 
-export const DEMO_PROFILE_NAME = 'Demo';
+const DEMO_PROFILE_NAME = 'Demo';
 
 // Local midnight `daysBack` days ago, via setDate() — fixed 86400000-ms
 // multiples would shift every session on the far side of a DST transition
@@ -138,16 +139,13 @@ function strengthKg(id, weekIdx) {
   return kg;
 }
 
+// The entry snapshot is store's newEntry (same shape the log screen writes);
+// only the settings come from this dataset's own snapshots. `sets` never
+// carries `at` — these sets were not logged live.
 function entryFor(gym, id, exercise, sets) {
-  const m = machineById(gym, id);
-  return {
-    machineId: m.id, num: m.num, label: m.label,
-    ...(exercise ? { exercise } : {}),
-    ...(m.cardio ? { cardio: true } : {}),
-    ...(m.bodyweight ? { bodyweight: true } : {}),
-    settings: { ...(SNAP_SETTINGS[id] ?? {}) },
-    sets, // never with `at` — these sets were not logged live
-  };
+  const entry = newEntry(machineById(gym, id), exercise, sets);
+  entry.settings = { ...(SNAP_SETTINGS[id] ?? {}) };
+  return entry;
 }
 
 function strengthSets(rng, kg) {

@@ -171,6 +171,22 @@ export function addMachine(gym, num, label) {
   return machine;
 }
 
+// Resolves a machine number to a station, CREATING it when the gym does not
+// know that number — the gym grows out of the plan (or the note) instead of
+// gating it. The new machine takes the item's own name, so it never lands
+// as a nameless "Machine 14"; the note already said what kind of station
+// this is ("20min" reads as cardio), and a machine born here inherits that,
+// or its target would be dropped as the wrong shape the moment it binds.
+// Persists NOTHING: every caller keeps its own saveGym timing (and its own
+// newGym, when there is no gym yet).
+export function bindOrCreateMachine(gym, num, name, target = null) {
+  const existing = gym.machines.find((m) => m.num === num);
+  if (existing) return existing;
+  const machine = addMachine(gym, num, name || `Machine ${num}`);
+  if (target?.distance != null) machine.cardio = true;
+  return machine;
+}
+
 export function newGym(name = 'My gym') {
   const grid = { w: 60, h: 40 };
   return {
@@ -236,6 +252,26 @@ export function lastEntryFor(machineId, exercise = null) {
     if (entry && entry.sets.length) return entry;
   }
   return null;
+}
+
+// A fresh history entry for this machine. num/label, the type flags and the
+// exercise are SNAPSHOTTED here — history, the editor, the chart and the AI
+// export read the entry, never the live machine, so a station renamed or
+// retyped later leaves logged sessions readable. Flags are absent unless
+// true (strength carries neither). `settings` starts empty: what belongs in
+// it depends on the caller (the log screen prefills from the last session,
+// the demo data from its own snapshots).
+export function newEntry(machine, exercise = null, sets = []) {
+  return {
+    machineId: machine.id,
+    num: machine.num,
+    label: machine.label,
+    ...(machine.cardio ? { cardio: true } : {}),
+    ...(machine.bodyweight ? { bodyweight: true } : {}),
+    ...(exercise ? { exercise } : {}),
+    settings: {},
+    sets,
+  };
 }
 
 // --- workout plans ---
@@ -589,6 +625,17 @@ export function recentWorkoutNames(limit = 3) {
   return names;
 }
 
+// The name chips every naming surface offers (the workout overview, the
+// history editor, the plan builder): what these machines suggest first, then
+// the names already in use, deduplicated. Pass one id per logged set (or per
+// plan item) — repeats are the weighting, see suggestWorkoutNames.
+export function nameChipsFor(machineIds, gym, limit = 5) {
+  return [...new Set([
+    ...suggestWorkoutNames(machineIds, gym),
+    ...recentWorkoutNames(),
+  ])].slice(0, limit);
+}
+
 // Total sets per machine across all history — feeds the usage map view.
 export function usageByMachine() {
   const usage = new Map();
@@ -886,8 +933,7 @@ export function workoutFromText(text, startedAt, settings = getSettings()) {
     let machine = resolved.machineId
       ? gym.machines.find((m) => m.id === resolved.machineId) : null;
     if (!machine && item.num) {
-      machine = addMachine(gym, item.num, item.name);
-      if (item.target?.distance != null) machine.cardio = true;
+      machine = bindOrCreateMachine(gym, item.num, item.name, item.target);
     }
     if (!machine) { skipped.push(item.name); return; }
     const t = resolved.target;
@@ -898,16 +944,7 @@ export function workoutFromText(text, startedAt, settings = getSettings()) {
       const count = t?.sets ?? 1;
       for (let i = 0; i < count; i++) sets.push({ reps: t?.reps ?? 10, weight: t?.weight ?? 0 });
     }
-    entries.push({
-      machineId: machine.id,
-      num: machine.num,
-      label: machine.label,
-      ...(machine.cardio ? { cardio: true } : {}),
-      ...(machine.bodyweight ? { bodyweight: true } : {}),
-      ...(resolved.exercise ? { exercise: resolved.exercise } : {}),
-      settings: {},
-      sets,
-    });
+    entries.push(newEntry(machine, resolved.exercise, sets));
   });
   if (!entries.length) {
     throw new Error('No line named a machine gymii knows — put a #number in front of one');

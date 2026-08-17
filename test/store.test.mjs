@@ -288,6 +288,46 @@ assert.equal(store.addMachine(quickGym, 2, 'Row').num, 2);
 store.saveGym(quickGym);
 assert.equal(store.getGym().machines.length, 2, 'quick gym saves cleanly');
 
+// bindOrCreateMachine — the one invariant behind every binding surface
+// (train's bind screen, the plan builder, workoutFromText)
+const bindGym = store.newGym('Bind');
+bindGym.machines.push({ id: 'known', num: 5, label: 'Leg press', x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles: [] });
+assert.strictEqual(store.bindOrCreateMachine(bindGym, 5, 'Whatever', null).id, 'known',
+  'a known number binds to that station, name and target ignored');
+assert.equal(bindGym.machines.length, 1, 'and creates nothing');
+const bindNew = store.bindOrCreateMachine(bindGym, 14, 'Cable crossover', { sets: 3, reps: 10, weight: 20 });
+assert.equal(bindNew.label, 'Cable crossover', 'an unknown number creates the machine under the ITEM name');
+assert.equal(bindNew.num, 14);
+assert.ok(!('cardio' in bindNew), 'a sets/reps target leaves it a strength station');
+assert.equal(bindGym.machines.length, 2, 'appended to the gym');
+const bindCardio = store.bindOrCreateMachine(bindGym, 21, 'Treadmill', { distance: 0, seconds: 1200 });
+assert.equal(bindCardio.cardio, true,
+  'a distance target makes it cardio — else the target is dropped as the wrong shape');
+assert.equal(store.bindOrCreateMachine(bindGym, 7, '', null).label, 'Machine 7',
+  'a nameless item falls back to "Machine <num>"');
+assert.equal(store.bindOrCreateMachine(bindGym, 7, 'Late name', null).label, 'Machine 7',
+  'the second call finds the machine it just created');
+assert.equal(store.getGym().machines.length, 2,
+  'bindOrCreateMachine persists NOTHING — saveGym timing stays with the caller');
+
+// newEntry — the entry snapshot the log screen, the editor, workoutFromText
+// and the demo data all write
+const strengthMachine = { id: 's1', num: 3, label: 'Chest press', settingsFields: ['Seat'] };
+assert.deepEqual(store.newEntry(strengthMachine, null, [{ reps: 10, weight: 40 }]), {
+  machineId: 's1', num: 3, label: 'Chest press', settings: {}, sets: [{ reps: 10, weight: 40 }],
+}, 'strength: no type flag at all, settings start empty');
+const cardioEntry = store.newEntry({ id: 'c1', num: 9, label: 'Rower', cardio: true }, 'Sprints', []);
+assert.deepEqual(Object.keys(cardioEntry),
+  ['machineId', 'num', 'label', 'cardio', 'exercise', 'settings', 'sets'],
+  'flags before the exercise, settings and sets last (history reads this shape)');
+assert.equal(store.newEntry({ id: 'b1', num: 4, label: 'Pull-up bar', bodyweight: true }).bodyweight, true);
+const flagless = store.newEntry({ id: 'x', num: 1, label: 'X', cardio: false, bodyweight: false }, '');
+assert.ok(!('cardio' in flagless) && !('bodyweight' in flagless) && !('exercise' in flagless),
+  'false flags and an empty exercise are absent, not falsy');
+assert.deepEqual(flagless.sets, [], 'sets default to empty');
+assert.notStrictEqual(store.newEntry(strengthMachine).sets, store.newEntry(strengthMachine).sets,
+  'each entry gets its OWN sets array — a shared one would log into two entries');
+
 // the shipped example template must pass import validation
 const { readFileSync } = await import('node:fs');
 const example = JSON.parse(readFileSync(new URL('../templates/example-gym.json', import.meta.url), 'utf8'));

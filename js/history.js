@@ -1,6 +1,6 @@
 import {
   getGym, getWorkouts, saveWorkouts, getSettings, getActive, deleteWorkout,
-  updateWorkout, distUnit, workoutFromText, suggestWorkoutNames, recentWorkoutNames,
+  updateWorkout, distUnit, workoutFromText, newEntry, nameChipsFor,
   gymMuscles, usageByMuscle, workoutsWithMuscle,
 } from './store.js';
 import {
@@ -253,21 +253,14 @@ export function renderHistory(root) {
       return;
     }
 
-    // A machine forgotten entirely. Type flags and num/label are
-    // snapshotted onto the entry exactly like the live logging screen does.
+    // A machine forgotten entirely. The entry is snapshotted through store's
+    // newEntry, exactly like the live logging screen does.
     if (e.target.closest('.entry-add') && editDraft) {
       const pick = e.target.closest('details').querySelector('.entry-pick');
       const machine = gym?.machines.find((m) => m.id === pick?.value);
       if (machine) {
-        editDraft.entries.push({
-          machineId: machine.id,
-          num: machine.num,
-          label: machine.label,
-          ...(machine.cardio ? { cardio: true } : {}),
-          ...(machine.bodyweight ? { bodyweight: true } : {}),
-          settings: {},
-          sets: [machine.cardio ? { distance: 0, seconds: 0 } : { reps: 10, weight: 0 }],
-        });
+        editDraft.entries.push(newEntry(machine, null,
+          [machine.cardio ? { distance: 0, seconds: 0 } : { reps: 10, weight: 0 }]));
         renderList();
       }
       return;
@@ -535,10 +528,8 @@ function editWorkoutHtml(w, s, gym) {
   const inWorkout = new Set(w.entries.map((e) => e.machineId));
   const addable = (gym?.machines ?? []).filter((m) => !inWorkout.has(m.id))
     .slice().sort((a, b) => a.num - b.num);
-  const nameChips = [...new Set([
-    ...suggestWorkoutNames(w.entries.flatMap((e) => e.sets.map(() => e.machineId)), gym),
-    ...recentWorkoutNames(),
-  ])].slice(0, 5);
+  // one id per logged set, so the dominant region wins the suggestion
+  const nameChips = nameChipsFor(w.entries.flatMap((e) => e.sets.map(() => e.machineId)), gym);
   return `<details class="workout" open>
     <summary>
       <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>
