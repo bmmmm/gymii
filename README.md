@@ -70,8 +70,12 @@ Vanilla HTML/CSS/JS (ES modules), zero dependencies. Tests: one file per
 module — `for f in test/*.test.mjs; do node "$f"; done`. Notes for
 contributors and agents live in [AGENTS.md](AGENTS.md).
 
-Got a floor plan of your gym? Templates are meant to be shared —
-`templates/index.json` is the manifest, pull requests welcome.
+Got a floor plan of your gym? Templates are meant to be shared — export it
+(Settings → Export gym template) and either open a
+[Submit a gym template](https://github.com/bmmmm/gymii/issues/new?template=01-gym-template.yml)
+issue (no git needed, paste the JSON) or send a two-file PR against
+`templates/`. Details in [CONTRIBUTING.md](CONTRIBUTING.md); CI validates
+every template against the app's real import path.
 
 ---
 

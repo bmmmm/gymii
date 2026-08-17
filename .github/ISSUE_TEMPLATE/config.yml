@@ -1,0 +1,11 @@
+# blank_issues_enabled: false does not remove the "Blank issue" option — it
+# restricts it to maintainers only, labelled "(Maintainers only)" in the
+# chooser.
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/bmmmm/gymii/security/policy
+    about: Do not open a public issue. Report privately — see SECURITY.md.
+  - name: Usage question or help
+    url: https://github.com/bmmmm/gymii#readme
+    about: Check the README first — screens, data storage and templates are documented there.

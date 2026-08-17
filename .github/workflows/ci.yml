@@ -26,6 +26,9 @@ jobs:
   # A runtime asset missing from the sw.js SHELL list breaks the app OFFLINE
   # only — invisible in every normal test. icons/icon.svg is the source the
   # PNGs are generated from, never fetched at runtime, so it stays out.
+  # Template FILES stay out too: they are on-demand content the service
+  # worker caches on first load — only the manifest is precached, so a
+  # community template PR never has to touch sw.js.
   shell-list:
     runs-on: ubuntu-latest
     steps:
@@ -38,7 +41,7 @@ jobs:
               echo "::error file=sw.js::$f is not in the SHELL list — it would be missing offline"
               missing=1
             fi
-          done < <(git ls-files 'js/*.js' 'css/*.css' 'icons/*.png' 'templates/*.json')
+          done < <(git ls-files 'js/*.js' 'css/*.css' 'icons/*.png' 'templates/index.json')
           [ "$missing" -eq 0 ] && echo "SHELL list covers every runtime asset."
           exit "$missing"
 

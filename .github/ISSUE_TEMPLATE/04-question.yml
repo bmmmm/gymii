@@ -1,0 +1,30 @@
+name: Question
+description: Ask about usage, behaviour, or whether something is intended
+title: "[question] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [README](https://github.com/bmmmm/gymii#readme) first —
+        what each screen does and where your data lives is documented there.
+        If the answer turns out to be "that's a bug," we'll convert this
+        into a proper report — don't worry about picking the wrong form.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+    validations:
+      required: true
+
+  - type: input
+    id: context
+    attributes:
+      label: Which screen or feature this is about, if any
+
+  - type: textarea
+    id: output
+    attributes:
+      label: What you saw that prompted the question
+      render: text

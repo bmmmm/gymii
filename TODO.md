@@ -22,12 +22,20 @@ identified by a `demo` flag instead of its user-editable name (a real gym
 called "Demo" can no longer be overwritten), demo day maths is DST-safe,
 and the unit converters live in store.js once.
 
+Also 2026-08-17 — community templates: `test/templates.test.mjs` gates
+manifest ↔ files ↔ real import validation on every PR; template files left
+the sw.js precache (on-demand content, only the manifest stays — a template
+PR is two files and never touches sw.js); intake via the "Submit a gym
+template" issue form (paste the export, no git needed) plus PR template,
+CONTRIBUTING.md and SECURITY.md (private vulnerability reporting enabled);
+the Studio template browser links to the form ("Share your gym").
+
 ## Open
 
 - **Unbound items and the muscle filter.** An exercise with no machine has
   no muscles either, so it is invisible to the builder's muscle chips and
   contributes nothing to name suggestions until it binds. Fine as-is; only
   worth revisiting if plans commonly stay unbound for long.
-- **Community templates** (carried over): the PR flow for
-  `templates/index.json` as the manifest "database" with country/city
-  metadata.
+- **Template browser filters.** Country/city already render per entry; a
+  filter row (chips, like History's) only earns its place once the library
+  holds enough templates that scanning the list stops working.

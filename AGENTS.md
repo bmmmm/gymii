@@ -17,7 +17,8 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   full editor, back-logging), `studio` (editor rendering, collision),
   `demo` (generator determinism, entry invariants, weekday plan states,
   unit conversion, load-replaces-profile), `ai` (export plans section,
-  paste-back new-vs-replace flow). Modules import
+  paste-back new-vs-replace flow), `templates` (the community-library
+  gate: manifest ↔ files ↔ real import validation). Modules import
   fine in Node as long as none touches the DOM at top level; the stub DOM
   hands back EVERY selector, rendered or not, so a test must drive view
   switches explicitly rather than assume a branch was skipped.
@@ -250,8 +251,11 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
 - `sw.js` + `manifest.webmanifest` — PWA. Network-first with cache
   fallback (online always fresh, no cache bump per deploy). IMPORTANT:
   new static files (js modules, css, icons) must be added to the SHELL
-  list in `sw.js`. Rest timer holds a screen wake lock (auto re-acquired
-  on visibilitychange; denial is silently ignored).
+  list in `sw.js` — EXCEPT template files: they are on-demand content the
+  fetch handler caches on first load, only `templates/index.json` is
+  precached (so a community template PR never touches sw.js). Rest timer
+  holds a screen wake lock (auto re-acquired on visibilitychange; denial
+  is silently ignored).
 
 ## Conventions (user-set, follow them)
 
@@ -290,5 +294,11 @@ replay uploads a second `github-pages` artifact into the same run and
 `deploy-pages` then aborts on "Multiple artifacts named github-pages", which
 looks like a workflow bug and isn't.
 
-Open: the community-template PR flow (`templates/index.json` is the manifest
-"database" with country/city metadata).
+Community templates: `templates/index.json` is the manifest "database"
+(id, name, country, city, file); `test/templates.test.mjs` is the gate —
+every entry must exist, import cleanly and have ≥1 machine, every file must
+be listed. Intake: the "Submit a gym template" issue form (non-git users
+paste their export; a maintainer makes the PR) or a two-file PR
+(`.github/PULL_REQUEST_TEMPLATE.md` has the checklist). Community PRs are
+adopted like Dependabot ones: apply locally, gate on the tests, push BOTH
+remotes, close the PR with a comment — never merge in the GitHub UI.

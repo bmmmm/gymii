@@ -1,0 +1,67 @@
+name: Submit a gym template
+description: Share your gym's floor plan — no git knowledge needed, paste the export and we do the rest
+title: "[template] "
+labels: ["template-submission", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing your gym! Export it in gymii under
+        **Settings → Export gym template**, then paste the file's content
+        below. A maintainer turns it into a pull request; once merged it
+        appears in everyone's template browser (Studio → template library).
+        Like everything in this repo, submitted templates are published
+        under GPL-3.0.
+
+  - type: input
+    id: gym-name
+    attributes:
+      label: Gym name
+      description: As it should appear in the library.
+      placeholder: FitX Hauptstraße
+    validations:
+      required: true
+
+  - type: input
+    id: city
+    attributes:
+      label: City
+      placeholder: Berlin
+    validations:
+      required: true
+
+  - type: input
+    id: country
+    attributes:
+      label: Country
+      description: Two-letter code preferred.
+      placeholder: DE
+    validations:
+      required: true
+
+  - type: textarea
+    id: template-json
+    attributes:
+      label: The template JSON
+      description: The full content of the file from Settings → Export gym template.
+      render: json
+      placeholder: '{"app":"gymii","kind":"gym-template","v":1,"gym":{…}}'
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I imported this exact file back into gymii (Settings → Import file…) and the floor plan looks right.
+          required: true
+        - label: This is a real gym layout I'm fine with sharing publicly under GPL-3.0.
+          required: true
+        - label: Machine numbers in the template match the numbers physically posted in the gym (if the gym numbers its machines).
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Renamed zones, machines the gym recently swapped out, whatever the next visitor should know.

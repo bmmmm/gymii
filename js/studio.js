@@ -742,7 +742,10 @@ export function renderStudio(root) {
       <button class="btn" id="tpl-file-btn">From file…</button>
       <input type="file" hidden accept=".json,application/json" id="tpl-file-input">
       <p class="muted" id="tpl-msg">Loading a template replaces the current gym layout
-      (workout history stays).</p>`;
+      (workout history stays).</p>
+      <p class="muted"><a class="linkish" target="_blank" rel="noopener"
+        href="https://github.com/bmmmm/gymii/issues/new?template=01-gym-template.yml">Share
+        your gym</a> — send in your floor plan and it becomes part of this library.</p>`;
 
     const msg = panel.querySelector('#tpl-msg');
     const apply = (data) => {

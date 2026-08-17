@@ -1,0 +1,70 @@
+name: Feature request
+description: Propose new behaviour
+title: "[feature] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form asks you to design the feature, not just wish for it — the
+        answers below are close to what someone would need to implement it
+        without a follow-up question.
+
+        Two things are deliberate non-goals, so proposals depending on them
+        won't land: **no accounts, sync or server** (your data stays in your
+        browser), and **no build step or dependencies** (vanilla JS stays
+        vanilla; AI stays copy/paste, gymii never calls an API itself).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >-
+        What are you unable to do today? Describe the situation, not your
+        solution — there may be a better way to solve it than the one you
+        have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: >-
+        The concrete surface this would add or change. If it changes an
+        existing screen, describe the before and after.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: >-
+        Written so someone else can tell whether it's done without asking
+        you. One Given/When/Then per behaviour, including a negative case.
+    validations:
+      required: true
+
+  - type: textarea
+    id: nongoals
+    attributes:
+      label: Explicitly out of scope
+      description: The neighbouring things this should NOT grow into.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and current workaround
+      description: What you do today, and why it isn't good enough.
+
+  - type: dropdown
+    id: implement
+    attributes:
+      label: Would you implement it?
+      options:
+        - "no, proposing only"
+        - "yes, if the design is accepted"
+        - "yes, but I'd need pointers on where to start"
+    validations:
+      required: true

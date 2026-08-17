@@ -1,0 +1,74 @@
+name: Bug report
+description: Something behaves wrongly — wrong numbers, broken screen, lost input
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        gymii is an installable offline app, so the single most useful thing
+        you can tell us is whether a **hard reload** changes anything — it
+        separates "the app cached an old version" from a real bug in the
+        current one.
+
+  - type: dropdown
+    id: hard-reload
+    attributes:
+      label: Does it still happen after a hard reload (Ctrl/Cmd+Shift+R) or in a private window?
+      description: This one answer routes the whole report — please actually try it.
+      options:
+        - "Not sure — haven't tried yet"
+        - "Yes — still happens after a hard reload"
+        - "No — a hard reload fixed it"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: What happened, step by step
+      description: Numbered steps from a fresh screen to the wrong behaviour. "Load test data" (Settings) is a quick way to reproduce on known data.
+      placeholder: |
+        1. Settings → Load test data
+        2. History → tap the Quads row
+        3. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: input
+    id: where
+    attributes:
+      label: Which screen
+      placeholder: Train / History / Studio / Plan / Settings / AI
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device and browser
+      description: Include whether gymii runs as an installed app or in a browser tab.
+      placeholder: iPhone 14, Safari, installed as PWA
+    validations:
+      required: true
+
+  - type: textarea
+    id: input-text
+    attributes:
+      label: Exact input, if typing or pasting was involved
+      description: For plan notes, past-workout lines, AI answers or imported JSON, paste the exact text — parser bugs live in the exact characters.
+      render: text
+
+  - type: markdown
+    attributes:
+      value: |
+        Your data never leaves your browser, so we can't see it. If the bug
+        depends on your data, **Settings → Export full backup** produces a
+        file you can attach — strip anything you'd rather keep private.

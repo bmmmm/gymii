@@ -2,7 +2,7 @@
 // files (no stale-module hell, no cache-name bump per deploy); an offline
 // user gets whatever was last fetched successfully. Relative URLs keep the
 // app subpath-safe (e.g. GitHub Pages project sites).
-const CACHE = 'gymii-v4'; // bumped: SHELL gained js/demo.js
+const CACHE = 'gymii-v5'; // bumped: template files left the precache
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest',
   'css/style.css',
@@ -10,7 +10,10 @@ const SHELL = [
   'js/ai.js', 'js/settings.js', 'js/ui.js', 'js/chart.js', 'js/demo.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-512-maskable.png',
   'icons/apple-touch-icon.png',
-  'templates/index.json', 'templates/example-gym.json',
+  // template FILES are on-demand content and enter the cache when first
+  // loaded (the fetch handler PUTs every ok response) — precaching only
+  // the manifest keeps community template PRs out of this file entirely
+  'templates/index.json',
 ];
 
 self.addEventListener('install', (e) => {
