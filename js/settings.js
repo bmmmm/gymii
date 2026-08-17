@@ -39,15 +39,17 @@ export function renderSettings(root) {
           handy between sets, harder on the battery. Needs a browser that offers a
           screen wake lock.</p>
       </div>
-      <div class="field-block"><span>Dim the rest screen</span>
+      <div class="field-block"><span>While resting, darken the screen</span>
         <div class="chip-select" id="dim-chips">
-          ${[['off', 'Off'], ['10s', 'After 10 s'], ['now', 'Right away']]
+          ${[['off', 'Never'], ['10s', '10 s into the break'], ['now', 'Straight away']]
     .map(([v, label]) => `<button type="button" class="chip${s.timerDim === v ? ' sel' : ''}"
             data-dim="${v}">${label}</button>`).join('')}
         </div>
-        <p class="muted">The countdown stays readable and ticks brighter every second;
-          a touch brings it back to full, and the last seconds never dim. Also on the
-          timer itself, so you can tune it mid-break.</p>
+        <p class="muted">A rest screen at full brightness is a lamp in a dark gym. This
+          turns gymii's own pixels down while you wait — the screen stays on, and the
+          countdown stays readable: it ticks one beat brighter every second. A touch
+          brings it back to full, the last seconds are bright again, and the same
+          choice sits on the timer itself so you can change it mid-break.</p>
       </div>
       <div class="field-block"><span>Units</span>
         <div class="chip-select" id="unit-chips">

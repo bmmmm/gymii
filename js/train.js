@@ -1500,7 +1500,7 @@ function startRest(secs) {
   // the sound itself only plays when the countdown reaches zero.
   primeAudio();
 
-  const dimChips = (sel) => [['off', 'Off'], ['10s', '10 s'], ['now', 'Now']]
+  const dimChips = (sel) => [['off', 'Never'], ['10s', 'After 10 s'], ['now', 'Now']]
     .map(([v, label]) => `<button type="button" class="chip sm${v === sel ? ' sel' : ''}"
       data-dim="${v}">${label}</button>`).join('');
 
@@ -1515,7 +1515,7 @@ function startRest(secs) {
     </div>
     <div class="row"><button class="btn btn-primary" id="rest-skip">Skip</button></div>
     <div class="rest-opts" id="dim-opts">
-      <span class="muted">🌙 Dim</span>${dimChips(getSettings().timerDim)}
+      <span class="muted">🌙 Darken</span>${dimChips(getSettings().timerDim)}
     </div>`;
   document.body.appendChild(overlay);
 
@@ -1539,7 +1539,7 @@ function startRest(secs) {
     if (!chip) return;
     saveSettings({ ...getSettings(), timerDim: chip.dataset.dim });
     overlay.querySelector('#dim-opts').innerHTML =
-      `<span class="muted">🌙 Dim</span>${dimChips(chip.dataset.dim)}`;
+      `<span class="muted">🌙 Darken</span>${dimChips(chip.dataset.dim)}`;
     dimAt = Date.now() + dimDelaySeconds(chip.dataset.dim) * 1000;
   });
 
