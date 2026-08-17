@@ -54,13 +54,12 @@ edge.
   (GraphQL `issueTemplates` returns `[]` even for working YAML forms;
   the chooser is login-gated) — it needs real clicks, then close the
   test issue.
-- **Browser/device smoke of the 2026-08-17 sweep.** Locker collapse
-  (spacing + summary tap target — the CSS has not been seen rendered),
-  the Studio find-by-number pulse, and the timer sounds on a real
-  iPhone — including with the ring/silent switch ON: tones now play as
-  media (runtime-rendered WAV blobs through an audio element) precisely
-  so the switch does not mute them, like YouTube. Review-verified only;
-  the Settings chips make the check a four-tap job.
+- **Browser smoke of the 2026-08-17 sweep.** Locker collapse (spacing +
+  summary tap target — the CSS has not been seen rendered) and the
+  Studio find-by-number pulse. The timer sounds are DONE: verified on a
+  real iPhone 2026-08-17, audible with the ring/silent switch ON — the
+  media-element path (runtime-rendered WAV blobs) does what it was
+  built for.
 - **test/map.test.mjs split.** test/studio.test.mjs now covers both the
   renderer (map.js) and the editor; if the test layout should mirror the
   module split, its renderer/collision half moves out. Cosmetic — the
