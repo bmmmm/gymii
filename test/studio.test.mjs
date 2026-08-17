@@ -336,4 +336,26 @@ const second = after.machines[1];
 assert.ok(!overlapsSolid(after, second, second.x, second.y, second.w, second.h),
   'second machine does not overlap the first');
 
+// --- find-by-number: hit selects + highlights the map, miss reports without selecting ---
+root = studioWith([mk('m1', 1, 10, 10), mk('m2', 2, 20, 10)]);
+const findNum = root.querySelector('#find-num');
+const findErr = root.querySelector('#find-err');
+findNum.value = '2';
+root.querySelector('#find-go').listeners.click[0]();
+assert.ok(root.querySelector('#props').innerHTML.includes('value="2"'),
+  'find hit selects the machine — its props panel opens (number field shows 2)');
+assert.equal(findErr.textContent, '', 'hit clears any previous error message');
+assert.ok(root.floor.innerHTML.includes('class="machine locate" data-id="m2"'),
+  'find hit highlights the machine on the map');
+
+findNum.value = '99';
+root.querySelector('#find-go').listeners.click[0]();
+assert.equal(findErr.textContent, 'No machine #99', 'miss reports the missing number');
+assert.ok(root.querySelector('#props').innerHTML.includes('value="2"'),
+  'miss does not change the current selection');
+
+// next pointerdown on the svg clears the highlight so editing resumes undimmed
+fire(root.floor, 'pointerdown', { target: { closest: () => null } });
+assert.ok(!root.floor.innerHTML.includes('locate'), 'highlight clears on the next svg pointerdown');
+
 console.log('studio editor rendering + collision + drag integration: all assertions passed');

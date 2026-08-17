@@ -435,6 +435,7 @@ export function renderStudio(root) {
   let selectedId = null;
   let selectedVertex = null; // outline corner index, for deletion
   let drag = null; // { mode: 'move'|'resize'|'vertex', item?, index?, offX, offY, moved }
+  let findHighlightId = null; // "find a machine by number" pulse — cleared on the next svg pointerdown
 
   root.innerHTML = `
     <div class="spread studio-head">
@@ -453,6 +454,11 @@ export function renderStudio(root) {
       ${Object.entries(FIXTURES).map(([key, f]) =>
         `<button class="btn add-fixture" data-fixture="${key}">${f.icon} ${f.label}</button>`).join('')}
     </div>
+    <div class="row">
+      <input id="find-num" type="number" inputmode="numeric" min="1" placeholder="Machine #">
+      <button id="find-go" class="btn btn-inline">Find</button>
+    </div>
+    <p class="muted" id="find-err"></p>
     <div class="floor-wrap"><svg id="floor" class="floor" xmlns="http://www.w3.org/2000/svg"></svg></div>
     <div class="map-mode" id="map-mode">
       <button type="button" class="chip" data-mode="custom">Colors</button>
@@ -467,6 +473,7 @@ export function renderStudio(root) {
   const redraw = () => drawGym(svg, gym, {
     selectedId, editor: true, selectedVertex,
     usage: usageOn() ? usagePayload(usageByMachine()) : null,
+    highlightId: findHighlightId,
   });
   // Touch targets are sized from the SVG's on-screen width, so re-render
   // on resize/orientation change. Observing the element (not window)
@@ -538,6 +545,9 @@ export function renderStudio(root) {
   }
 
   svg.addEventListener('pointerdown', (e) => {
+    // any real editing gesture ends the "find #N" pulse so it doesn't
+    // linger dimming other machines while the user works
+    findHighlightId = null;
     // outline corner / midpoint handles sit on top of everything
     const handle = e.target.closest('[data-vertex], [data-mid]');
     if (handle) {
@@ -723,6 +733,25 @@ export function renderStudio(root) {
   root.querySelectorAll('.add-fixture').forEach((btn) => {
     btn.addEventListener('click', () => addItem('fixture', btn.dataset.fixture));
   });
+
+  // "find a machine by number" — mirrors the Train picker's number lookup
+  const findInput = root.querySelector('#find-num');
+  const findErr = root.querySelector('#find-err');
+  const findGo = () => {
+    const n = Math.round(parseFloat(findInput.value));
+    if (!n || n < 1) return;
+    const machine = findMachineByNum(gym, n);
+    if (!machine) {
+      findErr.textContent = `No machine #${n}`;
+      return;
+    }
+    findErr.textContent = '';
+    findHighlightId = machine.id;
+    select(machine.id);
+    redraw();
+  };
+  root.querySelector('#find-go').addEventListener('click', findGo);
+  findInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') findGo(); });
 
   async function openTemplateBrowser(panel) {
     panel.innerHTML = '<p class="muted">Loading library…</p>';
