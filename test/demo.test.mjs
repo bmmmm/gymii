@@ -1,7 +1,12 @@
 // Logic-level test for the demo data generator: deterministic output,
 // entry/set invariants, weekday plan states on any day of the week, unit
-// conversion, and the load-is-a-replace profile behavior.
-// Run with: node test/demo.test.mjs
+// conversion, template mirroring, and the load-is-a-replace profile
+// behavior. Run with: node test/demo.test.mjs
+
+// Pinned to a DST-observing zone: the hour-of-day assertions below can
+// only catch DAY_MS-style drift where transitions exist (CI runs UTC).
+process.env.TZ = 'Europe/Berlin';
+
 import { strict as assert } from 'node:assert';
 
 const mem = new Map();
@@ -85,6 +90,48 @@ workouts.forEach((w) => {
   if (!today) assert.ok(mins >= 45 && mins <= 75, `${w.id} lasts 45-75 min (${mins})`);
 });
 
+// --- machines #1-#11 and the zone shapes hand-copy the example template;
+// this diff is what keeps the copy honest when the template changes ---
+const { readFileSync } = await import('node:fs');
+const tpl = JSON.parse(readFileSync(
+  new URL('../templates/example-gym.json', import.meta.url), 'utf8')).gym;
+const base = ({ id, num, label, x, y, w, h, settingsFields, muscles }) =>
+  ({ id, num, label, x, y, w, h, settingsFields, muscles });
+tpl.machines.forEach((tm) => {
+  const dm = gym.machines.find((m) => m.id === tm.id);
+  assert.ok(dm, `demo gym carries template machine ${tm.id}`);
+  assert.deepEqual(base(dm), base(tm), `${tm.id} mirrors the template`);
+});
+assert.deepEqual(gym.shapes, tpl.shapes, 'zone shapes mirror the template');
+
+// --- a load around midnight still produces a valid "today" session ---
+for (const offset of [0, 10 * 60000]) {
+  const night = new Date('2026-08-12T00:00:00').getTime() + offset;
+  const b = demo.buildDemoData({ now: night, settings: KG });
+  b.workouts.forEach((w) => assert.ok(w.finishedAt > w.startedAt,
+    `${w.id} keeps a positive duration at midnight+${offset / 60000}min`));
+  const today = b.workouts.filter((w) =>
+    new Date(w.startedAt).toDateString() === new Date(night).toDateString());
+  assert.equal(today.length, 1, 'exactly one session lands on the load day');
+  assert.ok(today[0].finishedAt <= night + 60000,
+    'the today session never reaches further than a minute past now');
+  assert.equal(store.planDayState(
+    b.plans.find((p) => p.id === 'demo-plan-pull'), b.workouts, night).state,
+  'done', 'pull still reads done on a night load');
+}
+
+// --- sessions keep their local evening hour across a DST transition ---
+// Berlin leaves DST on 25 Oct 2026; eight weeks of history built in early
+// November reach back across it. Day arithmetic in fixed 86400000-ms
+// steps would put the pre-transition sessions an hour off (18:xx).
+const dstNow = new Date('2026-11-04T14:00:00').getTime(); // a Wednesday
+const dst = demo.buildDemoData({ now: dstNow, settings: KG });
+dst.workouts.forEach((w) => {
+  if (new Date(w.startedAt).toDateString() === new Date(dstNow).toDateString()) return;
+  assert.equal(new Date(w.startedAt).getHours(), 17,
+    `${w.id} starts in the usual 17h window across the DST change`);
+});
+
 // --- plan states must hold on every day of the week ---
 for (let d = 0; d < 7; d++) {
   const now = NOW + d * 86400000;
@@ -103,8 +150,8 @@ const lbs = demo.buildDemoData({ now: NOW, settings: { unit: 'lbs' } });
 const firstWeight = (data, id) => data.workouts
   .flatMap((w) => w.entries).find((e) => e.machineId === id).sets[0].weight;
 assert.equal(firstWeight(lbs, 'chest-press'),
-  Math.round(firstWeight({ workouts }, 'chest-press') * 2.2046226218 * 2) / 2,
-  'weights converted with setUnit rounding');
+  store.convertWeight(firstWeight({ workouts }, 'chest-press'), 'lbs'),
+  'weights converted through store.convertWeight — setUnit rounding by construction');
 const dist = (data) => data.workouts.flatMap((w) => w.entries)
   .filter((e) => e.cardio).map((e) => e.sets[0].distance);
 assert.ok(dist({ workouts }).every((v) => v >= 1000), 'kg build uses metres');
@@ -143,5 +190,30 @@ assert.equal(store.getWorkouts().length, r1.workouts, 'reload replaces, not appe
 store.setActiveProfile(realId);
 assert.equal(JSON.stringify([store.getGym(), store.getWorkouts()]), realJson,
   'real data byte-identical after the demo load');
+
+// identity is the demo FLAG, not the name: a real gym renamed to "Demo"
+// must never be adopted and overwritten by a reload
+store.renameProfile(realId, 'Demo');
+const r3 = demo.loadDemoData({ now: NOW, settings: KG });
+assert.equal(r3.profileId, r1.profileId, 'reload sticks to the flagged profile');
+store.setActiveProfile(realId);
+assert.equal(JSON.stringify([store.getGym(), store.getWorkouts()]), realJson,
+  'a real gym named Demo survives a reload untouched');
+store.renameProfile(realId, 'Real gym');
+
+// ...and the identity survives renaming the demo profile itself
+store.renameProfile(r1.profileId, 'Playground');
+const r4 = demo.loadDemoData({ now: NOW, settings: KG });
+assert.equal(r4.created, false, 'a renamed demo profile is still recognized');
+assert.equal(r4.profileId, r1.profileId);
+
+// the demo profile can ALWAYS be deleted — even as the last profile, where
+// Settings' removal promise would otherwise break — and the registry
+// self-heals into a fresh default afterwards
+store.setActiveProfile(realId);
+assert.equal(store.deleteProfile(realId), true);
+assert.equal(store.deleteProfile(r1.profileId), true, 'sole demo profile deletable');
+assert.equal(store.getProfiles().list.length, 1, 'fresh default after the demo left');
+assert.ok(!store.getProfiles().list[0].demo, 'the fresh default is a normal profile');
 
 console.log('demo.test.mjs: all assertions passed');

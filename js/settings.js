@@ -4,7 +4,7 @@ import {
   exportGymTemplate, exportBackup, importData, clearAll,
 } from './store.js';
 import { download, esc, twoTapConfirm } from './ui.js';
-import { loadDemoData, DEMO_PROFILE_NAME } from './demo.js';
+import { loadDemoData } from './demo.js';
 
 export function renderSettings(root) {
   const s = getSettings();
@@ -56,7 +56,7 @@ export function renderSettings(root) {
         <input id="profile-new-name" type="text" placeholder="New gym name">
         <button id="profile-add" class="btn btn-inline">Add gym</button>
       </div>
-      ${profiles.list.length > 1
+      ${profiles.list.length > 1 || activeProfile.demo
         ? '<button id="profile-delete" class="btn btn-danger">Delete this gym</button>' : ''}
       <p class="muted">Each gym has its own floor plan and workout history; units and timers are
         shared. A workout in progress waits in its gym until you switch back.</p>
@@ -73,7 +73,7 @@ export function renderSettings(root) {
 
     <section class="card">
       <h2>Test data</h2>
-      <button id="demo-load" class="btn">${profiles.list.some((p) => p.name === DEMO_PROFILE_NAME)
+      <button id="demo-load" class="btn">${profiles.list.some((p) => p.demo)
         ? 'Reload test data' : 'Load test data'}</button>
       <p id="demo-msg" class="muted" role="status"></p>
       <p class="muted">Fills a separate Demo gym with a floor plan, eight weeks of
@@ -169,7 +169,7 @@ export function renderSettings(root) {
   demoBtn.addEventListener('click', () => {
     // replacing an existing Demo gym discards its edits — guard that, but
     // not the harmless first load
-    const exists = getProfiles().list.some((p) => p.name === DEMO_PROFILE_NAME);
+    const exists = getProfiles().list.some((p) => p.demo);
     if (exists && !twoTapConfirm(demoBtn,
       'Tap again to replace the Demo gym', 'Reload test data')) return;
     const r = loadDemoData();

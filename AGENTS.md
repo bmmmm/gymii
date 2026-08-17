@@ -225,9 +225,15 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   show at once, relative to the injected `now`. Fully deterministic —
   fixed `demo-*` ids, seeded PRNG, no `uid()`/`Date.now()` inside
   `buildDemoData` — so a reload REPLACES the Demo profile instead of
-  duplicating it. Data is authored in kg/metres and converted in one pass
-  when the display unit is lbs (plan targets included). Generated sets
-  never carry `at` (they were not logged live).
+  duplicating it. The profile is found by its `demo` flag, NEVER by name
+  (names are user-editable — matching one would let a reload overwrite a
+  real gym called "Demo"), and stays deletable even as the last profile
+  (Settings promises removal; the registry self-heals). Data is authored
+  in kg/metres and converted in one pass through store's
+  `convertWeight`/`convertDistance` when the display unit is lbs (plan
+  targets included). Day maths goes through store's `startOfDay` +
+  `setDate()`, never fixed 86400000-ms steps (DST). Generated sets never
+  carry `at` (they were not logged live).
 - `js/ai.js` — copy prompt+data / paste-import. Deliberately NO AI API.
   Export set tuples gain a third element (seconds offset from the
   workout's startedAt) when the set has `at`; old sets stay 2-tuples.

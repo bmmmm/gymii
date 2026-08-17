@@ -9,16 +9,17 @@
 
 import {
   getSettings, getProfiles, createProfile, setActiveProfile, clearActive,
-  saveGym, saveWorkouts, savePlans,
+  saveGym, saveWorkouts, savePlans, startOfDay, convertWeight, convertDistance,
 } from './store.js';
 
 export const DEMO_PROFILE_NAME = 'Demo';
 
-const DAY_MS = 86400000;
-
-const startOfDay = (t) => {
-  const d = new Date(t);
-  d.setHours(0, 0, 0, 0);
+// Local midnight `daysBack` days ago, via setDate() — fixed 86400000-ms
+// multiples would shift every session on the far side of a DST transition
+// by an hour (store.js's planDueDay uses the same pattern).
+const dayStartBack = (now, daysBack) => {
+  const d = startOfDay(now);
+  d.setDate(d.getDate() - daysBack);
   return d.getTime();
 };
 
@@ -96,7 +97,9 @@ function buildGym() {
     machines: MACHINES.map(([id, num, label, x, y, w, h, settingsFields, muscles, extra]) => ({
       id, num, label, x, y, w, h,
       settingsFields: [...settingsFields], muscles: [...muscles], docUrl: '',
-      ...extra,
+      // cloned, not spread: `extra` may carry an array (exercises), and a
+      // shared reference would let one build's mutation leak into the next
+      ...structuredClone(extra),
     })),
   };
 }
@@ -217,14 +220,18 @@ function buildWorkouts(gym, rng, now) {
       if (back === 0 && day.key === 'push') continue;
       if (drops.has(`${back}-${day.key}`)) continue;
       const entries = day.build(gym, rng, weekIdx);
-      let startedAt = startOfDay(now) - (day.offset + back * 7) * DAY_MS
+      let startedAt = dayStartBack(now, day.offset + back * 7)
         + (17.5 * 3600 + Math.floor((rng() - 0.5) * 3600)) * 1000;
       let finishedAt = startedAt + (45 + Math.floor(rng() * 30)) * 60000;
       if (back === 0 && day.offset === 0) {
-        // today's session must fit between midnight and now, even when the
-        // demo is loaded just after midnight
-        startedAt = Math.max(startOfDay(now), now - 2 * 3600000);
-        finishedAt = Math.min(now, startedAt + 55 * 60000);
+        // today's session: ~55 min ending now, clamped into [midnight, now]
+        // so the pull plan reads 'done' even on a load just after midnight.
+        // finishedAt stays strictly after startedAt — in the first minute
+        // of a day that may poke up to a minute past `now`, the lesser evil
+        // against a zero-length workout
+        const midnight = startOfDay(now).getTime();
+        startedAt = Math.max(midnight, now - 55 * 60000);
+        finishedAt = Math.max(startedAt + 60000, Math.min(now, startedAt + 55 * 60000));
       }
       workouts.push({
         id: `demo-${day.key}-w${back}`,
@@ -247,7 +254,7 @@ function buildWorkouts(gym, rng, now) {
 // (due). createdAt predates the whole history or "missed" could not fire.
 function buildPlans(now) {
   const dow = new Date(now).getDay();
-  const createdAt = startOfDay(now) - WEEKS * 7 * DAY_MS;
+  const createdAt = dayStartBack(now, WEEKS * 7);
   const target = (sets, reps, weight) => ({ sets, reps, weight });
   return [
     {
@@ -283,18 +290,15 @@ function buildPlans(now) {
 }
 
 // Stored values are always in the display unit; the dataset is authored in
-// kg/metres and converted in one pass, rounding exactly like setUnit does.
+// kg/metres and converted in one pass through store.js's converters, so
+// the rounding is setUnit's by construction.
 function convertToLbs({ workouts, plans }) {
-  const roundW = (v) => Math.round(v * 2.2046226218 * 2) / 2;
-  const roundD = (v) => Math.round((v / 1609.344) * 100) / 100;
-  workouts.forEach((w) => w.entries.forEach((e) => e.sets.forEach((st) => {
-    if (st.weight != null) st.weight = roundW(st.weight);
-    if (st.distance != null) st.distance = roundD(st.distance);
-  })));
-  plans.forEach((p) => p.items.forEach((it) => {
-    if (it.target?.weight != null) it.target.weight = roundW(it.target.weight);
-    if (it.target?.distance != null) it.target.distance = roundD(it.target.distance);
-  }));
+  const convert = (o) => {
+    if (o.weight != null) o.weight = convertWeight(o.weight, 'lbs');
+    if (o.distance != null) o.distance = convertDistance(o.distance, 'lbs');
+  };
+  workouts.forEach((w) => w.entries.forEach((e) => e.sets.forEach(convert)));
+  plans.forEach((p) => p.items.forEach((it) => it.target && convert(it.target)));
 }
 
 // Pure apart from its argument defaults: same now/settings/seed, same output.
@@ -307,13 +311,16 @@ export function buildDemoData({ now = Date.now(), settings = getSettings(), seed
   return { gym, workouts, plans };
 }
 
-// Creates or refreshes the Demo profile and switches to it. Order matters:
-// the profile switch must land first so every write hits its scoped keys,
-// and a stale in-progress workout is cleared or it would hijack Train.
+// Creates or refreshes the Demo profile and switches to it. The profile is
+// identified by its `demo` flag, NEVER by name — names are user-editable,
+// and matching one would let a reload overwrite a real gym that happens to
+// be called "Demo". Order matters: the profile switch must land first so
+// every write hits its scoped keys, and a stale in-progress workout is
+// cleared or it would hijack Train.
 export function loadDemoData({ now = Date.now(), settings = getSettings(), seed } = {}) {
   const { gym, workouts, plans } = buildDemoData({ now, settings, seed });
-  const existing = getProfiles().list.find((p) => p.name === DEMO_PROFILE_NAME);
-  const profileId = existing ? existing.id : createProfile(DEMO_PROFILE_NAME);
+  const existing = getProfiles().list.find((p) => p.demo);
+  const profileId = existing ? existing.id : createProfile(DEMO_PROFILE_NAME, { demo: true });
   setActiveProfile(profileId);
   clearActive();
   saveGym(gym);

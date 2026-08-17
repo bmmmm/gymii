@@ -58,11 +58,13 @@ export function getProfiles() {
 }
 
 // Creates a profile and makes it active. It starts without a gym; Studio
-// auto-creates one on first visit.
-export function createProfile(name) {
+// auto-creates one on first visit. `extra` lets a caller stamp identity
+// onto the profile (demo.js marks its profile `demo: true` — names are
+// user-editable and must never be an identity).
+export function createProfile(name, extra = {}) {
   const profiles = ensureProfiles();
   const id = uid();
-  profiles.list.push({ id, name: String(name || '').trim() || 'New gym' });
+  profiles.list.push({ id, name: String(name || '').trim() || 'New gym', ...extra });
   profiles.activeId = id;
   write(KEYS.profiles, profiles);
   return id;
@@ -84,14 +86,23 @@ export function setActiveProfile(id) {
   write(KEYS.profiles, profiles);
 }
 
-// Refuses to delete the last remaining profile (returns false). Deleting
-// the active profile switches to the first remaining one.
+// Refuses to delete the last remaining profile (returns false) — except
+// the demo profile: Settings promises it can always be removed, so as the
+// sole survivor it takes the registry with it and the next access
+// self-heals into a fresh default (same recovery clearAll relies on).
+// Deleting the active profile switches to the first remaining one.
 export function deleteProfile(id) {
   const profiles = ensureProfiles();
-  if (profiles.list.length <= 1) return false;
+  const profile = profiles.list.find((p) => p.id === id);
+  if (!profile) return false;
+  if (profiles.list.length <= 1 && !profile.demo) return false;
   profiles.list = profiles.list.filter((p) => p.id !== id);
-  if (profiles.activeId === id) profiles.activeId = profiles.list[0].id;
-  write(KEYS.profiles, profiles);
+  if (!profiles.list.length) {
+    localStorage.removeItem(KEYS.profiles);
+  } else {
+    if (profiles.activeId === id) profiles.activeId = profiles.list[0].id;
+    write(KEYS.profiles, profiles);
+  }
   ['gym', 'workouts', 'active', 'plans'].forEach((part) => localStorage.removeItem(scopedKey(id, part)));
   return true;
 }
@@ -275,7 +286,10 @@ export function deletePlan(id) {
 // All of this is pure date maths over `now`, so it is testable without
 // waiting for a Tuesday.
 
-const startOfDay = (date) => {
+// Local midnight as a Date — THE day-boundary definition (demo.js imports
+// it too; day arithmetic goes through setDate(), never DAY_MS multiples,
+// which drift an hour across DST transitions).
+export const startOfDay = (date) => {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   return d;
@@ -435,24 +449,34 @@ export function getSettings() {
 // Distances pair with the weight unit: meters in metric, miles in imperial.
 export const distUnit = (settings) => (settings.unit === 'kg' ? 'm' : 'mi');
 
+const LB_PER_KG = 2.2046226218;
+const M_PER_MI = 1609.344;
+
+// THE unit conversion, rounding included: weights to the nearest 0.5 in
+// the target unit, distances to whole meters / hundredths of a mile.
+// Every converter (setUnit below, demo.js's authored-in-kg data) must go
+// through these or values drift between surfaces. `unit` is the TARGET
+// display unit; the value is assumed to be in the other one.
+export const convertWeight = (v, unit) =>
+  Math.round((unit === 'lbs' ? v * LB_PER_KG : v / LB_PER_KG) * 2) / 2;
+export const convertDistance = (v, unit) => (unit === 'lbs'
+  ? Math.round((v / M_PER_MI) * 100) / 100
+  : Math.round(v * M_PER_MI));
+
 // Stored weights and distances are always in the current display unit.
 // Switching units therefore converts every stored value — across ALL
-// profiles' histories and active workouts (unit is global, data is per
-// profile) — plus the shared weight step. Weights round to the nearest 0.5
-// in the target unit; distances to whole meters / hundredths of a mile.
-// Seconds are unit-less and untouched.
+// profiles' histories, active workouts and plan targets (unit is global,
+// data is per profile) — plus the shared weight step. Seconds are
+// unit-less and untouched.
 export function setUnit(unit) {
   const s = getSettings();
   if (unit === s.unit) return;
-  const wFactor = unit === 'lbs' ? 2.2046226218 : 1 / 2.2046226218;
-  const roundW = (v) => Math.round(v * wFactor * 2) / 2;
-  const roundD = unit === 'lbs'
-    ? (v) => Math.round((v / 1609.344) * 100) / 100
-    : (v) => Math.round(v * 1609.344);
-  const convertSets = (entries) => entries.forEach((e) => e.sets.forEach((st) => {
-    if (st.weight != null) st.weight = roundW(st.weight);
-    if (st.distance != null) st.distance = roundD(st.distance);
-  }));
+  // one field-walk for everything that stores {weight, distance}
+  const convert = (o) => {
+    if (o.weight != null) o.weight = convertWeight(o.weight, unit);
+    if (o.distance != null) o.distance = convertDistance(o.distance, unit);
+  };
+  const convertSets = (entries) => entries.forEach((e) => e.sets.forEach(convert));
 
   ensureProfiles().list.forEach((p) => {
     const workouts = read(scopedKey(p.id, 'workouts'), []);
@@ -469,15 +493,12 @@ export function setUnit(unit) {
     // would silently turn a 80 kg target into an 80 lbs one
     const plans = read(scopedKey(p.id, 'plans'), []);
     if (plans.length) {
-      plans.forEach((pl) => pl.items?.forEach((it) => {
-        if (it.target?.weight != null) it.target.weight = roundW(it.target.weight);
-        if (it.target?.distance != null) it.target.distance = roundD(it.target.distance);
-      }));
+      plans.forEach((pl) => pl.items?.forEach((it) => it.target && convert(it.target)));
       write(scopedKey(p.id, 'plans'), plans);
     }
   });
 
-  saveSettings({ ...s, unit, weightStep: Math.max(0.5, roundW(s.weightStep)) });
+  saveSettings({ ...s, unit, weightStep: Math.max(0.5, convertWeight(s.weightStep, unit)) });
 }
 
 // Sorted list of every muscle assigned across the gym's machines — feeds
@@ -580,17 +601,16 @@ const muscleIndex = (gym) => new Map((gym?.machines ?? []).map((m) => [m.id, m.m
 // A set on a two-muscle station counts fully for BOTH: this answers "how
 // many sets worked this muscle", not "what should this session be called"
 // — suggestWorkoutNames splits 1/n because naming is a vote, usage isn't.
-// → Map<muscle, {sets, workouts, lastAt}>
+// → Map<muscle, {sets, workouts}>
 export function usageByMuscle(workouts, gym) {
   const muscles = muscleIndex(gym);
   const usage = new Map();
   workouts.forEach((w) => {
     const seen = new Set(); // count each workout once per muscle
     w.entries.forEach((e) => muscles.get(e.machineId)?.forEach((mu) => {
-      const u = usage.get(mu) ?? { sets: 0, workouts: 0, lastAt: 0 };
+      const u = usage.get(mu) ?? { sets: 0, workouts: 0 };
       u.sets += e.sets.length;
       if (!seen.has(mu)) { u.workouts += 1; seen.add(mu); }
-      u.lastAt = Math.max(u.lastAt, w.startedAt);
       usage.set(mu, u);
     }));
   });
@@ -658,25 +678,23 @@ const UNIT_WEIGHT = /(\d+(?:[.,]\d+)?)\s*(kgs?|lbs?|pounds?)\b/i;
 const DURATION = /(\d+(?:[.,]\d+)?)\s*(h|hrs?|hours?|min(?:ute)?s?|sec(?:ond)?s?)\b/i;
 const DISTANCE = /(\d+(?:[.,]\d+)?)\s*(km|mi|miles?|m)\b/i;
 const MARKED_NUM = /^(?:(?:nr|no)\.?\s*)?(?:#\s*(\d{1,3})|(\d{1,3})\s*[.)])\s*/i;
-const LB_PER_KG = 2.2046226218;
 
 const num = (raw) => parseFloat(String(raw).replace(',', '.'));
 
 // Weights and distances are stored in the display unit, so a note written
-// in the other one converts on the way in (mirrors setUnit's rounding).
+// in the other one converts on the way in (convertWeight/convertDistance
+// carry the rounding, same as setUnit).
 function toDisplayWeight(value, unit, settings) {
   if (!unit) return value;
   const imperial = /^(lbs?|pounds?)$/i.test(unit);
   if (imperial === (settings.unit === 'lbs')) return value;
-  return Math.round((imperial ? value / LB_PER_KG : value * LB_PER_KG) * 2) / 2;
+  return convertWeight(value, settings.unit);
 }
 
 function toDisplayDistance(value, unit, settings) {
   const meters = /^km$/i.test(unit) ? value * 1000
-    : /^m$/i.test(unit) ? value : value * 1609.344;
-  return settings.unit === 'kg'
-    ? Math.round(meters)
-    : Math.round((meters / 1609.344) * 100) / 100;
+    : /^m$/i.test(unit) ? value : value * M_PER_MI;
+  return settings.unit === 'kg' ? Math.round(meters) : convertDistance(meters, 'lbs');
 }
 
 // Reads one line into a raw item ({ name, num?, target? }), or null when

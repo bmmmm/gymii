@@ -279,8 +279,8 @@ const mWorkouts = [
 const usage = store.usageByMuscle(mWorkouts, mGym);
 assert.equal(usage.get('Quads').sets, 3, 'both leg-press entries counted');
 assert.equal(usage.get('Glutes').sets, 3, 'second muscle gets the FULL count, not half');
-assert.deepEqual(usage.get('Quads'), { sets: 3, workouts: 2, lastAt: 3000 });
-assert.deepEqual(usage.get('Lats'), { sets: 1, workouts: 1, lastAt: 3000 });
+assert.deepEqual(usage.get('Quads'), { sets: 3, workouts: 2 });
+assert.deepEqual(usage.get('Lats'), { sets: 1, workouts: 1 });
 assert.ok(!usage.has(undefined) && usage.size === 3, 'untagged and deleted machines attribute nothing');
 assert.equal(store.usageByMuscle([], mGym).size, 0);
 assert.equal(store.usageByMuscle(mWorkouts, null).size, 0, 'no gym, no muscles');
