@@ -431,8 +431,24 @@ for (const [name, snd] of Object.entries(ui.TIMER_SOUNDS)) {
       `${name} notes are [offset, hz] pairs`);
   });
 }
-// no window/AudioContext in Node — both must stay silent no-ops, never throw
+// the WAV renderer is pure and testable headless: valid RIFF/WAVE header,
+// the exact length its notes demand, and actual signal in the data
+const wav = new DataView(ui.renderWav(ui.TIMER_SOUNDS.double.notes));
+const tag = (off) => String.fromCharCode(
+  wav.getUint8(off), wav.getUint8(off + 1), wav.getUint8(off + 2), wav.getUint8(off + 3));
+assert.equal(tag(0), 'RIFF');
+assert.equal(tag(8), 'WAVE');
+assert.equal(tag(36), 'data');
+const expectedSamples = Math.ceil((0.35 + 0.3) * 44100); // last note offset + note length
+assert.equal(wav.byteLength, 44 + expectedSamples * 2, 'wav sized to the notes');
+assert.equal(wav.getUint32(40, true), expectedSamples * 2, 'data chunk length matches');
+let nonzero = false;
+for (let i = 0; i < 2000 && !nonzero; i++) nonzero = wav.getInt16(44 + i * 2, true) !== 0;
+assert.ok(nonzero, 'the wav actually carries signal');
+
+// no Audio element in Node — playback must stay a silent no-op, never throw
 ui.playTimerSound('double');
 ui.playTimerSound('no-such-sound');
+ui.primeAudio('double');
 
 console.log('store roundtrip: all assertions passed');

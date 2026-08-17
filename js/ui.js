@@ -129,30 +129,15 @@ export const setStr = (st, settings, bodyweight = false) => (st.distance != null
     : `${st.weight}×${st.reps}`);
 
 // --- rest-timer sound ---
-
-// One AudioContext for the whole session, never closed.
-let audioCtx = null;
-
-// Hands back the shared context, creating it on first call and nudging it
-// out of `suspended`. Must be called from inside a user gesture: iOS/Safari
-// only lets a context start (or resume) while a gesture is being handled,
-// so a context first built when the timer fires — ~90s after the tap that
-// logged the set — stays suspended and the rest is silent. train.js primes
-// it in the log-set click; the Settings preview chips are gestures anyway.
-export function primeAudio() {
-  try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return null;
-    if (!audioCtx) audioCtx = new Ctx();
-    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-    return audioCtx;
-  } catch {
-    return null; // audio is best-effort
-  }
-}
+// Played through ONE shared HTMLAudioElement, deliberately NOT WebAudio:
+// iOS mutes WebAudio with the ring/silent switch, but treats media-element
+// playback like music (YouTube keeps playing on silent). The tones are
+// rendered into tiny WAV blobs at runtime, so no audio assets ship.
+let soundEl = null;
+const wavUrls = new Map(); // sound name -> blob URL, rendered once
 
 // Selectable timer sounds: label + sine notes as [start offset s, Hz].
-// Every note shares one envelope (see playTimerSound), so a sound is pure
+// Every note shares one envelope (see renderWav), so a sound is pure
 // data — a new entry here shows up in Settings by itself.
 export const TIMER_SOUNDS = {
   double: { label: 'Double', notes: [[0, 880], [0.35, 880]] },
@@ -161,29 +146,77 @@ export const TIMER_SOUNDS = {
   low: { label: 'Low', notes: [[0, 440], [0.35, 440]] },
 };
 
-// Plays a TIMER_SOUNDS entry. Unknown names fall back to `double`, so a
-// stale settings value can never mute the timer.
-export function playTimerSound(name) {
-  const ctx = primeAudio();
-  if (!ctx) return;
+// Renders notes into 16-bit mono PCM WAV bytes (44.1 kHz), with the same
+// envelope the old WebAudio path shaped live: 20 ms attack to 0.35,
+// exponential decay to ~0.001 at 250 ms, note over at 300 ms. Exported
+// for the logic tests (audible output is device-only territory).
+export function renderWav(notes) {
+  const rate = 44100;
+  const noteSecs = 0.3;
+  const len = Math.ceil((Math.max(...notes.map(([at]) => at)) + noteSecs) * rate);
+  const samples = new Float32Array(len);
+  notes.forEach(([at, freq]) => {
+    const start = Math.round(at * rate);
+    for (let i = 0; i < noteSecs * rate && start + i < len; i++) {
+      const t = i / rate;
+      const amp = t < 0.02 ? 0.35 * (t / 0.02) : 0.35 * Math.exp(-25.5 * (t - 0.02));
+      samples[start + i] += amp * Math.sin(2 * Math.PI * freq * t);
+    }
+  });
+  const buf = new ArrayBuffer(44 + len * 2);
+  const v = new DataView(buf);
+  const ascii = (off, str) => [...str].forEach((c, i) => v.setUint8(off + i, c.charCodeAt(0)));
+  ascii(0, 'RIFF'); v.setUint32(4, 36 + len * 2, true); ascii(8, 'WAVE');
+  ascii(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  ascii(36, 'data'); v.setUint32(40, len * 2, true);
+  samples.forEach((s, i) => v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, s)) * 0x7fff, true));
+  return buf;
+}
+
+// Blob URL per sound, rendered on first use. Unknown names fall back to
+// `double`, so a stale settings value can never mute the timer.
+const soundUrl = (name) => {
+  const key = TIMER_SOUNDS[name] ? name : 'double';
+  if (!wavUrls.has(key)) {
+    wavUrls.set(key, URL.createObjectURL(
+      new Blob([renderWav(TIMER_SOUNDS[key].notes)], { type: 'audio/wav' })));
+  }
+  return wavUrls.get(key);
+};
+
+// Must be called from inside a user gesture: iOS only lets a media element
+// START in one, but an element that has once played in a gesture may be
+// replayed programmatically later — startRest() primes here in the log-set
+// click so the timer can fire ~90s after the tap. The immediate pause keeps
+// the prime inaudible (the attack's first samples are silent anyway).
+export function primeAudio(name = 'double') {
   try {
-    (TIMER_SOUNDS[name] ?? TIMER_SOUNDS.double).notes.forEach(([at, freq]) => {
-      const t = ctx.currentTime + at;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.001, t);
-      gain.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(t);
-      osc.stop(t + 0.3);
-    });
-    // the context is never closed: the next play reuses it, and a fresh
-    // one could not be started outside a gesture anyway
+    if (!soundEl) soundEl = new Audio();
+    soundEl.src = soundUrl(name);
+    soundEl.play().then(() => {
+      soundEl.pause();
+      soundEl.currentTime = 0;
+    }).catch(() => {});
+    return soundEl;
   } catch {
-    // audio is best-effort; some browsers block it before user interaction
+    return null; // audio is best-effort
+  }
+}
+
+// Plays a TIMER_SOUNDS entry through the shared element. In a gesture
+// (Settings preview chips) this works unprimed; the timer path relies on
+// primeAudio having blessed the element inside the log-set tap.
+export function playTimerSound(name) {
+  try {
+    if (!soundEl) soundEl = new Audio();
+    const url = soundUrl(name);
+    if (soundEl.src !== url) soundEl.src = url;
+    soundEl.currentTime = 0;
+    soundEl.play().catch(() => {});
+  } catch {
+    // audio is best-effort; browsers may block it before any interaction
   }
 }
 

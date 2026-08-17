@@ -1394,12 +1394,13 @@ function finish(root, active) {
 }
 
 // --- rest timer ---
-// The audio machinery (shared context, TIMER_SOUNDS, playTimerSound) lives
-// in ui.js — Settings previews the same sounds with the same code.
+// The audio machinery (shared media element, TIMER_SOUNDS, playTimerSound)
+// lives in ui.js — Settings previews the same sounds with the same code.
 
 function startRest(secs) {
   if (!secs) return; // 0 = rest timer off
-  primeAudio(); // prime while the tap that logged the set is still the gesture
+  // prime while the tap that logged the set is still the gesture
+  primeAudio(getSettings().timerSound);
 
   const overlay = document.createElement('div');
   overlay.className = 'overlay';

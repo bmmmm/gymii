@@ -56,9 +56,11 @@ edge.
   test issue.
 - **Browser/device smoke of the 2026-08-17 sweep.** Locker collapse
   (spacing + summary tap target — the CSS has not been seen rendered),
-  the Studio find-by-number pulse, and the rest beep on a real iPhone
-  (the AudioContext fix is review-verified only; Node/automation cannot
-  prove audible output).
+  the Studio find-by-number pulse, and the timer sounds on a real
+  iPhone — including with the ring/silent switch ON: tones now play as
+  media (runtime-rendered WAV blobs through an audio element) precisely
+  so the switch does not mute them, like YouTube. Review-verified only;
+  the Settings chips make the check a four-tap job.
 - **test/map.test.mjs split.** test/studio.test.mjs now covers both the
   renderer (map.js) and the editor; if the test layout should mirror the
   module split, its renderer/collision half moves out. Cosmetic — the
