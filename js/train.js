@@ -6,7 +6,9 @@ import {
 } from './store.js';
 import { drawGym, usagePayload, findMachineByNum } from './studio.js';
 import { renderPlanBuilder, DAY_LABELS } from './plan.js';
-import { esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural } from './ui.js';
+import {
+  esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural, machineChain,
+} from './ui.js';
 
 // Active workout shape:
 //   { v: 2, id, startedAt, plan: [{machineId, exercise|null, target?}…],
@@ -153,9 +155,6 @@ export function startWorkoutFrom(source, firstMachineId = null) {
     entries: [],
   });
 }
-
-const machineChain = (workout) =>
-  [...new Set(workout.entries.map((e) => `#${e.num}`))].join(' → ');
 
 const weekdayName = (date) => date.toLocaleDateString('en-GB', { weekday: 'long' });
 

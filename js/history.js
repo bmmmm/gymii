@@ -3,7 +3,10 @@ import {
   updateWorkout, distUnit, workoutFromText, suggestWorkoutNames, recentWorkoutNames,
   gymMuscles, usageByMuscle, workoutsWithMuscle,
 } from './store.js';
-import { esc, fmtDate, fmtTime, workoutTotals, setStr, twoTapConfirm, plural } from './ui.js';
+import {
+  esc, fmtDate, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
+  dateValue, timeValue, machineChain,
+} from './ui.js';
 import { lineChart } from './chart.js';
 import { startWorkoutFrom } from './train.js';
 
@@ -456,7 +459,7 @@ const entryTitle = (e) => `#${e.num} ${esc(e.label)}${e.exercise ? ` · ${esc(e.
 
 function workoutHtml(w, s) {
   const sets = setCount(w);
-  const chain = w.entries.map((e) => `#${e.num}`).join(' → ');
+  const chain = machineChain(w);
   return `<details class="workout">
     <summary>
       <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>
@@ -525,18 +528,6 @@ function wirePastLog(root, s) {
     }
   });
 }
-
-// Local-time values for the date/time inputs — toISOString would shift a
-// late-evening workout onto the previous day for anyone west of UTC.
-const pad2 = (n) => String(n).padStart(2, '0');
-const dateValue = (ts) => {
-  const d = new Date(ts);
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-};
-const timeValue = (ts) => {
-  const d = new Date(ts);
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-};
 
 function editWorkoutHtml(w, s, gym) {
   const sets = setCount(w);

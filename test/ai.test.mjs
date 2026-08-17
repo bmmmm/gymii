@@ -53,6 +53,20 @@ assert.ok(!('createdAt' in p) && !('machineId' in p.items[0]),
 store.savePlans([]);
 assert.ok(!('plans' in JSON.parse(buildAiExport())),
   'no plans, no plans key — empty users pay no tokens');
+
+// --- workout dates export in LOCAL time, not UTC (a 00:30 session must
+// not roll onto the previous day for anyone east of UTC) ---
+
+const lateNightTs = new Date(2030, 0, 15, 0, 30).getTime();
+const lnd = new Date(lateNightTs);
+const expectedLocalDate = `${lnd.getFullYear()}-${String(lnd.getMonth() + 1).padStart(2, '0')}-${String(lnd.getDate()).padStart(2, '0')}`;
+store.saveWorkouts([{ id: 'w1', startedAt: lateNightTs, entries: [] }]);
+const exportedWorkouts = JSON.parse(buildAiExport()).workouts;
+assert.equal(exportedWorkouts.length, 1);
+assert.equal(exportedWorkouts[0].date, expectedLocalDate,
+  'export date is the local calendar day, not the UTC-shifted one');
+store.saveWorkouts([]);
+
 store.savePlans([{
   id: 'p1', name: 'Push day', createdAt: 123, days: [1, 4],
   items: [{ machineId: 'm1', exercise: null, target: { sets: 3, reps: 10, weight: 50 } }],

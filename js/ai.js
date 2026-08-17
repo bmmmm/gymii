@@ -7,7 +7,7 @@ import {
   getActive, getPlans, planFromImport, savePlan,
 } from './store.js';
 import { openPlanBuilder } from './train.js';
-import { twoTapConfirm, plural } from './ui.js';
+import { twoTapConfirm, plural, dateValue } from './ui.js';
 
 const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; an "exercise" field names one movement at a multi-exercise station like a free-weight area; a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis).
 
@@ -186,7 +186,7 @@ export function buildAiExport() {
       })),
     } : {}),
     workouts: getWorkouts().map((w) => ({
-      date: new Date(w.startedAt).toISOString().slice(0, 10),
+      date: dateValue(w.startedAt),
       entries: w.entries.map((e) => ({
         machine: e.label,
         num: e.num,
