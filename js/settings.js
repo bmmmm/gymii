@@ -98,8 +98,9 @@ export function renderSettings(root) {
   });
 
   root.querySelector('#weight-step').addEventListener('change', (e) => {
-    // 0.5 min matches the stepper's data-min and setUnit's clamp
-    const v = Math.max(0.5, parseFloat(e.target.value) || 2.5);
+    // 0.5 min matches the stepper's data-min and setUnit's clamp; the ||
+    // catches NaN AND a typed 0, so both land on the minimum, not the default
+    const v = Math.max(0.5, parseFloat(e.target.value) || 0.5);
     e.target.value = v;
     saveSettings({ ...getSettings(), weightStep: v });
   });
