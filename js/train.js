@@ -48,6 +48,12 @@ export function goToHub() { screen = 'hub'; }
 export function goToStart() { screen = 'start'; }
 export function goToPlans() { screen = 'plans'; }
 
+// Locker number noted on the start screen, before any workout exists —
+// consumed by the next startWorkoutFrom, whichever way the session then
+// starts (machine pick, plan button, repeat, quick start), so the number
+// lives on the workout itself from its first second.
+let pendingLocker = '';
+
 // One plan item per (machine, exercise) pair of a past workout, deduped —
 // the seed for "turn this routine into a plan". Targets are NOT set here;
 // the builder seeds them from the machine's own history, which is exactly
@@ -196,11 +202,14 @@ export function startWorkoutFrom(source, firstMachineId = null) {
     // the plan this came from, so a slot bound on the floor can be
     // written back into it (asked once, not once per session)
     ...(source?.planId ? { planId: source.planId } : {}),
+    // a locker noted on the start screen moves onto the workout
+    ...(pendingLocker ? { locker: pendingLocker } : {}),
     plan,
     currentMachineId: firstMachineId ?? plan[0]?.machineId ?? null,
     currentExercise: firstMachineId ? null : plan[0]?.exercise ?? null,
     entries: [],
   });
+  pendingLocker = '';
 }
 
 const weekdayName = (date) => date.toLocaleDateString('en-GB', { weekday: 'long' });
@@ -469,6 +478,10 @@ function renderStart(root, gym, message) {
     <button type="button" id="back-hub" class="back-row">‹ Train</button>
     <h1>Train</h1>
     ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
+    <div class="row locker-ask">
+      <input id="locker-num" type="text" inputmode="numeric" placeholder="🔒 Locker #"
+        value="${esc(pendingLocker)}">
+    </div>
     ${gym?.machines.length ? `
     <section class="card">
       <h2>Start at a machine</h2>
@@ -525,6 +538,11 @@ function renderStart(root, gym, message) {
   root.querySelector('#back-hub').addEventListener('click', () => {
     screen = 'hub';
     renderTrain(root);
+  });
+
+  // noted before the workout exists — startWorkoutFrom carries it over
+  root.querySelector('#locker-num').addEventListener('change', (e) => {
+    pendingLocker = e.target.value.trim();
   });
 
   root.querySelector('#plan-primary')?.addEventListener('click', () => startPlanWorkout(root, primaryPlan));

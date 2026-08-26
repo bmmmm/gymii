@@ -162,18 +162,23 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   plans one slot per (machine, exercise) pair so "Next:" walks every
   exercise of a multi-exercise station; overview hub, per-machine
   `restSeconds`, locker number, two-tap finish guard. The locker is asked
-  where the session actually starts: the log screen shows a one-line
-  `.locker-ask` row (input + Skip) until the first set of the SESSION is
-  logged, the number is noted, or Skip sets `active.lockerDismissed`
+  where the session actually starts: the start screen offers it up front
+  (module state `pendingLocker`, no workout exists yet — the next
+  `startWorkoutFrom` moves it onto the workout and clears it, whichever
+  way the session then starts), and the log screen shows the same
+  one-line `.locker-ask` row (input + Skip) until the first set of the
+  SESSION is logged, the number is noted, or Skip sets
+  `active.lockerDismissed`
   (transient — `finishWorkout`'s allow-list never copies it out). The
   overview's locker card leads under the same condition; afterwards both
   collapse to a `details.locker` row at the bottom of the overview
   (directly above Finish, next to the `details.name-edit` row that
   replaced the old leading Name card — naming is optional bookkeeping, so
   it reads as "✏️ name" and expands to the same input + chips) — exactly
-  one `#locker-num` input exists in whichever of the three states
-  renders, the log-screen 🔒 header badge is unaffected. Both "no set
-  yet" checks share `workoutSetCount()`. Quick start
+  one `#locker-num` input exists in whichever of the four states renders
+  (start-screen note, log-screen ask, overview card, collapsed row), the
+  log-screen 🔒 header badge is unaffected. Both "no set yet" checks
+  share `workoutSetCount()`. Quick start
   (`#qs-label`/`#qs-start`) is wired once
   via `wireQuickStart()` — onboarding and the no-machines start screen
   share it, incl. the logged-sets backstop. The rest beep plays through ONE

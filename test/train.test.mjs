@@ -647,6 +647,22 @@ assert.ok(root.innerHTML.includes('Start at a machine'), 'the hero opens the sta
 assert.ok(root.innerHTML.includes('id="back-hub"'), 'which carries the back row');
 root.querySelector('#back-hub').listeners.click();
 assert.ok(root.innerHTML.includes('class="tile hero"'), 'the back row lands on the hub');
+
+// --- start-screen locker: noted before the workout exists, lives on it after ---
+goToStart();
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('id="locker-num"') && root.innerHTML.includes('🔒 Locker #'),
+  'the start screen offers the locker option with its symbol');
+root.querySelector('#locker-num').listeners.change({ target: { value: ' 42 ' } });
+root.querySelector('#qs-label').value = 'Seated row';
+root.querySelector('#qs-start').listeners.click();
+assert.equal(store.getActive().locker, '42',
+  'starting carries the noted locker onto the workout');
+startWorkoutFrom({ entries: [] });
+assert.strictEqual(store.getActive().locker, undefined,
+  'one start consumes the note — it never leaks into the next workout');
+store.clearActive();
 store.saveWorkouts([]);
 store.savePlans([]);
 
