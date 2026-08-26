@@ -203,7 +203,7 @@ globalThis.DOMPoint = class {
   matrixTransform(m) { return { x: m.a * this.x + m.e, y: m.d * this.y + m.f }; }
 };
 
-const { renderStudio } = await import(new URL('../js/studio.js', import.meta.url).href);
+const { renderStudio, focusMachine } = await import(new URL('../js/studio.js', import.meta.url).href);
 const S = SVG_PX / (60 + 2 * PAD); // screen px per unit, editor viewBox
 
 // Permissive element stub: every selector resolves, every listener is
@@ -357,5 +357,32 @@ assert.ok(root.querySelector('#props').innerHTML.includes('value="2"'),
 // next pointerdown on the svg clears the highlight so editing resumes undimmed
 fire(root.floor, 'pointerdown', { target: { closest: () => null } });
 assert.ok(!root.floor.innerHTML.includes('locate'), 'highlight clears on the next svg pointerdown');
+
+// --- focusMachine: Train hands a machine off, Studio preselects + highlights it ---
+focusMachine('m2');
+root = studioWith([mk('m1', 1, 10, 10), mk('m2', 2, 20, 10)]);
+assert.ok(root.querySelector('#props').innerHTML.includes('value="2"'),
+  'focusMachine preselects the handed-off machine — its props panel opens (number field shows 2)');
+assert.ok(root.floor.innerHTML.includes('class="machine locate" data-id="m2"'),
+  'focusMachine highlights the machine on the map, reusing the find-by-number pulse');
+
+// --- focusMachine: a stale id (machine deleted since the handoff) is dropped, not crashed on ---
+focusMachine('does-not-exist');
+root = studioWith([mk('m1', 1, 10, 10)]);
+assert.ok(!root.floor.innerHTML.includes('locate'), 'unknown focusMachine id leaves nothing highlighted');
+assert.ok(!root.querySelector('#props').innerHTML.includes('value="2"'),
+  'unknown focusMachine id leaves the default (gym) props panel open');
+
+// --- back-to-workout link: only offered while a workout is actually running ---
+store.clearActive();
+root = studioWith([mk('m1', 1, 10, 10)]);
+assert.ok(!root.innerHTML.includes('Back to your workout'),
+  'no active workout: header has no back-to-workout link');
+
+store.saveActive({ id: 'w1', startedAt: Date.now(), entries: [] });
+root = studioWith([mk('m1', 1, 10, 10)]);
+assert.ok(root.innerHTML.includes('href="#train"') && root.innerHTML.includes('Back to your workout'),
+  'active workout: header offers a one-tap link back to Train');
+store.clearActive();
 
 console.log('studio editor rendering + collision + drag integration: all assertions passed');

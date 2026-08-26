@@ -400,18 +400,17 @@ assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'cardio', kgS, { distance: 
 assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'bodyweight', kgS, { sets: 3, reps: 12, weight: 5 }),
   { reps: 12, weight: 5 }, 'a: a bodyweight target prefills reps + added weight');
 
-// (b) without a target: same set number last time, then the set just done,
-// then the static default
+// (b) without a target: the set just done this session, else set 1 of the
+// previous session, then the static default
 assert.deepEqual(nextSetDefaults({ sets: [] }, prev, 'strength', kgS),
   { reps: 12, weight: 40 }, 'b: set 1 comes from set 1 of the previous session');
 assert.deepEqual(nextSetDefaults({ sets: [{ reps: 10, weight: 42.5 }] }, prev, 'strength', kgS),
-  { reps: 10, weight: 45 }, 'b: same set number beats the set just logged');
+  { reps: 10, weight: 42.5 }, 'b: the set just logged beats the same set number from history');
 assert.deepEqual(nextSetDefaults({ sets: prev.sets.slice() }, prev, 'strength', kgS),
-  { reps: 8, weight: 50 }, 'b: past the previous session\'s set count the set just done wins');
-// the chain's fourth step ("the previous session's LAST set") is shadowed by
-// construction — i is entry.sets.length, so an empty entry always asks for
-// last.sets[0], and a non-empty one is served by the step above. Both
-// outcomes are pinned above; there is no input that reaches it.
+  { reps: 8, weight: 50 }, 'b: the set just done keeps winning past history\'s set count');
+// history only ever seeds the opener — a non-empty entry never reads `last`,
+// so the previous session's later sets are unreachable by construction; both
+// sides of that line are pinned above.
 assert.deepEqual(nextSetDefaults({ sets: [] }, { sets: [] }, 'strength', kgS),
   { reps: 10, weight: 20 }, 'b: a set-less previous entry falls through to the static default');
 assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'strength', kgS), { reps: 10, weight: 20 },

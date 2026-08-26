@@ -1,6 +1,6 @@
 import {
   getGym, saveGym, newGym, uid, importData, defaultOutline, exportGymTemplate,
-  getSettings, saveSettings, usageByMachine,
+  getSettings, saveSettings, usageByMachine, getActive,
   MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS,
 } from './store.js';
 import { esc, download, twoTapConfirm, keepInView } from './ui.js';
@@ -10,6 +10,15 @@ import {
 } from './map.js';
 
 // --- editor view ---
+
+// Lets Train hand a machine over for the Studio to preselect before
+// switching the hash to #studio (module state survives; the app never
+// reloads between tabs).
+let pendingFocus = null;
+
+export function focusMachine(id) {
+  pendingFocus = id;
+}
 
 export function renderStudio(root) {
   let gym = getGym();
@@ -30,6 +39,7 @@ export function renderStudio(root) {
         <button id="redo" class="btn btn-inline" aria-label="Redo" disabled>↪</button>
       </div>
     </div>
+    ${getActive() ? '<p class="muted"><a href="#train">← Back to your workout</a></p>' : ''}
     <div class="toolbar">
       <button id="add-room" class="btn">+ Zone</button>
       <button id="add-wall" class="btn">+ Wall</button>
@@ -750,6 +760,17 @@ export function renderStudio(root) {
       select(null);
       redraw();
     });
+  }
+
+  // Train may have handed a machine over via focusMachine() before switching
+  // tabs — preselect it here and reuse the find-by-number pulse to point it
+  // out, then clear the handoff so it doesn't stick on the next render.
+  if (pendingFocus) {
+    if (findItem(gym, pendingFocus)) {
+      selectedId = pendingFocus;
+      findHighlightId = pendingFocus;
+    }
+    pendingFocus = null;
   }
 
   redraw();

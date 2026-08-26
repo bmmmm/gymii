@@ -377,14 +377,15 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 
 .plan-row.unbound .plan-status { color: var(--accent); }
 
-/* what today is about — one stated line above the start button */
+/* what today is about — one quiet line above the plan buttons; the plan's
+   name stays semantic emphasis but no longer shouts (machine-first screen) */
 .day-status {
   margin: 0 0 12px;
   font-size: 15px;
   color: var(--muted);
 }
 
-.day-status strong { color: var(--text); }
+.day-status strong { color: inherit; font-weight: 600; }
 .day-status.done { color: var(--accent); }
 .day-status.done strong { color: var(--accent); }
 .day-status.missed strong { color: var(--text); }
@@ -580,10 +581,11 @@ svg .machine.locate .machine-box { animation: locate-pulse 1.1s ease-in-out infi
   50% { stroke-width: 1; stroke-opacity: 0.35; }
 }
 
-/* Collapsed locker row on the workout overview: once sets are logged the
-   locker is a detail, so it reads as one quiet line above Finish — same
-   markerless summary as History's workout rows. */
-details.locker {
+/* Collapsed locker and name rows on the workout overview: bookkeeping is a
+   detail, so each reads as one quiet line above Finish — same markerless
+   summary as History's workout rows. */
+details.locker,
+details.name-edit {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -591,9 +593,16 @@ details.locker {
   margin-bottom: 14px;
 }
 
-details.locker summary { list-style: none; cursor: pointer; padding: 10px 0; color: var(--muted); }
-details.locker summary::-webkit-details-marker { display: none; }
-details.locker .row { margin-bottom: 12px; }
+details.locker summary,
+details.name-edit summary { list-style: none; cursor: pointer; padding: 10px 0; color: var(--muted); }
+details.locker summary::-webkit-details-marker,
+details.name-edit summary::-webkit-details-marker { display: none; }
+details.locker .row,
+details.name-edit .row { margin-bottom: 12px; }
+
+/* One-line locker ask on the first machine's log screen */
+.locker-ask { margin: 12px 0; }
+.locker-ask .btn-inline { flex: 0 0 auto; }
 
 /* --- history --- */
 

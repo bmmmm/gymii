@@ -6,6 +6,7 @@ import {
 } from './store.js';
 import { drawGym, usagePayload, findMachineByNum } from './map.js';
 import { renderPlanBuilder, DAY_LABELS } from './plan.js';
+import { focusMachine } from './studio.js';
 import {
   esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural, machineChain,
   primeAudio, playTimerSound, keepInView,
@@ -287,11 +288,33 @@ function renderStart(root, gym, message) {
   const repeatIsPrimaryPlan = !!(primaryPlan?.name && last?.name === primaryPlan.name);
   const primaryDone = primaryPlan ? planLastDone(primaryPlan) : null;
 
+  // Machine-first: the screen leads with the picker — a session starts at
+  // the machine in front of you. Today's plan and the repeat follow below as
+  // the calmer options, not the headline.
   root.innerHTML = `
     <h1>Train</h1>
     ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
+    ${gym?.machines.length ? `
+    <section class="card">
+      <h2>Start at a machine</h2>
+      <div id="picker"></div>
+      <p class="muted">This starts your workout — finish it any time from the
+        workout overview.</p>
+    </section>`
+    // no machines yet (a plan-first start): the way in is naming the one
+    // in front of you, exactly as on the first-run screen
+    : `
+    <section class="card">
+      <h2>Start at a machine</h2>
+      <p class="muted">Your gym has no machines yet — name the one in front of
+        you and gymii adds it.</p>
+      <div class="row">
+        <input id="qs-label" type="text" placeholder="e.g. Chest press">
+        <button id="qs-start" class="btn btn-inline">Start</button>
+      </div>
+    </section>`}
     ${status ? statusLine(status) : ''}
-    ${primaryPlan ? `<button id="plan-primary" class="btn btn-primary btn-big">▶ Start
+    ${primaryPlan ? `<button id="plan-primary" class="btn">▶ Start
       ${primaryPlan.name ? esc(primaryPlan.name) : 'your plan'}
       <span class="sub">${[
     isToday(primaryPlan) ? 'today' : '',
@@ -301,7 +324,7 @@ function renderStart(root, gym, message) {
     primaryDone
       ? `last: ${new Date(primaryDone.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : '',
   ].filter(Boolean).join(' · ')}</span></button>` : ''}
-    ${last && !repeatIsPrimaryPlan ? `<button id="repeat" class="btn ${primaryPlan ? '' : 'btn-primary '}btn-big">Repeat last workout
+    ${last && !repeatIsPrimaryPlan ? `<button id="repeat" class="btn">Repeat last workout
       <span class="sub">${new Date(last.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
       · ${last.name ? `${esc(last.name)} · ` : ''}${machineChain(last)}</span></button>` : ''}
     <section class="card">
@@ -350,26 +373,7 @@ function renderStart(root, gym, message) {
       </div>
       <p class="muted">These come from what you've logged. Tap one to make it a
         real plan — targets, a name, weekdays.</p>
-    </section>` : ''}
-    ${gym?.machines.length ? `
-    <section class="card">
-      <h2>Start at a machine</h2>
-      <div id="picker"></div>
-      <p class="muted">Opening a machine starts your workout — finish it any time
-        from the workout overview.</p>
-    </section>`
-    // no machines yet (a plan-first start): the way in is naming the one
-    // in front of you, exactly as on the first-run screen
-    : `
-    <section class="card">
-      <h2>Start at a machine</h2>
-      <p class="muted">Your gym has no machines yet — name the one in front of
-        you and gymii adds it.</p>
-      <div class="row">
-        <input id="qs-label" type="text" placeholder="e.g. Chest press">
-        <button id="qs-start" class="btn btn-inline">Start</button>
-      </div>
-    </section>`}`;
+    </section>` : ''}`;
 
   const startPlan = (plan) => {
     startWorkoutFrom({
@@ -443,7 +447,7 @@ function renderStart(root, gym, message) {
     machinePicker(root.querySelector('#picker'), gym, (machineId) => {
       startWorkoutFrom(null, machineId);
       renderTrain(root);
-    });
+    }, { actionLabel: 'Start training' });
   } else {
     wireQuickStart(root);
   }
@@ -524,16 +528,19 @@ function renderOnboarding(root, message) {
 }
 
 // Number input, muscle filter and a tappable mini-map; calls
-// onPick(machineId). The map is collapsed by default (settings.pickerMap)
-// — number and muscle are the picker's primary inputs, the map is the
-// on-demand answer to "where?", not the main navigation surface.
-function machinePicker(container, gym, onPick) {
+// onPick(machineId). The action button says what a pick actually does here —
+// "Start training" on the start screen, "Add" mid-workout — because the same
+// picker starts a whole session in one place and only appends in the other.
+// The map is collapsed by default (settings.pickerMap) — number and muscle
+// are the picker's primary inputs, the map is the on-demand answer to
+// "where?", not the main navigation surface.
+function machinePicker(container, gym, onPick, { actionLabel = 'Open' } = {}) {
   const allMuscles = gymMuscles(gym);
 
   container.innerHTML = `
     <div class="row">
       <input class="pick-num" type="number" inputmode="numeric" min="1" placeholder="Machine #">
-      <button class="btn btn-inline pick-go">Open</button>
+      <button class="btn btn-inline pick-go">${esc(actionLabel)}</button>
     </div>
     ${allMuscles.length ? `
     <select class="pick-muscle" aria-label="Filter by muscle">
@@ -593,7 +600,7 @@ function machinePicker(container, gym, onPick) {
       // create-on-miss: standing at a real machine whose number gymii
       // doesn't know yet, one tap adds it — rename/arrange later in Studio
       err.innerHTML = `No machine #${num} yet — <button type="button"
-        class="btn btn-inline pick-create">Create #${num} &amp; open</button>`;
+        class="btn btn-inline pick-create">Create #${num} &amp; ${esc(actionLabel.toLowerCase())}</button>`;
       err.querySelector('.pick-create').addEventListener('click', () => {
         const created = addMachine(gym, num, `Machine ${num}`);
         saveGym(gym);
@@ -703,9 +710,13 @@ function targetTally(active) {
   };
 }
 
+// Sets logged anywhere this session — the "has the workout actually begun?"
+// signal that both locker asks (overview card, log-screen row) key on.
+const workoutSetCount = (active) => active.entries.reduce((n, e) => n + e.sets.length, 0);
+
 function renderOverview(root, gym, active) {
   const s = getSettings();
-  const sets = active.entries.reduce((n, e) => n + e.sets.length, 0);
+  const sets = workoutSetCount(active);
   const mins = Math.max(1, Math.round((Date.now() - active.startedAt) / 60000));
 
   // Muscle coverage today: muscles of every machine with ≥1 set this
@@ -718,22 +729,24 @@ function renderOverview(root, gym, active) {
     .flatMap((e) => gym.machines.find((m) => m.id === e.machineId)?.muscles ?? []));
 
   // Name suggestions: what was actually trained (one id per logged set,
-  // so the dominant region wins) plus the names already in use. Offered
-  // here rather than at Finish — this is the screen you pass through on
-  // the way out, so naming costs a tap, not a step.
+  // so the dominant region wins) plus the names already in use. Offered as
+  // a compact edit row above Finish rather than a leading card — naming is
+  // optional bookkeeping, and this is the screen you pass through on the
+  // way out, so it costs a tap, not a step.
   const nameChips = nameChipsFor(
     active.entries.flatMap((e) => e.sets.map(() => e.machineId)), gym);
 
   // The locker number is a start-of-session errand: you note it once, on
-  // the way in. Once the first set is logged the screen belongs to the next
-  // machine and the next reps, so the card collapses into one row above
-  // Finish — still reachable (and the input identical), just no longer in
-  // the way of the thing being done.
+  // the way in — usually on the first machine's log screen, which asks the
+  // same question. Once the first set is logged (or the ask was skipped
+  // there) the screen belongs to the next machine and the next reps, so the
+  // card collapses into one row above Finish — still reachable (and the
+  // input identical), just no longer in the way of the thing being done.
   const lockerInput = `<div class="row">
         <input id="locker-num" type="text" inputmode="numeric" placeholder="Locker #"
           value="${esc(active.locker ?? '')}">
       </div>`;
-  const lockerLeads = !sets;
+  const lockerLeads = !sets && !active.lockerDismissed;
 
   const rows = active.plan.map((slot, i) => {
     const machine = gym.machines.find((m) => m.id === slot.machineId);
@@ -771,20 +784,6 @@ function renderOverview(root, gym, active) {
     const tally = targetTally(active);
     return tally.total ? ` · ${tally.hit}/${tally.total} target sets` : '';
   })()}</p>
-    <section class="card">
-      <h2>Name</h2>
-      <div class="row">
-        <input id="workout-name" type="text" placeholder="e.g. Push day"
-          value="${esc(active.name ?? '')}">
-      </div>
-      ${nameChips.length ? `
-      <div class="chip-select" id="name-chips">
-        ${nameChips.map((n) => `<button type="button" class="chip${active.name === n ? ' sel' : ''}"
-          data-name="${esc(n)}">${esc(n)}</button>`).join('')}
-      </div>` : ''}
-      <p class="muted">A named workout gets its own start row, so two routines
-        on the same machines stay apart — and it stays findable in History.</p>
-    </section>
     ${lockerLeads ? `
     <section class="card">
       <h2>Locker</h2>
@@ -808,6 +807,20 @@ function renderOverview(root, gym, active) {
       <h2>Add machine</h2>
       <div id="picker"></div>
     </section>
+    <details class="name-edit">
+      <summary>✏️ ${active.name ? esc(active.name) : 'Name this workout'}</summary>
+      <div class="row">
+        <input id="workout-name" type="text" placeholder="e.g. Push day"
+          value="${esc(active.name ?? '')}">
+      </div>
+      ${nameChips.length ? `
+      <div class="chip-select" id="name-chips">
+        ${nameChips.map((n) => `<button type="button" class="chip${active.name === n ? ' sel' : ''}"
+          data-name="${esc(n)}">${esc(n)}</button>`).join('')}
+      </div>` : ''}
+      <p class="muted">A named workout gets its own start row, so two routines
+        on the same machines stay apart — and it stays findable in History.</p>
+    </details>
     ${lockerLeads ? '' : `
     <details class="locker">
       <summary>🔒 ${active.locker ? esc(active.locker) : 'Locker'}</summary>
@@ -861,7 +874,7 @@ function renderOverview(root, gym, active) {
     active.currentExercise = null;
     saveActive(active);
     renderTrain(root);
-  });
+  }, { actionLabel: 'Add' });
 
   root.querySelector('#muscle-coverage')?.addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
@@ -1162,6 +1175,11 @@ function renderLog(root, gym, active, reveal = null) {
     machineId, ...v, m: gym.machines.find((mm) => mm.id === machineId),
   })).filter((c) => c.m).sort((a, b) => b.at - a.at).slice(0, 2);
 
+  // Locker ask: a machine-first session never sees the overview before the
+  // first set, so the one start-of-session errand is asked here — a single
+  // row, gone once a set is logged or it's skipped, never nagging after.
+  const lockerAsk = !active.locker && !active.lockerDismissed && !workoutSetCount(active);
+
   root.innerHTML = `
     <div class="machine-head">
       <span class="machine-badge">${machine.num}</span>
@@ -1179,9 +1197,17 @@ function renderLog(root, gym, active, reveal = null) {
         ${machine.docUrl ? `<a class="doc-link" href="${esc(machine.docUrl)}"
           target="_blank" rel="noopener">Machine docs ↗</a>` : ''}
       </div>
+      <button type="button" id="edit-machine" class="locate-btn"
+        aria-label="Edit this machine">✏️</button>
       <button type="button" id="locate-current" class="locate-btn"
         aria-label="Show this machine on the map">📍</button>
     </div>
+
+    ${lockerAsk ? `
+    <div class="row locker-ask">
+      <input id="locker-num" type="text" inputmode="numeric" placeholder="🔒 Locker #">
+      <button type="button" id="locker-skip" class="btn btn-inline">Skip</button>
+    </div>` : ''}
 
     ${exercises.length ? `
     <section class="card">
@@ -1346,6 +1372,23 @@ function renderLog(root, gym, active, reveal = null) {
   root.querySelector('#locate-next')?.addEventListener('click',
     () => showMapOverlay(gym, nextMachine));
 
+  // hands the machine to the Studio's editor — the full one, not a copy
+  root.querySelector('#edit-machine').addEventListener('click', () => {
+    focusMachine(machine.id);
+    location.hash = '#studio';
+  });
+
+  root.querySelector('#locker-num')?.addEventListener('change', (e) => {
+    active.locker = e.target.value.trim();
+    saveActive(active);
+    renderLog(root, gym, active); // collapse the row right away — noted, done
+  });
+  root.querySelector('#locker-skip')?.addEventListener('click', () => {
+    active.lockerDismissed = true;
+    saveActive(active);
+    renderLog(root, gym, active);
+  });
+
   // same move as a Next tap, just to the nearby station instead
   root.querySelector('#nearby-machine')?.addEventListener('click', () => {
     active.currentMachineId = nearby.slot.machineId;
@@ -1377,13 +1420,13 @@ function renderLog(root, gym, active, reveal = null) {
   if (reveal) keepInView(root, reveal);
 }
 
-// Default for the next set: same set number last time, then the set just
-// done this session, then the last set of the previous session. `last` and
-// `target` must already be type-matched to the entry (caller gates on the
-// flags). A plan target is the goal for THIS session: it beats history as
-// the first-set prefill, but never what was actually just lifted — after a
-// deviation (50 instead of the planned 55) the prefill follows the real
-// working weight.
+// Default for the next set: the set just done this session, else the first
+// set of the previous session. Once a set is logged, this session is the
+// truth — history seeds only the opener. `last` and `target` must already
+// be type-matched to the entry (caller gates on the flags). A plan target
+// is the goal for THIS session: it beats history as the first-set prefill,
+// but never what was actually just lifted — after a deviation (50 instead
+// of the planned 55) the prefill follows the real working weight.
 // Exported for the logic tests (same reason as nearbyAlternative): the
 // precedence matrix is pure logic and pinning it through the stub DOM would
 // only test the renderer.
@@ -1394,10 +1437,8 @@ export function nextSetDefaults(entry, last, type, s, target = null) {
       ? { distance: target.distance, seconds: target.seconds }
       : { reps: target.reps, weight: target.weight };
   }
-  const i = entry.sets.length;
-  if (last?.sets?.[i]) return last.sets[i];
   if (entry.sets.length) return entry.sets[entry.sets.length - 1];
-  if (last?.sets?.length) return last.sets[last.sets.length - 1];
+  if (last?.sets?.length) return last.sets[0];
   if (type === 'cardio') return { distance: s.unit === 'kg' ? 1000 : 0.5, seconds: 600 };
   if (type === 'bodyweight') return { reps: 10, weight: 0 };
   return { reps: 10, weight: 20 };

@@ -26,7 +26,7 @@ even a cookie banner.
   `Treadmill 20min`) and gymii reads it — no gym needed yet. At the machine
   it asks once which one this is, creates it under that name, and remembers.
   Edit as a list of steppers or as plain text, whichever is faster. Then just
-  tick it off: today's plan is the big start button, every set is one tap
+  tick it off: today's plan is one tap on the start screen, every set is one tap
   ("✓ Log set 2/3 — 50 kg × 10"), and the workout keeps pulling you back to
   unfinished targets. Your LLM can draft one too; paste it in for review.
 - 📅 **Weekdays, without the nagging** — tag a plan with the days you train

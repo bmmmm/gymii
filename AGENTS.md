@@ -136,24 +136,41 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   (`overlapsSolid`/`fits`/`freeSpot`), `snapDoorToWall`, `FIXTURES`,
   `WALL_SNAPPED`, `ITEM_COLORS`. Its only import is `esc` from ui.js —
   keep it free of store/studio imports so the cycle cannot reappear.
+  train.js additionally imports ONE thing straight from studio.js — the
+  `focusMachine` edit handoff — which is fine exactly as long as
+  studio.js never imports from train.js/plan.js (the direction the map
+  split exists to prevent).
 - `js/studio.js` — floor-plan editor (renderer imported from map.js).
   Polygon outline with vertex/midpoint editing; wall-snapped fixtures
   (entrance/door/window) glue to the nearest wall segment with rotation +
   flips. Find-by-number row above the map: a hit selects the machine
   (props open) and pulses it via `highlightId`; the next pointerdown on
-  the map clears the pulse. Undo/redo = snapshot history via the local
-  `save()` wrapper — every mutation must go through `save()`, never
-  `saveGym()` directly.
+  the map clears the pulse. `focusMachine(id)` is the in-memory handoff
+  for the log screen's ✏️ button (same pattern as train's
+  `openPlanBuilder`): the next `renderStudio()` consumes it — selects the
+  machine and pulses it via the same find mechanism, silently dropping a
+  stale id. While a workout is active the header shows a "← Back to your
+  workout" link, whichever way the Studio was reached. Undo/redo =
+  snapshot history via the local `save()` wrapper — every mutation must
+  go through `save()`, never `saveGym()` directly.
 - `js/train.js` — guided workout: `active.plan` is a list of slots
   `{machineId, exercise|null, target?}` (null = whole station) — a repeat
   plans one slot per (machine, exercise) pair so "Next:" walks every
   exercise of a multi-exercise station; overview hub, per-machine
-  `restSeconds`, locker number, two-tap finish guard. The locker card
-  leads only while NO set is logged yet; afterwards it collapses to a
-  `details.locker` row at the bottom of the overview (directly above
-  Finish) so the focus stays on the next machine — exactly one
-  `#locker-num` input exists in either state, the log-screen 🔒 header
-  badge is unaffected. Quick start (`#qs-label`/`#qs-start`) is wired once
+  `restSeconds`, locker number, two-tap finish guard. The locker is asked
+  where the session actually starts: the log screen shows a one-line
+  `.locker-ask` row (input + Skip) until the first set of the SESSION is
+  logged, the number is noted, or Skip sets `active.lockerDismissed`
+  (transient — `finishWorkout`'s allow-list never copies it out). The
+  overview's locker card leads under the same condition; afterwards both
+  collapse to a `details.locker` row at the bottom of the overview
+  (directly above Finish, next to the `details.name-edit` row that
+  replaced the old leading Name card — naming is optional bookkeeping, so
+  it reads as "✏️ name" and expands to the same input + chips) — exactly
+  one `#locker-num` input exists in whichever of the three states
+  renders, the log-screen 🔒 header badge is unaffected. Both "no set
+  yet" checks share `workoutSetCount()`. Quick start
+  (`#qs-label`/`#qs-start`) is wired once
   via `wireQuickStart()` — onboarding and the no-machines start screen
   share it, incl. the logged-sets backstop. The rest beep plays through ONE
   shared HTMLAudioElement (ui.js), deliberately NOT WebAudio: iOS mutes
@@ -171,7 +188,9 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   preview each sound on tap (the tap is the gesture).
   `nextSetDefaults` is exported for the logic tests (same precedent as
   `nearbyAlternative`); its behavior contract is pinned by the
-  "prefill matrix" block in test/train.test.mjs. Quick-switch chips on
+  "prefill matrix" block in test/train.test.mjs: once a set is logged
+  this session its last set is the prefill — history (or a plan target)
+  only seeds the first set. Quick-switch chips on
   the log screen jump to the two most recently trained OTHER stations (by
   newest set `at`). Slots started from a stored plan carry its target:
   the log header shows it, the first-set prefill uses it (real logged sets
@@ -181,15 +200,21 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   ("✓ Log set 2/3 — 50 kg × 10", steppers update it live), and once a
   slot's target is met the Next button takes over as the primary action
   (log button demoted). `targetTally()` reports plan-wide progress on the
-  overview line and in the finish message. The start screen opens with ONE
-  stated sentence about today (`statusLine()` over `todayStatus()`): what
-  is on, what was missed (with an inline "Skip this week"), that today's
-  plan is already done, or that it is a rest day and when the next one
-  lands. Saying "nothing today" is a feature, not an empty slot. It is
-  plan-first: the weekday status picks the primary plan (due, else
-  missed) and a DONE plan deliberately hands the big button back rather
-  than pushing the same session twice; with no weekdays anywhere the old
-  fallback applies (most recently done plan).
+  overview line and in the finish message. The start screen is
+  machine-first: the "Start at a machine" picker card leads — its action
+  button says "Start training", because outside a session a pick starts
+  one; the same `machinePicker` renders "Add" on the overview via its
+  `actionLabel` option, where a pick only appends to the running session.
+  Below the picker comes ONE stated sentence about today (`statusLine()`
+  over `todayStatus()`): what is on, what was missed (with an inline
+  "Skip this week"), that today's plan is already done, or that it is a
+  rest day and when the next one lands. Saying "nothing today" is a
+  feature, not an empty slot. The weekday status picks the primary plan
+  (due, else missed) and a DONE plan deliberately hands its start button
+  back rather than pushing the same session twice; with no weekdays
+  anywhere the old fallback applies (most recently done plan). Both plan
+  buttons are plain `.btn` — deliberately demoted: still one tap, no
+  longer the headline.
   "Repeat last workout" moves below it and drops entirely
   when the last workout came from that plan. Stored plans list above
   history-derived routines. EVERY row is tappable (`.row-open` + chevron —
@@ -219,6 +244,10 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   map draws lazily on first expand). 📍 buttons on the log screen
   (machine head + next-row) open `showMapOverlay()` — a fullscreen
   read-only map, target machine pulsing, others dimmed, any tap closes.
+  The machine head's ✏️ button hands the machine to the Studio's full
+  editor (`focusMachine` + `#studio`) — machines stay editable
+  mid-workout, no Settings detour, and the Studio's back link returns to
+  the running session.
   `nearbyAlternative()` renders a "Busy? #N … is nearby" button under the
   next-row: the physically closest OTHER open station (machine centers,
   current + plan-next excluded) as the busy-machine escape hatch —
