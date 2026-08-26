@@ -11,7 +11,9 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
 - Logic tests: `for f in test/*.test.mjs; do node "$f"; done` — CI runs the
   glob, so a new `test/<module>.test.mjs` is picked up without a workflow
   edit. `store` (localStorage stub, store roundtrips, outline migration,
-  template validation, locker carry-over), `train` (guided-plan
+  template validation, locker carry-over, sync groundwork: stamps,
+  tombstones, v1/v2 backup compat), `merge` (the pure sync merge matrix —
+  union by id, LWW, tombstones), `train` (guided-plan
   construction, hub/start/plans navigation), `plan` (stored plans, the note parser/serialiser, AI
   import, binding, targets), `history` (name filter, muscle card + filter,
   full editor, back-logging), `studio` (editor rendering, collision),
@@ -59,6 +61,24 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   optional `machine.exercises: [string]` (deleted when emptied) splits a
   station into per-exercise entries — `lastEntryFor(machineId, exercise)`.
   Other lazy migrations live in `getGym()` (outline, meta).
+  SYNC GROUNDWORK (docs/sync-protocol.md is the contract; js/merge.js the
+  pure merge layer): every interactive write stamps `updatedAt`
+  (`savePlan`, `updateWorkout`, `finishWorkout`, `workoutFromText`,
+  `saveSettings`, `createProfile`/`renameProfile`); absence means epoch 0
+  and is MEANINGFUL (legacy loses any merge), so there is deliberately no
+  heal-on-read for it. Deletes leave tombstones — sidecar
+  `gymii.<pid>.tombstones` (`{v, workouts, plans, machines, shapes}` via
+  `get/saveTombstones`) and `profiles.deleted` — never in-object flags, so
+  read functions keep their contracts. `saveGym()` is diff-aware (stamps
+  changed machines/shapes, tombstones vanished ids, one structural stamp
+  for name/grid/meta/outline — studio's mutate-then-save needs no change);
+  bulk restore goes through `restoreGym()` verbatim (imports, future sync
+  apply — re-diffing would forge stamps). `uid()` is crypto-random, 16
+  chars; legacy 8-char ids stay valid, and ids deliberately carry no
+  device marker (they travel into AI exports). Backups are `v: 2`
+  (tombstones included, deletes stay dead across restore); v1 files import
+  unchanged. The future sync key (`gymii.<pid>.synckey`) must NEVER enter
+  a backup.
   `suggestWorkoutNames(machineIds, gym)` proposes names from what was
   trained (each machine contributes ONE unit split across its muscles, so
   a three-muscle station can't outvote two others; a Push/Pull/Leg split

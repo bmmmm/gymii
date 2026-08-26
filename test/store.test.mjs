@@ -474,4 +474,75 @@ ui.playTimerSound('double');
 ui.playTimerSound('no-such-sound');
 ui.primeAudio('double');
 
+// --- sync groundwork: stamps, tombstones, and the v2 backup roundtrip ---
+store.clearAll();
+store.saveWorkouts([
+  { id: 'ws1', startedAt: 1, entries: [{ machineId: 'm1', num: 1, label: 'A', settings: {}, sets: [{ reps: 10, weight: 40 }] }] },
+  { id: 'ws2', startedAt: 2, entries: [{ machineId: 'm1', num: 1, label: 'A', settings: {}, sets: [{ reps: 8, weight: 45 }] }] },
+]);
+store.deleteWorkout('ws1');
+assert.equal(store.getWorkouts().length, 1, 'delete removes the workout');
+assert.equal(store.getTombstones().workouts[0]?.id, 'ws1', 'and leaves a tombstone');
+store.deleteWorkout('nope');
+assert.equal(store.getTombstones().workouts.length, 1, 'an unknown id leaves no tombstone');
+
+const edited = store.updateWorkout({
+  id: 'ws2',
+  entries: [{ machineId: 'm1', num: 1, label: 'A', settings: {}, sets: [{ reps: 9, weight: 50 }] }],
+});
+assert.ok(edited.updatedAt > 0, 'an inline edit stamps updatedAt');
+store.updateWorkout({ id: 'ws2', entries: [{ machineId: 'm1', num: 1, label: 'A', settings: {}, sets: [] }] });
+assert.equal(store.getTombstones().workouts.some((t) => t.id === 'ws2'), true,
+  'editing away the last set tombstones like a delete');
+
+store.savePlan({ id: 'ps1', name: 'Push', items: [] });
+assert.ok(store.getPlans()[0].updatedAt > 0, 'savePlan stamps updatedAt');
+assert.ok(store.getPlans()[0].createdAt > 0, 'and createdAt on first save');
+store.deletePlan('ps1');
+assert.equal(store.getTombstones().plans[0]?.id, 'ps1', 'deletePlan tombstones');
+
+// saveGym diffs: a vanished machine tombstones, an unchanged one keeps its stamp
+const g2 = store.newGym('Diff gym');
+g2.machines.push({ id: 'gm1', num: 1, label: 'Press', x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles: [] });
+g2.machines.push({ id: 'gm2', num: 2, label: 'Row', x: 6, y: 0, w: 4, h: 3, settingsFields: [], muscles: [] });
+store.saveGym(g2);
+const firstStamp = store.getGym().machines.find((m) => m.id === 'gm1').updatedAt;
+assert.ok(firstStamp > 0, 'a new machine gets stamped');
+const g3 = store.getGym();
+g3.machines = g3.machines.filter((m) => m.id !== 'gm2');
+store.saveGym(g3);
+assert.equal(store.getTombstones().machines[0]?.id, 'gm2', 'a vanished machine tombstones');
+assert.equal(store.getGym().machines.find((m) => m.id === 'gm1').updatedAt, firstStamp,
+  'an untouched machine keeps its stamp');
+
+// v2 export -> clear -> import: the delete stays dead, tombstones travel
+const backup2 = store.exportBackup();
+assert.equal(backup2.v, 2, 'backups are v2 now');
+store.clearAll();
+store.importData(JSON.parse(JSON.stringify(backup2)));
+assert.equal(store.getWorkouts().some((w2) => w2.id === 'ws1'), false,
+  'a deleted workout does not come back from its own backup');
+assert.equal(store.getTombstones().workouts.some((t) => t.id === 'ws1'), true,
+  'its tombstone rode along');
+assert.equal(store.getTombstones().machines[0]?.id, 'gm2', 'machine tombstones too');
+
+// a v1 backup (no tombstones, no stamps) still imports cleanly
+store.clearAll();
+const v1 = {
+  app: 'gymii', kind: 'backup', v: 1,
+  gym: store.newGym('Old gym'),
+  workouts: [{ id: 'wOld', startedAt: 5, entries: [{ machineId: 'x', num: 1, label: 'O', settings: {}, sets: [{ reps: 1, weight: 1 }] }] }],
+  plans: [], settings: { v: 1, unit: 'kg' },
+};
+assert.equal(store.importData(JSON.parse(JSON.stringify(v1))), 'backup', 'v1 backups still import');
+assert.equal(store.getWorkouts().length, 1);
+assert.deepEqual(store.getTombstones().workouts, [], 'a v1 file simply carries no tombstones');
+
+// ids: crypto-random, 16 chars, and unique across a burst
+const ids = new Set(Array.from({ length: 1000 }, () => store.uid()));
+assert.equal(ids.size, 1000, 'uid burst has no collisions');
+assert.ok([...ids].every((id) => /^[0-9a-z]{16}$/.test(id)), 'uids are 16 base-36 chars');
+
+store.clearAll();
+
 console.log('store roundtrip: all assertions passed');

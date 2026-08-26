@@ -23,7 +23,15 @@ function write(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-export const uid = () => Math.random().toString(36).slice(2, 10);
+// 16 chars of crypto-quality randomness (~82 bits) — enough that two
+// devices minting ids offline can never realistically collide. Legacy
+// 8-char Math.random() ids stay valid forever: every consumer compares
+// ids opaquely. Deliberately NO device prefix — ids travel into AI
+// exports and community template PRs, where a stable per-device marker
+// would be a quiet fingerprint. (The slight modulo bias is irrelevant
+// at id scales.)
+export const uid = () => Array.from(
+  crypto.getRandomValues(new Uint8Array(16)), (b) => (b % 36).toString(36)).join('');
 
 // --- gym profiles ---
 // gymii.profiles = { v:1, list:[{id,name}], activeId }. Created lazily; a
@@ -64,7 +72,9 @@ export function getProfiles() {
 export function createProfile(name, extra = {}) {
   const profiles = ensureProfiles();
   const id = uid();
-  profiles.list.push({ id, name: String(name || '').trim() || 'New gym', ...extra });
+  profiles.list.push({
+    id, name: String(name || '').trim() || 'New gym', updatedAt: Date.now(), ...extra,
+  });
   profiles.activeId = id;
   write(KEYS.profiles, profiles);
   return id;
@@ -76,6 +86,7 @@ export function renameProfile(id, name) {
   const trimmed = String(name || '').trim();
   if (!p || !trimmed) return;
   p.name = trimmed;
+  p.updatedAt = Date.now();
   write(KEYS.profiles, profiles);
 }
 
@@ -97,14 +108,46 @@ export function deleteProfile(id) {
   if (!profile) return false;
   if (profiles.list.length <= 1 && !profile.demo) return false;
   profiles.list = profiles.list.filter((p) => p.id !== id);
+  // registry-level tombstone: a profile deleted here must not come back
+  // from another device's copy (its scoped keys are dropped wholesale, so
+  // no finer-grained tombstones are needed inside a dead profile)
+  profiles.deleted = [
+    ...(profiles.deleted ?? []).filter((t) => t.id !== id), { id, at: Date.now() }];
   if (!profiles.list.length) {
+    // demo-only survivor takes the registry (and its tombstones) with it —
+    // the next access self-heals into a fresh default, same as clearAll
     localStorage.removeItem(KEYS.profiles);
   } else {
     if (profiles.activeId === id) profiles.activeId = profiles.list[0].id;
     write(KEYS.profiles, profiles);
   }
-  ['gym', 'workouts', 'active', 'plans'].forEach((part) => localStorage.removeItem(scopedKey(id, part)));
+  ['gym', 'workouts', 'active', 'plans', 'tombstones']
+    .forEach((part) => localStorage.removeItem(scopedKey(id, part)));
   return true;
+}
+
+// --- tombstones (sync groundwork) ---
+// A delete must leave a trace or a future merge with another device would
+// resurrect the record from the other side's copy. Sidecar lists — never
+// in-object flags — so every existing read function keeps its contract
+// (getWorkouts/getPlans never return dead items). Pruning is a transport
+// concern (TTL), not handled here.
+
+const emptyTombstones = () => ({ v: 1, workouts: [], plans: [], machines: [], shapes: [] });
+
+export function getTombstones() {
+  return { ...emptyTombstones(), ...read(scopedKey(activeProfileId(), 'tombstones'), {}) };
+}
+
+export function saveTombstones(tombstones) {
+  write(scopedKey(activeProfileId(), 'tombstones'),
+    { ...emptyTombstones(), ...tombstones });
+}
+
+function addTombstone(kind, id, at = Date.now()) {
+  const t = getTombstones();
+  t[kind] = [...t[kind].filter((x) => x.id !== id), { id, at }];
+  saveTombstones(t);
 }
 
 // Canonical pick lists — selectable chips beat free text (fewer typos).
@@ -141,7 +184,46 @@ export function getGym() {
   return gym;
 }
 
+// Interactive save — the single choke point every editing surface (studio,
+// train's quick start, create-on-miss, plan binding) already flows through.
+// Diffs against the previously stored gym: a changed or new machine/shape
+// gets `updatedAt` stamped, a vanished id gets a tombstone, and the
+// structural rest (name/grid/meta/outline) carries one gym-level stamp.
+// Bulk restore (imports, sync apply) must NOT re-diff or re-stamp — the
+// incoming state owns its stamps — and uses restoreGym below instead; the
+// same interactive/bulk split saveWorkouts and savePlans get for free.
 export function saveGym(gym) {
+  const key = scopedKey(activeProfileId(), 'gym');
+  const prev = read(key, null);
+  const now = Date.now();
+  const gone = [];
+  ['machines', 'shapes'].forEach((coll) => {
+    const before = new Map((prev?.[coll] ?? []).map((i) => [i.id, i]));
+    (gym[coll] ?? []).forEach((item) => {
+      const was = before.get(item.id);
+      before.delete(item.id);
+      if (!was || JSON.stringify(was) !== JSON.stringify(item)) item.updatedAt = now;
+      else if (was.updatedAt != null) item.updatedAt = was.updatedAt;
+    });
+    before.forEach((_, id) => gone.push({ coll, id }));
+  });
+  const structural = ['name', 'grid', 'meta', 'outline'];
+  if (!prev || structural.some((f) => JSON.stringify(prev[f]) !== JSON.stringify(gym[f]))) {
+    gym.updatedAt = now;
+  } else if (prev.updatedAt != null) {
+    gym.updatedAt = prev.updatedAt;
+  }
+  write(key, gym);
+  if (gone.length) {
+    const t = getTombstones();
+    gone.forEach(({ coll, id }) => {
+      t[coll] = [...t[coll].filter((x) => x.id !== id), { id, at: now }];
+    });
+    saveTombstones(t);
+  }
+}
+
+export function restoreGym(gym) {
   write(scopedKey(activeProfileId(), 'gym'), gym);
 }
 
@@ -215,7 +297,10 @@ export function saveWorkouts(list) {
 
 // Deletes a workout by id; no-op if unknown.
 export function deleteWorkout(id) {
-  saveWorkouts(getWorkouts().filter((w) => w.id !== id));
+  const list = getWorkouts();
+  if (!list.some((w) => w.id === id)) return;
+  addTombstone('workouts', id);
+  saveWorkouts(list.filter((w) => w.id !== id));
 }
 
 // Replaces a workout's fields by id (inline history edits). Entries with
@@ -227,11 +312,13 @@ export function updateWorkout(patch) {
   if (idx === -1) return null;
   const entries = patch.entries.filter((e) => e.sets.length);
   if (!entries.length) {
+    // editing away the last set IS a delete — tombstoned like one
+    addTombstone('workouts', patch.id);
     list.splice(idx, 1);
     saveWorkouts(list);
     return null;
   }
-  const next = { ...list[idx], ...patch, entries };
+  const next = { ...list[idx], ...patch, entries, updatedAt: Date.now() };
   // a spread merge can't express key removal — an emptied locker or name
   // would otherwise silently resurrect from the stored workout
   if (!patch.locker) delete next.locker;
@@ -305,6 +392,7 @@ export function savePlans(list) {
 export function savePlan(plan) {
   const list = getPlans();
   const idx = list.findIndex((p) => p.id === plan.id);
+  plan.updatedAt = Date.now(); // every save, unlike createdAt's first-write-only
   if (idx === -1) list.push({ createdAt: Date.now(), ...plan });
   else list[idx] = plan;
   savePlans(list);
@@ -312,7 +400,10 @@ export function savePlan(plan) {
 }
 
 export function deletePlan(id) {
-  savePlans(getPlans().filter((p) => p.id !== id));
+  const list = getPlans();
+  if (!list.some((p) => p.id === id)) return;
+  addTombstone('plans', id);
+  savePlans(list.filter((p) => p.id !== id));
 }
 
 // --- weekday plans: what is due, what was missed, what today is for ---
@@ -460,6 +551,7 @@ export function finishWorkout(active) {
     id: active.id,
     startedAt: active.startedAt,
     finishedAt: Date.now(),
+    updatedAt: Date.now(),
     entries,
     ...(active.locker ? { locker: active.locker } : {}),
     ...(active.name ? { name: active.name } : {}),
@@ -690,7 +782,7 @@ export function workoutsWithMuscle(workouts, gym, muscle) {
 }
 
 export function saveSettings(settings) {
-  write(KEYS.settings, settings);
+  write(KEYS.settings, { ...settings, updatedAt: Date.now() });
 }
 
 // --- import / export ---
@@ -699,15 +791,21 @@ export function exportGymTemplate() {
   return { app: 'gymii', kind: 'gym-template', v: 1, gym: getGym() };
 }
 
+// v2 adds tombstones (and the records may carry updatedAt stamps) so a
+// restored backup keeps its deletes dead across a later sync. v1 files
+// (no tombstones, no stamps) import unchanged — absence means epoch 0.
+// The sync key (gymii.<pid>.synckey, M1) must NEVER be part of a backup:
+// backup files travel far more casually than sync credentials should.
 export function exportBackup() {
   return {
     app: 'gymii',
     kind: 'backup',
-    v: 1,
+    v: 2,
     gym: getGym(),
     workouts: getWorkouts(),
     plans: getPlans(),
     settings: getSettings(),
+    tombstones: getTombstones(),
   };
 }
 
@@ -962,7 +1060,7 @@ export function workoutFromText(text, startedAt, settings = getSettings()) {
   saveGym(gym);
   // no finishedAt: the duration of a workout logged after the fact is
   // simply unknown, and every consumer already guards for its absence
-  return { workout: { id: uid(), startedAt, entries }, skipped };
+  return { workout: { id: uid(), startedAt, updatedAt: Date.now(), entries }, skipped };
 }
 
 // Resolves an LLM-produced workout-plan file against the current gym.
@@ -1001,17 +1099,21 @@ export function importData(data) {
   if (!data || data.app !== 'gymii') throw new Error('Not a gymii file');
   if (data.kind === 'gym-template') {
     if (!isValidGym(data.gym)) throw new Error('Invalid gym template');
-    saveGym(data.gym);
+    // bulk restore, not an interactive edit: no re-diffing, no re-stamping
+    restoreGym(data.gym);
     return 'gym-template';
   }
   if (data.kind === 'backup') {
     if (!isValidGym(data.gym) || !Array.isArray(data.workouts)) throw new Error('Invalid backup');
-    saveGym(data.gym);
+    restoreGym(data.gym);
     saveWorkouts(data.workouts);
     if (Array.isArray(data.plans)) {
       savePlans(data.plans.filter((p) => p && p.id && Array.isArray(p.items)));
     }
     saveSettings({ ...getSettings(), ...data.settings });
+    // a v1 file carries none — restoring it clears the slate, same
+    // whole-overwrite semantics as every other part of a backup import
+    saveTombstones(data.tombstones ?? {});
     return 'backup';
   }
   if (data.kind === 'workout-plan') {
@@ -1024,7 +1126,7 @@ export function importData(data) {
 // Full factory reset: every profile's data, the registry, and settings.
 export function clearAll() {
   const profiles = read(KEYS.profiles, null);
-  profiles?.list.forEach((p) => ['gym', 'workouts', 'active', 'plans']
+  profiles?.list.forEach((p) => ['gym', 'workouts', 'active', 'plans', 'tombstones']
     .forEach((part) => localStorage.removeItem(scopedKey(p.id, part))));
   [KEYS.profiles, KEYS.settings, 'gymii.gym', 'gymii.workouts', 'gymii.active']
     .forEach((k) => localStorage.removeItem(k));

@@ -2,12 +2,13 @@
 // files (no stale-module hell, no cache-name bump per deploy); an offline
 // user gets whatever was last fetched successfully. Relative URLs keep the
 // app subpath-safe (e.g. GitHub Pages project sites).
-const CACHE = 'gymii-v6'; // bumped: the map renderer split out into js/map.js
+const CACHE = 'gymii-v7'; // bumped: sync groundwork added js/merge.js
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest',
   'css/style.css',
   'js/app.js', 'js/store.js', 'js/train.js', 'js/plan.js', 'js/studio.js', 'js/history.js',
   'js/ai.js', 'js/settings.js', 'js/ui.js', 'js/chart.js', 'js/demo.js', 'js/map.js',
+  'js/merge.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-512-maskable.png',
   'icons/apple-touch-icon.png',
   // template FILES are on-demand content and enter the cache when first

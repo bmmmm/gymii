@@ -1,0 +1,97 @@
+# gymii sync protocol (draft, pre-M1)
+
+The contract between the gymii client (`js/sync.js`, not built yet) and a
+sync server (reference implementation: a small self-hosted Go binary in its
+own repo). The server is a **dumb store for opaque encrypted blobs** — it
+never sees plaintext, never understands gymii's data model, and never
+decides a conflict beyond "your revision is stale."
+
+Status: the client-side groundwork (M0) is in place — per-record
+`updatedAt` stamps, tombstones (`gymii.<pid>.tombstones`,
+`profiles.deleted`), `js/merge.js`, backup envelope v2. Everything below
+this line is design, pinned here so the server and client can be built
+against the same words.
+
+## Model
+
+- One blob per `(account, profileId)` plus a server-assigned, monotonically
+  increasing `revision` (int). The token identifies the account.
+- Conflict ordering is ONLY the revision counter — client clocks never
+  order anything at the protocol level. (`updatedAt` stamps are the
+  merge layer's internal LWW tie-break, where a skewed clock can misorder
+  one edit but never hijack the sync.)
+- The active (in-progress) workout is device-local and never part of a
+  blob; a session enters sync when `finishWorkout` lands it in `workouts`.
+
+## Endpoints
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/v1/profiles` | list `{profileId, revision, updatedAt}` for the account (device discovery) |
+| `GET` | `/v1/profiles/{id}` | returns the outer envelope; `ETag: "<revision>"`; 404 if never pushed; honors `If-None-Match` → 304 |
+| `PUT` | `/v1/profiles/{id}` | requires `If-Match: "<revision>"` (`"0"` for first push); atomically bumps revision; **409** on stale revision |
+| `DELETE` | `/v1/profiles/{id}` | mirrors a local profile deletion |
+
+- Auth: `Authorization: Bearer <device-token>` — one token per device, all
+  resolving to one account; revocable individually. Never in the URL.
+- CORS: allowed origin from server config (`SYNC_ALLOWED_ORIGIN`), plus
+  `Access-Control-Expose-Headers: ETag`, `Allow-Headers: Authorization,
+  If-Match, Content-Type`, and an OPTIONS preflight. A wildcard origin does
+  not work with Authorization headers — the origin must be exact.
+
+## Envelope
+
+Outer (what the server stores, plaintext):
+
+```json
+{ "v": 1, "profileId": "…", "salt": "<base64>", "iv": "<base64, 12 bytes>", "ciphertext": "<base64>" }
+```
+
+Inner (exists only client-side, after decrypt) — the backup shape minus
+settings, plus the sync-relevant sidecars:
+
+```json
+{ "app": "gymii", "kind": "sync-profile", "v": 1,
+  "gym": …, "workouts": […], "plans": […],
+  "tombstones": { "workouts": […], "plans": […], "machines": […], "shapes": […] },
+  "profile": { "id": "…", "name": "…", "updatedAt": … },
+  "userSettings": { "unit": "kg", "weightStep": 2.5, "restSeconds": 90, "aiPrompt": "…", "updatedAt": … } }
+```
+
+- `userSettings` carries ONLY the user-scoped fields (`USER_SETTINGS` in
+  `js/merge.js`); device-scoped settings never leave the device.
+- **Unit normalization**: weights/distances are stored in the display unit,
+  so before merging, a client whose `unit` differs from the blob's converts
+  the losing side via the existing `convertWeight`/`convertDistance`
+  (store.js) into the winning unit. This is the transport's job, not the
+  merge layer's.
+
+## Crypto
+
+- AES-256-GCM via WebCrypto; key = PBKDF2-SHA256, ≥600,000 iterations, from
+  a **generated** passphrase (~128 bits, rendered readable) + the
+  per-profile `salt` from the outer envelope. Fresh random 12-byte IV per
+  encryption; GCM's auth tag rides inside `ciphertext` (WebCrypto default).
+- Key material lives in `gymii.<pid>.synckey` — **excluded from
+  `exportBackup()` by design** (backups travel casually; keys must not).
+- Pairing: one "sync code" string = server URL + device token + passphrase,
+  shown once (copy/QR). No recovery: losing every device and the code
+  means the account is gone — stated plainly in the pairing UI.
+
+## Sync flow (client)
+
+1. `GET` blob (or 304) → decrypt → `remote`.
+2. If remote revision == last pushed revision: encrypt local, `PUT If-Match`.
+3. Else: `merge*` (js/merge.js) per kind → apply locally via the bulk
+   writers (`restoreGym`, `saveWorkouts`, `savePlans`, `saveTombstones`) →
+   encrypt merged → `PUT If-Match: <remote revision>`.
+4. On 409: re-GET, re-merge, re-PUT (the loop IS the conflict protocol).
+5. Triggers: pull on app open / visibilitychange / before workout start;
+   push on finishWorkout and debounced after gym/plan edits. Offline: a
+   `syncPending` flag retries on the next trigger or `online` event.
+
+## Open questions
+
+Tracked in the sync plan (tombstone pruning TTL, per-profile opt-in,
+generic WebDAV/S3 target in the UI, active-workout handoff). None block
+M1 against this document.
