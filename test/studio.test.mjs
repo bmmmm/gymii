@@ -378,6 +378,8 @@ store.clearActive();
 root = studioWith([mk('m1', 1, 10, 10)]);
 assert.ok(!root.innerHTML.includes('Back to your workout'),
   'no active workout: header has no back-to-workout link');
+assert.ok(root.innerHTML.includes('href="#train"') && root.innerHTML.includes('‹ Train'),
+  'no active workout: header offers the plain back row to the Train hub instead');
 
 store.saveActive({ id: 'w1', startedAt: Date.now(), entries: [] });
 root = studioWith([mk('m1', 1, 10, 10)]);

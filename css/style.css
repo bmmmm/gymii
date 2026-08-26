@@ -37,7 +37,7 @@ body {
   width: 100%;
   max-width: 560px;
   margin: 0 auto;
-  padding: 12px 16px calc(76px + env(safe-area-inset-bottom));
+  padding: 12px 16px calc(96px + env(safe-area-inset-bottom));
 }
 
 /* --- tab bar --- */
@@ -54,16 +54,35 @@ body {
 
 #tabbar a {
   flex: 1;
-  text-align: center;
-  padding: 15px 0 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 9px 0 10px;
   color: var(--muted);
   text-decoration: none;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* the active tab announces itself with a pill behind the icon, not just a
+   color shift — the icon row is what the thumb aims for */
+.tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  height: 30px;
+  border-radius: 15px;
+  font-size: 18px;
+  transition: background-color 160ms ease;
 }
 
 #tabbar a.active { color: var(--accent); }
+#tabbar a.active .tab-icon { background: var(--accent-dim); }
 
 /* --- typography & layout bits --- */
 
@@ -376,6 +395,58 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 }
 
 .plan-row.unbound .plan-status { color: var(--accent); }
+
+/* --- train hub (bento tiles) --- */
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 4px 0 14px;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 14px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tile:active { filter: brightness(1.2); }
+.tile.hero, .tile.wide { grid-column: 1 / -1; }
+.tile.hero { background: var(--accent-dim); border-color: var(--accent); padding: 20px 16px; }
+.tile-icon { font-size: 22px; }
+.tile.hero .tile-icon { font-size: 26px; }
+.tile-title { font-weight: 700; font-size: 16px; }
+.tile.hero .tile-title { font-size: 19px; color: #dff5e9; }
+.tile-sub { color: var(--muted); font-size: 13px; }
+.tile.hero .tile-sub { color: #cfe8db; }
+
+/* one flush "‹ destination" line at the top of every sub-screen — works as
+   a <button> (train-internal state) and as an <a> (studio's route change) */
+.back-row {
+  display: block;
+  width: fit-content;
+  background: none;
+  border: 0;
+  padding: 0 0 10px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  text-decoration: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.back-row:active { color: var(--accent); }
 
 /* what today is about — one quiet line above the plan buttons; the plan's
    name stays semantic emphasis but no longer shouts (machine-first screen) */

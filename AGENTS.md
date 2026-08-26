@@ -12,7 +12,7 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   glob, so a new `test/<module>.test.mjs` is picked up without a workflow
   edit. `store` (localStorage stub, store roundtrips, outline migration,
   template validation, locker carry-over), `train` (guided-plan
-  construction), `plan` (stored plans, the note parser/serialiser, AI
+  construction, hub/start/plans navigation), `plan` (stored plans, the note parser/serialiser, AI
   import, binding, targets), `history` (name filter, muscle card + filter,
   full editor, back-logging), `studio` (editor rendering, collision),
   `demo` (generator determinism, entry invariants, weekday plan states,
@@ -125,8 +125,11 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   "Day A: Leg press" would lose half its name to a false heading.
 - `js/app.js` — hash-router, renders views into `#view`. The `#studio`
   route is deliberately NOT in the tabbar (the map is a setup tool, not a
-  daily surface — user decision); it is reached via links in onboarding
-  and Settings. Don't re-add the tab.
+  daily surface — user decision); it is reached via links in onboarding,
+  Settings and the Train hub's Studio tile. Don't re-add the tab. The
+  tabbar shows an emoji icon over each label with a Material-style pill
+  behind the active tab's icon — pure CSS off the existing `.active`
+  toggle, no router logic involved.
 - `js/map.js` — the shared floor-map renderer, split out of the editor so
   train.js/plan.js never import from studio.js. `drawGym()` draws every
   map surface (editor, train mini-maps, builder); its `highlightId` opt
@@ -150,7 +153,8 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   `openPlanBuilder`): the next `renderStudio()` consumes it — selects the
   machine and pulses it via the same find mechanism, silently dropping a
   stale id. While a workout is active the header shows a "← Back to your
-  workout" link, whichever way the Studio was reached. Undo/redo =
+  workout" link, whichever way the Studio was reached; without one it
+  shows a plain "‹ Train" back row to the hub instead. Undo/redo =
   snapshot history via the local `save()` wrapper — every mutation must
   go through `save()`, never `saveGym()` directly.
 - `js/train.js` — guided workout: `active.plan` is a list of slots
@@ -200,7 +204,23 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   ("✓ Log set 2/3 — 50 kg × 10", steppers update it live), and once a
   slot's target is met the Next button takes over as the primary action
   (log button demoted). `targetTally()` reports plan-wide progress on the
-  overview line and in the finish message. The start screen is
+  overview line and in the finish message. The Train tab's ROOT is a
+  neutral bento hub (`renderHub`): a hero tile into the merged start flow
+  (machine or plan — the start screen carries both) plus tiles to Plans,
+  Studio (`#studio`) and History; module state `screen`
+  (`'hub'|'start'|'plans'`, setters `goToHub`/`goToStart`/`goToPlans`
+  exported for the tests) is the LOWEST layer of `screenKey(active,
+  builder, screen)`'s priority — an active workout or open builder
+  outranks it, which is exactly why the AI import needs no change.
+  `finish()` resets `screen` to `'hub'`: the hub is the resting point
+  after the loop closes. The hero's subtitle is `statusText()` —
+  `statusLine()`'s plain-text twin (the hero is itself a `<button>`, so no
+  markup and no nested skip button); with no dated plan it falls back to
+  `lastWorkoutLabel()`, which the History tile always shows. Sub-screens
+  carry a `.back-row` at the top ("‹ Train" on start/plans, "‹ Workout" on
+  log/bind — bind's clears `active.binding` like Skip, never
+  `currentMachineId`; the overview has none, Finish is its exit).
+  The start screen is
   machine-first: the "Start at a machine" picker card leads — its action
   button says "Start training", because outside a session a pick starts
   one; the same `machinePicker` renders "Add" on the overview via its
@@ -214,7 +234,9 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   back rather than pushing the same session twice; with no weekdays
   anywhere the old fallback applies (most recently done plan). Both plan
   buttons are plain `.btn` — deliberately demoted: still one tap, no
-  longer the headline.
+  longer the headline. The "Planned workouts" card is `planListCard()`,
+  shared byte-identically with the hub's Plans screen (`renderPlans`) —
+  markup and wiring live once.
   "Repeat last workout" moves below it and drops entirely
   when the last workout came from that plan. Stored plans list above
   history-derived routines. EVERY row is tappable (`.row-open` + chevron —
@@ -374,7 +396,8 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   never smooth, and with `focus: true` only for text fields likely to be
   filled again (never number inputs: the keyboard would pop and
   `initNumericOverwrite` would hand over an empty field). Navigation is the
-  opposite case: the Train tab renders five screens into one container, so
+  opposite case: the Train tab renders its screens (hub, start, plans,
+  builder, bind, log, overview, onboarding) into one container, so
   `screenKey()` detects a screen CHANGE and resets the scroll to the top —
   an unchanged key means an in-place update whose scroll belongs to the user.
 - Numeric inputs arm for overwrite on focus — old value greyed out in the

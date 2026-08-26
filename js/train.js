@@ -37,6 +37,17 @@ export function openPlanBuilder(planId, notice = '') {
   builder = { planId, notice };
 }
 
+// Which non-workout, non-builder screen the Train tab shows. Layered UNDER
+// builder/active in screenKey's priority — exactly like builder already
+// sits under active — so the AI-import and mid-workout paths never consult
+// it. Exported setters, not the variable, so the tests (and any future
+// caller) can navigate without reaching into module internals.
+let screen = 'hub'; // 'hub' | 'start' | 'plans'
+
+export function goToHub() { screen = 'hub'; }
+export function goToStart() { screen = 'start'; }
+export function goToPlans() { screen = 'plans'; }
+
 // One plan item per (machine, exercise) pair of a past workout, deduped —
 // the seed for "turn this routine into a plan". Targets are NOT set here;
 // the builder seeds them from the machine's own history, which is exactly
@@ -56,20 +67,21 @@ function planSeedFrom(workout, gym) {
     (q) => q.machineId === p.machineId && q.exercise === p.exercise) === i);
 }
 
-// Which screen of the Train tab is on show. The tab renders five of them
-// into one container, so a changed key means NAVIGATION (start → log →
-// bind → overview) and the new screen must start at the top; an unchanged
-// key means an in-place update, where the scroll position belongs to the
-// user and must be left alone. Without this you arrive on a fresh screen
-// still scrolled to wherever the previous one stood. Exported for the tests.
-export const screenKey = (active, builder) => {
+// Which screen of the Train tab is on show. The tab renders its screens
+// into one container, so a changed key means NAVIGATION (hub → start →
+// log → bind → overview) and the new screen must start at the top; an
+// unchanged key means an in-place update, where the scroll position
+// belongs to the user and must be left alone. Without this you arrive on
+// a fresh screen still scrolled to wherever the previous one stood.
+// Exported for the tests.
+export const screenKey = (active, builder, screen) => {
   if (active) {
     if (active.binding != null) return `bind:${active.binding}`;
     return active.currentMachineId
       ? `log:${active.currentMachineId}:${active.currentExercise ?? ''}`
       : 'overview';
   }
-  return builder ? `builder:${builder.planId ?? 'new'}` : 'start';
+  return builder ? `builder:${builder.planId ?? 'new'}` : (screen ?? 'hub');
 };
 
 let lastScreenKey = null;
@@ -80,7 +92,7 @@ export function renderTrain(root, message = '') {
   // Reset BEFORE the render: the old (tall) content is still in place, so
   // the container can actually scroll to the top, and replacing the markup
   // afterwards leaves it there.
-  const key = screenKey(active, builder);
+  const key = screenKey(active, builder, screen);
   if (key !== lastScreenKey && root.scrollTop) root.scrollTop = 0;
   lastScreenKey = key;
   // 'workout' scope: the lock lives exactly as long as the workout does.
@@ -126,8 +138,12 @@ export function renderTrain(root, message = '') {
       }
       renderTrain(root, startPlan ? '' : message2);
     });
-  } else {
+  } else if (screen === 'plans') {
+    renderPlans(root, gym, message);
+  } else if (screen === 'start') {
     renderStart(root, gym, message);
+  } else {
+    renderHub(root, gym, message);
   }
 }
 
@@ -189,17 +205,18 @@ export function startWorkoutFrom(source, firstMachineId = null) {
 
 const weekdayName = (date) => date.toLocaleDateString('en-GB', { weekday: 'long' });
 
+const soon = (date) => {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return date.toDateString() === tomorrow.toDateString()
+    ? 'tomorrow' : `on ${weekdayName(date)}`;
+};
+
 // "what today is about", in one stated sentence. Never scolds: a missed
 // day is reported like a fact, and a day with nothing on it is told as
 // the good news it is, not as an empty slot.
 function statusLine(status) {
   const name = status.plan.name ? esc(status.plan.name) : 'Your plan';
-  const soon = (date) => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return date.toDateString() === tomorrow.toDateString()
-      ? 'tomorrow' : `on ${weekdayName(date)}`;
-  };
   if (status.state === 'due') {
     return `<p class="day-status">${weekdayName(status.due)} — <strong>${name}</strong> is on.</p>`;
   }
@@ -217,6 +234,20 @@ function statusLine(status) {
     ${soon(status.next)}.</p>`;
 }
 
+// statusLine's plain-text twin for surfaces that cannot carry markup or a
+// nested control — the hub's hero tile is itself a <button>, so no
+// <strong> and no inline skip button. Returns an UNESCAPED string; the
+// caller escapes at interpolation time.
+function statusText(status) {
+  const name = status.plan.name || 'Your plan';
+  if (status.state === 'due') return `${weekdayName(status.due)} — ${name} is on`;
+  if (status.state === 'done') {
+    return `✓ ${name} done today${status.next ? ` · next ${soon(status.next)}` : ''}`;
+  }
+  if (status.state === 'missed') return `${name} was on ${weekdayName(status.due)}`;
+  return `Rest day — ${name} is next ${soon(status.next)}`;
+}
+
 // --- start screen ---
 
 // Distinct machine nums of a plan, in item order — the plan-list twin of
@@ -224,6 +255,156 @@ function statusLine(status) {
 const planChain = (plan, gym) => [...new Set(plan.items
   .map((it) => gym?.machines.find((m) => m.id === it.machineId))
   .filter(Boolean).map((m) => `#${m.num}`))].join(' → ');
+
+// "last done" for a plan comes from history via its name
+const planLastDone = (workouts, p) => (p.name
+  ? workouts.findLast((w) => w.name === p.name) ?? null : null);
+
+// plans tagged with today's weekday float to the top (stable sort keeps
+// the stored order within each group)
+const isTodayPlan = (p) => (p.days?.includes(new Date().getDay()) ? 1 : 0);
+const sortPlansToday = (plans) => plans.slice().sort((a, b) => isTodayPlan(b) - isTodayPlan(a));
+
+const lastWorkoutLabel = (w) => `last: ${w.name ? w.name : machineChain(w)} · ${new Date(w.startedAt)
+  .toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+
+const startPlanWorkout = (root, plan) => {
+  startWorkoutFrom({
+    planId: plan.id,
+    ...(plan.name ? { name: plan.name } : {}),
+    entries: plan.items,
+  });
+  renderTrain(root);
+};
+
+// Shared "Planned workouts" card — the start screen and the hub's Plans
+// screen render the identical list, so its markup and wiring live once.
+function planListCard(gym, plans, workouts) {
+  const sortedPlans = sortPlansToday(plans);
+  const html = `
+    <section class="card">
+      <h2>Planned workouts</h2>
+      <div id="plan-list">
+        ${sortedPlans.map((p) => {
+    const done = planLastDone(workouts, p);
+    // counted as exercises, not machines: an unbound item is a real part
+    // of the plan that simply has no station yet
+    const count = p.items.length;
+    const open = p.items.filter((it) => !it.machineId).length;
+    return `<div class="recent-row">
+          <button type="button" class="recent-info row-open" data-pid="${p.id}">
+            <strong>${p.name ? esc(p.name) : planChain(p, gym) || 'Unnamed plan'}${isTodayPlan(p)
+    ? ' <span class="muted">· today</span>' : ''}</strong>
+            <span class="muted">${p.name && planChain(p, gym) ? `${planChain(p, gym)} · ` : ''}${plural(count, 'exercise')}${open
+    ? ` · ${open} to assign` : ''}${p.days?.length
+    ? ` · ${p.days.map((d) => DAY_LABELS[d]).join(' ')}` : ''}${done
+    ? ` · last: ${new Date(done.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>
+          </button>
+          <span class="row-chevron" aria-hidden="true">›</span>
+          <button class="btn btn-inline plan-start" data-pid="${p.id}">Start</button>
+        </div>`;
+  }).join('')}
+      </div>
+      <button id="plan-new" class="btn">+ Plan a workout</button>
+      ${plans.length ? '' : `<p class="muted">Write down the session you already
+        have — one exercise per line — or pick machines by muscle. Set target
+        sets × reps × weight, then start it any day.
+        (Your AI can draft one too, via the AI tab.)</p>`}
+    </section>`;
+  const wire = (root) => {
+    // delegated: the stubbed test DOM (and less wiring) both prefer one
+    // listener on the list over one per row
+    // tapping the row itself opens the plan's settings; the button starts it
+    root.querySelector('#plan-list').addEventListener('click', (e) => {
+      const btn = e.target.closest('.plan-start, .row-open');
+      if (!btn) return;
+      const plan = plans.find((p) => p.id === btn.dataset.pid);
+      if (!plan) return;
+      if (btn.classList.contains('row-open')) {
+        builder = { planId: plan.id, notice: '' };
+        renderTrain(root);
+        return;
+      }
+      startPlanWorkout(root, plan);
+    });
+    root.querySelector('#plan-new').addEventListener('click', () => {
+      builder = { planId: null, notice: '' };
+      renderTrain(root);
+    });
+  };
+  return { html, wire };
+}
+
+// --- train hub ---
+
+// The tab's neutral landing: one hero into the merged start flow (machine
+// or plan — renderStart carries both) plus small tiles to the areas that
+// used to hide further down the page or behind Settings. Deliberately
+// nothing else — the hub navigates, the screens behind it do the work.
+function renderHub(root, gym, message) {
+  const plans = getPlans();
+  const workouts = getWorkouts();
+  const last = workouts[workouts.length - 1] ?? null;
+  const status = todayStatus(plans, workouts);
+  const heroSub = status ? statusText(status)
+    : last ? lastWorkoutLabel(last)
+      : 'Tap to start your first workout';
+
+  root.innerHTML = `
+    <h1>Train</h1>
+    ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
+    <div class="tile-grid">
+      <button type="button" class="tile hero" id="hub-start">
+        <span class="tile-icon">▶</span>
+        <span class="tile-title">Start training</span>
+        <span class="tile-sub">${esc(heroSub)}</span>
+      </button>
+      <button type="button" class="tile" id="hub-plans">
+        <span class="tile-icon">📋</span>
+        <span class="tile-title">Plans</span>
+        <span class="tile-sub">${plural(plans.length, 'plan')}</span>
+      </button>
+      <button type="button" class="tile" id="hub-studio">
+        <span class="tile-icon">🗺</span>
+        <span class="tile-title">Studio</span>
+        <span class="tile-sub">${gym?.machines.length
+    ? plural(gym.machines.length, 'machine') : 'Draw your gym'}</span>
+      </button>
+      <button type="button" class="tile wide" id="hub-history">
+        <span class="tile-icon">📅</span>
+        <span class="tile-title">History</span>
+        <span class="tile-sub">${last ? esc(lastWorkoutLabel(last)) : 'No workouts yet'}</span>
+      </button>
+    </div>`;
+
+  root.querySelector('#hub-start').addEventListener('click', () => {
+    screen = 'start';
+    renderTrain(root);
+  });
+  root.querySelector('#hub-plans').addEventListener('click', () => {
+    screen = 'plans';
+    renderTrain(root);
+  });
+  // real route changes — the hash router takes it from here
+  root.querySelector('#hub-studio').addEventListener('click', () => { location.hash = '#studio'; });
+  root.querySelector('#hub-history').addEventListener('click', () => { location.hash = '#history'; });
+}
+
+// The Plans tile's own screen: just the shared card, nothing of the start
+// screen — the hero and the Plans tile must lead to distinct places.
+function renderPlans(root, gym, message) {
+  const { html, wire } = planListCard(gym, getPlans(), getWorkouts());
+  root.innerHTML = `
+    <button type="button" id="back-hub" class="back-row">‹ Train</button>
+    <h1>Plans</h1>
+    ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
+    ${html}`;
+  root.querySelector('#back-hub').addEventListener('click', () => {
+    screen = 'hub';
+    renderTrain(root);
+  });
+  wire(root);
+}
 
 function renderStart(root, gym, message) {
   const workouts = getWorkouts();
@@ -260,15 +441,7 @@ function renderStart(root, gym, message) {
     routines.push(w);
   }
 
-  // "last done" for a plan comes from history via its name
-  const planLastDone = (p) => (p.name
-    ? workouts.findLast((w) => w.name === p.name) ?? null : null);
-
-  // plans tagged with today's weekday float to the top (stable sort keeps
-  // the stored order within each group)
-  const today = new Date().getDay();
-  const isToday = (p) => (p.days?.includes(today) ? 1 : 0);
-  const sortedPlans = plans.slice().sort((a, b) => isToday(b) - isToday(a));
+  const sortedPlans = sortPlansToday(plans);
 
   // What today is about, if any plan carries weekdays at all.
   const status = todayStatus(plans, workouts);
@@ -283,15 +456,17 @@ function renderStart(root, gym, message) {
     ? status.plan : null;
   const primaryPlan = statusPlan
     ?? (status ? null : sortedPlans.slice().sort((a, b) =>
-      (planLastDone(b)?.startedAt ?? 0) - (planLastDone(a)?.startedAt ?? 0))[0])
+      (planLastDone(workouts, b)?.startedAt ?? 0) - (planLastDone(workouts, a)?.startedAt ?? 0))[0])
     ?? null;
   const repeatIsPrimaryPlan = !!(primaryPlan?.name && last?.name === primaryPlan.name);
-  const primaryDone = primaryPlan ? planLastDone(primaryPlan) : null;
+  const primaryDone = primaryPlan ? planLastDone(workouts, primaryPlan) : null;
+  const planCard = planListCard(gym, plans, workouts);
 
   // Machine-first: the screen leads with the picker — a session starts at
   // the machine in front of you. Today's plan and the repeat follow below as
   // the calmer options, not the headline.
   root.innerHTML = `
+    <button type="button" id="back-hub" class="back-row">‹ Train</button>
     <h1>Train</h1>
     ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
     ${gym?.machines.length ? `
@@ -317,7 +492,7 @@ function renderStart(root, gym, message) {
     ${primaryPlan ? `<button id="plan-primary" class="btn">▶ Start
       ${primaryPlan.name ? esc(primaryPlan.name) : 'your plan'}
       <span class="sub">${[
-    isToday(primaryPlan) ? 'today' : '',
+    isTodayPlan(primaryPlan) ? 'today' : '',
     planChain(primaryPlan, gym),
     primaryPlan.items.filter((it) => !it.machineId).length
       ? `${primaryPlan.items.filter((it) => !it.machineId).length} to assign` : '',
@@ -327,35 +502,7 @@ function renderStart(root, gym, message) {
     ${last && !repeatIsPrimaryPlan ? `<button id="repeat" class="btn">Repeat last workout
       <span class="sub">${new Date(last.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
       · ${last.name ? `${esc(last.name)} · ` : ''}${machineChain(last)}</span></button>` : ''}
-    <section class="card">
-      <h2>Planned workouts</h2>
-      <div id="plan-list">
-        ${sortedPlans.map((p) => {
-    const done = planLastDone(p);
-    // counted as exercises, not machines: an unbound item is a real part
-    // of the plan that simply has no station yet
-    const count = p.items.length;
-    const open = p.items.filter((it) => !it.machineId).length;
-    return `<div class="recent-row">
-          <button type="button" class="recent-info row-open" data-pid="${p.id}">
-            <strong>${p.name ? esc(p.name) : planChain(p, gym) || 'Unnamed plan'}${isToday(p)
-    ? ' <span class="muted">· today</span>' : ''}</strong>
-            <span class="muted">${p.name && planChain(p, gym) ? `${planChain(p, gym)} · ` : ''}${plural(count, 'exercise')}${open
-    ? ` · ${open} to assign` : ''}${p.days?.length
-    ? ` · ${p.days.map((d) => DAY_LABELS[d]).join(' ')}` : ''}${done
-    ? ` · last: ${new Date(done.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>
-          </button>
-          <span class="row-chevron" aria-hidden="true">›</span>
-          <button class="btn btn-inline plan-start" data-pid="${p.id}">Start</button>
-        </div>`;
-  }).join('')}
-      </div>
-      <button id="plan-new" class="btn">+ Plan a workout</button>
-      ${plans.length ? '' : `<p class="muted">Write down the session you already
-        have — one exercise per line — or pick machines by muscle. Set target
-        sets × reps × weight, then start it any day.
-        (Your AI can draft one too, via the AI tab.)</p>`}
-    </section>
+    ${planCard.html}
     ${routines.length ? `
     <section class="card">
       <h2>Start another routine</h2>
@@ -375,16 +522,12 @@ function renderStart(root, gym, message) {
         real plan — targets, a name, weekdays.</p>
     </section>` : ''}`;
 
-  const startPlan = (plan) => {
-    startWorkoutFrom({
-      planId: plan.id,
-      ...(plan.name ? { name: plan.name } : {}),
-      entries: plan.items,
-    });
+  root.querySelector('#back-hub').addEventListener('click', () => {
+    screen = 'hub';
     renderTrain(root);
-  };
+  });
 
-  root.querySelector('#plan-primary')?.addEventListener('click', () => startPlan(primaryPlan));
+  root.querySelector('#plan-primary')?.addEventListener('click', () => startPlanWorkout(root, primaryPlan));
 
   // "not this week" — one tap, no confirmation and no tally: the day stops
   // being outstanding until that weekday comes round again
@@ -398,26 +541,7 @@ function renderStart(root, gym, message) {
     renderTrain(root);
   });
 
-  // delegated: the stubbed test DOM (and less wiring) both prefer one
-  // listener on the list over one per row
-  // tapping the row itself opens the plan's settings; the button starts it
-  root.querySelector('#plan-list').addEventListener('click', (e) => {
-    const btn = e.target.closest('.plan-start, .row-open');
-    if (!btn) return;
-    const plan = plans.find((p) => p.id === btn.dataset.pid);
-    if (!plan) return;
-    if (btn.classList.contains('row-open')) {
-      builder = { planId: plan.id, notice: '' };
-      renderTrain(root);
-      return;
-    }
-    startPlan(plan);
-  });
-
-  root.querySelector('#plan-new').addEventListener('click', () => {
-    builder = { planId: null, notice: '' };
-    renderTrain(root);
-  });
+  planCard.wire(root);
 
   // A derived routine has no settings of its own — so tapping it opens the
   // plan builder seeded with its machines. Nothing persists until Save, so
@@ -921,6 +1045,7 @@ function renderBind(root, gym, active) {
     data-id="${m.id}">#${m.num} ${esc(m.label)}</button>`).join('');
 
   root.innerHTML = `
+    <button type="button" id="bind-back" class="back-row">‹ Workout</button>
     <h1>${esc(name)}</h1>
     <p class="muted">Which machine is this? Enter the number on it — gymii
       adds it to your gym under this name.</p>
@@ -987,6 +1112,14 @@ function renderBind(root, gym, active) {
   });
 
   root.querySelector('#bind-skip').addEventListener('click', () => {
+    delete active.binding;
+    saveActive(active);
+    renderTrain(root);
+  });
+
+  // same move as Skip — binding is the top of screenKey's priority, so
+  // leaving the screen means clearing it, never currentMachineId
+  root.querySelector('#bind-back').addEventListener('click', () => {
     delete active.binding;
     saveActive(active);
     renderTrain(root);
@@ -1181,6 +1314,7 @@ function renderLog(root, gym, active, reveal = null) {
   const lockerAsk = !active.locker && !active.lockerDismissed && !workoutSetCount(active);
 
   root.innerHTML = `
+    <button type="button" id="log-back" class="back-row">‹ Workout</button>
     <div class="machine-head">
       <span class="machine-badge">${machine.num}</span>
       <div>
@@ -1410,12 +1544,14 @@ function renderLog(root, gym, active, reveal = null) {
     renderTrain(root);
   });
 
-  root.querySelector('#change-machine').addEventListener('click', () => {
+  const toOverview = () => {
     active.currentMachineId = null;
     active.currentExercise = null;
     saveActive(active);
     renderTrain(root);
-  });
+  };
+  root.querySelector('#change-machine').addEventListener('click', toOverview);
+  root.querySelector('#log-back').addEventListener('click', toOverview);
 
   if (reveal) keepInView(root, reveal);
 }
@@ -1454,6 +1590,9 @@ const setsSummary = (sets, s, bodyweight = false) => {
 };
 
 function finish(root, active) {
+  // the hub is the resting point after the loop closes — not whatever
+  // sub-screen the session happened to start from
+  screen = 'hub';
   // target tally must run BEFORE finishWorkout clears the active state
   const { total: goalTotal, hit: goalHit } = targetTally(active);
   const saved = finishWorkout(active);

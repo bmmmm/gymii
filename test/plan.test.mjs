@@ -13,7 +13,8 @@ globalThis.localStorage = {
 };
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
-const { startWorkoutFrom, renderTrain } = await import(new URL('../js/train.js', import.meta.url).href);
+const { startWorkoutFrom, renderTrain, goToStart, goToPlans, goToHub } =
+  await import(new URL('../js/train.js', import.meta.url).href);
 
 const gym = store.newGym('Plan test gym');
 gym.machines.push({
@@ -151,7 +152,9 @@ const root = {
 };
 const fakeClick = (props) => ({ target: { closest: () => props } });
 
-// start screen: empty plans section with the create button
+// start screen: empty plans section with the create button (the tab root
+// is now the hub, so the tests navigate to the start screen first)
+goToStart();
 renderTrain(root);
 assert.ok(root.innerHTML.includes('Planned workouts'), 'start screen has the plans section');
 assert.ok(root.innerHTML.includes('Plan a workout'), 'and the create button');
@@ -509,6 +512,7 @@ assert.ok(root.innerHTML.includes('Assign machine'), 'each unbound item offers b
 
 root.querySelector('#plan-save').listeners.click();
 byId.clear();
+goToStart(); // the primary plan button lives on the start screen
 renderTrain(root);
 root.querySelector('#plan-primary').listeners.click(); // start the typed plan
 let bound = store.getActive();
@@ -761,5 +765,27 @@ assert.ok(!root.innerHTML.includes('id="plan-primary"'),
   'and stops holding the primary button hostage');
 store.saveWorkouts([]);
 store.savePlans([]);
+
+// --- the Plans screen: the hub tile's own, smaller surface ---
+store.savePlans([store.planFromText('Leg press 3x10 80')]);
+goToPlans();
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('<h1>Plans</h1>'), 'the plans screen has its own heading');
+assert.ok(root.innerHTML.includes('Planned workouts') && root.innerHTML.includes('Plan a workout'),
+  'and renders the shared plan card');
+assert.ok(!root.innerHTML.includes('Start at a machine'), 'but none of the start screen');
+assert.ok(root.innerHTML.includes('id="back-hub"'), 'with a back row to the hub');
+
+// opening the builder from here and leaving returns here — the builder
+// outranks the screen state without ever touching it
+root.querySelector('#plan-new').listeners.click();
+assert.ok(root.innerHTML.includes('Plan workout'), 'the builder opens from the plans screen');
+assert.ok(root.innerHTML.includes('id="plan-back"'), 'the builder carries its own back row');
+root.querySelector('#plan-back').listeners.click();
+assert.ok(root.innerHTML.includes('<h1>Plans</h1>'),
+  'backing out of the builder returns to the plans screen');
+store.savePlans([]);
+goToHub();
 
 console.log('workout plans: all assertions passed');

@@ -14,7 +14,7 @@ globalThis.localStorage = {
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const {
   startWorkoutFrom, renderTrain, nearbyAlternative, nextSetDefaults, dimDelaySeconds,
-  screenKey,
+  screenKey, goToHub, goToStart, goToPlans,
 } = await import(new URL('../js/train.js', import.meta.url).href);
 
 const gym = store.newGym('Test gym');
@@ -358,6 +358,7 @@ assert.equal(store.getGym().machines.length, 0, 'and creates no machine when it 
 store.clearActive();
 store.savePlan(store.planFromText('Leg press 3x10 80'));
 byId.clear();
+goToStart(); // the tab root is the hub; quick start lives on the start screen
 renderTrain(root);
 assert.ok(root.innerHTML.includes('Start at a machine') && root.innerHTML.includes('id="qs-start"'),
   'start screen without machines offers quick start');
@@ -559,8 +560,12 @@ assert.equal(stepper(root.innerHTML, 'set-weight'), '55', 'e: the roundtrip land
 // tab's five screens, the same key is an in-place update whose scroll
 // position belongs to the user (log a set and the view must NOT jump).
 const logging = { currentMachineId: 'm1', currentExercise: null, entries: [], plan: [] };
-assert.equal(screenKey(null, null), 'start');
+assert.equal(screenKey(null, null), 'hub', 'the tab root is the hub');
+assert.equal(screenKey(null, null, 'start'), 'start');
+assert.equal(screenKey(null, null, 'plans'), 'plans');
 assert.equal(screenKey(null, { planId: 'p1' }), 'builder:p1');
+assert.equal(screenKey(null, { planId: 'p1' }, 'plans'), 'builder:p1',
+  'an open builder outranks the screen state');
 assert.equal(screenKey(null, { planId: null }), 'builder:new');
 assert.equal(screenKey({ ...logging, currentMachineId: null }, null), 'overview');
 assert.equal(screenKey(logging, null), 'log:m1:');
@@ -599,5 +604,50 @@ assert.equal(typeof globalThis.document, 'undefined', 'no document in this env')
 store.saveSettings({ ...store.getSettings(), keepAwake: 'workout' });
 renderTrain(root); // would throw if the lock path were unguarded
 store.saveSettings({ ...store.getSettings(), keepAwake: 'break' });
+
+// --- the train hub: neutral landing, tiles navigate ---
+store.clearActive();
+store.saveGym(store.newGym('Hub test gym')); // no machines: start screen quick-starts
+store.saveWorkouts([{
+  id: 'w-hub', startedAt: 1755000000000, finishedAt: 1755003600000, name: 'Push day',
+  entries: [{
+    machineId: 'm1', num: 1, label: 'Chest press', settings: {},
+    sets: [{ reps: 8, weight: 40 }],
+  }],
+}]);
+// an undated plan keeps the onboarding gate shut without giving the hero
+// a weekday status — the fallback path stays reachable
+store.savePlans([]);
+store.savePlan(store.planFromText('Leg press 3x10 80'));
+goToHub();
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('class="tile hero"') && root.innerHTML.includes('Start training'),
+  'the hub leads with the start hero');
+assert.ok(root.innerHTML.includes('id="hub-plans"') && root.innerHTML.includes('id="hub-studio"')
+  && root.innerHTML.includes('id="hub-history"'), 'and offers the three nav tiles');
+assert.ok(root.innerHTML.includes('last: Push day'),
+  'without weekday plans the hero falls back to the last workout');
+assert.ok(root.innerHTML.includes('Draw your gym'),
+  'an empty gym turns the studio tile into the invitation');
+
+// a dated plan puts today's status on the hero instead — as plain text
+store.savePlans([{
+  id: 'hub-pd', name: 'Push day', items: [{ machineId: 'm1' }], days: [new Date().getDay()],
+}]);
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('Push day is on'),
+  'a due weekday plan states itself on the hero');
+assert.ok(!root.innerHTML.includes('<strong>'), 'the hero subtitle carries no markup');
+
+// hero → start screen → back row → hub again
+root.querySelector('#hub-start').listeners.click();
+assert.ok(root.innerHTML.includes('Start at a machine'), 'the hero opens the start screen');
+assert.ok(root.innerHTML.includes('id="back-hub"'), 'which carries the back row');
+root.querySelector('#back-hub').listeners.click();
+assert.ok(root.innerHTML.includes('class="tile hero"'), 'the back row lands on the hub');
+store.saveWorkouts([]);
+store.savePlans([]);
 
 console.log('train plan construction: all assertions passed');

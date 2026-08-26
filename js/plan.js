@@ -172,6 +172,7 @@ export function renderPlanBuilder(
       : machines).slice().sort((a, b) => a.num - b.num);
 
     root.innerHTML = `
+      <button type="button" id="plan-back" class="back-row">‹ Back</button>
       <h1>${stored ? 'Edit plan' : 'Plan workout'}</h1>
       ${notice ? `<p class="notice" role="status">${esc(notice)}</p>` : ''}
       <section class="card">
@@ -470,6 +471,10 @@ export function renderPlanBuilder(
     });
 
     root.querySelector('#plan-cancel').addEventListener('click', () => onClose(''));
+    // "‹ Back" labels the destination loosely — the builder opens from the
+    // hub, the start screen or the Plans screen, and onClose returns to
+    // whichever it was. Same non-destructive semantics as Cancel.
+    root.querySelector('#plan-back').addEventListener('click', () => onClose(''));
   }
 
   render();

@@ -39,7 +39,9 @@ export function renderStudio(root) {
         <button id="redo" class="btn btn-inline" aria-label="Redo" disabled>↪</button>
       </div>
     </div>
-    ${getActive() ? '<p class="muted"><a href="#train">← Back to your workout</a></p>' : ''}
+    ${getActive()
+    ? '<p class="muted"><a href="#train">← Back to your workout</a></p>'
+    : '<a href="#train" class="back-row">‹ Train</a>'}
     <div class="toolbar">
       <button id="add-room" class="btn">+ Zone</button>
       <button id="add-wall" class="btn">+ Wall</button>
