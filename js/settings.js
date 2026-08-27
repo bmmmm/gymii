@@ -3,13 +3,116 @@ import {
   getGyms, createGym, renameGym, deleteGym, setActiveGym, setUnit,
   exportGymTemplate, exportBackup, importData, clearAll,
 } from './store.js';
-import { download, esc, twoTapConfirm, TIMER_SOUNDS, playTimerSound } from './ui.js';
+import {
+  download, esc, twoTapConfirm, keepInView, fmtDate, fmtTime,
+  TIMER_SOUNDS, playTimerSound,
+} from './ui.js';
 import { loadDemoData } from './demo.js';
+import {
+  getSyncState, getSyncCode, enableSync, pairWithCode, syncNow, disableSync,
+} from './sync.js';
+
+// --- the Sync card (M1, docs/sync-plan.md) ---
+// The sync code is the ONLY key to an account (sync-plan decision 7), so it
+// is never read from storage by a plain render: minting one, or tapping
+// "Show sync code", parks it here and the NEXT renderSettings prints it and
+// clears it again. Every later re-render therefore takes it back off the
+// screen by itself — "shown once" is a mechanism, not a promise in the copy.
+let codeOnce = null;
+
+const SYNC_RESULT = {
+  synced: 'Synced.',
+  offline: 'Offline — the server did not answer. Nothing was lost; try again later.',
+  auth: 'The server refused the token. Check it, or pair again with a fresh sync code.',
+  decrypt: 'Could not read the copy on the server — this gym is paired with a different sync code.',
+};
+
+const syncResultText = (r) => SYNC_RESULT[r.status]
+  ?? `Sync failed${r.detail ? ` (${r.detail})` : ''}.`;
+
+// sync.js throws these as plain Error messages; anything else is surfaced
+// verbatim rather than swallowed.
+const SYNC_ERRORS = {
+  'bad-server': 'Enter both the server URL and the token your sync server printed.',
+  'bad-code': 'That is not a gymii sync code — copy the whole line, it starts with "gymii-sync:v1:".',
+  'demo-gym': 'The demo gym never syncs.',
+  'unknown-gym': 'This gym is gone — switch gyms and try again.',
+};
+
+const syncErrorText = (err, prefix) => SYNC_ERRORS[err?.message] ?? `${prefix}: ${err?.message}`;
+
+// The code plus the one warning that has to sit next to it, never a screen
+// away: this string is the account.
+const codeBlock = (code) => `
+  <code id="sync-code-out" class="synccode">${esc(code)}</code>
+  <button id="sync-copy" class="btn">Copy sync code</button>
+  <div class="notice">Keep this somewhere safe now — a password manager, or on paper.
+    It is the only key to this gym's encrypted data: anyone who has it can read the
+    sync, nobody without it can (not whoever runs the server, not us). Lose every
+    paired device and the code, and the data is gone. There is no recovery.</div>`;
+
+function syncCard(gym, shownCode) {
+  const state = getSyncState(gym.id);
+  if (!state.configured) {
+    return `
+    <section class="card">
+      <h2>Sync</h2>
+      <p class="muted">Sync is off. Turn it on and this gym — floor plan, workouts and
+        plans — is encrypted on this device before it leaves it, and stored on a sync
+        server you run yourself; the server only ever holds the encrypted blob. Opt-in
+        per gym: this switches on "${esc(gym.name)}" alone. You get one sync code, and
+        it is the only key — there is no recovery, and nobody can bring the data back
+        without it, us included. Export and import keep working without any of this.</p>
+      <label class="field-block"><span>Server URL</span>
+        <div class="row"><input id="sync-server" type="text" autocomplete="off"
+          placeholder="https://sync.example.org"></div>
+      </label>
+      <label class="field-block"><span>Token</span>
+        <div class="row"><input id="sync-token" type="text" autocomplete="off"
+          placeholder="printed by your sync server"></div>
+      </label>
+      <button id="sync-enable" class="btn btn-primary">Turn on sync</button>
+      <p id="sync-msg" class="muted" role="status"></p>
+      <div class="field-block"><span>Have a sync code?</span>
+        <div class="row">
+          <input id="sync-code" type="text" autocomplete="off" aria-label="Sync code"
+            placeholder="gymii-sync:v1:…">
+          <button id="sync-pair" class="btn btn-inline">Pair</button>
+        </div>
+      </div>
+      <p class="muted">Pairing joins this gym to a device that already syncs — paste the
+        code that device showed you. Both sides then merge into one history.</p>
+    </section>`;
+  }
+  return `
+    <section class="card">
+      <h2>Sync</h2>
+      <div class="spread"><span class="muted">Server</span>
+        <span class="sync-val">${esc(state.server)}</span></div>
+      <div class="spread"><span class="muted">Last sync</span>
+        <span class="sync-val">${state.lastSyncAt
+    ? `${fmtDate(state.lastSyncAt)} · ${fmtTime(state.lastSyncAt)}` : 'never'}</span></div>
+      ${state.lastError ? `<div class="spread"><span class="muted">Last error</span>
+        <span class="sync-val">${esc(state.lastError)}</span></div>` : ''}
+      <button id="sync-now" class="btn btn-primary">Sync now</button>
+      <p id="sync-msg" class="muted" role="status"></p>
+      ${shownCode ? codeBlock(shownCode)
+    : '<button id="sync-show-code" class="btn">Show sync code</button>'}
+      <button id="sync-off" class="btn btn-danger">Turn off sync</button>
+      <p class="muted">Turning sync off removes the server, the token and the key from
+        this device only. Your floor plan, workouts and plans stay exactly where they
+        are.</p>
+    </section>`;
+}
 
 export function renderSettings(root) {
   const s = getSettings();
   const gyms = getGyms();
   const activeGym = gyms.list.find((p) => p.id === gyms.activeId);
+  const gid = gyms.activeId;
+  // consumed by THIS render — see codeOnce
+  const shownCode = codeOnce;
+  codeOnce = null;
   root.innerHTML = `
     <h1>Settings</h1>
 
@@ -103,6 +206,10 @@ export function renderSettings(root) {
       <p id="data-msg" class="muted" role="status"></p>
     </section>
 
+    <!-- The demo gym never syncs (sync-plan decision 10), so the card is not
+         rendered at all rather than shown disabled. -->
+    ${activeGym.demo ? '' : syncCard(activeGym, shownCode)}
+
     <section class="card">
       <h2>Test data</h2>
       <button id="demo-load" class="btn">${gyms.list.some((p) => p.demo)
@@ -118,7 +225,9 @@ export function renderSettings(root) {
       <button id="clear-all" class="btn btn-danger">Clear all data</button>
     </section>
 
-    <p class="muted footnote">gymii stores everything in this browser only (localStorage). Export a backup before switching devices.</p>
+    <p class="muted footnote">gymii keeps everything in this browser (localStorage). Nothing
+      leaves this device unless you turn on sync — and then only end-to-end encrypted, to a
+      server you run. Export a backup before switching devices.</p>
   `;
 
   const msg = root.querySelector('#data-msg');
@@ -235,6 +344,89 @@ export function renderSettings(root) {
     renderSettings(root); // re-render swaps the DOM, so write the message after
     root.querySelector('#demo-msg').textContent =
       `Demo gym loaded — ${r.machines} machines, ${r.workouts} workouts, ${r.plans} plans.`;
+  });
+
+  // --- sync ---
+  // Every button below exists in exactly one of the card's two states (and
+  // in neither for the demo gym), so each is wired optionally.
+
+  const syncMsg = root.querySelector('#sync-msg');
+
+  const enableBtn = root.querySelector('#sync-enable');
+  enableBtn?.addEventListener('click', async () => {
+    enableBtn.disabled = true;
+    try {
+      const { code, sync } = await enableSync(gid, {
+        server: root.querySelector('#sync-server').value,
+        token: root.querySelector('#sync-token').value,
+      });
+      codeOnce = code; // the code block only exists after the re-render
+      renderSettings(root);
+      root.querySelector('#sync-msg').textContent = `Sync is on. ${syncResultText(sync)}`;
+      // the card just grew a code the user has to read before leaving
+      keepInView(root, '#sync-code-out');
+    } catch (err) {
+      enableBtn.disabled = false;
+      syncMsg.textContent = syncErrorText(err, 'Could not turn sync on');
+    }
+  });
+
+  const pairBtn = root.querySelector('#sync-pair');
+  pairBtn?.addEventListener('click', async () => {
+    const raw = root.querySelector('#sync-code').value;
+    if (!raw.trim()) {
+      syncMsg.textContent = 'Paste the sync code from your other device first.';
+      return;
+    }
+    pairBtn.disabled = true;
+    try {
+      // no code block here: the other device already showed it
+      const { sync } = await pairWithCode(gid, raw);
+      renderSettings(root);
+      root.querySelector('#sync-msg').textContent = `Paired. ${syncResultText(sync)}`;
+    } catch (err) {
+      pairBtn.disabled = false;
+      syncMsg.textContent = syncErrorText(err, 'Pairing failed');
+    }
+  });
+
+  const nowBtn = root.querySelector('#sync-now');
+  nowBtn?.addEventListener('click', async () => {
+    nowBtn.disabled = true; // one round trip at a time
+    nowBtn.textContent = 'Syncing…';
+    const r = await syncNow(gid);
+    renderSettings(root); // last-sync time and lastError have moved
+    root.querySelector('#sync-msg').textContent = syncResultText(r);
+  });
+
+  // one extra tap, deliberately: the key is not on screen by default
+  root.querySelector('#sync-show-code')?.addEventListener('click', () => {
+    const code = getSyncCode(gid);
+    if (!code) {
+      syncMsg.textContent = 'No sync code on this device.';
+      return;
+    }
+    codeOnce = code;
+    renderSettings(root);
+    keepInView(root, '#sync-code-out');
+  });
+
+  const copyBtn = root.querySelector('#sync-copy');
+  copyBtn?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(shownCode);
+      syncMsg.textContent = 'Sync code copied.';
+    } catch {
+      syncMsg.textContent = 'Clipboard blocked by the browser — select the code above and copy it by hand.';
+    }
+  });
+
+  const syncOffBtn = root.querySelector('#sync-off');
+  syncOffBtn?.addEventListener('click', () => {
+    if (!twoTapConfirm(syncOffBtn,
+      'Tap again to turn sync off — your data stays here', 'Turn off sync')) return;
+    disableSync(gid); // credentials only; the gym's data is untouched
+    renderSettings(root);
   });
 
   // Two-step confirm instead of a blocking confirm() dialog.

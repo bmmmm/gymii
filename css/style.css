@@ -799,6 +799,28 @@ select {
   width: 100%;
 }
 
+/* --- sync (Settings) --- */
+
+/* The sync code is one long opaque string that gets copied — or, once,
+   written down by hand. Monospace, wrapping mid-string so no character
+   hides past the right edge, and selectable as a whole for the fallback
+   when the clipboard is blocked. */
+.synccode {
+  display: block;
+  font: 13px/1.6 ui-monospace, 'SF Mono', Monaco, monospace;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  margin: 10px 0;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+/* Right column of the status rows: a server URL is user input and can be
+   any length, so it wraps instead of pushing the label off the card. */
+.sync-val { text-align: right; min-width: 0; overflow-wrap: anywhere; }
+
 /* --- empty states --- */
 
 .empty {
