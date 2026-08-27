@@ -56,6 +56,39 @@ is device-local, healed only if its profile died); settings split by field
 never leaves the device). An edit stamped after a delete un-deletes;
 before it, the delete holds.
 
+## Deployment: local network first
+
+The sync server runs on the home LAN by default; a public domain is an
+option, never a requirement.
+
+- **Reference deployment is a Docker container**: multi-stage build
+  (`golang:alpine` → `FROM scratch`), `CGO_ENABLED=0`, image in the
+  single-digit MB range. Storage is the **filesystem**, not SQLite — one
+  directory per account, blob + revision written via atomic rename. That
+  keeps the binary pure-stdlib, the image scratch-compatible, and state a
+  single volume mount. The bare binary stays a first-class artifact for
+  docker-less users (`go build`, run anywhere).
+- **Browser reality check for LAN hosting** (why the design must care):
+  `crypto.subtle` only exists in secure contexts (https or localhost), an
+  https page cannot fetch an `http://` LAN address (mixed content), and
+  public-site → private-network requests trigger Chrome's Private Network
+  Access preflight. Consequences, in order of preference:
+  1. **Same-origin mode (recommended local setup)**: the server takes a
+     flag (`-app-dir`) and serves gymii's static files itself — one
+     container, one origin, zero CORS, zero PNA, zero mixed content.
+     `docker compose up` and the whole app lives at one LAN address.
+  2. **Behind the existing reverse proxy** with a real certificate on an
+     internal domain: then the Pages-hosted app can sync against the LAN
+     too — the server must answer the PNA preflight
+     (`Access-Control-Allow-Private-Network: true`) next to its CORS
+     headers.
+  3. Plain `http://<lan-ip>` without either only works when the app is
+     served from that same origin AND the browser grants no-crypto…
+     it doesn't (`crypto.subtle` missing) — so E2E makes option 1 or 2
+     effectively mandatory. Documented, not left to be discovered.
+- **Going public later is a config change, not a code change**: same
+  container, a public router rule, `SYNC_ALLOWED_ORIGIN` updated.
+
 ## Open decisions (recommendation first)
 
 1. Gym merge granularity: per-item (recommended, implemented) vs whole-gym
@@ -78,3 +111,8 @@ before it, the delete holds.
    static files only.
 10. Sync is opt-in per profile; new profiles default to off; the demo
     profile never syncs.
+11. Packaging: Docker as the reference deployment (scratch image,
+    filesystem storage, compose + reverse-proxy labels) — decided; the
+    bare binary remains supported.
+12. Same-origin mode (`-app-dir` serving gymii itself) — recommended as
+    THE local-first setup; it dissolves CORS/PNA/mixed-content entirely.

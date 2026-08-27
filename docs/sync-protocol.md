@@ -37,7 +37,20 @@ against the same words.
 - CORS: allowed origin from server config (`SYNC_ALLOWED_ORIGIN`), plus
   `Access-Control-Expose-Headers: ETag`, `Allow-Headers: Authorization,
   If-Match, Content-Type`, and an OPTIONS preflight. A wildcard origin does
-  not work with Authorization headers — the origin must be exact.
+  not work with Authorization headers — the origin must be exact. For a
+  LAN-hosted server reached from a publicly-hosted app, the preflight must
+  also answer Chrome's Private Network Access:
+  `Access-Control-Allow-Private-Network: true`.
+- **Same-origin mode**: with `-app-dir <path>` the server additionally
+  serves gymii's static files, so app and API share one origin — no CORS,
+  no PNA, no mixed content. This is the recommended local-network setup
+  (one container is the whole app). Note `crypto.subtle` needs a secure
+  context: https via reverse proxy, or plain `http://localhost`; a bare
+  `http://<lan-ip>` cannot do E2E.
+- Server storage is the filesystem (one directory per account; blob and
+  revision written via atomic rename) — no database, `CGO_ENABLED=0`,
+  which keeps the reference Docker image `FROM scratch` and single-digit
+  MB. Deployment reference: docs/sync-plan.md § Deployment.
 
 ## Envelope
 
