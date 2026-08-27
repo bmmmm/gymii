@@ -10,6 +10,10 @@ const KEYS = {
 // one history"); settings stay global.
 const scopedKey = (gid, part) => `gymii.${gid}.${part}`;
 
+// Everything a gym owns — deleting the gym (or the whole install) must take
+// all of it, sync credentials included.
+const GYM_PARTS = ['layout', 'workouts', 'active', 'plans', 'tombstones', 'sync', 'synckey'];
+
 function read(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -118,6 +122,19 @@ export function renameGym(id, name) {
   write(KEYS.gyms, gyms);
 }
 
+// Bulk twin of renameGym (same split as restoreLayout/saveLayout): writes a
+// registry entry VERBATIM, stamp included. Sync applies a remote rename
+// through this — re-stamping it with Date.now() would forge a newer edit
+// and could beat a genuinely newer rename on the device it came from.
+export function restoreGymEntry(entry) {
+  if (!entry?.id) return;
+  const gyms = ensureGyms();
+  const idx = gyms.list.findIndex((g) => g.id === entry.id);
+  if (idx === -1) gyms.list.push(entry);
+  else gyms.list[idx] = { ...gyms.list[idx], ...entry };
+  write(KEYS.gyms, gyms);
+}
+
 export function setActiveGym(id) {
   const gyms = ensureGyms();
   if (!gyms.list.some((g) => g.id === id)) return;
@@ -149,8 +166,7 @@ export function deleteGym(id) {
     if (gyms.activeId === id) gyms.activeId = gyms.list[0].id;
     write(KEYS.gyms, gyms);
   }
-  ['layout', 'workouts', 'active', 'plans', 'tombstones']
-    .forEach((part) => localStorage.removeItem(scopedKey(id, part)));
+  GYM_PARTS.forEach((part) => localStorage.removeItem(scopedKey(id, part)));
   return true;
 }
 
@@ -813,6 +829,44 @@ export function saveSettings(settings) {
   write(KEYS.settings, { ...settings, updatedAt: Date.now() });
 }
 
+// Bulk twin of saveSettings: no re-stamping, because merged settings arrive
+// with the stamp that explains them (see restoreGymEntry / restoreLayout).
+export function restoreSettings(settings) {
+  write(KEYS.settings, settings);
+}
+
+// --- sync config & key (M1) ---
+// Per gym: `sync` is the transport's bookkeeping ({v, server, token, rev,
+// lastSyncAt, lastError}), `synckey` the key material ({v, pass, salt}).
+// Both are wiped with the gym (GYM_PARTS) and by clearAll, and NEITHER may
+// ever enter exportBackup() — a backup file travels far more casually than
+// sync credentials should. Passing null removes the key, which is what
+// turning sync off does; the gym's DATA is never touched here.
+
+export function getSyncConfig(gid) {
+  return read(scopedKey(gid, 'sync'), null);
+}
+
+export function saveSyncConfig(gid, config) {
+  if (!config) {
+    localStorage.removeItem(scopedKey(gid, 'sync'));
+    return;
+  }
+  write(scopedKey(gid, 'sync'), { v: 1, ...config });
+}
+
+export function getSyncKey(gid) {
+  return read(scopedKey(gid, 'synckey'), null);
+}
+
+export function saveSyncKey(gid, key) {
+  if (!key) {
+    localStorage.removeItem(scopedKey(gid, 'synckey'));
+    return;
+  }
+  write(scopedKey(gid, 'synckey'), { v: 1, ...key });
+}
+
 // --- import / export ---
 
 // The wire format is frozen: the field is `gym` and the kind is
@@ -827,8 +881,10 @@ export function exportGymTemplate() {
 // v2 adds tombstones (and the records may carry updatedAt stamps) so a
 // restored backup keeps its deletes dead across a later sync. v1 files
 // (no tombstones, no stamps) import unchanged — absence means epoch 0.
-// The sync key (gymii.<pid>.synckey, M1) must NEVER be part of a backup:
-// backup files travel far more casually than sync credentials should.
+// The sync credentials (gymii.<gid>.synckey and .sync — passphrase, salt,
+// server token) must NEVER be part of a backup: backup files travel far
+// more casually than sync credentials should. This composes the file field
+// by field, so nothing can slip in by accident; test/sync.test.mjs pins it.
 export function exportBackup() {
   return {
     app: 'gymii',
@@ -1160,7 +1216,7 @@ export function importData(data) {
 // Full factory reset: every gym's data, the registry, and settings.
 export function clearAll() {
   const gyms = read(KEYS.gyms, null);
-  gyms?.list.forEach((g) => ['layout', 'workouts', 'active', 'plans', 'tombstones']
+  gyms?.list.forEach((g) => GYM_PARTS
     .forEach((part) => localStorage.removeItem(scopedKey(g.id, part))));
   // the pre-profile top-level keys keep their historical names — 'gymii.gym'
   // held what is now the layout, and does NOT follow the gym→layout rename
