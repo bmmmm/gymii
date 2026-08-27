@@ -164,6 +164,7 @@ assert.ok(code.startsWith('gymii-sync:v1:'), '1: sync code prefix');
 const parsed = JSON.parse(Buffer.from(code.slice('gymii-sync:v1:'.length), 'base64url').toString());
 assert.equal(parsed.server, 'http://sync.local/');
 assert.equal(parsed.token, 'tok-1');
+assert.equal(parsed.gymId, gid, '1: the code carries the blob id — pairing depends on it');
 assert.match(parsed.pass, /^[a-z1-9]{4}(-[a-z1-9]{4}){6}$/, '1: ~140 bits in readable groups');
 assert.equal(code, sync.getSyncCode(gid), '1: getSyncCode rebuilds the same code');
 
@@ -209,6 +210,25 @@ assert.equal(store.getLayout().machines[0].label, 'Chest press', "3: A's layout 
 assert.equal(store.getPlans()[0].id, 'pA', "3: A's plan arrived");
 assert.equal(store.getSyncKey(gid).salt, srv.blob.salt, '3: the per-gym salt is adopted from the envelope');
 assert.equal(paired.code, code, '3: both devices show the same code');
+
+// --- 3b. a device with its OWN gym id pairs onto the same blob ---
+// The code carries the blob's gymId; the local id stays local and the wire
+// only ever sees the remote one (config `remoteId`). Without this, pairing
+// would write a second blob and silently never converge.
+devices.C = new Map();
+useDevice('C');
+const gidC = 'gymlocalphone001';
+mem.set('gymii.gyms', JSON.stringify({
+  v: 1, list: [{ id: gidC, name: 'Home gym', updatedAt: 100 }], activeId: gidC,
+}));
+srv.log.length = 0;
+const pairedC = await sync.pairWithCode(gidC, code);
+assert.equal(pairedC.sync.status, 'synced', '3b: pairing under a different local id syncs');
+assert.ok(srv.log.length > 0 && srv.log.every((r) => r.url.endsWith(`/v1/gyms/${gid}`)),
+  '3b: every request addresses the BLOB id, never the local one');
+assert.equal(store.getLayout().machines[0].label, 'Chest press', "3b: A's layout arrived");
+assert.equal(store.getGyms().activeId, gidC, '3b: the local gym keeps its id');
+assert.equal(pairedC.code, code, '3b: the re-shown code still carries the blob id');
 
 // --- 4. the 409 loop actually re-merges ---
 useDevice('B');
@@ -353,6 +373,9 @@ await assert.rejects(() => sync.pairWithCode(gid, 'nope'), /bad-code/, '10: no p
 await assert.rejects(() => sync.pairWithCode(gid, 'gymii-sync:v1:@@@@'), /bad-code/, '10: not base64');
 await assert.rejects(
   () => sync.pairWithCode(gid, `gymii-sync:v1:${Buffer.from(JSON.stringify({ server: 'x' })).toString('base64url')}`),
+  /bad-code/, '10: fields missing');
+await assert.rejects(
+  () => sync.pairWithCode(gid, `gymii-sync:v1:${Buffer.from(JSON.stringify({ server: 'x', token: 't', pass: 'p' })).toString('base64url')}`),
   /bad-code/, '10: incomplete payload',
 );
 const demoId = store.createGym('Demo', { demo: true });

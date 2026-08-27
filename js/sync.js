@@ -119,17 +119,23 @@ async function decryptEnvelope(envelope, pass) {
   return JSON.parse(dec.decode(plain));
 }
 
-// --- sync code: server + token + passphrase, shown once ---
+// --- sync code: server + token + passphrase + blob id, shown once ---
 // M1 shares ONE account token across devices (sync-plan decision 13);
 // per-device tokens land with M3's device registry. The per-gym salt is
 // deliberately NOT in the code: it lives in the outer envelope, so a paired
-// device adopts it from the first blob it pulls.
+// device adopts it from the first blob it pulls. The code DOES carry the
+// blob's gymId — a blob is keyed by (account, gymId), and without the id a
+// paired device would sync its own gym into a second blob and silently
+// never converge. The paired device keeps its LOCAL gym id and maps to the
+// blob via `remoteId` in the sync config.
 
 export function getSyncCode(gid) {
   const cfg = getSyncConfig(gid);
   const key = getSyncKey(gid);
   if (!cfg || !key?.pass) return null;
-  const body = JSON.stringify({ server: cfg.server, token: cfg.token, pass: key.pass });
+  const body = JSON.stringify({
+    server: cfg.server, token: cfg.token, pass: key.pass, gymId: cfg.remoteId ?? gid,
+  });
   return CODE_PREFIX + b64url(bytesToB64(enc.encode(body)));
 }
 
@@ -142,9 +148,13 @@ function parseSyncCode(code) {
   } catch {
     throw new Error('bad-code');
   }
-  const { server, token, pass } = data ?? {};
-  if (!server || !token || !pass) throw new Error('bad-code');
-  return { server: String(server), token: String(token), pass: String(pass) };
+  const {
+    server, token, pass, gymId,
+  } = data ?? {};
+  if (!server || !token || !pass || !gymId) throw new Error('bad-code');
+  return {
+    server: String(server), token: String(token), pass: String(pass), gymId: String(gymId),
+  };
 }
 
 // --- talking to the server ---
@@ -292,7 +302,7 @@ function normalizeUnits(remote, unit) {
 // The heart: merge every kind, write the winners back through the bulk
 // writers (never the interactive ones — incoming state owns its stamps),
 // and hand back the payload that should be on the server.
-function reconcile(gid, remote) {
+function reconcile(gid, remote, rid) {
   return withGym(gid, () => {
     // 1. settings decide the unit, so they go first
     const before = getSettings();
@@ -369,7 +379,9 @@ function reconcile(gid, remote) {
         machines: tombstones.machines,
         shapes: tombstones.shapes,
       },
-      gymEntry: { id: gid, name: mergedEntry.name ?? '', updatedAt: stamp(mergedEntry) },
+      // the blob speaks in its OWN id (the key it lives under) — a paired
+      // device's local gym id stays local
+      gymEntry: { id: rid, name: mergedEntry.name ?? '', updatedAt: stamp(mergedEntry) },
       userSettings: userSettingsOf(getSettings()),
     };
   });
@@ -379,6 +391,9 @@ function reconcile(gid, remote) {
 
 async function runSync(gid, cfg, keyMaterial) {
   const { pass } = keyMaterial;
+  // the blob's address on the server — the paired device's local id and the
+  // blob id differ, and the wire only ever sees the latter
+  const rid = cfg.remoteId ?? gid;
   let rev = cfg.rev ?? 0;
   let salt = keyMaterial.salt || null;
 
@@ -386,7 +401,7 @@ async function runSync(gid, cfg, keyMaterial) {
     // only the first round may be answered with 304: after a 409 our
     // revision is known-stale and the blob is exactly what we need
     // eslint-disable-next-line no-await-in-loop
-    const got = await pull(cfg, gid, attempt === 0 ? rev : 0);
+    const got = await pull(cfg, rid, attempt === 0 ? rev : 0);
     let remote = null;
     if (got.kind === 'blob') {
       salt = got.envelope.salt; // the per-gym salt lives in the envelope
@@ -403,16 +418,16 @@ async function runSync(gid, cfg, keyMaterial) {
     // a device that paired but never pulled a blob has no salt yet
     if (!salt) salt = bytesToB64(randomBytes(SALT_BYTES));
 
-    const payload = reconcile(gid, remote);
+    const payload = reconcile(gid, remote, rid);
     // 304 says the blob is unchanged since our last pull, not that our
     // local side is unchanged — M1 has no dirty flag (M2's offline queue
     // brings one), so it re-pushes rather than sit on unsynced edits.
     if (remote && same(payload, remote)) return { rev, salt };
 
     // eslint-disable-next-line no-await-in-loop
-    const envelope = await encryptPayload(payload, pass, salt, gid);
+    const envelope = await encryptPayload(payload, pass, salt, rid);
     // eslint-disable-next-line no-await-in-loop
-    const put = await push(cfg, gid, rev, envelope);
+    const put = await push(cfg, rid, rev, envelope);
     if (put.kind === 'ok') return { rev: put.revision, salt };
     // 409: someone else pushed. Re-GET, re-merge, re-PUT — that loop IS
     // the conflict protocol.
@@ -477,23 +492,26 @@ export async function enableSync(gid, { server, token } = {}) {
   if (!url || !bearer) throw new Error('bad-server');
   saveSyncKey(gid, { v: 1, pass: generatePassphrase(), salt: bytesToB64(randomBytes(SALT_BYTES)) });
   saveSyncConfig(gid, {
-    v: 1, server: url, token: bearer, rev: 0, lastSyncAt: null, lastError: null,
+    v: 1, server: url, token: bearer, remoteId: gid, rev: 0, lastSyncAt: null, lastError: null,
   });
   return { code: getSyncCode(gid), sync: await syncNow(gid) };
 }
 
-// Second device: the code carries server, token and passphrase; the salt
-// arrives with the first blob. M1 pairs a gym that already carries the
-// remote gym's id (a blob is keyed by (account, gymId)) — discovering
-// another device's gyms via GET /v1/gyms is M3.
+// Second device: the code carries server, token, passphrase and the blob's
+// gymId; the salt arrives with the first blob. The local gym keeps its own
+// id — `remoteId` maps it onto the blob, so pairing binds whichever gym the
+// user picked to the shared one. Discovering a fresh device's other gyms
+// via GET /v1/gyms is M3.
 export async function pairWithCode(gid, code) {
   const gym = getGyms().list.find((g) => g.id === gid);
   if (!gym) throw new Error('unknown-gym');
   if (gym.demo) throw new Error('demo-gym');
-  const { server, token, pass } = parseSyncCode(code);
+  const {
+    server, token, pass, gymId,
+  } = parseSyncCode(code);
   saveSyncKey(gid, { v: 1, pass, salt: null });
   saveSyncConfig(gid, {
-    v: 1, server, token, rev: 0, lastSyncAt: null, lastError: null,
+    v: 1, server, token, remoteId: gymId, rev: 0, lastSyncAt: null, lastError: null,
   });
   return { code: getSyncCode(gid), sync: await syncNow(gid) };
 }

@@ -27,7 +27,10 @@ never order anything at the protocol level. Pairing a second device is one
   travel into AI exports), backup envelope v2 (tombstones ride along, v1
   imports unchanged), pure `js/merge.js` pinned by the 18-case matrix in
   `test/merge.test.mjs`, and the protocol spec.
-- **M1 — manual sync, E2E from day one**: the `gymii-sync` Go server (own
+- **M1 — manual sync, E2E from day one (DONE 2026-08-27 — proven
+  end-to-end: the real `js/sync.js` against the real `gymii-sync` binary,
+  a fresh second device with its own gym id converging both ways)**: the
+  `gymii-sync` Go server (own
   repo, stdlib, opaque blobs, bearer token per device, configurable CORS
   origin), `js/sync.js` (fetch + revision/ETag + 409 loop + WebCrypto +
   sync-code pairing), a Settings "Sync" card with a "Sync now" button,
@@ -37,9 +40,13 @@ never order anything at the protocol level. Pairing a second device is one
   "never leaves" again).
 - **M2 — ambient sync**: pull on app open / visibilitychange / before a
   workout starts; push on `finishWorkout` and debounced after gym/plan
-  edits; offline queue + retry; multi-tab guard; convergence tests.
+  edits; offline queue + retry; multi-tab guard; convergence tests; mirror
+  a local gym deletion via `DELETE /v1/gyms/{id}` (M1 never calls it — the
+  other device would re-push the gym).
 - **M3 — pairing polish**: QR code, device list + token revocation,
-  gym discovery on a fresh device, a failure badge on the Settings tab.
+  gym discovery on a fresh device (listing the account's other blobs via
+  `GET /v1/gyms`; single-gym pairing already works — the sync code carries
+  the blob's gymId), a failure badge on the Settings tab.
 - **M4 — only on demand**: live handoff of a running workout. Needs a UI
   decision ("already running on your phone — resume here?"), not merge
   logic; deliberately deferred.
@@ -120,3 +127,9 @@ option, never a requirement.
     sync code carries it to every device — decided. Per-device tokens (and
     revocation) arrive with M3's device registry; the protocol's
     "one token per device" is the M3 target, not an M1 requirement.
+14. The sync code carries the blob's gymId, and a paired device maps its
+    LOCAL gym onto that blob via `remoteId` in its sync config — decided
+    after the first end-to-end run proved the alternative broken: gym ids
+    never travel (backups restore content, not identity), so without the
+    id in the code a paired device pushed a second blob and never
+    converged, while the UI said "Synced."

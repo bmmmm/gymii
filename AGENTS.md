@@ -13,7 +13,10 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   edit. `store` (localStorage stub, store roundtrips, outline migration,
   template validation, locker carry-over, sync groundwork: stamps,
   tombstones, v1/v2 backup compat), `merge` (the pure sync merge matrix —
-  union by id, LWW, tombstones), `train` (guided-plan
+  union by id, LWW, tombstones), `sync` (the client sync engine: protocol
+  conformance over a stubbed fetch, WebCrypto roundtrip, sync-code parsing,
+  wire unit conversion, synckey-never-in-backup), `settings` (the Sync
+  card's states over the stub DOM), `train` (guided-plan
   construction, hub/start/plans navigation), `plan` (stored plans, the note parser/serialiser, AI
   import, binding, targets), `history` (name filter, muscle card + filter,
   full editor, back-logging), `gym` (editor rendering, collision),
@@ -154,6 +157,31 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   backs the builder's Text view. `#2 Dumbbells: Biceps curls` names a
   movement AT a machine — only a marked num unlocks that reading, or
   "Day A: Leg press" would lose half its name to a false heading.
+- `js/sync.js` — the cross-device sync engine (M1; docs/sync-protocol.md
+  is the wire contract, docs/sync-plan.md the decision log, gymii-sync the
+  reference server in its own repo). Public API is a FROZEN contract the
+  Settings Sync card consumes: `getSyncState`, `enableSync`,
+  `pairWithCode`, `getSyncCode`, `syncNow`, `disableSync`. `syncNow` runs
+  GET → decrypt → merge (js/merge.js) → apply → encrypt → PUT If-Match,
+  with a max-3 re-merge loop on 409; merged state is applied through the
+  bulk writers plus store's `restoreGymEntry`/`restoreSettings` — restore
+  twins exist because re-stamping with Date.now() would forge edits that
+  beat genuinely newer ones. Unit normalization happens at the wire, stamp-
+  driven: the newer userSettings stamp picks the winning unit (remote wins
+  ⇒ `setUnit()` converts local, local wins ⇒ the remote blob is converted
+  in memory before merging). Crypto: AES-256-GCM, PBKDF2-SHA256 (600k
+  iterations), per-gym salt in the outer envelope (a paired device adopts
+  it from the blob), fresh 12-byte IV per push. Server URL + account token
+  + passphrase + the blob's gymId travel as ONE sync code (`gymii-sync:v1:`
+  + base64url JSON; M1 shares one account token — sync-plan decision 13).
+  The gymId is load-bearing (decision 14): gym ids never travel between
+  devices, so a paired device keeps its LOCAL id and maps onto the blob
+  via `remoteId` in the sync config — every wire request speaks the remote
+  id, the store only ever sees the local one. Config lives in
+  `gymii.<gid>.sync`, key material in `gymii.<gid>.synckey` — both wiped
+  with the gym and NEVER in a backup (test-pinned). The demo gym never
+  syncs. M1 limit, deliberate: a local gym deletion is not yet mirrored
+  via DELETE (M2 — the other device would re-push it).
 - `js/app.js` — hash-router, renders views into `#view`. The `#gym`
   route is deliberately NOT in the tabbar (the map is a setup tool, not a
   daily surface — user decision); it is reached via links in onboarding,

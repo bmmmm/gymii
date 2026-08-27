@@ -59,41 +59,30 @@ dim setting's labels name their reference point ("10 s into the break").
 Timer sounds were confirmed on a real iPhone 2026-08-17, audible with the
 ring/silent switch ON.
 
-## Sync M1 (orchestrated — see docs/sync-plan.md)
-
-### Sync client core (js/sync.js)
-**Type: Feature**
-**Complexity: Large**
-**Touches: js/sync.js (new), test/sync.test.mjs (new), js/store.js, sw.js**
-The client sync engine per docs/sync-protocol.md: WebCrypto (AES-256-GCM,
-PBKDF2 ≥600k), sync-code pairing, GET/PUT with ETag + If-Match, the 409
-re-merge loop over js/merge.js, unit normalization at the wire, apply via
-the bulk writers. store.js gains getSyncConfig/saveSyncConfig +
-getSyncKey/saveSyncKey (`gymii.<gid>.sync` / `.synckey`), wiped on
-deleteGym/clearAll, NEVER in exportBackup (test-pinned). sw.js SHELL gains
-js/sync.js.
-
-### Honest privacy copy
-**Type: Docs**
-**Complexity: Small**
-**Touches: README.md, SECURITY.md, index.html**
-Rewrite every unconditional "never leaves the browser" claim for the sync
-era: "never unencrypted / not unless you turn it on". Sync is opt-in,
-E2E-encrypted, the server stores ciphertext only, manual export stays the
-zero-network fallback.
-
-### Settings Sync card
-**Type: Feature**
-**Complexity: Medium**
-**Touches: js/settings.js, css/style.css**
-Per-gym opt-in card (hidden for the demo gym): server URL + token →
-"Turn on sync" shows the sync code ONCE (copy button, plain no-recovery
-warning); paste field for pairing an existing code; configured state shows
-server, last sync, "Sync now", show-code and a two-tap "Turn off sync".
-Update the localStorage-only footnote. Consumes the frozen js/sync.js API.
+Shipped 2026-08-27 — sync M1, orchestrated (2 waves + a parallel server
+agent, all merged green): `js/sync.js` (E2E crypto, 409 re-merge loop,
+stamp-driven wire unit conversion, sync-code pairing), the Settings Sync
+card (opt-in per gym, show-once code, two-tap off), the honest privacy
+rewrite (README/SECURITY/meta: "never unencrypted / not unless you turn it
+on"), and the `gymii-sync` Go server in its own Forgejo repo (fs store with
+single-file atomic records, token-mint CLI, CORS/PNA, same-origin
+`-app-dir` mode, scratch Docker image). docs/sync-protocol.md now carries
+the decisions both implementations pinned. The first end-to-end run (real
+client, real binary) then caught what both test suites could not: gym ids
+never travel, so pairing wrote a second blob and never converged — the
+sync code now carries the blob's gymId and a paired device maps its local
+gym via `remoteId` (decision 14). E2E proven both ways with a fresh
+second device.
 
 ## Open
 
+- **A backup of a layout-less gym cannot be imported.** `exportBackup()`
+  writes `gym: getLayout()`, which is `null` until the Gym editor ever
+  ran — and `importData` then refuses the file as an invalid backup.
+  Surfaced by the sync E2E run (pre-existing, not introduced by M1): a
+  user who only logs workouts against a plan, never drawing a floor plan,
+  exports a backup that won't restore. Either export a valid empty layout
+  or accept `gym: null` on import.
 - **Verify the issue forms in a signed-in browser.** The chooser
   (`/issues/new/choose`) should show four forms + two contact links with
   "Blank issue" as maintainers-only, and the template form must block
