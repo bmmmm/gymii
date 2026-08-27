@@ -1,8 +1,11 @@
 # Security policy
 
 gymii is a local-first PWA: no server, no accounts, no network calls beyond
-fetching its own static files. Your data lives in your browser's
-`localStorage` and never leaves it unless you export it.
+fetching its own static files — unless you turn on cross-device sync. Sync
+is opt-in and end-to-end encrypted (AES-256-GCM) in the browser before
+anything is sent; the self-hosted server stores nothing but ciphertext.
+Your data lives in your browser's `localStorage` and never leaves
+unencrypted.
 
 ## Report privately
 
@@ -22,6 +25,9 @@ response within a week.
   describe a floor plan when loaded.
 - **Service worker**: cache behaviour that lets one origin's content stand
   in for gymii's, or keeps a known-vulnerable version pinned.
+- **Sync crypto & transport** (once cross-device sync ships): anything that
+  leaks plaintext, key material, or the passphrase to the self-hosted
+  server or over the wire.
 
 ## Out of scope
 
