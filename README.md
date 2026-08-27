@@ -3,8 +3,9 @@
 Type in your plan. Log your sets. Watch the numbers climb. Your gym draws
 itself along the way.
 
-Everything lives in your browser — no account, no backend, no tracking, not
-even a cookie banner.
+Everything lives in your browser — no account, no tracking, not even a
+cookie banner. No backend unless you turn on sync, and even then it only
+ever sees ciphertext.
 
 **→ [bmmmm.github.io/gymii](https://bmmmm.github.io/gymii/)** — installable, works offline.
 
@@ -68,8 +69,9 @@ show up on plain reload. No build step, no dependencies, no `node_modules`.
 
 ## Your data
 
-localStorage, under `gymii.*` keys. That's the whole story — nothing syncs
-anywhere, so export a backup before you switch devices or browsers.
+localStorage, under `gymii.*` keys. Nothing leaves the browser unencrypted,
+and nothing leaves at all unless you turn on sync — until then, export a
+backup before you switch devices or browsers.
 
 ## Contributing
 
