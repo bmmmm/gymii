@@ -59,6 +59,39 @@ dim setting's labels name their reference point ("10 s into the break").
 Timer sounds were confirmed on a real iPhone 2026-08-17, audible with the
 ring/silent switch ON.
 
+## Sync M1 (orchestrated — see docs/sync-plan.md)
+
+### Sync client core (js/sync.js)
+**Type: Feature**
+**Complexity: Large**
+**Touches: js/sync.js (new), test/sync.test.mjs (new), js/store.js, sw.js**
+The client sync engine per docs/sync-protocol.md: WebCrypto (AES-256-GCM,
+PBKDF2 ≥600k), sync-code pairing, GET/PUT with ETag + If-Match, the 409
+re-merge loop over js/merge.js, unit normalization at the wire, apply via
+the bulk writers. store.js gains getSyncConfig/saveSyncConfig +
+getSyncKey/saveSyncKey (`gymii.<gid>.sync` / `.synckey`), wiped on
+deleteGym/clearAll, NEVER in exportBackup (test-pinned). sw.js SHELL gains
+js/sync.js.
+
+### Honest privacy copy
+**Type: Docs**
+**Complexity: Small**
+**Touches: README.md, SECURITY.md, index.html**
+Rewrite every unconditional "never leaves the browser" claim for the sync
+era: "never unencrypted / not unless you turn it on". Sync is opt-in,
+E2E-encrypted, the server stores ciphertext only, manual export stays the
+zero-network fallback.
+
+### Settings Sync card
+**Type: Feature**
+**Complexity: Medium**
+**Touches: js/settings.js, css/style.css**
+Per-gym opt-in card (hidden for the demo gym): server URL + token →
+"Turn on sync" shows the sync code ONCE (copy button, plain no-recovery
+warning); paste field for pairing an existing code; configured state shows
+server, last sync, "Sync now", show-code and a two-tap "Turn off sync".
+Update the localStorage-only footnote. Consumes the frozen js/sync.js API.
+
 ## Open
 
 - **Verify the issue forms in a signed-in browser.** The chooser

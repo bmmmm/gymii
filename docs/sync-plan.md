@@ -116,3 +116,7 @@ option, never a requirement.
     bare binary remains supported.
 12. Same-origin mode (`-app-dir` serving gymii itself) — recommended as
     THE local-first setup; it dissolves CORS/PNA/mixed-content entirely.
+13. Token provisioning, M1: the server CLI mints ONE account token and the
+    sync code carries it to every device — decided. Per-device tokens (and
+    revocation) arrive with M3's device registry; the protocol's
+    "one token per device" is the M3 target, not an M1 requirement.

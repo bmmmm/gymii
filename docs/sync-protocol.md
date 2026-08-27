@@ -34,6 +34,9 @@ against the same words.
 
 - Auth: `Authorization: Bearer <device-token>` — one token per device, all
   resolving to one account; revocable individually. Never in the URL.
+  **M1 scope**: the server CLI mints one account token and the sync code
+  shares it across devices; per-device tokens + revocation land with M3's
+  device registry (sync-plan decision 13).
 - CORS: allowed origin from server config (`SYNC_ALLOWED_ORIGIN`), plus
   `Access-Control-Expose-Headers: ETag`, `Allow-Headers: Authorization,
   If-Match, Content-Type`, and an OPTIONS preflight. A wildcard origin does
