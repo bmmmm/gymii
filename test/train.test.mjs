@@ -17,13 +17,13 @@ const {
   screenKey, goToHub, goToStart, goToPlans,
 } = await import(new URL('../js/train.js', import.meta.url).href);
 
-const gym = store.newGym('Test gym');
+const gym = store.newLayout('Test gym');
 gym.machines.push({ id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
 gym.machines.push({
   id: 'db', num: 2, label: 'Dumbbells', x: 6, y: 0, w: 4, h: 3, settingsFields: [],
   exercises: ['Biceps curls', 'Shoulder press'],
 });
-store.saveGym(gym);
+store.saveLayout(gym);
 
 const entry = (machineId, exercise = null, extra = {}) => ({
   machineId, num: 0, label: 'x', ...(exercise ? { exercise } : {}),
@@ -53,16 +53,16 @@ assert.equal(active.currentExercise, 'Shoulder press', 'first slot pre-picks its
 startWorkoutFrom({ entries: [entry('db', 'Biceps curls'), entry('db', 'Biceps curls')] });
 assert.equal(store.getActive().plan.length, 1, 'duplicate pairs dedupe');
 
-// an exercise the machine no longer offers falls back to a station slot —
+// an exercise the machine no longer offers falls back to a machine slot —
 // which is dropped again when exercise slots for the same machine exist
 startWorkoutFrom({ entries: [entry('db', 'Gone')] });
 assert.deepEqual(store.getActive().plan, [{ machineId: 'db', exercise: null }],
-  'unknown exercise falls back to a whole-station slot');
+  'unknown exercise falls back to a whole-machine slot');
 startWorkoutFrom({ entries: [entry('db', 'Gone'), entry('db', 'Biceps curls')] });
 assert.deepEqual(store.getActive().plan, [{ machineId: 'db', exercise: 'Biceps curls' }],
-  'station slot dropped when exercise slots for the machine exist');
+  'machine slot dropped when exercise slots for the machine exist');
 
-// deleted machines fall out of the plan; firstMachineId seeds a free session
+// deleted machines fall out of the plan; firstMachineId seeds a free workout
 startWorkoutFrom({ entries: [entry('ghost'), entry('m1')] });
 assert.deepEqual(store.getActive().plan, [{ machineId: 'm1', exercise: null }],
   'entries of deleted machines are skipped');
@@ -112,14 +112,14 @@ store.saveActive({
 renderTrain(root);
 assert.ok(root.innerHTML.includes('Log set'), 'plain machine renders the set logger');
 
-// multi-exercise station, no exercise picked yet: chip picker, no logger
+// multi-exercise machine, no exercise picked yet: chip picker, no logger
 store.saveActive({
   v: 2, id: 'w-pick', startedAt: 1755000000000,
   plan: [{ machineId: 'db', exercise: null }],
   currentMachineId: 'db', currentExercise: null, entries: [],
 });
 renderTrain(root);
-assert.ok(root.innerHTML.includes('Biceps curls'), 'station renders its exercise chips');
+assert.ok(root.innerHTML.includes('Biceps curls'), 'machine renders its exercise chips');
 assert.ok(!root.innerHTML.includes('Log set'), 'no logger while the exercise pick is pending');
 
 // #log-set stamps `at: Date.now()` onto the logged set
@@ -147,11 +147,11 @@ assert.equal(typeof loggedSet.at, 'number', 'logged set carries a numeric at tim
 assert.ok(loggedSet.at >= before && loggedSet.at <= after, 'at is stamped at log time');
 
 // --- quick-switch chips ---
-// a superset session logging at station A with `at`-stamped sets on B and
-// C shows chips for the OTHER stations, newest first-ish (both present),
-// but never a chip for the current station A itself.
+// a superset workout logging at machine A with `at`-stamped sets on B and
+// C shows chips for the OTHER machines, newest first-ish (both present),
+// but never a chip for the current machine A itself.
 gym.machines.push({ id: 'm2', num: 3, label: 'Back extension', x: 12, y: 0, w: 4, h: 3, settingsFields: [] });
-store.saveGym(gym);
+store.saveLayout(gym);
 
 store.saveActive({
   v: 2, id: 'w-quick-switch', startedAt: 1755000000000,
@@ -165,20 +165,20 @@ store.saveActive({
 });
 byId.clear();
 renderTrain(root);
-assert.ok(root.innerHTML.includes('quick-switch'), 'quick-switch block renders for stations with at-stamped sets');
-assert.ok(root.innerHTML.includes('#2 Dumbbells'), 'chip for station B (Dumbbells)');
-assert.ok(root.innerHTML.includes('#3 Back extension'), 'chip for station C (Back extension)');
-assert.ok(!root.innerHTML.includes('↩ #1 Chest press'), 'no quick-switch chip for the current station');
+assert.ok(root.innerHTML.includes('quick-switch'), 'quick-switch block renders for machines with at-stamped sets');
+assert.ok(root.innerHTML.includes('#2 Dumbbells'), 'chip for machine B (Dumbbells)');
+assert.ok(root.innerHTML.includes('#3 Back extension'), 'chip for machine C (Back extension)');
+assert.ok(!root.innerHTML.includes('↩ #1 Chest press'), 'no quick-switch chip for the current machine');
 
-// tapping a chip swings the session back: currentMachineId/currentExercise
-// switch to the tapped station and the entry that owns its newest set
+// tapping a chip swings the workout back: currentMachineId/currentExercise
+// switch to the tapped machine and the entry that owns its newest set
 const quickSwitchChip = root.querySelector('.quick-switch').listeners.click;
 quickSwitchChip({ target: { closest: () => ({ dataset: { machine: 'db' } }) } });
 active = store.getActive();
-assert.equal(active.currentMachineId, 'db', 'tapping a chip switches the current station');
+assert.equal(active.currentMachineId, 'db', 'tapping a chip switches the current machine');
 assert.equal(active.currentExercise, 'Biceps curls', 'tapping a chip switches to the entry\'s exercise');
 
-// a session whose OTHER-station sets lack `at` renders no quick-switch
+// a workout whose OTHER-machine sets lack `at` renders no quick-switch
 // block at all — nothing to rank, nothing to show
 store.saveActive({
   v: 2, id: 'w-quick-switch-no-at', startedAt: 1755000000000,
@@ -191,14 +191,14 @@ store.saveActive({
 });
 byId.clear();
 renderTrain(root);
-assert.ok(!root.innerHTML.includes('quick-switch'), 'no quick-switch block when other-station sets lack at');
+assert.ok(!root.innerHTML.includes('quick-switch'), 'no quick-switch block when other-machine sets lack at');
 
 // --- nearby alternative (busy-machine escape hatch) ---
-// the closest OTHER station with an open slot, by center distance; the
+// the closest OTHER machine with an open slot, by center distance; the
 // current machine and the plan's next are excluded, done slots don't count
 gym.machines.push({ id: 'far', num: 4, label: 'Far press', x: 50, y: 30, w: 4, h: 3, settingsFields: [] });
 gym.machines.push({ id: 'near', num: 5, label: 'Near fly', x: 0, y: 6, w: 4, h: 3, settingsFields: [] });
-store.saveGym(gym);
+store.saveLayout(gym);
 
 const m1 = gym.machines.find((m) => m.id === 'm1');
 const mkActive = (entries = []) => ({
@@ -215,21 +215,21 @@ const mkActive = (entries = []) => ({
 });
 
 let alt = nearbyAlternative(mkActive(), gym, m1, 'db');
-assert.equal(alt.machine.id, 'near', 'closest open other station wins (current + next excluded)');
+assert.equal(alt.machine.id, 'near', 'closest open other machine wins (current + next excluded)');
 
-// a station with sets logged is done and falls out of the running
+// a machine with sets logged is done and falls out of the running
 alt = nearbyAlternative(mkActive([
   { machineId: 'near', num: 5, label: 'Near fly', settings: {}, sets: [{ reps: 8, weight: 10 }] },
 ]), gym, m1, 'db');
-assert.equal(alt.machine.id, 'm2', 'done stations are skipped');
+assert.equal(alt.machine.id, 'm2', 'done machines are skipped');
 
-// but a plan target keeps its station open until the set count is met
+// but a plan target keeps its machine open until the set count is met
 const targeted = mkActive([
   { machineId: 'near', num: 5, label: 'Near fly', settings: {}, sets: [{ reps: 8, weight: 10 }] },
 ]);
 targeted.plan.find((p) => p.machineId === 'near').target = { sets: 3, reps: 8, weight: 10 };
 alt = nearbyAlternative(targeted, gym, m1, 'db');
-assert.equal(alt.machine.id, 'near', 'a station below its target set count is still open');
+assert.equal(alt.machine.id, 'near', 'a machine below its target set count is still open');
 
 // nothing open besides the plan's next -> no alternative
 const onlyNext = { ...mkActive(), plan: [
@@ -258,12 +258,12 @@ renderTrain(root);
 assert.ok(!root.innerHTML.includes('Busy?'), 'no nearby line when only the next slot is open');
 
 // --- muscle coverage on the overview ---
-// muscles of machines with sets this session read live from the gym;
+// muscles of machines with sets this workout read live from the gym;
 // covered chips carry sel+done, open ones stay plain
 gym.machines.find((m) => m.id === 'm1').muscles = ['Chest'];
 gym.machines.find((m) => m.id === 'm2').muscles = ['Lower back'];
 gym.machines.find((m) => m.id === 'near').muscles = ['Shoulders'];
-store.saveGym(gym);
+store.saveLayout(gym);
 
 store.saveActive({
   v: 2, id: 'w-coverage', startedAt: 1755000000000,
@@ -278,14 +278,14 @@ byId.clear();
 renderTrain(root);
 assert.ok(root.innerHTML.includes('Muscles today'), 'overview renders the coverage card');
 assert.ok(root.innerHTML.includes('chip sel done" data-muscle="Chest"'),
-  'a muscle trained this session is marked covered');
+  'a muscle trained this workout is marked covered');
 assert.ok(root.innerHTML.includes('chip" data-muscle="Lower back"'),
   'a machine without sets leaves its muscle open');
 assert.ok(root.innerHTML.includes('chip" data-muscle="Shoulders"'),
   'unvisited machines leave their muscles open');
 
 // --- locker: leads on the way in, collapses once training starts ---
-// The locker only matters at the start of a session; from the first logged
+// The locker only matters at the start of a workout; from the first logged
 // set on, the overview belongs to the next machine and the next reps, so the
 // card becomes one row above Finish.
 const lockerActive = (sets) => ({
@@ -332,7 +332,7 @@ assert.ok(root.innerHTML.includes('🔒 Locker'), 'an unset locker labels itself
 // The first-run screen and the start screen's no-machines branch offer the
 // same two controls and now share one handler — backstop included: a workout
 // with logged sets that appeared after the render must never be clobbered.
-store.saveGym(store.newGym('Empty gym'));
+store.saveLayout(store.newLayout('Empty gym'));
 store.clearActive();
 byId.clear();
 renderTrain(root);
@@ -351,7 +351,7 @@ store.saveActive({
 root.querySelector('#qs-start').listeners.click();
 assert.equal(store.getActive().id, 'w-live',
   'onboarding quick start backs off from a workout with logged sets');
-assert.equal(store.getGym().machines.length, 0, 'and creates no machine when it backs off');
+assert.equal(store.getLayout().machines.length, 0, 'and creates no machine when it backs off');
 
 // same wiring on the start screen: a saved plan routes there instead of
 // onboarding, and its no-machines branch quick-starts identically
@@ -364,7 +364,7 @@ assert.ok(root.innerHTML.includes('Start at a machine') && root.innerHTML.includ
   'start screen without machines offers quick start');
 root.querySelector('#qs-label').value = 'Cable row';
 root.querySelector('#qs-start').listeners.click();
-const qsGym = store.getGym();
+const qsGym = store.getLayout();
 assert.equal(qsGym.machines.length, 1, 'quick start creates the named machine');
 assert.equal(qsGym.machines[0].label, 'Cable row');
 assert.equal(store.getActive().plan[0].machineId, qsGym.machines[0].id,
@@ -372,7 +372,7 @@ assert.equal(store.getActive().plan[0].machineId, qsGym.machines[0].id,
 
 // --- prefill matrix ---
 // The "last weight at this machine" contract, pinned case by case:
-//  (a) a plan target vs. a set already logged this session
+//  (a) a plan target vs. a set already logged this workout
 //  (b) the no-target fallback chain
 //  (c) exercise scoping (lastEntryFor's own cases live in store.test.mjs)
 //  (d) a previous entry whose type flag was toggled since
@@ -388,29 +388,29 @@ const lbsS = { ...kgS, unit: 'lbs', weightStep: 5.5 };
 const prev = { sets: [{ reps: 12, weight: 40 }, { reps: 10, weight: 45 }, { reps: 8, weight: 50 }] };
 const goal = { sets: 3, reps: 10, weight: 55 };
 
-// (a) the target is the goal for THIS session: it beats history on the
+// (a) the target is the goal for THIS workout: it beats history on the
 // first set, but never what was actually just lifted
 assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'strength', kgS, goal),
   { reps: 10, weight: 55 }, 'a: no sets yet -> the target prefills');
 assert.deepEqual(nextSetDefaults({ sets: [] }, prev, 'strength', kgS, goal),
   { reps: 10, weight: 55 }, 'a: the target outranks history on the first set');
 assert.deepEqual(nextSetDefaults({ sets: [{ reps: 10, weight: 50 }] }, prev, 'strength', kgS, goal),
-  { reps: 10, weight: 50 }, 'a: a set logged this session outranks the target');
+  { reps: 10, weight: 50 }, 'a: a set logged this workout outranks the target');
 assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'cardio', kgS, { distance: 3000, seconds: 900 }),
   { distance: 3000, seconds: 900 }, 'a: a cardio target prefills distance + time');
 assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'bodyweight', kgS, { sets: 3, reps: 12, weight: 5 }),
   { reps: 12, weight: 5 }, 'a: a bodyweight target prefills reps + added weight');
 
-// (b) without a target: the set just done this session, else set 1 of the
-// previous session, then the static default
+// (b) without a target: the set just done this workout, else set 1 of the
+// previous workout, then the static default
 assert.deepEqual(nextSetDefaults({ sets: [] }, prev, 'strength', kgS),
-  { reps: 12, weight: 40 }, 'b: set 1 comes from set 1 of the previous session');
+  { reps: 12, weight: 40 }, 'b: set 1 comes from set 1 of the previous workout');
 assert.deepEqual(nextSetDefaults({ sets: [{ reps: 10, weight: 42.5 }] }, prev, 'strength', kgS),
   { reps: 10, weight: 42.5 }, 'b: the set just logged beats the same set number from history');
 assert.deepEqual(nextSetDefaults({ sets: prev.sets.slice() }, prev, 'strength', kgS),
   { reps: 8, weight: 50 }, 'b: the set just done keeps winning past history\'s set count');
 // history only ever seeds the opener — a non-empty entry never reads `last`,
-// so the previous session's later sets are unreachable by construction; both
+// so the previous workout's later sets are unreachable by construction; both
 // sides of that line are pinned above.
 assert.deepEqual(nextSetDefaults({ sets: [] }, { sets: [] }, 'strength', kgS),
   { reps: 10, weight: 20 }, 'b: a set-less previous entry falls through to the static default');
@@ -426,21 +426,21 @@ assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'cardio', lbsS), { distance
 
 // --- render-level: header line, settings carry-over, stepper values ---
 store.clearAll();
-const pGym = store.newGym('Prefill gym');
+const pGym = store.newLayout('Prefill gym');
 pGym.machines.push(
   { id: 'p1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: ['Seat'] },
   { id: 'pdb', num: 2, label: 'Dumbbells', x: 6, y: 0, w: 4, h: 3, settingsFields: [],
     exercises: ['Biceps curls', 'Shoulder press'] },
-  // pex LOST its cardio flag in the studio, pbw GAINED a bodyweight one —
+  // pex LOST its cardio flag in the gym, pbw GAINED a bodyweight one —
   // either way the stored entry is the wrong shape for this screen now
   { id: 'pex', num: 3, label: 'Rower', x: 12, y: 0, w: 4, h: 3, settingsFields: ['Level'] },
   { id: 'pbw', num: 4, label: 'Dip bar', x: 18, y: 0, w: 4, h: 3, settingsFields: [], bodyweight: true },
   { id: 'pc', num: 5, label: 'Treadmill', x: 24, y: 0, w: 4, h: 3, settingsFields: [], cardio: true },
 );
-store.saveGym(pGym);
+store.saveLayout(pGym);
 
 store.saveWorkouts([
-  // an older session at the same machine — the prefill must read the LAST
+  // an older workout at the same machine — the prefill must read the LAST
   // one, not the first one it finds
   { id: 'h0', startedAt: 100, finishedAt: 200, entries: [
     { machineId: 'p1', num: 1, label: 'Chest press', settings: { Seat: '2' },
@@ -449,7 +449,7 @@ store.saveWorkouts([
   { id: 'h1', startedAt: 1000, finishedAt: 2000, entries: [
     { machineId: 'p1', num: 1, label: 'Chest press', settings: { Seat: '4' },
       sets: [{ reps: 12, weight: 40 }, { reps: 10, weight: 45 }] },
-    // logged while pex was still a cardio station — settings included
+    // logged while pex was still a cardio machine — settings included
     { machineId: 'pex', num: 3, label: 'Rower', cardio: true, settings: { Level: '7' },
       sets: [{ distance: 3000, seconds: 900 }] },
     // logged before pbw was flagged bodyweight: 30 kg on the bar, not added
@@ -477,17 +477,17 @@ const logAt = (machineId, exercise = null, { entries = [], target = null } = {})
 const stepper = (html, id) =>
   html.match(new RegExp(`id="${id}"[^>]*value="([^"]*)"`))?.[1] ?? null;
 
-// (b) render-level: set 1 prefills from set 1 of the MOST RECENT session
+// (b) render-level: set 1 prefills from set 1 of the MOST RECENT workout
 let html = logAt('p1');
-assert.equal(stepper(html, 'set-weight'), '40', 'b: the log screen prefills last session\'s set 1');
+assert.equal(stepper(html, 'set-weight'), '40', 'b: the log screen prefills last workout\'s set 1');
 assert.equal(stepper(html, 'set-reps'), '12');
-assert.ok(html.includes('Last: 40×12, 45×10 kg'), 'b: the header states the whole last session');
-assert.ok(!html.includes('30×15'), 'b: the older session at the same machine is not the one read');
+assert.ok(html.includes('Last: 40×12, 45×10 kg'), 'b: the header states the whole last workout');
+assert.ok(!html.includes('30×15'), 'b: the older workout at the same machine is not the one read');
 assert.ok(/data-field="Seat"[\s\S]*?value="4"/.test(html),
   'b: machine settings come from the same (most recent) entry');
 assert.ok(html.includes('✓ Log set — 40 kg × 12'), 'b: the log button names what it will log');
 
-// (c) exercise scoping: each exercise of a station prefills from its own
+// (c) exercise scoping: each exercise of a machine prefills from its own
 // history, never from its sibling's
 html = logAt('pdb', 'Shoulder press');
 assert.equal(stepper(html, 'set-weight'), '20', 'c: the picked exercise prefills from its own entry');
@@ -521,7 +521,7 @@ assert.deepEqual([stepper(html, 'set-distance'), stepper(html, 'set-time')], ['1
 
 // (a) render-level: the target leads, a logged set takes over
 html = logAt('p1', null, { target: goal });
-assert.equal(stepper(html, 'set-weight'), '55', 'a: the target prefills over last session\'s 40');
+assert.equal(stepper(html, 'set-weight'), '55', 'a: the target prefills over last workout\'s 40');
 assert.ok(html.includes('Target: 3 × 10 @ 55 kg') && html.includes('set 1/3'),
   'a: the header states the target and the set position');
 assert.ok(html.includes('✓ Log set 1/3 — 55 kg × 10'), 'a: the log button counts against the target');
@@ -570,7 +570,7 @@ assert.equal(screenKey(null, { planId: null }), 'builder:new');
 assert.equal(screenKey({ ...logging, currentMachineId: null }, null), 'overview');
 assert.equal(screenKey(logging, null), 'log:m1:');
 assert.equal(screenKey({ ...logging, currentExercise: 'Biceps curls' }, null),
-  'log:m1:Biceps curls', 'each exercise at a station is its own screen');
+  'log:m1:Biceps curls', 'each exercise at a machine is its own screen');
 assert.equal(screenKey({ ...logging, binding: 0 }, null), 'bind:0',
   'binding index 0 must not read as "no binding"');
 assert.equal(screenKey(logging, null), screenKey({ ...logging }, null),
@@ -607,7 +607,7 @@ store.saveSettings({ ...store.getSettings(), keepAwake: 'break' });
 
 // --- the train hub: neutral landing, tiles navigate ---
 store.clearActive();
-store.saveGym(store.newGym('Hub test gym')); // no machines: start screen quick-starts
+store.saveLayout(store.newLayout('Hub test gym')); // no machines: start screen quick-starts
 store.saveWorkouts([{
   id: 'w-hub', startedAt: 1755000000000, finishedAt: 1755003600000, name: 'Push day',
   entries: [{
@@ -624,12 +624,12 @@ byId.clear();
 renderTrain(root);
 assert.ok(root.innerHTML.includes('class="tile hero"') && root.innerHTML.includes('Start training'),
   'the hub leads with the start hero');
-assert.ok(root.innerHTML.includes('id="hub-plans"') && root.innerHTML.includes('id="hub-studio"')
+assert.ok(root.innerHTML.includes('id="hub-plans"') && root.innerHTML.includes('id="hub-gym"')
   && root.innerHTML.includes('id="hub-history"'), 'and offers the three nav tiles');
 assert.ok(root.innerHTML.includes('last: Push day'),
   'without weekday plans the hero falls back to the last workout');
 assert.ok(root.innerHTML.includes('Draw your gym'),
-  'an empty gym turns the studio tile into the invitation');
+  'an empty gym turns the gym tile into the invitation');
 
 // a dated plan puts today's status on the hero instead — as plain text
 store.savePlans([{

@@ -12,11 +12,11 @@ globalThis.localStorage = {
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 
-// build a gym
-const gym = store.newGym('Test gym');
-gym.machines.push({ id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: ['Seat'] });
-gym.machines.push({ id: 'm2', num: 2, label: 'Lat pulldown', x: 6, y: 0, w: 4, h: 3, settingsFields: [] });
-store.saveGym(gym);
+// build a layout
+const layout = store.newLayout('Test layout');
+layout.machines.push({ id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: ['Seat'] });
+layout.machines.push({ id: 'm2', num: 2, label: 'Lat pulldown', x: 6, y: 0, w: 4, h: 3, settingsFields: [] });
+store.saveLayout(layout);
 
 // log a workout; the set-less entry must be dropped on finish
 store.saveActive({
@@ -48,47 +48,48 @@ assert.strictEqual(store.lastEntryFor('m2'), null, 'machines without sets have n
 const backup = store.exportBackup();
 const template = store.exportGymTemplate();
 store.clearAll();
-assert.equal(store.getGym(), null);
+assert.equal(store.getLayout(), null);
 assert.equal(store.importData(JSON.parse(JSON.stringify(backup))), 'backup');
-assert.equal(store.getGym().name, 'Test gym');
+assert.equal(store.getLayout().name, 'Test layout');
 assert.equal(store.getWorkouts().length, 1);
 assert.equal(store.lastEntryFor('m1').sets[0].weight, 40);
 store.clearAll();
 assert.equal(store.importData(JSON.parse(JSON.stringify(template))), 'gym-template');
-assert.equal(store.getGym().machines.length, 2);
+assert.equal(store.getLayout().machines.length, 2);
 assert.equal(store.getWorkouts().length, 0, 'template import brings no history');
 
 // invalid files must throw, not corrupt
 assert.throws(() => store.importData({ app: 'other' }));
+// `gym` here is the frozen WIRE field, not the internal layout name
 assert.throws(() => store.importData({ app: 'gymii', kind: 'gym-template', gym: { machines: 'nope' } }));
 assert.throws(() => store.importData({
   app: 'gymii', kind: 'gym-template', v: 1,
-  gym: { ...store.newGym('bad'), machines: [{ id: 'x', num: 1, exercises: [{ name: 'Curl' }] }] },
+  gym: { ...store.newLayout('bad'), machines: [{ id: 'x', num: 1, exercises: [{ name: 'Curl' }] }] },
 }), 'non-string exercises rejected');
 
 // machines healed on read: a hand-edited import without settingsFields must
-// not brick Train/Studio (they call machine.settingsFields.forEach)
-const bare = store.newGym('Bare');
+// not brick Train/Gym (they call machine.settingsFields.forEach)
+const bare = store.newLayout('Bare');
 bare.machines.push({ id: 'b1', num: 1, label: 'Imported' });
-store.saveGym(bare);
-assert.deepEqual(store.getGym().machines[0].settingsFields, [], 'missing settingsFields healed');
-assert.deepEqual(store.getGym().machines[0].muscles, [], 'missing muscles healed');
+store.saveLayout(bare);
+assert.deepEqual(store.getLayout().machines[0].settingsFields, [], 'missing settingsFields healed');
+assert.deepEqual(store.getLayout().machines[0].muscles, [], 'missing muscles healed');
 
-// outline: new gyms carry a full-rect outline, legacy gyms get one on read
-assert.equal(store.newGym('x').outline.length, 4);
-const legacy = store.newGym('Legacy');
+// outline: a new layout carries a full-rect outline, a legacy one gets it on read
+assert.equal(store.newLayout('x').outline.length, 4);
+const legacy = store.newLayout('Legacy');
 delete legacy.outline;
-store.saveGym(legacy);
-assert.deepEqual(store.getGym().outline[2], { x: 60, y: 40 }, 'legacy gym migrated on read');
+store.saveLayout(legacy);
+assert.deepEqual(store.getLayout().outline[2], { x: 60, y: 40 }, 'legacy layout migrated on read');
 
 // outline validation: fewer than 3 points or non-numbers are rejected
 assert.throws(() => store.importData({
   app: 'gymii', kind: 'gym-template', v: 1,
-  gym: { ...store.newGym('bad'), outline: [{ x: 1, y: 2 }] },
+  gym: { ...store.newLayout('bad'), outline: [{ x: 1, y: 2 }] },
 }));
 assert.throws(() => store.importData({
   app: 'gymii', kind: 'gym-template', v: 1,
-  gym: { ...store.newGym('bad'), outline: [{ x: 1, y: 2 }, { x: 'a', y: 3 }, { x: 4, y: 5 }] },
+  gym: { ...store.newLayout('bad'), outline: [{ x: 1, y: 2 }, { x: 'a', y: 3 }, { x: 4, y: 5 }] },
 }));
 
 // delete/update workouts (inline history edits)
@@ -123,60 +124,105 @@ assert.equal(store.updateWorkout({ id: 'wb', entries: [{ machineId: 'm2', num: 2
   null, 'update with only empty entries removes the workout');
 assert.equal(store.getWorkouts().length, 0);
 
-// profiles: legacy top-level keys migrate under a default profile on first access
+// gyms: pre-profile top-level keys migrate under a default gym on first
+// access, and the one called 'gym' back then lands as the 'layout' part
 store.clearAll();
-localStorage.setItem('gymii.gym', JSON.stringify(store.newGym('Legacy gym')));
+localStorage.setItem('gymii.gym', JSON.stringify(store.newLayout('Legacy gym')));
 localStorage.setItem('gymii.workouts', JSON.stringify(
   [{ id: 'lw', startedAt: 1, finishedAt: 2, entries: [{ machineId: 'm1', num: 1, label: 'A', settings: {}, sets: [{ reps: 5, weight: 20 }] }] }]));
-const profiles = store.getProfiles();
-assert.equal(profiles.list.length, 1);
-assert.equal(profiles.list[0].name, 'Legacy gym', 'migrated profile takes the gym name');
-assert.equal(localStorage.getItem('gymii.gym'), null, 'legacy key moved under the profile');
-assert.equal(store.getGym().name, 'Legacy gym', 'gym readable through the profile');
-assert.equal(store.getWorkouts().length, 1, 'history readable through the profile');
+const migratedLegacy = store.getGyms();
+assert.equal(migratedLegacy.list.length, 1);
+assert.equal(migratedLegacy.list[0].name, 'Legacy gym', 'the migrated gym takes the layout name');
+assert.equal(localStorage.getItem('gymii.gym'), null, 'the legacy key moved under the gym');
+assert.equal(localStorage.getItem(`gymii.${migratedLegacy.activeId}.layout`) != null, true,
+  'the pre-profile gym key became the layout part');
+assert.equal(store.getLayout().name, 'Legacy gym', 'layout readable through the gym');
+assert.equal(store.getWorkouts().length, 1, 'history readable through the gym');
 
-// profile switching: each profile is an isolated {gym, workouts, active} bundle
-const firstId = profiles.activeId;
-const secondId = store.createProfile('Second gym');
-assert.equal(store.getProfiles().activeId, secondId, 'new profile becomes active');
-assert.equal(store.getGym(), null, 'new profile starts without a gym');
+// --- the profile era migrates: gymii.profiles → gymii.gyms, and each
+// profile's `gym` part → `layout`. Ids are preserved; only names move. ---
+store.clearAll();
+const pid = 'legacy-profile-id';
+const eraLayout = store.newLayout('Profile-era gym');
+eraLayout.machines = [{ id: 'em1', num: 7, label: 'Old press', x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Chest'] }];
+localStorage.setItem('gymii.profiles', JSON.stringify(
+  { v: 1, list: [{ id: pid, name: 'Profile-era gym' }], activeId: pid }));
+localStorage.setItem(`gymii.${pid}.gym`, JSON.stringify(eraLayout)); // the old part name
+localStorage.setItem(`gymii.${pid}.workouts`, JSON.stringify(
+  [{ id: 'ew', startedAt: 1, finishedAt: 2, entries: [{ machineId: 'em1', num: 7, label: 'Old press', settings: {}, sets: [{ reps: 8, weight: 40 }] }] }]));
+
+const migrated = store.getGyms();
+assert.equal(localStorage.getItem('gymii.profiles'), null, 'the profile registry is gone');
+assert.ok(localStorage.getItem('gymii.gyms'), 'the gym registry took its place');
+assert.equal(migrated.activeId, pid, 'ids survive the rename — only key names change');
+assert.equal(migrated.list[0].name, 'Profile-era gym');
+assert.equal(localStorage.getItem(`gymii.${pid}.gym`), null, 'the old gym part is gone');
+assert.equal(store.getLayout().machines[0].label, 'Old press', 'the layout came across intact');
+assert.equal(store.getWorkouts().length, 1, 'untouched parts keep working');
+
+// idempotent: a second pass finds nothing to do and changes nothing
+const again = store.getGyms();
+assert.deepEqual(again, migrated, 'migrating twice is a no-op');
+assert.equal(store.getLayout().machines[0].label, 'Old press');
+
+// crash-safety: the parts move BEFORE the registry, so a replay that finds
+// the layout already in place must not clobber it with the stale copy
+store.clearAll();
+localStorage.setItem('gymii.profiles', JSON.stringify(
+  { v: 1, list: [{ id: pid, name: 'Half-migrated' }], activeId: pid }));
+localStorage.setItem(`gymii.${pid}.gym`, JSON.stringify(store.newLayout('Stale')));
+localStorage.setItem(`gymii.${pid}.layout`, JSON.stringify(store.newLayout('Already moved')));
+store.getGyms();
+assert.equal(store.getLayout().name, 'Already moved',
+  'a replay leaves the newer layout alone and only drops the stale key');
+assert.equal(localStorage.getItem(`gymii.${pid}.gym`), null, 'the stale key is cleaned up');
+
+// gym switching: each gym is an isolated {layout, workouts, active} bundle
+store.clearAll();
+const firstId = store.getGyms().activeId;
+store.saveLayout(store.newLayout('Legacy gym'));
+store.saveWorkouts(
+  [{ id: 'lw', startedAt: 1, finishedAt: 2, entries: [{ machineId: 'm1', num: 1, label: 'A', settings: {}, sets: [{ reps: 5, weight: 20 }] }] }]);
+const secondId = store.createGym('Second layout');
+assert.equal(store.getGyms().activeId, secondId, 'a new layout becomes active');
+assert.equal(store.getLayout(), null, 'a new layout starts without a layout');
 assert.equal(store.getWorkouts().length, 0);
 store.saveWorkouts(
   [{ id: 'sw', startedAt: 3, finishedAt: 4, entries: [{ machineId: 'x', num: 1, label: 'X', settings: {}, sets: [{ reps: 8, weight: 100 }] }] }]);
-store.setActiveProfile(firstId);
-assert.equal(store.getGym().name, 'Legacy gym', 'switching back returns the original bundle');
+store.setActiveGym(firstId);
+assert.equal(store.getLayout().name, 'Legacy gym', 'switching back returns the original bundle');
 assert.equal(store.getWorkouts()[0].id, 'lw');
-store.renameProfile(firstId, 'Renamed gym');
-assert.equal(store.getProfiles().list.find((p) => p.id === firstId).name, 'Renamed gym');
+store.renameGym(firstId, 'Renamed layout');
+assert.equal(store.getGyms().list.find((p) => p.id === firstId).name, 'Renamed layout');
 
-// setUnit converts every profile's stored weights, not just the active one
+// setUnit converts every layout's stored weights, not just the active one
 store.saveActive({ v: 2, id: 'aw', startedAt: 5, entries: [{ machineId: 'm1', num: 1, label: 'A', settings: {}, sets: [{ reps: 3, weight: 60 }] }] });
 store.setUnit('lbs');
 assert.equal(store.getSettings().unit, 'lbs');
 assert.equal(store.getWorkouts()[0].entries[0].sets[0].weight, 44, '20 kg -> 44 lbs (nearest 0.5)');
 assert.equal(store.getActive().entries[0].sets[0].weight, 132.5, 'active workout converted');
 assert.equal(store.getSettings().weightStep, 5.5, '2.5 kg step -> 5.5 lbs');
-store.setActiveProfile(secondId);
-assert.equal(store.getWorkouts()[0].entries[0].sets[0].weight, 220.5, 'inactive profile converted too');
+store.setActiveGym(secondId);
+assert.equal(store.getWorkouts()[0].entries[0].sets[0].weight, 220.5, 'inactive layout converted too');
 store.setUnit('lbs');
 assert.equal(store.getWorkouts()[0].entries[0].sets[0].weight, 220.5, 'same-unit switch is a no-op');
 store.setUnit('kg');
 assert.equal(store.getWorkouts()[0].entries[0].sets[0].weight, 100, 'roundtrip back to kg');
-store.setActiveProfile(firstId);
+store.setActiveGym(firstId);
 assert.equal(store.getActive().entries[0].sets[0].weight, 60, 'active roundtrips too');
 store.clearActive();
 
-// deleting profiles: keys are removed, the last profile is protected
-store.setActiveProfile(secondId);
-assert.equal(store.deleteProfile(secondId), true);
-assert.equal(store.getProfiles().activeId, firstId, 'active falls back to the first remaining profile');
-assert.equal(localStorage.getItem(`gymii.${secondId}.workouts`), null, 'deleted profile keys removed');
-assert.equal(store.deleteProfile(firstId), false, 'the last profile cannot be deleted');
-assert.equal(store.getProfiles().list.length, 1);
+// deleting gyms: keys are removed, the last layout is protected
+store.setActiveGym(secondId);
+assert.equal(store.deleteGym(secondId), true);
+assert.equal(store.getGyms().activeId, firstId, 'active falls back to the first remaining layout');
+assert.equal(localStorage.getItem(`gymii.${secondId}.workouts`), null, 'deleted layout keys removed');
+assert.equal(store.deleteGym(firstId), false, 'the last layout cannot be deleted');
+assert.equal(store.getGyms().list.length, 1);
 
 // cardio sets {distance, seconds}: finish keeps them, setUnit converts
 // distances per field (m <-> mi), seconds stay untouched
-store.setActiveProfile(firstId);
+store.setActiveGym(firstId);
 assert.equal(store.distUnit(store.getSettings()), 'm', 'metric pairs with meters');
 store.saveActive({
   v: 2, id: 'cw', startedAt: 10, plan: [], currentMachineId: null,
@@ -203,7 +249,7 @@ assert.equal(store.updateWorkout({ ...cw, locker: '3' }).entries[1].sets[0].seco
   'updateWorkout passes cardio sets through');
 store.deleteWorkout('cw');
 
-// exercises: entries at one station are isolated per exercise; the bare
+// exercises: entries at one machine are isolated per exercise; the bare
 // bucket (no exercise) never leaks into exercise lookups and vice versa
 store.saveActive({
   v: 2, id: 'ew', startedAt: 20, currentMachineId: null, currentExercise: null,
@@ -219,7 +265,7 @@ store.saveActive({
   ],
 });
 const exSaved = store.finishWorkout(store.getActive());
-assert.equal(exSaved.entries.length, 3, 'same-station entries with different exercises both kept');
+assert.equal(exSaved.entries.length, 3, 'same-machine entries with different exercises both kept');
 assert.equal(store.lastEntryFor('db', 'Biceps curls').sets[0].weight, 12.5);
 assert.equal(store.lastEntryFor('db', 'Shoulder press').sets[0].weight, 10);
 assert.strictEqual(store.lastEntryFor('db'), null, 'bare bucket does not match exercise entries');
@@ -234,7 +280,7 @@ store.setUnit('kg');
 store.deleteWorkout('ew');
 
 // lastEntryFor scoping — this is what feeds train.js's set prefills, so the
-// rules are pinned here: exercise-scoped in BOTH directions, newest session
+// rules are pinned here: exercise-scoped in BOTH directions, newest workout
 // first (over the chronologically sorted list), and only entries that
 // actually carry sets count.
 const dbEntry = (exercise, sets) => ({
@@ -250,7 +296,7 @@ store.saveWorkouts([
     dbEntry('Biceps curls', []),
   ] },
   { id: 's1', startedAt: 1000, finishedAt: 1500, entries: [
-    dbEntry(undefined, [{ reps: 10, weight: 10 }]), // logged before the station had exercises
+    dbEntry(undefined, [{ reps: 10, weight: 10 }]), // logged before the machine had exercises
     dbEntry('Biceps curls', [{ reps: 10, weight: 12.5 }]),
   ] },
   { id: 's4', startedAt: 4000, finishedAt: 4500, entries: [dbEntry('Biceps curls', [{ reps: 6, weight: 17.5 }])] },
@@ -259,47 +305,47 @@ store.saveWorkouts([
 assert.deepEqual(store.getWorkouts().map((w) => w.id), ['s1', 's2', 's3', 's4'],
   'saveWorkouts sorts chronologically — lastEntryFor depends on it');
 assert.equal(store.lastEntryFor('db').sets[0].weight, 15,
-  'bare lookup: an explicit exercise:null counts as bare, and the newest bare session wins');
+  'bare lookup: an explicit exercise:null counts as bare, and the newest bare workout wins');
 assert.equal(store.lastEntryFor('db', undefined).sets[0].weight, 15,
   'an omitted exercise reads the bare bucket, never a newer exercise entry');
 assert.equal(store.lastEntryFor('db', 'Biceps curls').sets[0].weight, 17.5,
-  'an exercise lookup takes its own newest session');
+  'an exercise lookup takes its own newest workout');
 store.deleteWorkout('s4');
 assert.deepEqual(store.lastEntryFor('db', 'Biceps curls').sets, [{ reps: 10, weight: 12.5 }],
   'a newer set-less entry never shadows the last real one');
 assert.strictEqual(store.lastEntryFor('db', 'Shoulder press'), null,
-  'an exercise never trained at this station has no last entry');
+  'an exercise never trained at this machine has no last entry');
 assert.strictEqual(store.lastEntryFor('nope'), null, 'unknown machine: no last entry');
 store.saveWorkouts([]);
 
-// clearAll wipes every gymii key and self-heals into a fresh default profile
+// clearAll wipes every gymii key and self-heals into a fresh default layout
 store.clearAll();
 assert.equal([...mem.keys()].filter((k) => k.startsWith('gymii.')).length, 0, 'clearAll leaves no gymii keys');
-assert.equal(store.getGym(), null);
-assert.equal(store.getProfiles().list.length, 1, 'fresh default profile after reset');
+assert.equal(store.getLayout(), null);
+assert.equal(store.getGyms().list.length, 1, 'fresh default layout after reset');
 
 // addMachine appends with an auto position (quick start / create-on-miss)
-const quickGym = store.newGym('Quick');
+const quickGym = store.newLayout('Quick');
 const quickMachine = store.addMachine(quickGym, 1, 'Chest press');
 assert.equal(quickGym.machines.length, 1);
 assert.ok(quickMachine.id, 'gets an id');
 assert.ok(Number.isFinite(quickMachine.x) && Number.isFinite(quickMachine.y), 'auto-position assigned');
 assert.equal(store.addMachine(quickGym, 2, 'Row').num, 2);
-store.saveGym(quickGym);
-assert.equal(store.getGym().machines.length, 2, 'quick gym saves cleanly');
+store.saveLayout(quickGym);
+assert.equal(store.getLayout().machines.length, 2, 'quick layout saves cleanly');
 
 // bindOrCreateMachine — the one invariant behind every binding surface
 // (train's bind screen, the plan builder, workoutFromText)
-const bindGym = store.newGym('Bind');
+const bindGym = store.newLayout('Bind');
 bindGym.machines.push({ id: 'known', num: 5, label: 'Leg press', x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles: [] });
 assert.strictEqual(store.bindOrCreateMachine(bindGym, 5, 'Whatever', null).id, 'known',
-  'a known number binds to that station, name and target ignored');
+  'a known number binds to that machine, name and target ignored');
 assert.equal(bindGym.machines.length, 1, 'and creates nothing');
 const bindNew = store.bindOrCreateMachine(bindGym, 14, 'Cable crossover', { sets: 3, reps: 10, weight: 20 });
 assert.equal(bindNew.label, 'Cable crossover', 'an unknown number creates the machine under the ITEM name');
 assert.equal(bindNew.num, 14);
-assert.ok(!('cardio' in bindNew), 'a sets/reps target leaves it a strength station');
-assert.equal(bindGym.machines.length, 2, 'appended to the gym');
+assert.ok(!('cardio' in bindNew), 'a sets/reps target leaves it a strength machine');
+assert.equal(bindGym.machines.length, 2, 'appended to the layout');
 const bindCardio = store.bindOrCreateMachine(bindGym, 21, 'Treadmill', { distance: 0, seconds: 1200 });
 assert.equal(bindCardio.cardio, true,
   'a distance target makes it cardio — else the target is dropped as the wrong shape');
@@ -307,8 +353,8 @@ assert.equal(store.bindOrCreateMachine(bindGym, 7, '', null).label, 'Machine 7',
   'a nameless item falls back to "Machine <num>"');
 assert.equal(store.bindOrCreateMachine(bindGym, 7, 'Late name', null).label, 'Machine 7',
   'the second call finds the machine it just created');
-assert.equal(store.getGym().machines.length, 2,
-  'bindOrCreateMachine persists NOTHING — saveGym timing stays with the caller');
+assert.equal(store.getLayout().machines.length, 2,
+  'bindOrCreateMachine persists NOTHING — saveLayout timing stays with the caller');
 
 // newEntry — the entry snapshot the log screen, the editor, workoutFromText
 // and the demo data all write
@@ -332,13 +378,13 @@ assert.notStrictEqual(store.newEntry(strengthMachine).sets, store.newEntry(stren
 const { readFileSync } = await import('node:fs');
 const example = JSON.parse(readFileSync(new URL('../templates/example-gym.json', import.meta.url), 'utf8'));
 assert.equal(store.importData(example), 'gym-template');
-assert.equal(store.getGym().machines.length, 11);
-assert.ok(store.getGym().machines.some((m) => (m.muscles || []).includes('Lower back')),
+assert.equal(store.getLayout().machines.length, 11);
+assert.ok(store.getLayout().machines.some((m) => (m.muscles || []).includes('Lower back')),
   'example template has a lower-back machine');
 
 // usageByMuscle / workoutsWithMuscle — muscles resolve against the LIVE
-// gym; a set on a two-muscle station counts fully for both (no 1/n split)
-const mGym = store.newGym('Muscle gym');
+// layout; a set on a two-muscle machine counts fully for both (no 1/n split)
+const mGym = store.newLayout('Muscle layout');
 mGym.machines.push(
   { id: 'm1', num: 1, label: 'Leg press', x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Quads', 'Glutes'] },
   { id: 'm2', num: 2, label: 'Lat pulldown', x: 6, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Lats'] },
@@ -362,7 +408,7 @@ assert.deepEqual(usage.get('Quads'), { sets: 3, workouts: 2 });
 assert.deepEqual(usage.get('Lats'), { sets: 1, workouts: 1 });
 assert.ok(!usage.has(undefined) && usage.size === 3, 'untagged and deleted machines attribute nothing');
 assert.equal(store.usageByMuscle([], mGym).size, 0);
-assert.equal(store.usageByMuscle(mWorkouts, null).size, 0, 'no gym, no muscles');
+assert.equal(store.usageByMuscle(mWorkouts, null).size, 0, 'no layout, no muscles');
 
 // setUnit must convert plan targets along with the sets — they are stored
 // in the display unit like everything else
@@ -375,7 +421,7 @@ store.savePlan({
 });
 // …and a RUNNING workout carries its own copy of those targets on its plan
 // slots (train.js startWorkoutFrom), which the log screen's first-set
-// prefill reads — so a mid-session switch has to convert them too
+// prefill reads — so a mid-workout switch has to convert them too
 store.saveActive({
   v: 2, id: 'unit-active', startedAt: 9000,
   plan: [
@@ -395,7 +441,7 @@ const lbsActive = store.getActive();
 assert.equal(lbsActive.entries[0].sets[0].weight, Math.round(75 * 2.2046226218 * 2) / 2,
   'the running workout\'s logged sets convert');
 assert.equal(lbsActive.plan[0].target.weight, Math.round(80 * 2.2046226218 * 2) / 2,
-  'the running workout\'s slot target converts too — else 80 kg becomes 80 lbs mid-session');
+  'the running workout\'s slot target converts too — else 80 kg becomes 80 lbs mid-workout');
 assert.equal(lbsActive.plan[1].target.distance, 1.86, 'a cardio slot target converts its distance');
 assert.equal(lbsActive.plan[1].target.seconds, 900, 'and leaves the seconds alone');
 store.setUnit('kg');
@@ -501,18 +547,18 @@ assert.ok(store.getPlans()[0].createdAt > 0, 'and createdAt on first save');
 store.deletePlan('ps1');
 assert.equal(store.getTombstones().plans[0]?.id, 'ps1', 'deletePlan tombstones');
 
-// saveGym diffs: a vanished machine tombstones, an unchanged one keeps its stamp
-const g2 = store.newGym('Diff gym');
+// saveLayout diffs: a vanished machine tombstones, an unchanged one keeps its stamp
+const g2 = store.newLayout('Diff layout');
 g2.machines.push({ id: 'gm1', num: 1, label: 'Press', x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles: [] });
 g2.machines.push({ id: 'gm2', num: 2, label: 'Row', x: 6, y: 0, w: 4, h: 3, settingsFields: [], muscles: [] });
-store.saveGym(g2);
-const firstStamp = store.getGym().machines.find((m) => m.id === 'gm1').updatedAt;
+store.saveLayout(g2);
+const firstStamp = store.getLayout().machines.find((m) => m.id === 'gm1').updatedAt;
 assert.ok(firstStamp > 0, 'a new machine gets stamped');
-const g3 = store.getGym();
+const g3 = store.getLayout();
 g3.machines = g3.machines.filter((m) => m.id !== 'gm2');
-store.saveGym(g3);
+store.saveLayout(g3);
 assert.equal(store.getTombstones().machines[0]?.id, 'gm2', 'a vanished machine tombstones');
-assert.equal(store.getGym().machines.find((m) => m.id === 'gm1').updatedAt, firstStamp,
+assert.equal(store.getLayout().machines.find((m) => m.id === 'gm1').updatedAt, firstStamp,
   'an untouched machine keeps its stamp');
 
 // v2 export -> clear -> import: the delete stays dead, tombstones travel
@@ -530,7 +576,7 @@ assert.equal(store.getTombstones().machines[0]?.id, 'gm2', 'machine tombstones t
 store.clearAll();
 const v1 = {
   app: 'gymii', kind: 'backup', v: 1,
-  gym: store.newGym('Old gym'),
+  gym: store.newLayout('Old layout'), // wire field, frozen at `gym`
   workouts: [{ id: 'wOld', startedAt: 5, entries: [{ machineId: 'x', num: 1, label: 'O', settings: {}, sets: [{ reps: 1, weight: 1 }] }] }],
   plans: [], settings: { v: 1, unit: 'kg' },
 };

@@ -1,6 +1,6 @@
 import {
-  getSettings, saveSettings, getGym,
-  getProfiles, createProfile, renameProfile, deleteProfile, setActiveProfile, setUnit,
+  getSettings, saveSettings, getLayout,
+  getGyms, createGym, renameGym, deleteGym, setActiveGym, setUnit,
   exportGymTemplate, exportBackup, importData, clearAll,
 } from './store.js';
 import { download, esc, twoTapConfirm, TIMER_SOUNDS, playTimerSound } from './ui.js';
@@ -8,8 +8,8 @@ import { loadDemoData } from './demo.js';
 
 export function renderSettings(root) {
   const s = getSettings();
-  const profiles = getProfiles();
-  const activeProfile = profiles.list.find((p) => p.id === profiles.activeId);
+  const gyms = getGyms();
+  const activeGym = gyms.list.find((p) => p.id === gyms.activeId);
   root.innerHTML = `
     <h1>Settings</h1>
 
@@ -67,26 +67,29 @@ export function renderSettings(root) {
     </section>
 
     <section class="card">
-      <h2>Studio</h2>
-      <a class="btn" href="#studio">Open the Studio</a>
+      <h2>Gym</h2>
+      <a class="btn" href="#gym">Open the gym</a>
       <p class="muted">Draw the floor plan, number the machines and edit their
         muscles, settings and exercises.</p>
     </section>
 
+    <!-- Singular above = the active gym's floor plan; plural here = every
+         gym you train at. The two sections sit next to each other, so the
+         headings have to carry that difference on their own. -->
     <section class="card">
-      <h2>Gyms</h2>
-      <div class="chip-select" id="profile-chips">
-        ${profiles.list.map((p) => `<button type="button" class="chip${p.id === profiles.activeId
+      <h2>Your gyms</h2>
+      <div class="chip-select" id="gym-chips">
+        ${gyms.list.map((p) => `<button type="button" class="chip${p.id === gyms.activeId
           ? ' sel' : ''}" data-id="${p.id}">${esc(p.name)}</button>`).join('')}
       </div>
       <label class="field"><span>Gym name</span>
-        <input id="profile-rename" type="text" value="${esc(activeProfile.name)}"></label>
+        <input id="gym-rename" type="text" value="${esc(activeGym.name)}"></label>
       <div class="row">
-        <input id="profile-new-name" type="text" placeholder="New gym name">
-        <button id="profile-add" class="btn btn-inline">Add gym</button>
+        <input id="gym-new-name" type="text" placeholder="New gym name">
+        <button id="gym-add" class="btn btn-inline">Add gym</button>
       </div>
-      ${profiles.list.length > 1 || activeProfile.demo
-        ? '<button id="profile-delete" class="btn btn-danger">Delete this gym</button>' : ''}
+      ${gyms.list.length > 1 || activeGym.demo
+        ? '<button id="gym-delete" class="btn btn-danger">Delete this gym</button>' : ''}
       <p class="muted">Each gym has its own floor plan and workout history; units and timers are
         shared. A workout in progress waits in its gym until you switch back.</p>
     </section>
@@ -102,7 +105,7 @@ export function renderSettings(root) {
 
     <section class="card">
       <h2>Test data</h2>
-      <button id="demo-load" class="btn">${profiles.list.some((p) => p.demo)
+      <button id="demo-load" class="btn">${gyms.list.some((p) => p.demo)
         ? 'Reload test data' : 'Load test data'}</button>
       <p id="demo-msg" class="muted" role="status"></p>
       <p class="muted">Fills a separate Demo gym with a floor plan, eight weeks of
@@ -163,37 +166,37 @@ export function renderSettings(root) {
   root.querySelector('#unit-chips').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
-    setUnit(chip.dataset.unit); // converts all stored weights across profiles
+    setUnit(chip.dataset.unit); // converts all stored weights across gyms
     renderSettings(root);
   });
 
-  root.querySelector('#profile-chips').addEventListener('click', (e) => {
+  root.querySelector('#gym-chips').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
-    setActiveProfile(chip.dataset.id);
+    setActiveGym(chip.dataset.id);
     renderSettings(root);
   });
 
-  root.querySelector('#profile-rename').addEventListener('change', (e) => {
-    renameProfile(getProfiles().activeId, e.target.value);
+  root.querySelector('#gym-rename').addEventListener('change', (e) => {
+    renameGym(getGyms().activeId, e.target.value);
     renderSettings(root);
   });
 
-  root.querySelector('#profile-add').addEventListener('click', () => {
-    createProfile(root.querySelector('#profile-new-name').value);
+  root.querySelector('#gym-add').addEventListener('click', () => {
+    createGym(root.querySelector('#gym-new-name').value);
     renderSettings(root);
   });
 
-  const delProfileBtn = root.querySelector('#profile-delete');
-  delProfileBtn?.addEventListener('click', () => {
-    if (!twoTapConfirm(delProfileBtn,
+  const delGymBtn = root.querySelector('#gym-delete');
+  delGymBtn?.addEventListener('click', () => {
+    if (!twoTapConfirm(delGymBtn,
       'Tap again to delete this gym and its history', 'Delete this gym')) return;
-    deleteProfile(getProfiles().activeId);
+    deleteGym(getGyms().activeId);
     renderSettings(root);
   });
 
   root.querySelector('#export-gym').addEventListener('click', () => {
-    if (!getGym()) { msg.textContent = 'No gym to export yet — build one in Studio.'; return; }
+    if (!getLayout()) { msg.textContent = 'No gym to export yet — build one in Gym.'; return; }
     download('gymii-gym-template.json', exportGymTemplate());
     msg.textContent = 'Gym template exported.';
   });
@@ -225,7 +228,7 @@ export function renderSettings(root) {
   demoBtn.addEventListener('click', () => {
     // replacing an existing Demo gym discards its edits — guard that, but
     // not the harmless first load
-    const exists = getProfiles().list.some((p) => p.demo);
+    const exists = getGyms().list.some((p) => p.demo);
     if (exists && !twoTapConfirm(demoBtn,
       'Tap again to replace the Demo gym', 'Reload test data')) return;
     const r = loadDemoData();

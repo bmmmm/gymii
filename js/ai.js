@@ -3,23 +3,23 @@
 // control over where their data goes.
 
 import {
-  getGym, getWorkouts, getSettings, saveSettings, importData, distUnit,
+  getLayout, getWorkouts, getSettings, saveSettings, importData, distUnit,
   getActive, getPlans, planFromImport, savePlan,
 } from './store.js';
 import { openPlanBuilder } from './train.js';
 import { twoTapConfirm, plural, dateValue } from './ui.js';
 
-const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; an "exercise" field names one movement at a multi-exercise station like a free-weight area; a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis).
+const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; an "exercise" field names one movement at a multi-exercise machine like a free-weight area; a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis).
 
 Analyze my progress: trends per machine, plateaus, and muscle-group imbalances. Then suggest concrete targets for my next workout — weight × reps per machine — and one or two practical tips.
 
-Using the timing offsets: join each entry's num against the gym's machines list to get its muscles, and flag same-muscle-group sets spaced too closely together — unless the alternation looks deliberate (a consistent A↔B or A→B→C rhythm reads as a superset/circuit, which is fine and worth calling out as such). Also comment on idle gaps between stations and on the overall density of the workout.
+Using the timing offsets: join each entry's num against the gym's machines list to get its muscles, and flag same-muscle-group sets spaced too closely together — unless the alternation looks deliberate (a consistent A↔B or A→B→C rhythm reads as a superset/circuit, which is fine and worth calling out as such). Also comment on idle gaps between machines and on the overall density of the workout.
 
 If you propose changes to my gym or machines, reply with a valid gymii gym-template JSON (exactly the structure the app exports) so I can paste it straight back into gymii.
 
-If I ask you to PLAN a workout (e.g. "plan me a chest & shoulders session", possibly excluding some machines), pick suitable machines via their muscles field and reply with a gymii workout-plan JSON I can paste back:
+If I ask you to PLAN a workout (e.g. "plan me a chest & shoulders workout", possibly excluding some machines), pick suitable machines via their muscles field and reply with a gymii workout-plan JSON I can paste back:
 {"app":"gymii","kind":"workout-plan","name":"<short name>","items":[{"num":<machine num>,"sets":3,"reps":10,"weight":50}]}
-Use each machine's num exactly as listed, weights in my unit derived from my history (a slight progression where it looks earned), add "exercise" only for a movement at a multi-exercise station, and use {"num":…,"distance":…,"seconds":…} for cardio machines. An optional top-level "days":[1,4] tags weekdays (0 = Sunday).
+Use each machine's num exactly as listed, weights in my unit derived from my history (a slight progression where it looks earned), add "exercise" only for a movement at a multi-exercise machine, and use {"num":…,"distance":…,"seconds":…} for cardio machines. An optional top-level "days":[1,4] tags weekdays (0 = Sunday).
 For a movement my gym has no machine for, give {"name":"<exercise name>","sets":3,"reps":10,"weight":50} instead of a num — gymii keeps it and asks me which machine it is at the gym.
 My saved plans, when present, are included as "plans" in that same shape. If I ask you to revise one, reply with the full revised plan and KEEP its "id" — that lets gymii update the plan in place (it asks me before replacing). Omit "id" for a brand-new plan.`;
 
@@ -131,8 +131,8 @@ export function renderAi(root) {
       }
       const kind = importData(data);
       importMsg.textContent = kind === 'backup'
-        ? 'Backup imported — check Studio and History.'
-        : 'Gym template imported — check Studio.';
+        ? 'Backup imported — check Gym and History.'
+        : 'Gym template imported — check Gym.';
       dataEl.value = buildAiExport();
     } catch (err) {
       importMsg.textContent = `Import failed: ${err.message}`;
@@ -143,7 +143,7 @@ export function renderAi(root) {
 // Compact, LLM-friendly snapshot: machines + saved plans + full log, no
 // floor layout.
 export function buildAiExport() {
-  const gym = getGym();
+  const layout = getLayout();
   const settings = getSettings();
   const plans = getPlans();
   return JSON.stringify({
@@ -154,9 +154,11 @@ export function buildAiExport() {
       distUnit(settings)}; bodyweight:true entries log ADDED weight (0 = bodyweight only); ` +
       'a third element, when present, is seconds since the workout started (sets logged before ' +
       'timing was added lack it)',
-    gym: gym ? {
-      name: gym.name,
-      machines: gym.machines.map((m) => ({
+    // `gym` is the frozen wire name for the layout — the prompt teaches it
+    // and pasted-back answers use it (see store.js exportGymTemplate)
+    gym: layout ? {
+      name: layout.name,
+      machines: layout.machines.map((m) => ({
         num: m.num,
         label: m.label,
         ...(m.cardio ? { cardio: true } : {}),
@@ -175,7 +177,7 @@ export function buildAiExport() {
         name: p.name,
         ...(p.days?.length ? { days: p.days } : {}),
         items: p.items.map((it) => {
-          const m = it.machineId ? gym?.machines.find((x) => x.id === it.machineId) : null;
+          const m = it.machineId ? layout?.machines.find((x) => x.id === it.machineId) : null;
           if (it.machineId && !m) return null; // machine deleted since
           return {
             ...(m ? { num: m.num } : { name: it.name, ...(it.num ? { num: it.num } : {}) }),

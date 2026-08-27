@@ -17,12 +17,12 @@ const { renderAi, buildAiExport } = await import(new URL('../js/ai.js', import.m
 
 // --- fixture: a small gym and one saved plan with everything on it ---
 
-const gym = store.newGym('AI test gym');
+const gym = store.newLayout('AI test gym');
 gym.machines.push(
   { id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: ['Seat'], muscles: ['Chest'] },
   { id: 'tm', num: 9, label: 'Treadmill', x: 6, y: 0, w: 3, h: 6, settingsFields: [], muscles: ['Quads'], cardio: true },
 );
-store.saveGym(gym);
+store.saveLayout(gym);
 store.savePlans([{
   id: 'p1', name: 'Push day', createdAt: 123, days: [1, 4],
   items: [
@@ -54,7 +54,7 @@ store.savePlans([]);
 assert.ok(!('plans' in JSON.parse(buildAiExport())),
   'no plans, no plans key — empty users pay no tokens');
 
-// --- workout dates export in LOCAL time, not UTC (a 00:30 session must
+// --- workout dates export in LOCAL time, not UTC (a 00:30 workout must
 // not roll onto the previous day for anyone east of UTC) ---
 
 const lateNightTs = new Date(2030, 0, 15, 0, 30).getTime();

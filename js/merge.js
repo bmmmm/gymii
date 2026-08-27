@@ -1,6 +1,6 @@
 // Pure merge logic for cross-device sync — no DOM, no localStorage, no
 // imports. The transport (js/sync.js, M1) decides WHEN to reconcile and
-// hands whole per-profile states in; these functions only decide WHAT the
+// hands whole per-gym states in; these functions only decide WHAT the
 // reconciled state is. Conflict ordering between devices is the server's
 // revision counter (never client clocks); `updatedAt` client stamps are
 // used solely as the last-writer-wins tie-break WITHIN a merge, so a
@@ -50,7 +50,7 @@ export function mergeById(localItems, remoteItems, localTomb = [], remoteTomb = 
 }
 
 export function mergeWorkouts(local, remote, localTomb = [], remoteTomb = []) {
-  // Two ids with near-identical content (a session logged live on one
+  // Two ids with near-identical content (a workout logged live on one
   // device and back-logged on another) are NOT content-deduped — identity
   // is the id, full stop. Deduping is a UX question, never a merge rule.
   return mergeById(local, remote, localTomb, remoteTomb);
@@ -62,26 +62,26 @@ export function mergePlans(local, remote, localTomb = [], remoteTomb = []) {
   return mergeById(local, remote, localTomb, remoteTomb);
 }
 
-// Gym is a hybrid: machines and shapes are id-keyed collections (machines
-// are created outside the studio too — quick start, create-on-miss, plan
-// binding — so two offline sessions adding stations is an everyday case
-// that a whole-gym LWW would silently half-discard). The structural rest
+// Layout is a hybrid: machines and shapes are id-keyed collections (machines
+// are created outside the gym too — quick start, create-on-miss, plan
+// binding — so two offline workouts adding machines is an everyday case
+// that a whole-layout LWW would silently half-discard). The structural rest
 // (name, grid, meta, outline) has no per-item ids and merges as one blob
-// via the gym-level `updatedAt`.
-const GYM_STRUCTURAL = ['v', 'name', 'grid', 'meta', 'outline', 'updatedAt'];
+// via the layout-level `updatedAt`.
+const LAYOUT_STRUCTURAL = ['v', 'name', 'grid', 'meta', 'outline', 'updatedAt'];
 
-export function mergeGym(local, remote, localTomb = {}, remoteTomb = {}) {
+export function mergeLayout(local, remote, localTomb = {}, remoteTomb = {}) {
   const machines = mergeById(local.machines ?? [], remote.machines ?? [],
     localTomb.machines ?? [], remoteTomb.machines ?? []);
   const shapes = mergeById(local.shapes ?? [], remote.shapes ?? [],
     localTomb.shapes ?? [], remoteTomb.shapes ?? []);
   const base = stamp(remote) > stamp(local) ? remote : local;
   const merged = {};
-  GYM_STRUCTURAL.forEach((f) => { if (f in base) merged[f] = base[f]; });
+  LAYOUT_STRUCTURAL.forEach((f) => { if (f in base) merged[f] = base[f]; });
   merged.machines = machines.items;
   merged.shapes = shapes.items;
   const changed = machines.changed || shapes.changed
-    || (base === remote && GYM_STRUCTURAL.some(
+    || (base === remote && LAYOUT_STRUCTURAL.some(
       (f) => JSON.stringify(local[f]) !== JSON.stringify(remote[f])));
   return {
     merged,
@@ -91,11 +91,11 @@ export function mergeGym(local, remote, localTomb = {}, remoteTomb = {}) {
 }
 
 // Registry merge. `activeId` is device-local by definition (two devices
-// may look at different profiles at once) — it is never taken from remote,
-// only healed when the merge removed the profile it pointed at. A profile
-// tombstone supersedes everything under that profile's namespace; callers
+// may look at different gyms at once) — it is never taken from remote,
+// only healed when the merge removed the gym it pointed at. A gym
+// tombstone supersedes everything under that gym's namespace; callers
 // drop the scoped keys, no per-item tombstones needed inside.
-export function mergeProfiles(local, remote) {
+export function mergeGyms(local, remote) {
   const { items, tombstones, changed } = mergeById(
     local.list ?? [], remote.list ?? [], local.deleted ?? [], remote.deleted ?? []);
   const merged = { ...local, list: items };

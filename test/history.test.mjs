@@ -16,15 +16,15 @@ const { renderHistory } = await import(new URL('../js/history.js', import.meta.u
 
 // --- fixture: three named workouts across two routines ---
 
-const gym = store.newGym('History test gym');
+const layout = store.newLayout('History test layout');
 [
   ['m1', 14, 'Leg press', ['Quads']],
   ['m2', 3, 'Lat pulldown', ['Lats']],
   ['m3', 7, 'Chest press', ['Chest']],
-].forEach(([id, num, label, muscles]) => gym.machines.push({
+].forEach(([id, num, label, muscles]) => layout.machines.push({
   id, num, label, x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles,
 }));
-store.saveGym(gym);
+store.saveLayout(layout);
 
 const entry = (id, num, label, sets) => ({ machineId: id, num, label, settings: {}, sets });
 store.saveWorkouts([
@@ -157,12 +157,12 @@ assert.equal(saved.finishedAt - saved.startedAt, 3600000,
 assert.deepEqual(store.getWorkouts().map((w) => w.id), ['w2', 'w3', 'w1'],
   'the re-dated workout sorts into place');
 
-// removing a station drops it
+// removing a machine drops it
 list().listeners.click(clickOn('.edit-w', { wid: 'w1' }));
 list().listeners.click(clickOn('.entry-del', { ei: '1' }));
 list().listeners.click(clickOn('.edit-save'));
 assert.equal(store.getWorkouts().find((w) => w.id === 'w1').entries.length, 1,
-  'a removed station is gone after saving');
+  'a removed machine is gone after saving');
 
 // --- logging a workout after the fact, straight into edit mode ---
 
@@ -207,7 +207,7 @@ store.saveWorkouts([
 render();
 assert.ok(root.innerHTML.includes('id="muscle-list"'), 'the muscle card renders');
 assert.ok(root.innerHTML.includes('Quads') && root.innerHTML.includes('Lats'),
-  'every gym muscle gets a row');
+  'every layout muscle gets a row');
 assert.ok(root.innerHTML.includes('bar-fill'), 'rows carry usage bars');
 
 // tapping a row narrows the WHOLE view, like the name filter does
@@ -276,11 +276,11 @@ root.querySelector('#past-log').listeners.click();
 assert.ok(list().innerHTML.includes('edit-save'),
   'the logged workout opens in edit mode despite the previous filter');
 
-// the filter clears itself when its muscle leaves the gym, and orphaned
+// the filter clears itself when its muscle leaves the layout, and orphaned
 // sets are counted instead of silently dropped
 root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Lats' }));
 assert.ok(root.innerHTML.includes('Workouts — Lats'));
-store.saveGym({ ...store.getGym(), machines: store.getGym().machines.filter((m) => m.id !== 'm2') });
+store.saveLayout({ ...store.getLayout(), machines: store.getLayout().machines.filter((m) => m.id !== 'm2') });
 render();
 assert.ok(!root.innerHTML.includes('Workouts — Lats'), 'a stranded muscle filter resets');
 assert.ok(root.innerHTML.includes("can't be attributed"),

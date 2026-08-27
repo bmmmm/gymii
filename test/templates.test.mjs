@@ -42,7 +42,7 @@ idx.templates.forEach((t) => {
   // the template loads in gymii
   assert.equal(store.importData(JSON.parse(JSON.stringify(data))), 'gym-template',
     `${t.id} passes gymii's import validation`);
-  assert.ok(store.getGym().machines.length >= 1, `${t.id} has at least one machine`);
+  assert.ok(store.getLayout().machines.length >= 1, `${t.id} has at least one machine`);
 });
 
 // no orphan template files the manifest doesn't know about

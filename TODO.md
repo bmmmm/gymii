@@ -3,11 +3,11 @@
 Shipped 2026-08-14, in five waves: plans that exist before the gym does
 (typed note → unbound items → bind on the floor), the builder's text view,
 proposed workout names, the history name filter, and a complete workout
-editor incl. logging a session after the fact. See AGENTS.md for how the
+editor incl. logging a workout after the fact. See AGENTS.md for how the
 pieces fit; README for what they do.
 
 Shipped 2026-08-16: "Load test data" (Settings) fills a deterministic Demo
-profile — 16 machines, 8 weeks of history, three weekday plans covering
+gym — 16 machines, 8 weeks of history, three weekday plans covering
 due/missed/done — so manual testing never starts from an empty gym; the
 History tab gained a Muscles card (sets per group as tappable bar rows that
 filter the whole view); and setUnit now converts plan targets too (they
@@ -17,7 +17,7 @@ Shipped 2026-08-17: the AI export carries saved plans (same wire shape the
 prompt teaches for answers, ~5% of a demo-sized export, measured), and a
 pasted answer that keeps an exported plan id replaces that plan in place
 behind a two-tap confirm — "tighten up my push plan" is a real roundtrip
-now instead of a duplicate. Plus a review sweep: the demo profile is
+now instead of a duplicate. Plus a review sweep: the demo gym is
 identified by a `demo` flag instead of its user-editable name (a real gym
 called "Demo" can no longer be overwritten), demo day maths is DST-safe,
 and the unit converters live in store.js once.
@@ -28,18 +28,18 @@ the sw.js precache (on-demand content, only the manifest stays — a template
 PR is two files and never touches sw.js); intake via the "Submit a gym
 template" issue form (paste the export, no git needed) plus PR template,
 CONTRIBUTING.md and SECURITY.md (private vulnerability reporting enabled);
-the Studio template browser links to the form ("Share your gym").
+the Gym template browser links to the form ("Share your gym").
 
 Also 2026-08-17 — orchestrated sweep (4 waves, 6 agents, all merged
 green): the locker card steps aside once the first set is logged
 (collapsed details row above Finish — focus stays on the next machine);
 the rest beep reuses an AudioContext created inside the log-set gesture
 (iOS suspends gesture-less contexts — the timer was silent there); the
-Studio finds a machine by number (select + locate pulse); the AI export
+Gym finds a machine by number (select + locate pulse); the AI export
 dates workouts in local time (was UTC — off-by-one past midnight); and a
 real setUnit bug is fixed: a RUNNING workout's plan-slot targets kept
 their number across a unit switch (80 kg goal became an 80 lbs one
-mid-session). Plus consolidation: store helpers `bindOrCreateMachine` /
+mid-workout). Plus consolidation: store helpers `bindOrCreateMachine` /
 `newEntry` / `nameChipsFor`, shared ui.js date/chain helpers, the map
 renderer extracted to `js/map.js` (sw.js cache v6), a "prefill matrix"
 test block pinning the prefill contract, and the typed-0 weight-step
@@ -49,7 +49,7 @@ Browser-verified 2026-08-18 (Chrome, 400×800), and one more bug out of it:
 the scroll fix measured A/B — the log button drifted 492→762 px over six
 sets with the correction neutralised, and pins at 552 px with it; a screen
 change resets the scroll (210→0) while logging does not; the locker card
-collapses exactly once a set exists; Studio find-by-number selects and
+collapses exactly once a set exists; Gym find-by-number selects and
 pulses (15 of 16 machines dimmed); the rest screen darkens on schedule and
 its jerk ticks at 999–1010 ms. The "+15 s, is that correct?" question then
 exposed a real defect: a finished timer's pending close was never
@@ -68,7 +68,7 @@ ring/silent switch ON.
   (GraphQL `issueTemplates` returns `[]` even for working YAML forms;
   the chooser is login-gated) — it needs real clicks, then close the
   test issue.
-- **test/map.test.mjs split.** test/studio.test.mjs now covers both the
+- **test/map.test.mjs split.** test/gym.test.mjs now covers both the
   renderer (map.js) and the editor; if the test layout should mirror the
   module split, its renderer/collision half moves out. Cosmetic — the
   file passes as one.

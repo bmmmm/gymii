@@ -1,8 +1,8 @@
-// The shared floor map. `drawGym()` paints a gym into an SVG for the Studio
+// The shared floor map. `drawLayout()` paints a layout into an SVG for the Gym
 // editor, the Train mini-maps/overlay and the plan builder alike, together
 // with the fixture registry, the SVG symbol builders and the geometry and
 // collision helpers all three surfaces share. Nothing here imports the
-// editor: the dependency runs one way, studio.js -> map.js.
+// editor: the dependency runs one way, gym.js -> map.js.
 import { esc } from './ui.js';
 
 // Map furniture beyond machines. Entrances, doors and windows snap onto
@@ -28,13 +28,13 @@ export const ITEM_COLORS = [
 ];
 
 // All wall segments a door can live on: outline edges + interior walls.
-function wallSegments(gym) {
+function wallSegments(layout) {
   const segments = [];
-  const o = gym.outline || [];
+  const o = layout.outline || [];
   for (let i = 0; i < o.length; i++) {
     segments.push([o[i], o[(i + 1) % o.length]]);
   }
-  gym.shapes.filter((s) => s.kind === 'line').forEach((l) => {
+  layout.shapes.filter((s) => s.kind === 'line').forEach((l) => {
     segments.push([{ x: l.x, y: l.y }, { x: l.x + l.w, y: l.y + l.h }]);
   });
   return segments;
@@ -42,11 +42,11 @@ function wallSegments(gym) {
 
 // Projects the door's center onto the nearest wall segment and aligns
 // its rotation with that wall.
-export function snapDoorToWall(gym, door) {
+export function snapDoorToWall(layout, door) {
   const cx = door.x + door.w / 2;
   const cy = door.y + door.h / 2;
   let best = null;
-  wallSegments(gym).forEach(([a, b]) => {
+  wallSegments(layout).forEach(([a, b]) => {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const len2 = dx * dx + dy * dy;
@@ -95,7 +95,7 @@ function pxPerUnit(svg, viewBoxWidth) {
 
 // --- shared renderer (also used by the Train mini-map) ---
 
-export function drawGym(svg, gym, {
+export function drawLayout(svg, layout, {
   selectedId = null, editor = false, selectedVertex = null, usage = null,
   highlightId = null,
 } = {}) {
@@ -104,40 +104,40 @@ export function drawGym(svg, gym, {
   // half-tappable exactly where the SVG ends. The viewer needs just
   // enough to not clip doors/windows; the editor needs finger room.
   const pad = editor ? 2.5 : 1;
-  const vw = gym.grid.w + 2 * pad;
-  const vh = gym.grid.h + 2 * pad;
+  const vw = layout.grid.w + 2 * pad;
+  const vh = layout.grid.h + 2 * pad;
   svg.setAttribute('viewBox', `${-pad} ${-pad} ${vw} ${vh}`);
   svg.style.aspectRatio = `${vw} / ${vh}`;
-  const selected = selectedId && selectedId !== OUTLINE_ID ? findItem(gym, selectedId) : null;
+  const selected = selectedId && selectedId !== OUTLINE_ID ? findItem(layout, selectedId) : null;
   // px-per-unit only matters for editor touch targets — skip the layout
   // measurement for the read-only Train mini-map.
   const ppu = editor ? pxPerUnit(svg, vw) : 1;
   // small free-standing items get invisible tap padding; wall-snapped
   // fixtures and wall lines keep their own .hit shapes
   const padded = editor
-    ? [...gym.shapes.filter((s) => s.kind !== 'line' && !WALL_SNAPPED.has(s.fixture)), ...gym.machines]
+    ? [...layout.shapes.filter((s) => s.kind !== 'line' && !WALL_SNAPPED.has(s.fixture)), ...layout.machines]
     : [];
   // the outline's tap target sits ABOVE zones/walls (which often touch the
   // outer wall) but below wall-snapped fixtures (doors/windows live ON the
   // outline — under it they'd be impossible to tap), machines and the
   // editing handles; tap pads sit below the machines so a visible machine
   // always wins hit-testing over a neighbor's padding
-  const wallPieces = gym.shapes.filter((s) => WALL_SNAPPED.has(s.fixture));
-  const floorPieces = gym.shapes.filter((s) => !WALL_SNAPPED.has(s.fixture));
+  const wallPieces = layout.shapes.filter((s) => WALL_SNAPPED.has(s.fixture));
+  const floorPieces = layout.shapes.filter((s) => !WALL_SNAPPED.has(s.fixture));
   const shapePpu = editor ? ppu : null;
   svg.innerHTML =
-    outlineFloorSvg(gym.outline) +
-    (editor ? gridSvg(gym.grid) : '') +
+    outlineFloorSvg(layout.outline) +
+    (editor ? gridSvg(layout.grid) : '') +
     floorPieces.map((s) => shapeSvg(s, shapePpu)).join('') +
-    (editor ? outlineHitSvg(gym.outline) : '') +
+    (editor ? outlineHitSvg(layout.outline) : '') +
     wallPieces.map((s) => shapeSvg(s, shapePpu)).join('') +
     (editor ? hitPadSvg(padded, ppu) : '') +
-    gym.machines.map((m) => machineSvg(m, usage, highlightId)).join('') +
-    (editor && selected ? selectionSvg(selected, ppu, gym.grid, pad) : '') +
-    (editor && selectedId === OUTLINE_ID ? outlineHandlesSvg(gym.outline, selectedVertex, ppu, gym.grid, pad) : '');
+    layout.machines.map((m) => machineSvg(m, usage, highlightId)).join('') +
+    (editor && selected ? selectionSvg(selected, ppu, layout.grid, pad) : '') +
+    (editor && selectedId === OUTLINE_ID ? outlineHandlesSvg(layout.outline, selectedVertex, ppu, layout.grid, pad) : '');
 }
 
-// Builds the usage payload for drawGym from all-time set counts.
+// Builds the usage payload for drawLayout from all-time set counts.
 export function usagePayload(counts) {
   return { counts, max: Math.max(1, ...counts.values()) };
 }
@@ -186,12 +186,12 @@ function outlineHandlesSvg(outline, selectedVertex, ppu, grid, pad) {
   return mids + verts;
 }
 
-export function findMachineByNum(gym, num) {
-  return gym.machines.find((m) => m.num === num) || null;
+export function findMachineByNum(layout, num) {
+  return layout.machines.find((m) => m.num === num) || null;
 }
 
-export function findItem(gym, id) {
-  return gym.machines.find((m) => m.id === id) || gym.shapes.find((s) => s.id === id) || null;
+export function findItem(layout, id) {
+  return layout.machines.find((m) => m.id === id) || layout.shapes.find((s) => s.id === id) || null;
 }
 
 // Machines and free-standing fixtures (reception, lockers, trash, …) are
@@ -201,8 +201,8 @@ const isSolid = (it) => !it.kind || (it.kind === 'fixture' && !WALL_SNAPPED.has(
 
 // Axis-aligned overlap between a proposed box and any solid item other
 // than `item`. Edge-to-edge contact is fine (strict inequalities).
-export function overlapsSolid(gym, item, x, y, w, h) {
-  return [...gym.machines, ...gym.shapes.filter(isSolid)].some((m) => m !== item
+export function overlapsSolid(layout, item, x, y, w, h) {
+  return [...layout.machines, ...layout.shapes.filter(isSolid)].some((m) => m !== item
     && x < m.x + m.w && x + w > m.x && y < m.y + m.h && y + h > m.y);
 }
 
@@ -210,22 +210,22 @@ export function overlapsSolid(gym, item, x, y, w, h) {
 // exclusive — and only when they start from a non-overlapping spot, so
 // layouts saved before this rule stay fully editable and can be
 // untangled.
-export function fits(gym, it, x, y, w, h) {
+export function fits(layout, it, x, y, w, h) {
   if (!isSolid(it)) return true;
-  if (overlapsSolid(gym, it, it.x, it.y, it.w, it.h)) return true;
-  return !overlapsSolid(gym, it, x, y, w, h);
+  if (overlapsSolid(layout, it, it.x, it.y, it.w, it.h)) return true;
+  return !overlapsSolid(layout, it, x, y, w, h);
 }
 
 // Placement for a new solid item: the preferred position if free, else
 // the nearest non-overlapping spot so new items line up next to existing
 // ones; a packed floor falls back to the preferred spot (overlapping
 // beats refusing to add).
-export function freeSpot(gym, x, y, w, h) {
-  if (!overlapsSolid(gym, null, x, y, w, h)) return { x, y };
+export function freeSpot(layout, x, y, w, h) {
+  if (!overlapsSolid(layout, null, x, y, w, h)) return { x, y };
   let best = null;
-  for (let sy = 0; sy + h <= gym.grid.h; sy += SNAP) {
-    for (let sx = 0; sx + w <= gym.grid.w; sx += SNAP) {
-      if (overlapsSolid(gym, null, sx, sy, w, h)) continue;
+  for (let sy = 0; sy + h <= layout.grid.h; sy += SNAP) {
+    for (let sx = 0; sx + w <= layout.grid.w; sx += SNAP) {
+      if (overlapsSolid(layout, null, sx, sy, w, h)) continue;
       const d = (sx - x) ** 2 + (sy - y) ** 2;
       if (!best || d < best.d) best = { x: sx, y: sy, d };
     }
@@ -310,7 +310,7 @@ function machineSvg(m, usage = null, highlightId = null) {
 
 // Invisible tap padding for items smaller than the touch-target guideline.
 // Must be painted in its own layer BEFORE the visible machines (see
-// drawGym) so a tap on any visible machine always resolves to that
+// drawLayout) so a tap on any visible machine always resolves to that
 // machine, never to a neighbor's padding; padding only catches taps on
 // otherwise-empty floor near a small item.
 function hitPadSvg(items, ppu) {

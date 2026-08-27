@@ -1,22 +1,22 @@
-// Demo data: one tap fills a separate "Demo" profile with a gym, eight
+// Demo data: one tap fills a separate "Demo" gym with a layout, eight
 // weeks of history and three weekday plans, so every feature surface
 // (cardio, bodyweight, multi-exercise, targets, weekday states, lockers,
 // settings snapshots) is testable without building it by hand first.
 //
 // Everything is deterministic: fixed ids, a seeded PRNG and an injectable
 // `now` — the same inputs always produce byte-identical data, which is
-// what makes a reload replace the Demo profile instead of duplicating it.
+// what makes a reload replace the Demo gym instead of duplicating it.
 
 import {
-  getSettings, getProfiles, createProfile, setActiveProfile, clearActive,
-  saveGym, saveWorkouts, savePlans, startOfDay, convertWeight, convertDistance,
+  getSettings, getGyms, createGym, setActiveGym, clearActive,
+  saveLayout, saveWorkouts, savePlans, startOfDay, convertWeight, convertDistance,
   newEntry,
 } from './store.js';
 
-const DEMO_PROFILE_NAME = 'Demo';
+const DEMO_GYM_NAME = 'Demo';
 
 // Local midnight `daysBack` days ago, via setDate() — fixed 86400000-ms
-// multiples would shift every session on the far side of a DST transition
+// multiples would shift every workout on the far side of a DST transition
 // by an hour (store.js's planDueDay uses the same pattern).
 const dayStartBack = (now, daysBack) => {
   const d = startOfDay(now);
@@ -37,10 +37,10 @@ function mulberry32(seed) {
   };
 }
 
-// --- the demo gym ---
+// --- the demo layout ---
 // Machines #1-#11 mirror templates/example-gym.json; #12-#16 fill the
 // template's empty Free-weights and Cardio zones with the coverage the
-// template lacks: cardio, bodyweight and a multi-exercise station.
+// template lacks: cardio, bodyweight and a multi-exercise machine.
 // [id, num, label, x, y, w, h, settingsFields, muscles, extra]
 const MACHINES = [
   ['chest-press', 1, 'Chest press', 4, 4, 5, 4, ['Seat'], ['Chest', 'Triceps'],
@@ -63,6 +63,8 @@ const MACHINES = [
     { cardio: true }],
   ['demo-pullup', 14, 'Pull-up bar', 36, 4, 4, 2, [], ['Lats', 'Biceps'],
     { bodyweight: true }],
+  // "Dip station" is this piece of equipment's real-world name, not the
+  // old synonym for machine — it stays as a user would read it on the floor
   ['demo-dip', 15, 'Dip station', 42, 4, 4, 3, [], ['Chest', 'Triceps'],
     { bodyweight: true }],
   ['demo-dumbbells', 16, 'Dumbbell rack', 36, 10, 12, 2, [], ['Biceps', 'Shoulders', 'Forearms'],
@@ -84,7 +86,7 @@ const SHAPES = [
   { id: 'front-counter', kind: 'fixture', fixture: 'counter', x: 23, y: 33, w: 5, h: 2 },
 ];
 
-function buildGym() {
+function buildLayout() {
   return {
     v: 1,
     name: 'Demo gym',
@@ -129,7 +131,7 @@ const BASE_KG = {
 
 const WEEKS = 8;
 
-const machineById = (gym, id) => gym.machines.find((m) => m.id === id);
+const machineById = (layout, id) => layout.machines.find((m) => m.id === id);
 
 // weekIdx 0 = oldest week, WEEKS-1 = current. One deload week keeps the
 // progress chart from being a straight line.
@@ -142,8 +144,8 @@ function strengthKg(id, weekIdx) {
 // The entry snapshot is store's newEntry (same shape the log screen writes);
 // only the settings come from this dataset's own snapshots. `sets` never
 // carries `at` — these sets were not logged live.
-function entryFor(gym, id, exercise, sets) {
-  const entry = newEntry(machineById(gym, id), exercise, sets);
+function entryFor(layout, id, exercise, sets) {
+  const entry = newEntry(machineById(layout, id), exercise, sets);
   entry.settings = { ...(SNAP_SETTINGS[id] ?? {}) };
   return entry;
 }
@@ -153,46 +155,46 @@ function strengthSets(rng, kg) {
   return Array.from({ length: n }, () => ({ reps: 8 + Math.floor(rng() * 5), weight: kg }));
 }
 
-// day templates: which entries a session of each rotation day contains
-function pushEntries(gym, rng, weekIdx) {
+// day templates: which entries a workout of each rotation day contains
+function pushEntries(layout, rng, weekIdx) {
   return [
-    entryFor(gym, 'chest-press', null, strengthSets(rng, strengthKg('chest-press', weekIdx))),
-    entryFor(gym, 'shoulder-press', null, strengthSets(rng, strengthKg('shoulder-press', weekIdx))),
-    entryFor(gym, 'pec-deck', null, strengthSets(rng, strengthKg('pec-deck', weekIdx))),
-    entryFor(gym, 'demo-dip', null,
+    entryFor(layout, 'chest-press', null, strengthSets(rng, strengthKg('chest-press', weekIdx))),
+    entryFor(layout, 'shoulder-press', null, strengthSets(rng, strengthKg('shoulder-press', weekIdx))),
+    entryFor(layout, 'pec-deck', null, strengthSets(rng, strengthKg('pec-deck', weekIdx))),
+    entryFor(layout, 'demo-dip', null,
       Array.from({ length: 3 }, () => ({ reps: 8 + Math.floor(rng() * 5), weight: 0 }))),
-    entryFor(gym, 'demo-dumbbells', 'Lateral raises',
+    entryFor(layout, 'demo-dumbbells', 'Lateral raises',
       strengthSets(rng, 8 + Math.floor(weekIdx / 3) * 2)),
   ];
 }
 
-function pullEntries(gym, rng, weekIdx) {
+function pullEntries(layout, rng, weekIdx) {
   const entries = [
-    entryFor(gym, 'lat-pulldown', null, strengthSets(rng, strengthKg('lat-pulldown', weekIdx))),
-    entryFor(gym, 'seated-row', null, strengthSets(rng, strengthKg('seated-row', weekIdx))),
+    entryFor(layout, 'lat-pulldown', null, strengthSets(rng, strengthKg('lat-pulldown', weekIdx))),
+    entryFor(layout, 'seated-row', null, strengthSets(rng, strengthKg('seated-row', weekIdx))),
     // added weight appears in the last three weeks, flipping history's
     // bodyweight chart from reps to added-weight
-    entryFor(gym, 'demo-pullup', null,
+    entryFor(layout, 'demo-pullup', null,
       Array.from({ length: 3 }, () => ({
         reps: 6 + Math.floor(rng() * 5), weight: weekIdx >= WEEKS - 3 ? 5 : 0,
       }))),
-    entryFor(gym, 'demo-dumbbells', 'Biceps curls',
+    entryFor(layout, 'demo-dumbbells', 'Biceps curls',
       strengthSets(rng, 10 + Math.floor(weekIdx / 3) * 2)),
   ];
   if (rng() < 0.5) {
-    entries.push(entryFor(gym, 'demo-rower', null,
+    entries.push(entryFor(layout, 'demo-rower', null,
       [{ distance: 2000, seconds: 480 + Math.floor(rng() * 120) }]));
   }
   return entries;
 }
 
-function legsEntries(gym, rng, weekIdx) {
+function legsEntries(layout, rng, weekIdx) {
   return [
-    entryFor(gym, 'leg-press', null, strengthSets(rng, strengthKg('leg-press', weekIdx))),
-    entryFor(gym, 'leg-extension', null, strengthSets(rng, strengthKg('leg-extension', weekIdx))),
-    entryFor(gym, 'leg-curl', null, strengthSets(rng, strengthKg('leg-curl', weekIdx))),
-    entryFor(gym, 'back-extension', null, strengthSets(rng, strengthKg('back-extension', weekIdx))),
-    entryFor(gym, 'demo-treadmill', null,
+    entryFor(layout, 'leg-press', null, strengthSets(rng, strengthKg('leg-press', weekIdx))),
+    entryFor(layout, 'leg-extension', null, strengthSets(rng, strengthKg('leg-extension', weekIdx))),
+    entryFor(layout, 'leg-curl', null, strengthSets(rng, strengthKg('leg-curl', weekIdx))),
+    entryFor(layout, 'back-extension', null, strengthSets(rng, strengthKg('back-extension', weekIdx))),
+    entryFor(layout, 'demo-treadmill', null,
       [{ distance: 3000 + Math.floor(rng() * 4) * 250, seconds: 900 + Math.floor(rng() * 300) }]),
   ];
 }
@@ -203,8 +205,8 @@ const DAYS = [
   { key: 'pull', name: 'Pull day', offset: 0, planId: 'demo-plan-pull', build: pullEntries },
 ];
 
-function buildWorkouts(gym, rng, now) {
-  // two sessions vanish from the mid weeks for heatmap texture — never
+function buildWorkouts(layout, rng, now) {
+  // two workouts vanish from the mid weeks for heatmap texture — never
   // from week 0 or 1, which the missed/done plan states depend on
   const drops = new Set([
     `${3 + Math.floor(rng() * 4)}-push`,
@@ -214,15 +216,15 @@ function buildWorkouts(gym, rng, now) {
   for (let back = WEEKS - 1; back >= 0; back--) {
     const weekIdx = WEEKS - 1 - back;
     for (const day of DAYS) {
-      // the omitted week-0 Push session is what makes its plan "missed"
+      // the omitted week-0 Push workout is what makes its plan "missed"
       if (back === 0 && day.key === 'push') continue;
       if (drops.has(`${back}-${day.key}`)) continue;
-      const entries = day.build(gym, rng, weekIdx);
+      const entries = day.build(layout, rng, weekIdx);
       let startedAt = dayStartBack(now, day.offset + back * 7)
         + (17.5 * 3600 + Math.floor((rng() - 0.5) * 3600)) * 1000;
       let finishedAt = startedAt + (45 + Math.floor(rng() * 30)) * 60000;
       if (back === 0 && day.offset === 0) {
-        // today's session: ~55 min ending now, clamped into [midnight, now]
+        // today's workout: ~55 min ending now, clamped into [midnight, now]
         // so the pull plan reads 'done' even on a load just after midnight.
         // finishedAt stays strictly after startedAt — in the first minute
         // of a day that may poke up to a minute past `now`, the lesser evil
@@ -235,7 +237,7 @@ function buildWorkouts(gym, rng, now) {
         id: `demo-${day.key}-w${back}`,
         startedAt, finishedAt, entries,
         name: day.name,
-        // recent sessions carry the plan id; older ones only the name, so
+        // recent workouts carry the plan id; older ones only the name, so
         // the name-fallback in planTrainedSince gets exercised too
         ...(day.planId && back <= 3 ? { planId: day.planId } : {}),
         ...(rng() < 0.33 ? { locker: String(101 + Math.floor(rng() * 98)) } : {}),
@@ -247,8 +249,8 @@ function buildWorkouts(gym, rng, now) {
 
 // --- plans ---
 // Three plans so all weekday states show at once: Push was due two days
-// ago and its week-0 session is missing (missed), Pull is due today and
-// today's session carries its id (done), Core & cardio was never trained
+// ago and its week-0 workout is missing (missed), Pull is due today and
+// today's workout carries its id (done), Core & cardio was never trained
 // (due). createdAt predates the whole history or "missed" could not fire.
 function buildPlans(now) {
   const dow = new Date(now).getDay();
@@ -302,30 +304,30 @@ function convertToLbs({ workouts, plans }) {
 // Pure apart from its argument defaults: same now/settings/seed, same output.
 export function buildDemoData({ now = Date.now(), settings = getSettings(), seed = 0x5eed17 } = {}) {
   const rng = mulberry32(seed);
-  const gym = buildGym();
-  const workouts = buildWorkouts(gym, rng, now);
+  const layout = buildLayout();
+  const workouts = buildWorkouts(layout, rng, now);
   const plans = buildPlans(now);
   if (settings.unit === 'lbs') convertToLbs({ workouts, plans });
-  return { gym, workouts, plans };
+  return { layout, workouts, plans };
 }
 
-// Creates or refreshes the Demo profile and switches to it. The profile is
+// Creates or refreshes the Demo gym and switches to it. The gym is
 // identified by its `demo` flag, NEVER by name — names are user-editable,
 // and matching one would let a reload overwrite a real gym that happens to
-// be called "Demo". Order matters: the profile switch must land first so
+// be called "Demo". Order matters: the gym switch must land first so
 // every write hits its scoped keys, and a stale in-progress workout is
 // cleared or it would hijack Train.
 export function loadDemoData({ now = Date.now(), settings = getSettings(), seed } = {}) {
-  const { gym, workouts, plans } = buildDemoData({ now, settings, seed });
-  const existing = getProfiles().list.find((p) => p.demo);
-  const profileId = existing ? existing.id : createProfile(DEMO_PROFILE_NAME, { demo: true });
-  setActiveProfile(profileId);
+  const { layout, workouts, plans } = buildDemoData({ now, settings, seed });
+  const existing = getGyms().list.find((p) => p.demo);
+  const gymId = existing ? existing.id : createGym(DEMO_GYM_NAME, { demo: true });
+  setActiveGym(gymId);
   clearActive();
-  saveGym(gym);
+  saveLayout(layout);
   saveWorkouts(workouts);
   savePlans(plans);
   return {
-    profileId, created: !existing,
-    machines: gym.machines.length, workouts: workouts.length, plans: plans.length,
+    gymId, created: !existing,
+    machines: layout.machines.length, workouts: workouts.length, plans: plans.length,
   };
 }

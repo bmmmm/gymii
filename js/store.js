@@ -2,13 +2,13 @@
 // inside each object so future schema migrations have something to check.
 
 const KEYS = {
-  profiles: 'gymii.profiles',
+  gyms: 'gymii.gyms',
   settings: 'gymii.settings',
 };
 
-// Gym, workouts and the active workout are stored per profile ("one gym,
+// Layout, workouts and the active workout are stored per gym ("one gym,
 // one history"); settings stay global.
-const scopedKey = (pid, part) => `gymii.${pid}.${part}`;
+const scopedKey = (gid, part) => `gymii.${gid}.${part}`;
 
 function read(key, fallback) {
   try {
@@ -33,95 +33,123 @@ function write(key, value) {
 export const uid = () => Array.from(
   crypto.getRandomValues(new Uint8Array(16)), (b) => (b % 36).toString(36)).join('');
 
-// --- gym profiles ---
-// gymii.profiles = { v:1, list:[{id,name}], activeId }. Created lazily; a
-// pre-profile install's gymii.gym|workouts|active keys are moved (as raw
-// strings) under a new default profile on first access.
+// --- gyms ---
+// gymii.gyms = { v:1, list:[{id,name}], activeId }. A gym is the CONTAINER:
+// its own layout, workouts, plans and history, all under gymii.<id>.<part>.
+// Created lazily.
+//
+// Two historical shapes migrate on first access, newest first:
+//   1. the profile era — gymii.profiles, and a `gym` part per id (the name
+//      `gym` then meant the layout)
+//   2. a pre-profile install — top-level gymii.gym|workouts|active
+// Both move raw strings (no parse, no reshape) and drop the old keys, so an
+// older app version left open in another tab cannot diverge from them.
 
-function ensureProfiles() {
-  let profiles = read(KEYS.profiles, null);
-  if (profiles) return profiles;
+// Parts move FIRST, the registry last: the registry key is the commit
+// signal, so a crash mid-migration replays harmlessly on the next access
+// instead of orphaning a layout under a key nothing reads any more.
+function migrateProfileEra() {
+  const raw = localStorage.getItem('gymii.profiles');
+  if (raw == null) return; // never a profile install, or already migrated
+  try {
+    JSON.parse(raw).list.forEach(({ id }) => {
+      const old = localStorage.getItem(scopedKey(id, 'gym'));
+      if (old != null && localStorage.getItem(scopedKey(id, 'layout')) == null) {
+        localStorage.setItem(scopedKey(id, 'layout'), old);
+      }
+      localStorage.removeItem(scopedKey(id, 'gym'));
+    });
+  } catch { /* unreadable registry: it lands below and read() self-heals */ }
+  localStorage.setItem(KEYS.gyms, raw);
+  localStorage.removeItem('gymii.profiles');
+}
+
+function ensureGyms() {
+  migrateProfileEra();
+  let gyms = read(KEYS.gyms, null);
+  if (gyms) return gyms;
   const id = uid();
   let name = 'My gym';
-  const legacyGym = localStorage.getItem('gymii.gym');
-  if (legacyGym) {
-    try { name = JSON.parse(legacyGym).name || name; } catch { /* keep default */ }
+  const legacyLayout = localStorage.getItem('gymii.gym');
+  if (legacyLayout) {
+    try { name = JSON.parse(legacyLayout).name || name; } catch { /* keep default */ }
   }
-  ['gym', 'workouts', 'active'].forEach((part) => {
-    const raw = localStorage.getItem(`gymii.${part}`);
+  // pre-profile top-level keys; the one called 'gym' back then is the layout
+  [['gym', 'layout'], ['workouts', 'workouts'], ['active', 'active']].forEach(([from, to]) => {
+    const raw = localStorage.getItem(`gymii.${from}`);
     if (raw != null) {
-      localStorage.setItem(scopedKey(id, part), raw);
-      localStorage.removeItem(`gymii.${part}`);
+      localStorage.setItem(scopedKey(id, to), raw);
+      localStorage.removeItem(`gymii.${from}`);
     }
   });
-  profiles = { v: 1, list: [{ id, name }], activeId: id };
-  write(KEYS.profiles, profiles);
-  return profiles;
+  gyms = { v: 1, list: [{ id, name }], activeId: id };
+  write(KEYS.gyms, gyms);
+  return gyms;
 }
 
-const activeProfileId = () => ensureProfiles().activeId;
+const activeGymId = () => ensureGyms().activeId;
 
-export function getProfiles() {
-  return ensureProfiles();
+export function getGyms() {
+  return ensureGyms();
 }
 
-// Creates a profile and makes it active. It starts without a gym; Studio
-// auto-creates one on first visit. `extra` lets a caller stamp identity
-// onto the profile (demo.js marks its profile `demo: true` — names are
+// Creates a gym and makes it active. It starts without a layout; the Gym
+// screen auto-creates one on first visit. `extra` lets a caller stamp
+// identity onto the gym (demo.js marks its gym `demo: true` — names are
 // user-editable and must never be an identity).
-export function createProfile(name, extra = {}) {
-  const profiles = ensureProfiles();
+export function createGym(name, extra = {}) {
+  const gyms = ensureGyms();
   const id = uid();
-  profiles.list.push({
+  gyms.list.push({
     id, name: String(name || '').trim() || 'New gym', updatedAt: Date.now(), ...extra,
   });
-  profiles.activeId = id;
-  write(KEYS.profiles, profiles);
+  gyms.activeId = id;
+  write(KEYS.gyms, gyms);
   return id;
 }
 
-export function renameProfile(id, name) {
-  const profiles = ensureProfiles();
-  const p = profiles.list.find((x) => x.id === id);
+export function renameGym(id, name) {
+  const gyms = ensureGyms();
+  const g = gyms.list.find((x) => x.id === id);
   const trimmed = String(name || '').trim();
-  if (!p || !trimmed) return;
-  p.name = trimmed;
-  p.updatedAt = Date.now();
-  write(KEYS.profiles, profiles);
+  if (!g || !trimmed) return;
+  g.name = trimmed;
+  g.updatedAt = Date.now();
+  write(KEYS.gyms, gyms);
 }
 
-export function setActiveProfile(id) {
-  const profiles = ensureProfiles();
-  if (!profiles.list.some((p) => p.id === id)) return;
-  profiles.activeId = id;
-  write(KEYS.profiles, profiles);
+export function setActiveGym(id) {
+  const gyms = ensureGyms();
+  if (!gyms.list.some((g) => g.id === id)) return;
+  gyms.activeId = id;
+  write(KEYS.gyms, gyms);
 }
 
-// Refuses to delete the last remaining profile (returns false) — except
-// the demo profile: Settings promises it can always be removed, so as the
-// sole survivor it takes the registry with it and the next access
-// self-heals into a fresh default (same recovery clearAll relies on).
-// Deleting the active profile switches to the first remaining one.
-export function deleteProfile(id) {
-  const profiles = ensureProfiles();
-  const profile = profiles.list.find((p) => p.id === id);
-  if (!profile) return false;
-  if (profiles.list.length <= 1 && !profile.demo) return false;
-  profiles.list = profiles.list.filter((p) => p.id !== id);
-  // registry-level tombstone: a profile deleted here must not come back
-  // from another device's copy (its scoped keys are dropped wholesale, so
-  // no finer-grained tombstones are needed inside a dead profile)
-  profiles.deleted = [
-    ...(profiles.deleted ?? []).filter((t) => t.id !== id), { id, at: Date.now() }];
-  if (!profiles.list.length) {
+// Refuses to delete the last remaining gym (returns false) — except the
+// demo gym: Settings promises it can always be removed, so as the sole
+// survivor it takes the registry with it and the next access self-heals
+// into a fresh default (same recovery clearAll relies on).
+// Deleting the active gym switches to the first remaining one.
+export function deleteGym(id) {
+  const gyms = ensureGyms();
+  const gym = gyms.list.find((g) => g.id === id);
+  if (!gym) return false;
+  if (gyms.list.length <= 1 && !gym.demo) return false;
+  gyms.list = gyms.list.filter((g) => g.id !== id);
+  // registry-level tombstone: a gym deleted here must not come back from
+  // another device's copy (its scoped keys are dropped wholesale, so no
+  // finer-grained tombstones are needed inside a dead gym)
+  gyms.deleted = [
+    ...(gyms.deleted ?? []).filter((t) => t.id !== id), { id, at: Date.now() }];
+  if (!gyms.list.length) {
     // demo-only survivor takes the registry (and its tombstones) with it —
     // the next access self-heals into a fresh default, same as clearAll
-    localStorage.removeItem(KEYS.profiles);
+    localStorage.removeItem(KEYS.gyms);
   } else {
-    if (profiles.activeId === id) profiles.activeId = profiles.list[0].id;
-    write(KEYS.profiles, profiles);
+    if (gyms.activeId === id) gyms.activeId = gyms.list[0].id;
+    write(KEYS.gyms, gyms);
   }
-  ['gym', 'workouts', 'active', 'plans', 'tombstones']
+  ['layout', 'workouts', 'active', 'plans', 'tombstones']
     .forEach((part) => localStorage.removeItem(scopedKey(id, part)));
   return true;
 }
@@ -136,11 +164,11 @@ export function deleteProfile(id) {
 const emptyTombstones = () => ({ v: 1, workouts: [], plans: [], machines: [], shapes: [] });
 
 export function getTombstones() {
-  return { ...emptyTombstones(), ...read(scopedKey(activeProfileId(), 'tombstones'), {}) };
+  return { ...emptyTombstones(), ...read(scopedKey(activeGymId(), 'tombstones'), {}) };
 }
 
 export function saveTombstones(tombstones) {
-  write(scopedKey(activeProfileId(), 'tombstones'),
+  write(scopedKey(activeGymId(), 'tombstones'),
     { ...emptyTombstones(), ...tombstones });
 }
 
@@ -169,37 +197,37 @@ export const COMMON_SETTINGS = [
   'Foot plate',
 ];
 
-// --- gym template ---
+// --- layout template ---
 
-export function getGym() {
-  const gym = read(scopedKey(activeProfileId(), 'gym'), null);
-  if (gym && !Array.isArray(gym.outline)) gym.outline = defaultOutline(gym.grid); // pre-outline gyms
-  if (gym && !gym.meta) gym.meta = {}; // pre-meta gyms
+export function getLayout() {
+  const layout = read(scopedKey(activeGymId(), 'layout'), null);
+  if (layout && !Array.isArray(layout.outline)) layout.outline = defaultOutline(layout.grid); // pre-outline layouts
+  if (layout && !layout.meta) layout.meta = {}; // pre-meta layouts
   // heal machines from hand-edited/AI-produced imports — a missing
-  // settingsFields would otherwise throw across Train and Studio
-  gym?.machines.forEach((m) => {
+  // settingsFields would otherwise throw across Train and Gym
+  layout?.machines.forEach((m) => {
     if (!Array.isArray(m.settingsFields)) m.settingsFields = [];
     if (!Array.isArray(m.muscles)) m.muscles = [];
   });
-  return gym;
+  return layout;
 }
 
-// Interactive save — the single choke point every editing surface (studio,
+// Interactive save — the single choke point every editing surface (gym,
 // train's quick start, create-on-miss, plan binding) already flows through.
-// Diffs against the previously stored gym: a changed or new machine/shape
+// Diffs against the previously stored layout: a changed or new machine/shape
 // gets `updatedAt` stamped, a vanished id gets a tombstone, and the
-// structural rest (name/grid/meta/outline) carries one gym-level stamp.
+// structural rest (name/grid/meta/outline) carries one layout-level stamp.
 // Bulk restore (imports, sync apply) must NOT re-diff or re-stamp — the
-// incoming state owns its stamps — and uses restoreGym below instead; the
+// incoming state owns its stamps — and uses restoreLayout below instead; the
 // same interactive/bulk split saveWorkouts and savePlans get for free.
-export function saveGym(gym) {
-  const key = scopedKey(activeProfileId(), 'gym');
+export function saveLayout(layout) {
+  const key = scopedKey(activeGymId(), 'layout');
   const prev = read(key, null);
   const now = Date.now();
   const gone = [];
   ['machines', 'shapes'].forEach((coll) => {
     const before = new Map((prev?.[coll] ?? []).map((i) => [i.id, i]));
-    (gym[coll] ?? []).forEach((item) => {
+    (layout[coll] ?? []).forEach((item) => {
       const was = before.get(item.id);
       before.delete(item.id);
       if (!was || JSON.stringify(was) !== JSON.stringify(item)) item.updatedAt = now;
@@ -208,12 +236,12 @@ export function saveGym(gym) {
     before.forEach((_, id) => gone.push({ coll, id }));
   });
   const structural = ['name', 'grid', 'meta', 'outline'];
-  if (!prev || structural.some((f) => JSON.stringify(prev[f]) !== JSON.stringify(gym[f]))) {
-    gym.updatedAt = now;
+  if (!prev || structural.some((f) => JSON.stringify(prev[f]) !== JSON.stringify(layout[f]))) {
+    layout.updatedAt = now;
   } else if (prev.updatedAt != null) {
-    gym.updatedAt = prev.updatedAt;
+    layout.updatedAt = prev.updatedAt;
   }
-  write(key, gym);
+  write(key, layout);
   if (gone.length) {
     const t = getTombstones();
     gone.forEach(({ coll, id }) => {
@@ -223,8 +251,8 @@ export function saveGym(gym) {
   }
 }
 
-export function restoreGym(gym) {
-  write(scopedKey(activeProfileId(), 'gym'), gym);
+export function restoreLayout(layout) {
+  write(scopedKey(activeGymId(), 'layout'), layout);
 }
 
 export function defaultOutline(grid) {
@@ -236,40 +264,40 @@ export function defaultOutline(grid) {
   ];
 }
 
-// Appends a machine near the grid center (loosely mirroring the studio's
+// Appends a machine near the grid center (loosely mirroring the gym's
 // placement). Quick start and the picker's create-on-miss use this, so a
-// gym can grow without ever opening the studio — arranging is optional.
-export function addMachine(gym, num, label) {
+// layout can grow without ever opening the gym — arranging is optional.
+export function addMachine(layout, num, label) {
   // 5 per row, next row below, wrapping inside the grid — plain modulo
   // would stack machine 1/6/11 on the same spot
-  const n = gym.machines.length;
+  const n = layout.machines.length;
   const machine = {
     id: uid(), num, label,
-    x: Math.round(2 + (n % 5) * 5) % Math.max(1, gym.grid.w - 4),
-    y: Math.round(2 + Math.floor(n / 5) * 4) % Math.max(1, gym.grid.h - 3),
+    x: Math.round(2 + (n % 5) * 5) % Math.max(1, layout.grid.w - 4),
+    y: Math.round(2 + Math.floor(n / 5) * 4) % Math.max(1, layout.grid.h - 3),
     w: 4, h: 3, settingsFields: [], muscles: [], docUrl: '',
   };
-  gym.machines.push(machine);
+  layout.machines.push(machine);
   return machine;
 }
 
-// Resolves a machine number to a station, CREATING it when the gym does not
-// know that number — the gym grows out of the plan (or the note) instead of
+// Resolves a machine number to a machine, CREATING it when the layout does not
+// know that number — the layout grows out of the plan (or the note) instead of
 // gating it. The new machine takes the item's own name, so it never lands
-// as a nameless "Machine 14"; the note already said what kind of station
+// as a nameless "Machine 14"; the note already said what kind of machine
 // this is ("20min" reads as cardio), and a machine born here inherits that,
 // or its target would be dropped as the wrong shape the moment it binds.
-// Persists NOTHING: every caller keeps its own saveGym timing (and its own
-// newGym, when there is no gym yet).
-export function bindOrCreateMachine(gym, num, name, target = null) {
-  const existing = gym.machines.find((m) => m.num === num);
+// Persists NOTHING: every caller keeps its own saveLayout timing (and its own
+// newLayout, when there is no layout yet).
+export function bindOrCreateMachine(layout, num, name, target = null) {
+  const existing = layout.machines.find((m) => m.num === num);
   if (existing) return existing;
-  const machine = addMachine(gym, num, name || `Machine ${num}`);
+  const machine = addMachine(layout, num, name || `Machine ${num}`);
   if (target?.distance != null) machine.cardio = true;
   return machine;
 }
 
-export function newGym(name = 'My gym') {
+export function newLayout(name = 'My layout') {
   const grid = { w: 60, h: 40 };
   return {
     v: 1, name, grid,
@@ -282,16 +310,16 @@ export function newGym(name = 'My gym') {
 // --- workout history ---
 
 export function getWorkouts() {
-  return read(scopedKey(activeProfileId(), 'workouts'), []);
+  return read(scopedKey(activeGymId(), 'workouts'), []);
 }
 
 // Chronological order is an INVARIANT of this list: "repeat last workout"
 // reads the tail, lastEntryFor walks it backwards, and history renders it
-// reversed. Logging a session after the fact or editing a workout's date
+// reversed. Logging a workout after the fact or editing a workout's date
 // would otherwise silently misplace it, so sorting happens here — once,
 // for every writer — instead of at each call site.
 export function saveWorkouts(list) {
-  write(scopedKey(activeProfileId(), 'workouts'),
+  write(scopedKey(activeGymId(), 'workouts'),
     list.slice().sort((a, b) => a.startedAt - b.startedAt));
 }
 
@@ -329,7 +357,7 @@ export function updateWorkout(patch) {
 }
 
 // Most recent entry with at least one set for this machine — and, at
-// multi-exercise stations, for this exercise (null matches entries logged
+// multi-exercise machines, for this exercise (null matches entries logged
 // without one). Returns null if nothing matches.
 export function lastEntryFor(machineId, exercise = null) {
   const workouts = getWorkouts();
@@ -343,10 +371,10 @@ export function lastEntryFor(machineId, exercise = null) {
 
 // A fresh history entry for this machine. num/label, the type flags and the
 // exercise are SNAPSHOTTED here — history, the editor, the chart and the AI
-// export read the entry, never the live machine, so a station renamed or
-// retyped later leaves logged sessions readable. Flags are absent unless
+// export read the entry, never the live machine, so a machine renamed or
+// retyped later leaves logged workouts readable. Flags are absent unless
 // true (strength carries neither). `settings` starts empty: what belongs in
-// it depends on the caller (the log screen prefills from the last session,
+// it depends on the caller (the log screen prefills from the last workout,
 // the demo data from its own snapshots).
 export function newEntry(machine, exercise = null, sets = []) {
   return {
@@ -368,9 +396,9 @@ export function newEntry(machine, exercise = null, sets = []) {
 // path. Shape:
 //   { id, name, items: [{ machineId?, name?, num?, exercise|null,
 //     target?: {sets,reps,weight} | {distance,seconds} }] }
-// INVARIANT: an item carries a machineId (bound — it knows which station)
-// or a name (unbound — it knows the movement but not the station yet), or
-// both. Unbound items are what lets a plan exist before the gym does: a
+// INVARIANT: an item carries a machineId (bound — it knows which machine)
+// or a name (unbound — it knows the movement but not the machine yet), or
+// both. Unbound items are what lets a plan exist before the layout does: a
 // trainer's note is typed in, and each item binds to a machine the first
 // time it is trained (train.js renderBind). `num` on an unbound item is a
 // hint from the source note, not a binding — it prefills the bind prompt.
@@ -378,11 +406,11 @@ export function newEntry(machine, exercise = null, sets = []) {
 // shape of its target (distance/seconds = cardio).
 
 export function getPlans() {
-  return read(scopedKey(activeProfileId(), 'plans'), []);
+  return read(scopedKey(activeGymId(), 'plans'), []);
 }
 
 export function savePlans(list) {
-  write(scopedKey(activeProfileId(), 'plans'), list);
+  write(scopedKey(activeGymId(), 'plans'), list);
 }
 
 // Upserts by id so the builder saves new and edited plans alike. A plan
@@ -513,7 +541,7 @@ export function skipPlanDay(planId, now = Date.now()) {
 }
 
 // The weekday this plan actually gets trained on, when there is a clear
-// one (at least 3 sessions, and 60% of them on the same day). Lets gymii
+// one (at least 3 workouts, and 60% of them on the same day). Lets gymii
 // notice a rhythm instead of asking for one.
 export function usualWeekday(plan, workouts) {
   const mine = workouts.filter((w) =>
@@ -531,15 +559,15 @@ export function usualWeekday(plan, workouts) {
 // --- active (in-progress) workout, saved after every set for crash safety ---
 
 export function getActive() {
-  return read(scopedKey(activeProfileId(), 'active'), null);
+  return read(scopedKey(activeGymId(), 'active'), null);
 }
 
 export function saveActive(workout) {
-  write(scopedKey(activeProfileId(), 'active'), workout);
+  write(scopedKey(activeGymId(), 'active'), workout);
 }
 
 export function clearActive() {
-  localStorage.removeItem(scopedKey(activeProfileId(), 'active'));
+  localStorage.removeItem(scopedKey(activeGymId(), 'active'));
 }
 
 // Moves the active workout into history; entries without sets are dropped.
@@ -568,7 +596,7 @@ export function finishWorkout(active) {
 // --- settings ---
 
 // `keepAwake` names the SCOPE of the screen wake lock: 'break' (the rest
-// timer only, default), 'workout' (the whole session — costs battery, so
+// timer only, default), 'workout' (the whole workout — costs battery, so
 // never the default) or 'off'. `timerDim` is when the rest screen dims
 // itself: '10s' (default), 'now' or 'off'.
 export function getSettings() {
@@ -603,8 +631,8 @@ export const convertDistance = (v, unit) => (unit === 'lbs'
 
 // Stored weights and distances are always in the current display unit.
 // Switching units therefore converts every stored value — across ALL
-// profiles' histories, active workouts and plan targets (unit is global,
-// data is per profile) — plus the shared weight step. Seconds are
+// gyms' histories, active workouts and plan targets (unit is global,
+// data is per gym) — plus the shared weight step. Seconds are
 // unit-less and untouched.
 export function setUnit(unit) {
   const s = getSettings();
@@ -616,7 +644,7 @@ export function setUnit(unit) {
   };
   const convertSets = (entries) => entries.forEach((e) => e.sets.forEach(convert));
 
-  ensureProfiles().list.forEach((p) => {
+  ensureGyms().list.forEach((p) => {
     const workouts = read(scopedKey(p.id, 'workouts'), []);
     workouts.forEach((w) => convertSets(w.entries));
     write(scopedKey(p.id, 'workouts'), workouts);
@@ -627,7 +655,7 @@ export function setUnit(unit) {
       // a running workout's slots carry their OWN copy of the plan targets
       // (train.js startWorkoutFrom) — the log screen's header and its
       // first-set prefill read that copy, so skipping it would turn an 80 kg
-      // goal into an 80 lbs one the moment the unit is switched mid-session.
+      // goal into an 80 lbs one the moment the unit is switched mid-workout.
       // Legacy plans are bare machineId strings; they have no target.
       active.plan?.forEach((slot) => slot?.target && convert(slot.target));
       write(scopedKey(p.id, 'active'), active);
@@ -645,13 +673,13 @@ export function setUnit(unit) {
   saveSettings({ ...s, unit, weightStep: Math.max(0.5, convertWeight(s.weightStep, unit)) });
 }
 
-// Sorted list of every muscle assigned across the gym's machines — feeds
+// Sorted list of every muscle assigned across the layout's machines — feeds
 // the picker's filter, the overview's coverage chips and the plan builder.
-export const gymMuscles = (gym) => [...new Set(gym.machines.flatMap((m) => m.muscles || []))]
+export const layoutMuscles = (layout) => [...new Set(layout.machines.flatMap((m) => m.muscles || []))]
   .sort((a, b) => a.localeCompare(b));
 
 // --- naming a workout ---
-// A name is what makes a session findable later, so gymii proposes one
+// A name is what makes a workout findable later, so gymii proposes one
 // instead of asking for one: the muscles of the machines actually trained
 // say what this workout was. Chips, not free text — the house rule for
 // anything enumerable, and one tap beats typing "Push day" for the ninth
@@ -682,15 +710,15 @@ const PULL = new Set(['Lats', 'Upper back', 'Lower back', 'Traps', 'Biceps']);
 
 // Names this set of machines could plausibly go by, most specific first.
 // Pass one id per set (or per plan item) — repeats are the weighting.
-export function suggestWorkoutNames(machineIds, gym) {
+export function suggestWorkoutNames(machineIds, layout) {
   const hits = new Map(); // muscle -> weight
   let total = 0;
   machineIds.forEach((id) => {
-    const machine = gym?.machines.find((m) => m.id === id);
+    const machine = layout?.machines.find((m) => m.id === id);
     const muscles = machine?.muscles ?? [];
     if (!muscles.length) return;
     // each machine contributes ONE unit, split across its muscles — a
-    // station tagged with three leg muscles must not outvote two others
+    // machine tagged with three leg muscles must not outvote two others
     const unit = 1 / muscles.length;
     muscles.forEach((mu) => hits.set(mu, (hits.get(mu) || 0) + unit));
     total += 1;
@@ -705,7 +733,7 @@ export function suggestWorkoutNames(machineIds, gym) {
   });
   const ranked = [...regions].sort((a, b) => b[1] - a[1]).map(([r]) => r);
   const names = [];
-  // a classic split only when the session really is one — a stray
+  // a classic split only when the workout really is one — a stray
   // machine from another region should not rename the whole workout
   if (share(PUSH) >= 0.7) names.push('Push day');
   if (share(PULL) >= 0.7) names.push('Pull day');
@@ -731,9 +759,9 @@ export function recentWorkoutNames(limit = 3) {
 // history editor, the plan builder): what these machines suggest first, then
 // the names already in use, deduplicated. Pass one id per logged set (or per
 // plan item) — repeats are the weighting, see suggestWorkoutNames.
-export function nameChipsFor(machineIds, gym, limit = 5) {
+export function nameChipsFor(machineIds, layout, limit = 5) {
   return [...new Set([
-    ...suggestWorkoutNames(machineIds, gym),
+    ...suggestWorkoutNames(machineIds, layout),
     ...recentWorkoutNames(),
   ])].slice(0, limit);
 }
@@ -748,17 +776,17 @@ export function usageByMachine() {
 }
 
 // Muscles live on the MACHINE, never on the entry, so history resolves
-// them against the gym as it is today — a deleted or untagged machine
+// them against the layout as it is today — a deleted or untagged machine
 // simply contributes to no muscle.
-const muscleIndex = (gym) => new Map((gym?.machines ?? []).map((m) => [m.id, m.muscles ?? []]));
+const muscleIndex = (layout) => new Map((layout?.machines ?? []).map((m) => [m.id, m.muscles ?? []]));
 
 // Sets per muscle over `workouts` (the caller passes its filtered list).
-// A set on a two-muscle station counts fully for BOTH: this answers "how
-// many sets worked this muscle", not "what should this session be called"
+// A set on a two-muscle machine counts fully for BOTH: this answers "how
+// many sets worked this muscle", not "what should this workout be called"
 // — suggestWorkoutNames splits 1/n because naming is a vote, usage isn't.
 // → Map<muscle, {sets, workouts}>
-export function usageByMuscle(workouts, gym) {
-  const muscles = muscleIndex(gym);
+export function usageByMuscle(workouts, layout) {
+  const muscles = muscleIndex(layout);
   const usage = new Map();
   workouts.forEach((w) => {
     const seen = new Set(); // count each workout once per muscle
@@ -774,9 +802,9 @@ export function usageByMuscle(workouts, gym) {
 
 // The workouts that touched `muscle` — WHOLE workouts on purpose: history
 // edits a full workout, so narrowing entries would let Save silently drop
-// the stations that didn't match.
-export function workoutsWithMuscle(workouts, gym, muscle) {
-  const muscles = muscleIndex(gym);
+// the machines that didn't match.
+export function workoutsWithMuscle(workouts, layout, muscle) {
+  const muscles = muscleIndex(layout);
   return workouts.filter((w) =>
     w.entries.some((e) => muscles.get(e.machineId)?.includes(muscle)));
 }
@@ -787,8 +815,13 @@ export function saveSettings(settings) {
 
 // --- import / export ---
 
+// The wire format is frozen: the field is `gym` and the kind is
+// `gym-template`, even though internally this is the LAYOUT. Files in the
+// wild read it that way — every backup ever exported, every community
+// template under templates/, the AI prompt's format description and the
+// gym-template issue form. Renaming the field would be a v3 for no gain.
 export function exportGymTemplate() {
-  return { app: 'gymii', kind: 'gym-template', v: 1, gym: getGym() };
+  return { app: 'gymii', kind: 'gym-template', v: 1, gym: getLayout() };
 }
 
 // v2 adds tombstones (and the records may carry updatedAt stamps) so a
@@ -801,7 +834,8 @@ export function exportBackup() {
     app: 'gymii',
     kind: 'backup',
     v: 2,
-    gym: getGym(),
+    gym: getLayout(), // wire field, see exportGymTemplate above
+
     workouts: getWorkouts(),
     plans: getPlans(),
     settings: getSettings(),
@@ -809,21 +843,21 @@ export function exportBackup() {
   };
 }
 
-function isValidGym(gym) {
-  return gym && typeof gym === 'object'
-    && gym.grid && Number.isFinite(gym.grid.w) && Number.isFinite(gym.grid.h)
-    && Array.isArray(gym.shapes) && Array.isArray(gym.machines)
-    && gym.machines.every((m) => m.id && Number.isFinite(m.num)
+function isValidLayout(layout) {
+  return layout && typeof layout === 'object'
+    && layout.grid && Number.isFinite(layout.grid.w) && Number.isFinite(layout.grid.h)
+    && Array.isArray(layout.shapes) && Array.isArray(layout.machines)
+    && layout.machines.every((m) => m.id && Number.isFinite(m.num)
       && (m.exercises === undefined
         || (Array.isArray(m.exercises) && m.exercises.every((x) => typeof x === 'string'))))
-    && (gym.outline === undefined || (Array.isArray(gym.outline) && gym.outline.length >= 3
-      && gym.outline.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))));
+    && (layout.outline === undefined || (Array.isArray(layout.outline) && layout.outline.length >= 3
+      && layout.outline.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))));
 }
 
 // --- plan text: the trainer's note ---
 // A plan arrives as LINES, not as a form — "Leg press 3x10 80", "#7 Chest
 // press 3x8-12 40kg", "Treadmill 20min". Reading them is what makes a plan
-// possible before a gym exists. Cutting order matters: set and weight
+// possible before a layout exists. Cutting order matters: set and weight
 // terms come out FIRST, so a leftover leading number ("7. Leg press") is
 // unambiguously a machine num and "20min Treadmill" never reads its 20 as
 // one. Only a MARKED number (#7, 7., 7)) counts — a bare leading digit
@@ -904,7 +938,7 @@ export function parsePlanLine(line, settings = getSettings()) {
   // strip the punctuation that separated the terms we just cut out
   let name = rest.replace(/[\s,;:@×*x-]+$/i, '').replace(/^[\s,;:@-]+/, '')
     .replace(/\s+/g, ' ').trim();
-  // "#2 Dumbbells: Biceps curls" names a movement AT a station. Only a
+  // "#2 Dumbbells: Biceps curls" names a movement AT a machine. Only a
   // MARKED num unlocks this reading — otherwise "Day A: Leg press" would
   // lose its exercise to a heading that merely looks like one.
   let exercise = null;
@@ -929,14 +963,14 @@ export function parsePlanText(text, settings = getSettings()) {
     .filter(Boolean);
 }
 
-// Binds one raw item to a machine when the gym allows it: a known num
+// Binds one raw item to a machine when the layout allows it: a known num
 // wins, else an exact label match, else a SINGLE substring match (an
-// ambiguous one would bind the wrong station, so it stays unbound). What
+// ambiguous one would bind the wrong machine, so it stays unbound). What
 // cannot bind keeps its name and num — an unbound item is a full citizen,
 // not a failed one.
-function resolveItem(raw, gym) {
+function resolveItem(raw, layout) {
   const name = String(raw.name || '').trim();
-  const machines = gym?.machines ?? [];
+  const machines = layout?.machines ?? [];
   let machine = raw.num != null ? machines.find((m) => m.num === raw.num) : null;
   if (!machine && name) {
     const n = name.toLowerCase();
@@ -964,10 +998,10 @@ function normalizeTarget(raw, cardio) {
 }
 
 // Turns raw items ({num?, name?, exercise?, target?} — from an LLM file or
-// a typed note) into plan items, binding what the gym already knows.
-export function planItemsFrom(rawItems, gym) {
+// a typed note) into plan items, binding what the layout already knows.
+export function planItemsFrom(rawItems, layout) {
   return rawItems.map((raw) => {
-    const { machine, name } = resolveItem(raw, gym);
+    const { machine, name } = resolveItem(raw, layout);
     const flat = raw.target ? { ...raw, ...raw.target } : raw;
     const cardio = machine ? !!machine.cardio : flat.distance != null || flat.seconds != null;
     const target = normalizeTarget(flat, cardio);
@@ -975,7 +1009,7 @@ export function planItemsFrom(rawItems, gym) {
       const exercise = machine.exercises?.includes(raw.exercise) ? raw.exercise : null;
       return { machineId: machine.id, exercise, ...(target ? { target } : {}) };
     }
-    // neither a station nor a name: nothing to train and nothing to bind
+    // neither a machine nor a name: nothing to train and nothing to bind
     if (!name) return null;
     return {
       machineId: null, name, exercise: null,
@@ -991,10 +1025,10 @@ export const isUnbound = (item) => !item.machineId;
 // parsePlanText, so the builder can offer text and list as two views of
 // one plan. Bound items lead with their #num, which is what makes the
 // round-trip bind again on the way back in.
-export function planToText(items, gym, settings = getSettings()) {
+export function planToText(items, layout, settings = getSettings()) {
   const du = distUnit(settings);
   return items.map((it) => {
-    const machine = it.machineId ? gym?.machines.find((m) => m.id === it.machineId) : null;
+    const machine = it.machineId ? layout?.machines.find((m) => m.id === it.machineId) : null;
     if (!machine && !isUnbound(it)) return null; // machine deleted since
     const num = machine?.num ?? it.num ?? null;
     const label = machine ? machine.label : it.name;
@@ -1011,37 +1045,37 @@ export function planToText(items, gym, settings = getSettings()) {
   }).filter(Boolean).join('\n');
 }
 
-// Reads a plan out of a typed note. No gym needed — that is the point.
+// Reads a plan out of a typed note. No layout needed — that is the point.
 export function planFromText(text, name = '', settings = getSettings()) {
   const raw = parsePlanText(text, settings);
   if (!raw.length) throw new Error('No exercises found — one per line, e.g. "Leg press 3x10 80"');
   return {
     id: uid(),
     name: String(name || '').trim(),
-    items: planItemsFrom(raw, getGym()),
+    items: planItemsFrom(raw, getLayout()),
   };
 }
 
-// Builds a PAST workout out of the same note grammar — the session you
+// Builds a PAST workout out of the same note grammar — the workout you
 // forgot to log is a plan that already happened, so "3x10 80" means three
 // sets of ten at eighty rather than a target of them. Lines naming a num
-// the gym doesn't know create that machine (same deal as binding on the
+// the layout doesn't know create that machine (same deal as binding on the
 // floor); lines with no findable machine are reported, not invented, so
-// nothing lands in the gym that the note didn't actually name.
-// Returns { workout, skipped } and persists ONLY the gym, not the workout.
+// nothing lands in the layout that the note didn't actually name.
+// Returns { workout, skipped } and persists ONLY the layout, not the workout.
 export function workoutFromText(text, startedAt, settings = getSettings()) {
   const raw = parsePlanText(text, settings);
   if (!raw.length) throw new Error('No exercises found — one per line, e.g. "#14 Leg press 3x10 80"');
-  const gym = getGym() ?? newGym();
+  const layout = getLayout() ?? newLayout();
   const entries = [];
   const skipped = [];
   raw.forEach((item) => {
-    const [resolved] = planItemsFrom([item], gym);
+    const [resolved] = planItemsFrom([item], layout);
     if (!resolved) return;
     let machine = resolved.machineId
-      ? gym.machines.find((m) => m.id === resolved.machineId) : null;
+      ? layout.machines.find((m) => m.id === resolved.machineId) : null;
     if (!machine && item.num) {
-      machine = bindOrCreateMachine(gym, item.num, item.name, item.target);
+      machine = bindOrCreateMachine(layout, item.num, item.name, item.target);
     }
     if (!machine) { skipped.push(item.name); return; }
     const t = resolved.target;
@@ -1057,17 +1091,17 @@ export function workoutFromText(text, startedAt, settings = getSettings()) {
   if (!entries.length) {
     throw new Error('No line named a machine gymii knows — put a #number in front of one');
   }
-  saveGym(gym);
+  saveLayout(layout);
   // no finishedAt: the duration of a workout logged after the fact is
   // simply unknown, and every consumer already guards for its absence
   return { workout: { id: uid(), startedAt, updatedAt: Date.now(), entries }, skipped };
 }
 
-// Resolves an LLM-produced workout-plan file against the current gym.
+// Resolves an LLM-produced workout-plan file against the current layout.
 // Machines are referenced by their visible num — the only stable handle an
-// LLM sees in the AI export. A num the gym doesn't know does NOT drop the
+// LLM sees in the AI export. A num the layout doesn't know does NOT drop the
 // item any more: the answer may arrive hours after the export (or before
-// the gym exists at all), so it lands unbound and binds on first use.
+// the layout exists at all), so it lands unbound and binds on first use.
 // The plan always gets a FRESH id; when the file carries the id of an
 // existing plan (a revision of an exported one), that id is only REPORTED
 // as `replacesId` — replacing is a destructive choice the caller must
@@ -1075,7 +1109,7 @@ export function workoutFromText(text, startedAt, settings = getSettings()) {
 // Does not persist anything.
 export function planFromImport(data) {
   if (!Array.isArray(data.items) || !data.items.length) throw new Error('Plan has no items');
-  const items = planItemsFrom(data.items, getGym());
+  const items = planItemsFrom(data.items, getLayout());
   const days = Array.isArray(data.days)
     ? [...new Set(data.days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))]
       .sort((a, b) => a - b)
@@ -1094,18 +1128,18 @@ export function planFromImport(data) {
 }
 
 // Returns the imported kind ('gym-template' | 'backup' | 'workout-plan'),
-// throws on bad input.
+// throws on bad input. `data.gym` is the frozen wire name for the layout.
 export function importData(data) {
   if (!data || data.app !== 'gymii') throw new Error('Not a gymii file');
   if (data.kind === 'gym-template') {
-    if (!isValidGym(data.gym)) throw new Error('Invalid gym template');
+    if (!isValidLayout(data.gym)) throw new Error('Invalid gym template');
     // bulk restore, not an interactive edit: no re-diffing, no re-stamping
-    restoreGym(data.gym);
+    restoreLayout(data.gym);
     return 'gym-template';
   }
   if (data.kind === 'backup') {
-    if (!isValidGym(data.gym) || !Array.isArray(data.workouts)) throw new Error('Invalid backup');
-    restoreGym(data.gym);
+    if (!isValidLayout(data.gym) || !Array.isArray(data.workouts)) throw new Error('Invalid backup');
+    restoreLayout(data.gym);
     saveWorkouts(data.workouts);
     if (Array.isArray(data.plans)) {
       savePlans(data.plans.filter((p) => p && p.id && Array.isArray(p.items)));
@@ -1123,11 +1157,13 @@ export function importData(data) {
   throw new Error('Unrecognized file kind');
 }
 
-// Full factory reset: every profile's data, the registry, and settings.
+// Full factory reset: every gym's data, the registry, and settings.
 export function clearAll() {
-  const profiles = read(KEYS.profiles, null);
-  profiles?.list.forEach((p) => ['gym', 'workouts', 'active', 'plans', 'tombstones']
-    .forEach((part) => localStorage.removeItem(scopedKey(p.id, part))));
-  [KEYS.profiles, KEYS.settings, 'gymii.gym', 'gymii.workouts', 'gymii.active']
+  const gyms = read(KEYS.gyms, null);
+  gyms?.list.forEach((g) => ['layout', 'workouts', 'active', 'plans', 'tombstones']
+    .forEach((part) => localStorage.removeItem(scopedKey(g.id, part))));
+  // the pre-profile top-level keys keep their historical names — 'gymii.gym'
+  // held what is now the layout, and does NOT follow the gym→layout rename
+  [KEYS.gyms, 'gymii.profiles', KEYS.settings, 'gymii.gym', 'gymii.workouts', 'gymii.active']
     .forEach((k) => localStorage.removeItem(k));
 }

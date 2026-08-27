@@ -9,7 +9,7 @@ contract; this file is the roadmap and the decision log.
 
 ## Architecture in one paragraph
 
-The client encrypts a whole per-profile state (~200–350 KB per training
+The client encrypts a whole per-gym state (~200–350 KB per training
 year — blob size is a non-issue) with WebCrypto (AES-256-GCM, key derived
 via PBKDF2 from a generated passphrase) and PUTs it to a tiny self-hosted
 Go server that stores opaque blobs with a monotonic revision counter.
@@ -22,8 +22,8 @@ never order anything at the protocol level. Pairing a second device is one
 
 - **M0 — groundwork (DONE, no network)**: `updatedAt` stamps on every
   interactive write (absence = epoch 0, legacy loses), tombstone sidecars
-  so deletes can't be resurrected, diff-aware `saveGym` vs verbatim
-  `restoreGym`, crypto-random 16-char `uid()` (no device marker — ids
+  so deletes can't be resurrected, diff-aware `saveLayout` vs verbatim
+  `restoreLayout`, crypto-random 16-char `uid()` (no device marker — ids
   travel into AI exports), backup envelope v2 (tombstones ride along, v1
   imports unchanged), pure `js/merge.js` pinned by the 18-case matrix in
   `test/merge.test.mjs`, and the protocol spec.
@@ -39,7 +39,7 @@ never order anything at the protocol level. Pairing a second device is one
   workout starts; push on `finishWorkout` and debounced after gym/plan
   edits; offline queue + retry; multi-tab guard; convergence tests.
 - **M3 — pairing polish**: QR code, device list + token revocation,
-  profile discovery on a fresh device, a failure badge on the Settings tab.
+  gym discovery on a fresh device, a failure badge on the Settings tab.
 - **M4 — only on demand**: live handoff of a running workout. Needs a UI
   decision ("already running on your phone — resume here?"), not merge
   logic; deliberately deferred.
@@ -49,9 +49,9 @@ never order anything at the protocol level. Pairing a second device is one
 Union by id + whole-record last-writer-wins via `updatedAt` + tombstones,
 per kind: workouts and plans as documents-per-id (no content dedupe of
 back-logged twins — identity is the id); the gym hybrid (machines/shapes
-per item so two offline sessions both keep their new stations; name/grid/
-meta/outline as one structural blob); profiles as a registry (`activeId`
-is device-local, healed only if its profile died); settings split by field
+per item so two offline workouts both keep their new machines; name/grid/
+meta/outline as one structural blob); gyms as a registry (`activeId`
+is device-local, healed only if its gym died); settings split by field
 (user-scoped: `unit`, `weightStep`, `restSeconds`, `aiPrompt` — the rest
 never leaves the device). An edit stamped after a delete un-deletes;
 before it, the delete holds.
@@ -109,8 +109,8 @@ option, never a requirement.
    it" is unprovable without a device registry.
 9. The Go server lives in its own repo (`gymii-sync`); this repo stays
    static files only.
-10. Sync is opt-in per profile; new profiles default to off; the demo
-    profile never syncs.
+10. Sync is opt-in per gym; new gyms default to off; the demo gym never
+    syncs.
 11. Packaging: Docker as the reference deployment (scratch image,
     filesystem storage, compose + reverse-proxy labels) — decided; the
     bare binary remains supported.

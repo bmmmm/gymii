@@ -16,7 +16,7 @@ const store = await import(new URL('../js/store.js', import.meta.url).href);
 const { startWorkoutFrom, renderTrain, goToStart, goToPlans, goToHub } =
   await import(new URL('../js/train.js', import.meta.url).href);
 
-const gym = store.newGym('Plan test gym');
+const gym = store.newLayout('Plan test gym');
 gym.machines.push({
   id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3,
   settingsFields: [], muscles: ['Chest'],
@@ -33,7 +33,7 @@ gym.machines.push({
   id: 'c1', num: 4, label: 'Treadmill', x: 18, y: 0, w: 4, h: 3,
   settingsFields: [], muscles: [], cardio: true,
 });
-store.saveGym(gym);
+store.saveLayout(gym);
 
 // --- store CRUD ---
 
@@ -66,7 +66,7 @@ const { plan: imported, unbound } = store.planFromImport({
   items: [
     { num: 1, sets: 0, reps: 8, weight: -5 }, // sets clamps to 1, weight to 0
     { num: 2, exercise: 'Biceps curls', sets: 3 }, // reps defaults to 10
-    { num: 2, exercise: 'Gone', sets: 3 }, // unknown exercise -> station slot
+    { num: 2, exercise: 'Gone', sets: 3 }, // unknown exercise -> machine slot
     { num: 4, distance: 2000, seconds: 900 },
     { num: 99, sets: 3 },
     { name: 'Cable crossover', sets: 4, reps: 12, weight: 25 },
@@ -212,7 +212,7 @@ root.querySelector('#change-machine').listeners.click();
 assert.ok(root.innerHTML.includes('1/3 sets'), 'overview shows target progress');
 store.clearActive();
 
-// --- "Next" pulls back to stations with unfinished targets ---
+// --- "Next" pulls back to machines with unfinished targets ---
 
 store.saveActive({
   v: 2, id: 'w-pull-back', startedAt: 1755000000000,
@@ -228,7 +228,7 @@ store.saveActive({
 });
 byId.clear();
 renderTrain(root);
-assert.ok(root.innerHTML.includes('Next: #1'), 'a 1/3 station stays an open Next stop');
+assert.ok(root.innerHTML.includes('Next: #1'), 'a 1/3 machine stays an open Next stop');
 store.clearActive();
 
 // once the target is met, Next takes over as the primary action
@@ -393,7 +393,7 @@ assert.deepEqual(store.parsePlanLine('45 degree leg press 3x10', s),
   { name: '45 degree leg press', target: { sets: 3, reps: 10, weight: 0 } },
   'an unmarked leading number is part of the name');
 
-// lbs in the note convert into a kg profile
+// lbs in the note convert into a kg gym
 assert.equal(store.parsePlanLine('Bench 3x10 100lb', s).target.weight, 45.5,
   'a note written in lbs converts to the display unit');
 
@@ -402,7 +402,7 @@ assert.equal(store.parsePlanText('Leg press 3x10 80\n\nDay B:\nTreadmill 20min',
 
 // --- name suggestions: derived from what was trained, not asked for ---
 
-const nameGym = store.newGym('Naming gym');
+const nameGym = store.newLayout('Naming gym');
 [
   ['p1', 1, 'Chest press', ['Chest']],
   ['p2', 2, 'Shoulder press', ['Shoulders']],
@@ -417,11 +417,11 @@ const nameGym = store.newGym('Naming gym');
 assert.ok(store.suggestWorkoutNames(['p1', 'p2', 'p3'], nameGym).includes('Push day'),
   'chest + shoulders + triceps reads as a push day');
 assert.ok(store.suggestWorkoutNames(['l1', 'l2'], nameGym).includes('Leg day'),
-  'a legs-only session reads as a leg day');
+  'a legs-only workout reads as a leg day');
 assert.ok(store.suggestWorkoutNames(['b1'], nameGym).includes('Pull day'),
   'lats + upper back read as a pull day');
 assert.deepEqual(store.suggestWorkoutNames(['p1', 'l1'], nameGym), ['Chest', 'Chest & Legs'],
-  'a mixed session falls back to its regions, never to a wrong split');
+  'a mixed workout falls back to its regions, never to a wrong split');
 assert.deepEqual(store.suggestWorkoutNames([], nameGym), [], 'nothing trained, nothing to suggest');
 assert.deepEqual(store.suggestWorkoutNames(['nope'], nameGym), [],
   'machines without muscles suggest nothing');
@@ -445,7 +445,7 @@ assert.deepEqual(store.nameChipsFor([], nameGym), ['Push day', 'Old one'],
 assert.deepEqual(store.nameChipsFor(['l1', 'l2'], nameGym, 2), ['Leg day', 'Legs'],
   'the limit cuts the tail, never the suggestions');
 // the weighting the call sites depend on: train/history pass one id PER
-// LOGGED SET, so a station trained three times outvotes a single visit
+// LOGGED SET, so a machine trained three times outvotes a single visit
 assert.deepEqual(store.nameChipsFor(['p1', 'p1', 'p1', 'l1'], nameGym),
   ['Push day', 'Chest', 'Chest & Legs', 'Old one'],
   'repeated ids weight the suggestion — three chest sets make it a push day');
@@ -478,18 +478,18 @@ assert.deepEqual(store.planItemsFrom(store.parsePlanText(note, s), gym), roundTr
 assert.equal(store.planToText([{ machineId: 'm1', exercise: null, target: { sets: 3, reps: 10, weight: 0 } }], gym, s),
   '#1 Chest press 3x10', 'a zero weight is not written out');
 
-// only a marked num unlocks the "station: exercise" reading — otherwise
+// only a marked num unlocks the "machine: exercise" reading — otherwise
 // the colon stays part of the name instead of eating half of it
 assert.deepEqual(store.parsePlanLine('Day A: Leg press 3x10', s),
   { name: 'Day A: Leg press', target: { sets: 3, reps: 10, weight: 0 } },
   'without a #num a colon does not split off an exercise');
 assert.deepEqual(store.parsePlanLine('#2 Dumbbells: Shoulder press 3x10 20', s),
   { name: 'Dumbbells', num: 2, exercise: 'Shoulder press', target: { sets: 3, reps: 10, weight: 20 } },
-  'with a #num it names a movement at that station');
+  'with a #num it names a movement at that machine');
 
 // --- onboarding: the typed plan is the way in, before any gym exists ---
 
-store.createProfile('Fresh gym'); // empty profile -> onboarding screen
+store.createGym('Fresh gym'); // empty gym -> onboarding screen
 byId.clear();
 renderTrain(root);
 assert.ok(root.innerHTML.includes('Type in your plan'), 'onboarding leads with the plan note');
@@ -503,7 +503,7 @@ const typed = store.getPlans()[0];
 assert.equal(typed.items.length, 3, 'every line became an item');
 assert.ok(typed.items.every((it) => store.isUnbound(it)),
   'without a gym every item starts unbound');
-assert.equal(store.getGym(), null, 'reading a plan does NOT create a gym');
+assert.equal(store.getLayout(), null, 'reading a plan does NOT create a gym');
 assert.ok(root.innerHTML.includes('Edit plan'), 'review opens in the builder');
 assert.ok(root.innerHTML.includes('Leg press'), 'with the exercise names from the note');
 assert.ok(root.innerHTML.includes('Assign machine'), 'each unbound item offers binding');
@@ -518,7 +518,7 @@ root.querySelector('#plan-primary').listeners.click(); // start the typed plan
 let bound = store.getActive();
 assert.equal(bound.planId, typed.id, 'the active workout remembers its plan');
 assert.equal(bound.plan.length, 3, 'unbound slots survive into the guided flow');
-assert.ok(store.getGym(), 'starting a workout creates the empty gym it needs');
+assert.ok(store.getLayout(), 'starting a workout creates the empty gym it needs');
 
 byId.clear();
 renderTrain(root); // overview — every slot is unbound
@@ -532,7 +532,7 @@ assert.ok(root.innerHTML.includes('Which machine is this?'), 'the bind screen as
 root.querySelector('#bind-num').value = '14';
 root.querySelector('#bind-go').listeners.click();
 bound = store.getActive();
-const created = store.getGym().machines.find((m) => m.num === 14);
+const created = store.getLayout().machines.find((m) => m.num === 14);
 assert.ok(created, 'an unknown number creates the machine');
 assert.equal(created.label, 'Leg press', 'under the name the plan gave it');
 assert.equal(bound.plan[0].machineId, created.id, 'the slot is bound');
@@ -541,7 +541,7 @@ assert.equal(store.getPlans()[0].items[0].machineId, created.id,
   'the binding is written back into the stored plan');
 assert.ok(!('name' in store.getPlans()[0].items[0]), 'a bound item drops its name');
 
-// the same bind on a cardio line: the station is born cardio, or its
+// the same bind on a cardio line: the machine is born cardio, or its
 // distance/time target would be dropped as the wrong shape right away
 bound.binding = 2; // "Treadmill 20min"
 store.saveActive(bound);
@@ -549,9 +549,9 @@ byId.clear();
 renderTrain(root);
 root.querySelector('#bind-num').value = '21';
 root.querySelector('#bind-go').listeners.click();
-const treadmill = store.getGym().machines.find((m) => m.num === 21);
-assert.equal(treadmill.label, 'Treadmill', 'the cardio line names its station too');
-assert.equal(treadmill.cardio, true, 'a distance/time target makes the new station cardio');
+const treadmill = store.getLayout().machines.find((m) => m.num === 21);
+assert.equal(treadmill.label, 'Treadmill', 'the cardio line names its machine too');
+assert.equal(treadmill.cardio, true, 'a distance/time target makes the new machine cardio');
 assert.deepEqual(store.getActive().plan[2].target, { distance: 0, seconds: 1200 },
   'so the target survives the bind instead of being dropped as the wrong shape');
 
@@ -573,7 +573,7 @@ assert.deepEqual(past.workout.entries[0].sets[0], { reps: 10, weight: 85 },
 assert.ok(!('at' in past.workout.entries[0].sets[0]),
   'a set logged after the fact never claims a live timestamp');
 assert.ok(!('finishedAt' in past.workout), 'an unknown duration stays unknown');
-assert.ok(store.getGym().machines.some((m) => m.num === 42 && m.label === 'Pec deck'),
+assert.ok(store.getLayout().machines.some((m) => m.num === 42 && m.label === 'Pec deck'),
   'an unknown #num creates that machine, like binding does');
 assert.throws(() => store.workoutFromText('nothing here 3x', Date.now(), s), /No line named a machine/);
 assert.throws(() => store.workoutFromText('', Date.now(), s), /No exercises found/);
@@ -591,7 +591,7 @@ store.saveWorkouts([]);
 // --- a derived routine is not a dead end: tapping it opens its settings ---
 
 store.savePlans([]);
-const freshGym = store.getGym();
+const freshGym = store.getLayout();
 const legId = freshGym.machines.find((m) => m.num === 14).id;
 const pecId = freshGym.machines.find((m) => m.num === 42).id;
 const rEntry = (id, n, label, sets) => ({ machineId: id, num: n, label, settings: {}, sets });
@@ -623,10 +623,10 @@ assert.ok(root.innerHTML.includes('From a routine you already train'), 'and says
 assert.ok(root.innerHTML.includes('id="t-sets-0"') && root.innerHTML.includes('id="t-sets-1"'),
   'seeded with both of its machines, targets ready to edit');
 // the routine picks the MACHINES; the targets still come from the newest
-// session on each of them (95, not this routine's older 90) — when
+// workout on each of them (95, not this routine's older 90) — when
 // planning, your current working weight is the honest starting point
 assert.ok(root.innerHTML.includes('value="95"'),
-  "targets are seeded from each machine's latest session, not the routine's");
+  "targets are seeded from each machine's latest workout, not the routine's");
 assert.equal(store.getPlans().length, 0, 'nothing is stored until Save');
 
 root.querySelector('#plan-name').value = 'Legs & chest';
@@ -636,7 +636,7 @@ assert.deepEqual(store.getPlans()[0].items.map((it) => it.machineId), [legId, pe
 assert.equal(store.getPlans()[0].name, 'Legs & chest');
 
 // the routine row is gone now: the plan covers exactly those machines, so
-// keeping both would list the same session twice
+// keeping both would list the same workout twice
 byId.clear();
 renderTrain(root);
 assert.ok(!root.innerHTML.includes('data-wid="r-old"'),
@@ -730,7 +730,7 @@ const on = (weekday, weeksAgo) => ({
   entries: [],
 });
 assert.equal(store.usualWeekday(rhythmPlan, [on(back(1), 1), on(back(1), 2)]), null,
-  'two sessions are not a rhythm');
+  'two workouts are not a rhythm');
 const tueish = [on(back(1), 1), on(back(1), 2), on(back(1), 3), on(back(4), 4)];
 assert.equal(store.usualWeekday(rhythmPlan, tueish), back(1),
   'three of four on the same weekday is');

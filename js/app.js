@@ -1,5 +1,5 @@
 import { renderTrain } from './train.js';
-import { renderStudio } from './studio.js';
+import { renderGym } from './gym.js';
 import { renderHistory } from './history.js';
 import { renderAi } from './ai.js';
 import { renderSettings } from './settings.js';
@@ -7,7 +7,7 @@ import { initSteppers, initNumericOverwrite } from './ui.js';
 
 const routes = {
   train: renderTrain,
-  studio: renderStudio,
+  gym: renderGym,
   history: renderHistory,
   ai: renderAi,
   settings: renderSettings,

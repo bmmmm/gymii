@@ -15,7 +15,7 @@ export const timeValue = (ts) => {
 };
 
 // Distinct machine nums of a workout's entries, in entry order — dedup so a
-// workout with two exercises at one station reads '#16', not '#16 → #16'.
+// workout with two exercises at one machine reads '#16', not '#16 → #16'.
 export const machineChain = (workout) =>
   [...new Set(workout.entries.map((e) => `#${e.num}`))].join(' → ');
 

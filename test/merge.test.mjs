@@ -4,7 +4,7 @@
 // Run with: node test/merge.test.mjs
 import { strict as assert } from 'node:assert';
 import {
-  stamp, mergeById, mergeWorkouts, mergePlans, mergeGym, mergeProfiles,
+  stamp, mergeById, mergeWorkouts, mergePlans, mergeLayout, mergeGyms,
   mergeSettings,
 } from '../js/merge.js';
 
@@ -85,7 +85,7 @@ const byId = (items) => [...items].sort((a, b) => a.id.localeCompare(b.id));
 }
 
 // (10) two ids with near-identical content are NOT content-deduped — a
-// live-logged and a back-logged copy of the same session both survive
+// live-logged and a back-logged copy of the same workout both survive
 {
   const r = mergeWorkouts([w('a', 1, 40, 1000)], [w('b', 1, 40, 1000)]);
   assert.equal(r.items.length, 2, '10: identity is the id, never the content');
@@ -119,15 +119,15 @@ const gymWith = (machines, extra = {}) => ({
 {
   const local = gymWith([machine('m1', 0, 1), machine('mNew', 5, 9)]);
   const remote = gymWith([machine('m1', 20, 8)]);
-  const r = mergeGym(local, remote);
+  const r = mergeLayout(local, remote);
   assert.deepEqual(byId(r.merged.machines).map((m) => m.id), ['m1', 'mNew'],
-    '13: the new machine survives the other device\'s session');
+    '13: the new machine survives the other device\'s workout');
   assert.equal(r.merged.machines.find((m) => m.id === 'm1').x, 20, '13: the move survives too');
 }
 
 // (14) same machine edited on both: whole-machine LWW (accepted trade-off)
 {
-  const r = mergeGym(gymWith([machine('m1', 5, 1)]), gymWith([machine('m1', 9, 2)]));
+  const r = mergeLayout(gymWith([machine('m1', 5, 1)]), gymWith([machine('m1', 9, 2)]));
   assert.equal(r.merged.machines[0].x, 9, '14: newer edit takes the whole machine');
 }
 
@@ -135,7 +135,7 @@ const gymWith = (machines, extra = {}) => ({
 {
   const local = gymWith([machine('m2', 7, 9)]);
   const remote = gymWith([machine('m1', 0, 1), machine('m2', 3, 2)]);
-  const r = mergeGym(local, remote, { machines: [{ id: 'm1', at: 5 }] }, {});
+  const r = mergeLayout(local, remote, { machines: [{ id: 'm1', at: 5 }] }, {});
   assert.deepEqual(r.merged.machines.map((m) => m.id), ['m2'], '15: the delete holds');
   assert.equal(r.merged.machines[0].x, 7, '15: the rearrangement elsewhere survives');
 }
@@ -145,7 +145,7 @@ const gymWith = (machines, extra = {}) => ({
   const local = gymWith([machine('m1', 0, 1)],
     { outline: [{ x: 9, y: 9 }], updatedAt: 10 });
   const remote = gymWith([machine('m1', 0, 1), machine('m2', 5, 8)], { updatedAt: 2 });
-  const r = mergeGym(local, remote);
+  const r = mergeLayout(local, remote);
   assert.deepEqual(r.merged.outline, [{ x: 9, y: 9 }], '16: local outline wins structurally');
   assert.equal(r.merged.machines.length, 2, '16: while the remote machine still lands');
 }
@@ -164,17 +164,17 @@ const gymWith = (machines, extra = {}) => ({
   assert.equal(stale.changed, false);
 }
 
-// (18) profiles: tombstoned profile stays dead, activeId is device-local
+// (18) gyms: tombstoned gym stays dead, activeId is device-local
 {
   const local = { v: 1, list: [{ id: 'p1', name: 'Home', updatedAt: 1 }], activeId: 'p1' };
   const remote = {
     v: 1, list: [{ id: 'p2', name: 'Hotel', updatedAt: 2 }], activeId: 'p2',
     deleted: [{ id: 'p1', at: 5 }],
   };
-  const r = mergeProfiles(local, remote);
+  const r = mergeGyms(local, remote);
   assert.deepEqual(r.merged.list.map((p) => p.id), ['p2'], '18: the delete travels');
-  assert.equal(r.merged.activeId, 'p2', '18: activeId healed to a live profile, not taken from remote');
-  const keep = mergeProfiles(
+  assert.equal(r.merged.activeId, 'p2', '18: activeId healed to a live gym, not taken from remote');
+  const keep = mergeGyms(
     { v: 1, list: [{ id: 'p1', name: 'Home', updatedAt: 1 }, { id: 'p3', name: 'B', updatedAt: 1 }], activeId: 'p3' },
     { v: 1, list: [{ id: 'p1', name: 'Home', updatedAt: 1 }], activeId: 'p1' });
   assert.equal(keep.merged.activeId, 'p3', '18: a live local activeId is never touched');

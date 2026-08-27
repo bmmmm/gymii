@@ -5,7 +5,7 @@ git skills needed) and **code**. Both are welcome.
 
 ## Share your gym template
 
-The template library (`Studio → template library` in the app) is community
+The template library (`Gym → template library` in the app) is community
 fed. Two ways in:
 
 **Without git** — open a

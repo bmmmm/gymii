@@ -1,7 +1,7 @@
 import {
-  getGym, getWorkouts, saveWorkouts, getSettings, getActive, deleteWorkout,
+  getLayout, getWorkouts, saveWorkouts, getSettings, getActive, deleteWorkout,
   updateWorkout, distUnit, workoutFromText, newEntry, nameChipsFor,
-  gymMuscles, usageByMuscle, workoutsWithMuscle,
+  layoutMuscles, usageByMuscle, workoutsWithMuscle,
 } from './store.js';
 import {
   esc, fmtDate, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
@@ -35,12 +35,12 @@ export function renderHistory(root) {
   const byName = nameFilter ? all.filter((w) => w.name === nameFilter) : all;
   const s = getSettings();
   const unit = s.unit;
-  const gym = getGym();
-  // muscles resolve against the LIVE gym — a deleted machine or a gym
+  const layout = getLayout();
+  // muscles resolve against the LIVE layout — a deleted machine or a gym
   // switch can strand the filter, so it clears itself like nameFilter does
-  const allMuscles = gym ? gymMuscles(gym) : [];
+  const allMuscles = layout ? layoutMuscles(layout) : [];
   if (muscleFilter && !allMuscles.includes(muscleFilter)) muscleFilter = '';
-  const workouts = muscleFilter ? workoutsWithMuscle(byName, gym, muscleFilter) : byName;
+  const workouts = muscleFilter ? workoutsWithMuscle(byName, layout, muscleFilter) : byName;
 
   // Nothing logged yet still gets the past-workout form: someone moving
   // over from paper starts by typing in the weeks they already trained.
@@ -55,8 +55,8 @@ export function renderHistory(root) {
     return;
   }
 
-  // Stations — and, at multi-exercise stations, each exercise — seen in
-  // history, labeled with their current gym name when still present.
+  // Machines — and, at multi-exercise machines, each exercise — seen in
+  // history, labeled with their current name in the layout when still present.
   // Keyed "machineId exercise": uid()s never contain spaces, so decoding
   // splits on the FIRST space only (exercise names may contain more).
   const machines = new Map();
@@ -64,7 +64,7 @@ export function renderHistory(root) {
     machines.set(`${e.machineId} ${e.exercise ?? ''}`,
       { machineId: e.machineId, exercise: e.exercise ?? null, num: e.num, label: e.label });
   }));
-  gym?.machines.forEach((m) => {
+  layout?.machines.forEach((m) => {
     machines.forEach((val, key) => {
       if (val.machineId === m.id) machines.set(key, { ...val, num: m.num, label: m.label });
     });
@@ -87,14 +87,14 @@ export function renderHistory(root) {
   // what keeps other muscles reachable while one is selected.
   const muscleCardHtml = () => {
     if (!allMuscles.length) return '';
-    const usage = usageByMuscle(byName, gym);
+    const usage = usageByMuscle(byName, layout);
     const rows = allMuscles
       .map((mu) => ({ mu, ...(usage.get(mu) ?? { sets: 0, workouts: 0 }) }))
       .sort((a, b) => b.sets - a.sets || a.mu.localeCompare(b.mu));
     const max = rows[0]?.sets || 1;
     // sets whose machine is gone or untagged — count them, or the card
     // silently disagrees with the workout list's totals
-    const tagged = new Set(gym.machines.filter((m) => m.muscles?.length).map((m) => m.id));
+    const tagged = new Set(layout.machines.filter((m) => m.muscles?.length).map((m) => m.id));
     const lost = byName.reduce((n, w) => n + w.entries.reduce(
       (k, e) => k + (tagged.has(e.machineId) ? 0 : e.sets.length), 0), 0);
     return `
@@ -184,7 +184,7 @@ export function renderHistory(root) {
   // One card at a time can be in edit mode; the draft is a deep clone so
   // Cancel never touches stored data. A freshly logged past workout opens
   // in edit mode straight away (openEditId), so its details can be checked
-  // and named while the session is still in mind.
+  // and named while the workout is still in mind.
   let editDraft = openEditId
     ? JSON.parse(JSON.stringify(workouts.find((w) => w.id === openEditId) ?? null)) : null;
   openEditId = null;
@@ -192,7 +192,7 @@ export function renderHistory(root) {
   const renderList = () => {
     // reachable only by combining the name and muscle filters
     list.innerHTML = workouts.length ? workouts.slice().reverse()
-      .map((w) => (editDraft?.id === w.id ? editWorkoutHtml(editDraft, s, gym) : workoutHtml(w, s)))
+      .map((w) => (editDraft?.id === w.id ? editWorkoutHtml(editDraft, s, layout) : workoutHtml(w, s)))
       .join('') : '<p class="muted">No workouts match this filter.</p>';
   };
   renderList();
@@ -244,7 +244,7 @@ export function renderHistory(root) {
         : entry.cardio ? { distance: 0, seconds: 0 } : { reps: 10, weight: 0 });
       renderList();
       // the new row lands ABOVE this button, so it would walk away while
-      // you fill in a session set by set
+      // you fill in a workout set by set
       keepInView(list, `.set-add[data-ei="${setAdd.dataset.ei}"]`);
       return;
     }
@@ -260,12 +260,12 @@ export function renderHistory(root) {
     // newEntry, exactly like the live logging screen does.
     if (e.target.closest('.entry-add') && editDraft) {
       const pick = e.target.closest('details').querySelector('.entry-pick');
-      const machine = gym?.machines.find((m) => m.id === pick?.value);
+      const machine = layout?.machines.find((m) => m.id === pick?.value);
       if (machine) {
         editDraft.entries.push(newEntry(machine, null,
           [machine.cardio ? { distance: 0, seconds: 0 } : { reps: 10, weight: 0 }]));
         renderList();
-        keepInView(list, '.entry-add'); // the new station pushed this row down
+        keepInView(list, '.entry-add'); // the new machine pushed this row down
       }
       return;
     }
@@ -478,7 +478,7 @@ function workoutHtml(w, s) {
   </details>`;
 }
 
-// "Log a past workout" — the session you trained without your phone.
+// "Log a past workout" — the workout you trained without your phone.
 // Same note grammar as a plan, because a past workout IS a plan that
 // already happened; shown even when history is empty, since coming over
 // from paper starts by typing in the weeks you already trained.
@@ -526,14 +526,14 @@ function wirePastLog(root, s) {
   });
 }
 
-function editWorkoutHtml(w, s, gym) {
+function editWorkoutHtml(w, s, layout) {
   const sets = setCount(w);
   const du = distUnit(s);
   const inWorkout = new Set(w.entries.map((e) => e.machineId));
-  const addable = (gym?.machines ?? []).filter((m) => !inWorkout.has(m.id))
+  const addable = (layout?.machines ?? []).filter((m) => !inWorkout.has(m.id))
     .slice().sort((a, b) => a.num - b.num);
   // one id per logged set, so the dominant region wins the suggestion
-  const nameChips = nameChipsFor(w.entries.flatMap((e) => e.sets.map(() => e.machineId)), gym);
+  const nameChips = nameChipsFor(w.entries.flatMap((e) => e.sets.map(() => e.machineId)), layout);
   return `<details class="workout" open>
     <summary>
       <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>

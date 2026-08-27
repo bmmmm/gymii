@@ -10,14 +10,14 @@ even a cookie banner.
 
 ## What's inside
 
-- 🗺️ **Studio** — a real floor-plan editor: walls, zones, doors, mirrors,
+- 🗺️ **Gym** — a real floor-plan editor: walls, zones, doors, mirrors,
   lockers, and machines you can tap. Undo/redo included, and typing a machine
   number lights it up on the plan. One tap away from the Train hub. Optional:
   draw it once your gym is in there and gymii can point you at the next
   machine.
 - 💪 **Train** — repeat a past workout in order, or roam by number, map tap or
-  muscle. Last session's numbers prefill every set. Cardio stations log
-  distance + time, bodyweight stations reps + extra weight, and free-weight
+  muscle. Last workout's numbers prefill every set. Cardio machines log
+  distance + time, bodyweight machines reps + extra weight, and free-weight
   areas keep separate histories per named exercise. 📍 shows where the next
   machine stands, a busy one gets the closest open alternative, and a
   coverage row tracks which muscles you've hit today. Your locker number has a
@@ -49,7 +49,7 @@ even a cookie banner.
   groups collect at the bottom. Past workouts are fully editable — add or
   remove sets and machines, fix the date — and one you trained without your
   phone can be typed in after the fact.
-- 🏨 **Profiles & units** — home gym, hotel gym, whatever. kg or lbs, switched
+- 🏨 **Gyms & units** — home gym, hotel gym, whatever. kg or lbs, switched
   in one go.
 - 📦 **Templates** — export your gym as JSON, import someone else's. Want to
   poke around first? Settings → "Load test data" fills a separate Demo gym

@@ -1,18 +1,18 @@
 import {
-  getGym, saveGym, newGym, uid, importData, defaultOutline, exportGymTemplate,
+  getLayout, saveLayout, newLayout, uid, importData, defaultOutline, exportGymTemplate,
   getSettings, saveSettings, usageByMachine, getActive,
   MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS,
 } from './store.js';
 import { esc, download, twoTapConfirm, keepInView } from './ui.js';
 import {
-  drawGym, usagePayload, findMachineByNum, findItem, fits, freeSpot,
+  drawLayout, usagePayload, findMachineByNum, findItem, fits, freeSpot,
   snapDoorToWall, snap, clamp, FIXTURES, WALL_SNAPPED, ITEM_COLORS, OUTLINE_ID,
 } from './map.js';
 
 // --- editor view ---
 
-// Lets Train hand a machine over for the Studio to preselect before
-// switching the hash to #studio (module state survives; the app never
+// Lets Train hand a machine over for the Gym to preselect before
+// switching the hash to #gym (module state survives; the app never
 // reloads between tabs).
 let pendingFocus = null;
 
@@ -20,11 +20,11 @@ export function focusMachine(id) {
   pendingFocus = id;
 }
 
-export function renderStudio(root) {
-  let gym = getGym();
-  if (!gym) {
-    gym = newGym();
-    saveGym(gym); // fresh gym: persist directly, history starts from it
+export function renderGym(root) {
+  let layout = getLayout();
+  if (!layout) {
+    layout = newLayout();
+    saveLayout(layout); // fresh layout: persist directly, history starts from it
   }
   let selectedId = null;
   let selectedVertex = null; // outline corner index, for deletion
@@ -32,8 +32,8 @@ export function renderStudio(root) {
   let findHighlightId = null; // "find a machine by number" pulse — cleared on the next svg pointerdown
 
   root.innerHTML = `
-    <div class="spread studio-head">
-      <h1>Studio</h1>
+    <div class="spread gym-head">
+      <h1>Gym</h1>
       <div class="undo-group">
         <button id="undo" class="btn btn-inline" aria-label="Undo" disabled>↩</button>
         <button id="redo" class="btn btn-inline" aria-label="Redo" disabled>↪</button>
@@ -67,7 +67,7 @@ export function renderStudio(root) {
   const svg = root.querySelector('#floor');
   const props = root.querySelector('#props');
   const usageOn = () => getSettings().mapColors === 'usage';
-  const redraw = () => drawGym(svg, gym, {
+  const redraw = () => drawLayout(svg, layout, {
     selectedId, editor: true, selectedVertex,
     usage: usageOn() ? usagePayload(usageByMachine()) : null,
     highlightId: findHighlightId,
@@ -90,7 +90,7 @@ export function renderStudio(root) {
   updateModeBar();
 
   // --- undo/redo: one snapshot per completed edit ---
-  const history = [JSON.stringify(gym)];
+  const history = [JSON.stringify(layout)];
   let hIndex = 0;
   const undoBtn = root.querySelector('#undo');
   const redoBtn = root.querySelector('#redo');
@@ -100,19 +100,19 @@ export function renderStudio(root) {
     redoBtn.disabled = hIndex === history.length - 1;
   };
 
-  // every studio mutation goes through save(): persist + record history
+  // every gym mutation goes through save(): persist + record history
   const save = () => {
-    saveGym(gym);
+    saveLayout(layout);
     history.length = hIndex + 1; // editing kills the redo branch
-    history.push(JSON.stringify(gym));
+    history.push(JSON.stringify(layout));
     if (history.length > 60) history.shift();
     else hIndex++;
     updateUndoButtons();
   };
 
   const restore = (json) => {
-    gym = JSON.parse(json);
-    saveGym(gym); // persist without recording — undo/redo just moves the pointer
+    layout = JSON.parse(json);
+    saveLayout(layout); // persist without recording — undo/redo just moves the pointer
     selectedId = null; // the selected item may not exist in this state
     selectedVertex = null;
     redraw();
@@ -158,9 +158,9 @@ export function renderStudio(root) {
       } else {
         // tapping a midpoint inserts a corner there and starts dragging it
         const i = parseInt(handle.dataset.mid, 10);
-        const p = gym.outline[i];
-        const q = gym.outline[(i + 1) % gym.outline.length];
-        gym.outline.splice(i + 1, 0, { x: snap((p.x + q.x) / 2), y: snap((p.y + q.y) / 2) });
+        const p = layout.outline[i];
+        const q = layout.outline[(i + 1) % layout.outline.length];
+        layout.outline.splice(i + 1, 0, { x: snap((p.x + q.x) / 2), y: snap((p.y + q.y) / 2) });
         selectedVertex = i + 1;
         drag = { mode: 'vertex', index: i + 1, moved: true };
         renderProps();
@@ -192,7 +192,7 @@ export function renderStudio(root) {
       e.preventDefault();
       return;
     }
-    const item = findItem(gym, target.dataset.id);
+    const item = findItem(layout, target.dataset.id);
     if (!item) return;
     selectedVertex = null;
     select(item.id);
@@ -209,11 +209,11 @@ export function renderStudio(root) {
     if (!drag) return;
     const p = svgPoint(e);
     if (drag.mode === 'vertex') {
-      const v = gym.outline[drag.index];
-      const nx = clamp(snap(p.x), 0, gym.grid.w);
-      const ny = clamp(snap(p.y), 0, gym.grid.h);
+      const v = layout.outline[drag.index];
+      const nx = clamp(snap(p.x), 0, layout.grid.w);
+      const ny = clamp(snap(p.y), 0, layout.grid.h);
       if (nx === v.x && ny === v.y) return; // sub-snap wiggle: nothing changed
-      gym.outline[drag.index] = { x: nx, y: ny };
+      layout.outline[drag.index] = { x: nx, y: ny };
       drag.moved = true;
       redraw();
       return;
@@ -225,37 +225,37 @@ export function renderStudio(root) {
         // wall pieces ignore the grid and glue themselves to the nearest wall
         it.x = p.x - drag.offX;
         it.y = p.y - drag.offY;
-        snapDoorToWall(gym, it);
+        snapDoorToWall(layout, it);
       } else {
         // clamp so the item's bounding box stays on the floor (works for
         // rects and for lines with negative w/h)
-        const nx = clamp(snap(p.x - drag.offX), -Math.min(it.w, 0), gym.grid.w - Math.max(it.w, 0));
-        const ny = clamp(snap(p.y - drag.offY), -Math.min(it.h, 0), gym.grid.h - Math.max(it.h, 0));
+        const nx = clamp(snap(p.x - drag.offX), -Math.min(it.w, 0), layout.grid.w - Math.max(it.w, 0));
+        const ny = clamp(snap(p.y - drag.offY), -Math.min(it.h, 0), layout.grid.h - Math.max(it.h, 0));
         // when the target spot collides with another machine, try each
         // axis alone so the item slides along the neighbor's edge
-        if (fits(gym, it, nx, ny, it.w, it.h)) {
+        if (fits(layout, it, nx, ny, it.w, it.h)) {
           it.x = nx;
           it.y = ny;
-        } else if (fits(gym, it, nx, it.y, it.w, it.h)) {
+        } else if (fits(layout, it, nx, it.y, it.w, it.h)) {
           it.x = nx;
-        } else if (fits(gym, it, it.x, ny, it.w, it.h)) {
+        } else if (fits(layout, it, it.x, ny, it.w, it.h)) {
           it.y = ny;
         }
       }
     } else if (it.kind === 'line') {
-      it.w = clamp(snap(p.x - it.x), -it.x, gym.grid.w - it.x);
-      it.h = clamp(snap(p.y - it.y), -it.y, gym.grid.h - it.y);
+      it.w = clamp(snap(p.x - it.x), -it.x, layout.grid.w - it.x);
+      it.h = clamp(snap(p.y - it.y), -it.y, layout.grid.h - it.y);
     } else {
       const minSize = it.kind === 'fixture' ? 1 : 2; // mirrors etc. may be slim
-      const nw = clamp(snap(p.x - it.x), minSize, gym.grid.w - it.x);
-      const nh = clamp(snap(p.y - it.y), minSize, gym.grid.h - it.y);
+      const nw = clamp(snap(p.x - it.x), minSize, layout.grid.w - it.x);
+      const nh = clamp(snap(p.y - it.y), minSize, layout.grid.h - it.y);
       // growing into a neighboring machine is blocked per axis
-      if (fits(gym, it, it.x, it.y, nw, nh)) {
+      if (fits(layout, it, it.x, it.y, nw, nh)) {
         it.w = nw;
         it.h = nh;
-      } else if (fits(gym, it, it.x, it.y, nw, it.h)) {
+      } else if (fits(layout, it, it.x, it.y, nw, it.h)) {
         it.w = nw;
-      } else if (fits(gym, it, it.x, it.y, it.w, nh)) {
+      } else if (fits(layout, it, it.x, it.y, it.w, nh)) {
         it.h = nh;
       }
     }
@@ -282,42 +282,42 @@ export function renderStudio(root) {
   svg.addEventListener('pointercancel', endDrag);
 
   function nextNum() {
-    return gym.machines.reduce((mx, m) => Math.max(mx, m.num), 0) + 1;
+    return layout.machines.reduce((mx, m) => Math.max(mx, m.num), 0) + 1;
   }
 
   function addItem(kind, fixtureType = null) {
-    const g = gym.grid;
-    const off = ((gym.shapes.length + gym.machines.length) % 6); // cascade new items
+    const g = layout.grid;
+    const off = ((layout.shapes.length + layout.machines.length) % 6); // cascade new items
     let item;
     if (kind === 'machine') {
       const num = nextNum();
-      const pos = freeSpot(gym, snap(g.w / 2 - 2 + off), snap(g.h / 2 - 1.5 + off), 4, 3);
+      const pos = freeSpot(layout, snap(g.w / 2 - 2 + off), snap(g.h / 2 - 1.5 + off), 4, 3);
       item = {
         id: uid(), num, label: `Machine ${num}`,
         x: pos.x, y: pos.y,
         w: 4, h: 3, settingsFields: [], muscles: [], docUrl: '',
       };
-      gym.machines.push(item);
+      layout.machines.push(item);
     } else if (kind === 'rect') {
       item = { id: uid(), kind: 'rect', label: '', x: snap(g.w / 2 - 6 + off), y: snap(g.h / 2 - 4 + off), w: 12, h: 8 };
-      gym.shapes.push(item);
+      layout.shapes.push(item);
     } else if (kind === 'fixture') {
       const f = FIXTURES[fixtureType];
       const wx = snap(g.w / 2 - f.w / 2 + off);
       const wy = snap(g.h / 2 - f.h / 2 + off);
       // wall pieces snap to a wall anyway; solid furniture lands on a
       // free spot like machines do
-      const pos = WALL_SNAPPED.has(fixtureType) ? { x: wx, y: wy } : freeSpot(gym, wx, wy, f.w, f.h);
+      const pos = WALL_SNAPPED.has(fixtureType) ? { x: wx, y: wy } : freeSpot(layout, wx, wy, f.w, f.h);
       item = {
         id: uid(), kind: 'fixture', fixture: fixtureType,
         x: pos.x, y: pos.y,
         w: f.w, h: f.h,
       };
-      if (WALL_SNAPPED.has(fixtureType)) snapDoorToWall(gym, item); // born on a wall
-      gym.shapes.push(item);
+      if (WALL_SNAPPED.has(fixtureType)) snapDoorToWall(layout, item); // born on a wall
+      layout.shapes.push(item);
     } else {
       item = { id: uid(), kind: 'line', x: snap(g.w / 2 - 4 + off), y: snap(g.h / 2 + off), w: 8, h: 0 };
-      gym.shapes.push(item);
+      layout.shapes.push(item);
     }
     save();
     select(item.id);
@@ -337,7 +337,7 @@ export function renderStudio(root) {
   const findGo = () => {
     const n = Math.round(parseFloat(findInput.value));
     if (!n || n < 1) return;
-    const machine = findMachineByNum(gym, n);
+    const machine = findMachineByNum(layout, n);
     if (!machine) {
       findErr.textContent = `No machine #${n}`;
       return;
@@ -367,7 +367,7 @@ export function renderStudio(root) {
       }).join('') || '<p class="muted">Library is empty.</p>'}
       <button class="btn" id="tpl-file-btn">From file…</button>
       <input type="file" hidden accept=".json,application/json" id="tpl-file-input">
-      <p class="muted" id="tpl-msg">Loading a template replaces the current gym layout
+      <p class="muted" id="tpl-msg">Loading a template replaces the current layout
       (workout history stays).</p>
       <p class="muted"><a class="linkish" target="_blank" rel="noopener"
         href="https://github.com/bmmmm/gymii/issues/new?template=01-gym-template.yml">Share
@@ -376,13 +376,13 @@ export function renderStudio(root) {
     const msg = panel.querySelector('#tpl-msg');
     const apply = (data) => {
       importData(data);
-      renderStudio(root);
+      renderGym(root);
     };
 
     panel.addEventListener('click', async (e) => {
       const btn = e.target.closest('.tpl-load');
       if (!btn) return;
-      if (!twoTapConfirm(btn, 'Tap again to replace current gym', btn.dataset.label)) return;
+      if (!twoTapConfirm(btn, 'Tap again to replace current layout', btn.dataset.label)) return;
       try {
         apply(await fetch(btn.dataset.file, { cache: 'no-store' }).then((r) => r.json()));
       } catch (err) {
@@ -425,11 +425,11 @@ export function renderStudio(root) {
 
   function renderProps() {
     if (selectedId === OUTLINE_ID) {
-      const canDelete = selectedVertex !== null && gym.outline.length > 3;
+      const canDelete = selectedVertex !== null && layout.outline.length > 3;
       props.innerHTML = `
         <section class="card">
           <h2>Floor outline</h2>
-          <p class="muted">${gym.outline.length} corners. Drag a white corner to reshape the floor;
+          <p class="muted">${layout.outline.length} corners. Drag a white corner to reshape the floor;
           tap a hollow dot between two corners to add a new one.</p>
           <button id="del-vertex" class="btn btn-danger" ${canDelete ? '' : 'disabled'}>
             ${selectedVertex === null
@@ -439,15 +439,15 @@ export function renderStudio(root) {
           <button id="reset-outline" class="btn">Reset outline to full rectangle</button>
         </section>`;
       props.querySelector('#del-vertex').addEventListener('click', () => {
-        if (selectedVertex === null || gym.outline.length <= 3) return;
-        gym.outline.splice(selectedVertex, 1);
+        if (selectedVertex === null || layout.outline.length <= 3) return;
+        layout.outline.splice(selectedVertex, 1);
         selectedVertex = null;
         save();
         redraw();
         renderProps();
       });
       props.querySelector('#reset-outline').addEventListener('click', () => {
-        gym.outline = defaultOutline(gym.grid);
+        layout.outline = defaultOutline(layout.grid);
         selectedVertex = null;
         save();
         redraw();
@@ -456,24 +456,27 @@ export function renderStudio(root) {
       return;
     }
 
-    const item = selectedId ? findItem(gym, selectedId) : null;
+    const item = selectedId ? findItem(layout, selectedId) : null;
 
     if (!item) {
       props.innerHTML = `
         <section class="card">
-          <h2>Gym</h2>
-          <label class="field"><span>Name</span><input id="gym-name" type="text" value="${esc(gym.name)}"></label>
+          <h2>Layout</h2>
+          <!-- "Layout name", not "Gym name": Settings owns the gym's own name
+               (the one you switch between) — this one travels with the
+               exported template. Two different names, so they say so. -->
+          <label class="field"><span>Layout name</span><input id="gym-name" type="text" value="${esc(layout.name)}"></label>
           <label class="field"><span>Floor width</span>
             <div class="stepper" data-step="5" data-min="20">
               <button type="button" class="step-down">−</button>
-              <input id="floor-w" type="number" inputmode="numeric" value="${gym.grid.w}">
+              <input id="floor-w" type="number" inputmode="numeric" value="${layout.grid.w}">
               <button type="button" class="step-up">+</button>
             </div>
           </label>
           <label class="field"><span>Floor height</span>
             <div class="stepper" data-step="5" data-min="20">
               <button type="button" class="step-down">−</button>
-              <input id="floor-h" type="number" inputmode="numeric" value="${gym.grid.h}">
+              <input id="floor-h" type="number" inputmode="numeric" value="${layout.grid.h}">
               <button type="button" class="step-up">+</button>
             </div>
           </label>
@@ -484,11 +487,11 @@ export function renderStudio(root) {
         <section class="card">
           <h2>Location</h2>
           <label class="field"><span>Address</span><input id="gym-address" type="text"
-            value="${esc(gym.meta?.address || '')}"></label>
+            value="${esc(layout.meta?.address || '')}"></label>
           <label class="field"><span>City</span><input id="gym-city" type="text"
-            value="${esc(gym.meta?.city || '')}"></label>
+            value="${esc(layout.meta?.city || '')}"></label>
           <label class="field"><span>Country</span><input id="gym-country" type="text"
-            value="${esc(gym.meta?.country || '')}"></label>
+            value="${esc(layout.meta?.country || '')}"></label>
           <p class="muted">Travels with the template so others can find this gym when you share it.</p>
         </section>
         <section class="card">
@@ -500,7 +503,7 @@ export function renderStudio(root) {
 
       const bindMeta = (sel, key) => {
         props.querySelector(sel).addEventListener('change', (e) => {
-          gym.meta = { ...(gym.meta || {}), [key]: e.target.value.trim() };
+          layout.meta = { ...(layout.meta || {}), [key]: e.target.value.trim() };
           save();
         });
       };
@@ -509,7 +512,7 @@ export function renderStudio(root) {
       bindMeta('#gym-country', 'country');
 
       props.querySelector('#save-template').addEventListener('click', () => {
-        const slug = [gym.name, gym.meta?.city].filter(Boolean).join('-')
+        const slug = [layout.name, layout.meta?.city].filter(Boolean).join('-')
           .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'gym';
         download(`gymii-template-${slug}.json`, exportGymTemplate());
       });
@@ -518,17 +521,17 @@ export function renderStudio(root) {
         openTemplateBrowser(props.querySelector('#template-browser'));
       });
       props.querySelector('#gym-name').addEventListener('change', (e) => {
-        gym.name = e.target.value.trim() || 'My gym';
+        layout.name = e.target.value.trim() || 'My gym';
         save();
       });
       const onFloor = (inputId, key) => {
         props.querySelector(inputId).addEventListener('change', (e) => {
           const v = clamp(Math.round(parseFloat(e.target.value) || 20), 20, 200);
           e.target.value = v;
-          gym.grid[key] = v;
-          gym.outline.forEach((p) => { // keep the outline on the shrunk floor
-            p.x = Math.min(p.x, gym.grid.w);
-            p.y = Math.min(p.y, gym.grid.h);
+          layout.grid[key] = v;
+          layout.outline.forEach((p) => { // keep the outline on the shrunk floor
+            p.x = Math.min(p.x, layout.grid.w);
+            p.y = Math.min(p.y, layout.grid.h);
           });
           save();
           redraw();
@@ -579,7 +582,7 @@ export function renderStudio(root) {
               <button type="button" id="m-field-add" class="btn btn-inline">Add</button>
             </div>
           </div>
-          <div class="field-block"><span>Exercises — for free-weight or multi-exercise stations</span>
+          <div class="field-block"><span>Exercises — for free-weight or multi-exercise machines</span>
             <div class="chip-select" id="m-exercises">${chipRow(item.exercises ?? [], item.exercises ?? [])}</div>
             <div class="row">
               <input id="m-exercise-custom" type="text" placeholder="e.g. Biceps curls…">
@@ -652,7 +655,7 @@ export function renderStudio(root) {
       });
 
       // Exercises: tap a chip to remove it, add via the text row. The field
-      // is deleted when emptied so plain stations export without it.
+      // is deleted when emptied so plain machines export without it.
       props.querySelector('#m-exercises').addEventListener('click', (e) => {
         const chip = e.target.closest('.chip');
         if (!chip) return;
@@ -756,8 +759,8 @@ export function renderStudio(root) {
     const delBtn = props.querySelector('#del-item');
     delBtn.addEventListener('click', () => {
       if (!twoTapConfirm(delBtn, 'Tap again to delete', delBtn.textContent)) return;
-      gym.machines = gym.machines.filter((m) => m.id !== item.id);
-      gym.shapes = gym.shapes.filter((s) => s.id !== item.id);
+      layout.machines = layout.machines.filter((m) => m.id !== item.id);
+      layout.shapes = layout.shapes.filter((s) => s.id !== item.id);
       save();
       select(null);
       redraw();
@@ -768,7 +771,7 @@ export function renderStudio(root) {
   // tabs — preselect it here and reuse the find-by-number pulse to point it
   // out, then clear the handoff so it doesn't stick on the next render.
   if (pendingFocus) {
-    if (findItem(gym, pendingFocus)) {
+    if (findItem(layout, pendingFocus)) {
       selectedId = pendingFocus;
       findHighlightId = pendingFocus;
     }

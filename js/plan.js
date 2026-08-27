@@ -3,16 +3,16 @@
 // tab (train.js owns the open/close state). Nothing persists until Save,
 // so an imported AI draft can be reviewed and trimmed before it sticks.
 //
-// It runs WITHOUT a gym: items typed from a trainer's note start unbound
+// It runs WITHOUT a layout: items typed from a trainer's note start unbound
 // (a name and a target, no machine) and bind here or on the gym floor.
 
 import {
-  getGym, saveGym, newGym, bindOrCreateMachine, getPlans, savePlan, deletePlan,
+  getLayout, saveLayout, newLayout, bindOrCreateMachine, getPlans, savePlan, deletePlan,
   lastEntryFor, getSettings, getWorkouts, usualWeekday, uid, distUnit,
-  gymMuscles, isUnbound,
+  layoutMuscles, isUnbound,
   parsePlanText, planItemsFrom, planToText, nameChipsFor,
 } from './store.js';
-import { drawGym } from './map.js';
+import { drawLayout } from './map.js';
 import { esc, twoTapConfirm, stepperField, plural, keepInView } from './ui.js';
 
 // Weekday labels indexed by Date#getDay() (0 = Sunday); chips render
@@ -21,7 +21,7 @@ export const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
-// Seeds a fresh item's target from the last session on that machine so a
+// Seeds a fresh item's target from the last workout on that machine so a
 // new plan starts from reality, not from zero. Cross-type history (the
 // machine's type flag changed since) is ignored, like renderLog does.
 // machine null = an unbound item: no history to seed from, so the target
@@ -48,14 +48,14 @@ function targetDefaults(machine, exercise, s) {
 }
 
 // An item's type without needing its machine: bound items follow the
-// station, unbound ones the shape their target arrived in.
+// machine, unbound ones the shape their target arrived in.
 const itemIsCardio = (item, machine) =>
   (machine ? !!machine.cardio : item.target?.distance != null);
 
 export function renderPlanBuilder(
   root, { planId = null, notice = '', seed = null, seedName = '' } = {}, onClose,
 ) {
-  let gym = getGym(); // may be null — a plan can exist before the gym does
+  let layout = getLayout(); // may be null — a plan can exist before the gym does
   const s = getSettings();
   const du = distUnit(s);
   const stored = planId ? getPlans().find((p) => p.id === planId) : null;
@@ -80,13 +80,13 @@ export function renderPlanBuilder(
   // blank page.
   let view = draft.items.length ? 'list' : 'text';
 
-  const machineFor = (id) => (id ? gym?.machines.find((m) => m.id === id) : null);
+  const machineFor = (id) => (id ? layout?.machines.find((m) => m.id === id) : null);
 
-  // The bind prompt: which station is this movement? A known num binds, an
-  // unknown one creates the machine under the item's own name — the gym
+  // The bind prompt: which machine is this movement? A known num binds, an
+  // unknown one creates the machine under the item's own name — the layout
   // grows out of the plan instead of gating it.
   const bindBox = (it, i) => {
-    const candidates = (gym?.machines ?? []).slice().sort((a, b) => a.num - b.num);
+    const candidates = (layout?.machines ?? []).slice().sort((a, b) => a.num - b.num);
     return `<div class="plan-bind">
       <div class="row">
         <input class="bind-num" type="number" inputmode="numeric" min="1"
@@ -155,8 +155,8 @@ export function renderPlanBuilder(
     draft.items.forEach((it) => {
       if (!it.target) it.target = targetDefaults(machineFor(it.machineId), it.exercise, s);
     });
-    const machines = gym?.machines ?? [];
-    const allMuscles = gym ? gymMuscles(gym) : [];
+    const machines = layout?.machines ?? [];
+    const allMuscles = layout ? layoutMuscles(layout) : [];
     const inPlan = new Set(draft.items.map((it) => it.machineId).filter(Boolean));
     const unboundCount = draft.items.filter(isUnbound).length;
     // a rhythm gymii noticed but the plan doesn't state yet — offered, not
@@ -166,7 +166,7 @@ export function renderPlanBuilder(
     const rhythm = usual != null && !draft.days?.includes(usual) ? usual : null;
     // what this plan trains, plus names already in use — a nameless plan
     // is a plan nobody finds again
-    const nameChips = nameChipsFor(draft.items.map((it) => it.machineId).filter(Boolean), gym);
+    const nameChips = nameChipsFor(draft.items.map((it) => it.machineId).filter(Boolean), layout);
     const filtered = (muscle
       ? machines.filter((m) => (m.muscles || []).includes(muscle))
       : machines).slice().sort((a, b) => a.num - b.num);
@@ -253,11 +253,11 @@ export function renderPlanBuilder(
     // textarea content goes in via value, never innerHTML — user data can
     // never break out of the markup that way
     const textArea = root.querySelector('#plan-text');
-    if (textArea) textArea.value = planToText(draft.items, gym, s);
+    if (textArea) textArea.value = planToText(draft.items, layout, s);
 
     const svg = view === 'list' && machines.length ? root.querySelector('svg') : null;
     if (svg) {
-      drawGym(svg, gym, {});
+      drawLayout(svg, layout, {});
       if (muscle) { // dim non-matching machines like the picker's filter
         const ids = new Set(filtered.map((m) => m.id));
         svg.querySelectorAll('.machine').forEach((g) => {
@@ -290,7 +290,7 @@ export function renderPlanBuilder(
           'No exercise found in that text — one per line, e.g. "Leg press 3x10 80".';
         return false;
       }
-      draft.items = planItemsFrom(raw, gym);
+      draft.items = planItemsFrom(raw, layout);
       return true;
     };
 
@@ -313,23 +313,23 @@ export function renderPlanBuilder(
       render();
     };
 
-    // Binds an unbound item to a station, creating the gym and/or the
-    // machine when the number is new (store's bindOrCreateMachine): the gym
+    // Binds an unbound item to a machine, creating the layout and/or the
+    // machine when the number is new (store's bindOrCreateMachine): the layout
     // grows out of the plan instead of gating it.
     const bindItem = (i, machineId, wantedNum) => {
       const it = draft.items[i];
       if (!it) return;
       let machine = machineId ? machineFor(machineId) : null;
       if (!machine && wantedNum > 0) {
-        gym = gym ?? newGym();
-        machine = bindOrCreateMachine(gym, wantedNum, it.name, it.target);
-        saveGym(gym);
+        layout = layout ?? newLayout();
+        machine = bindOrCreateMachine(layout, wantedNum, it.name, it.target);
+        saveLayout(layout);
       }
       if (!machine) return;
       it.machineId = machine.id;
       delete it.name;
       delete it.num;
-      // a station of the other type needs a target of that shape
+      // a machine of the other type needs a target of that shape
       if (!!machine.cardio !== (it.target?.distance != null)) {
         it.target = targetDefaults(machine, it.exercise, s);
       }
@@ -362,7 +362,7 @@ export function renderPlanBuilder(
         if (j < 0 || j >= draft.items.length) return;
         [draft.items[i], draft.items[j]] = [draft.items[j], draft.items[i]];
       } else {
-        // exercise chip: toggle between a scoped and a whole-station slot,
+        // exercise chip: toggle between a scoped and a whole-machine slot,
         // reseeding the target — weights differ per exercise
         const x = btn.dataset.exercise;
         it.exercise = it.exercise === x ? null : x;
@@ -412,7 +412,7 @@ export function renderPlanBuilder(
           'Nothing to add — try "Leg press 3x10 80" or "Treadmill 20min".';
         return;
       }
-      draft.items.push(...planItemsFrom(raw, gym));
+      draft.items.push(...planItemsFrom(raw, layout));
       field.value = '';
       render();
       // the item list above just grew — a note is typed line by line, so

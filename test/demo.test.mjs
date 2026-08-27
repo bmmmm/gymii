@@ -1,6 +1,6 @@
 // Logic-level test for the demo data generator: deterministic output,
 // entry/set invariants, weekday plan states on any day of the week, unit
-// conversion, template mirroring, and the load-is-a-replace profile
+// conversion, template mirroring, and the load-is-a-replace gym
 // behavior. Run with: node test/demo.test.mjs
 
 // Pinned to a DST-observing zone: the hour-of-day assertions below can
@@ -32,34 +32,34 @@ assert.notDeepEqual(
   demo.buildDemoData({ now: NOW, settings: KG, seed: 2 }).workouts,
   'the seed must actually steer the output');
 
-const { gym, workouts, plans } = demo.buildDemoData({ now: NOW, settings: KG });
+const { layout, workouts, plans } = demo.buildDemoData({ now: NOW, settings: KG });
 
-// --- gym shape ---
-assert.equal(gym.machines.length, 16);
-assert.equal(new Set(gym.machines.map((m) => m.num)).size, 16, 'nums unique');
-assert.equal(gym.machines.filter((m) => m.cardio).length, 2);
-assert.equal(gym.machines.filter((m) => m.bodyweight).length, 2);
-assert.ok(!gym.machines.some((m) => m.cardio && m.bodyweight), 'flags are exclusive');
-assert.ok(gym.machines.some((m) => Array.isArray(m.exercises) && m.exercises.length >= 2),
-  'a multi-exercise station exists');
-gym.machines.forEach((m) => {
+// --- layout shape ---
+assert.equal(layout.machines.length, 16);
+assert.equal(new Set(layout.machines.map((m) => m.num)).size, 16, 'nums unique');
+assert.equal(layout.machines.filter((m) => m.cardio).length, 2);
+assert.equal(layout.machines.filter((m) => m.bodyweight).length, 2);
+assert.ok(!layout.machines.some((m) => m.cardio && m.bodyweight), 'flags are exclusive');
+assert.ok(layout.machines.some((m) => Array.isArray(m.exercises) && m.exercises.length >= 2),
+  'a multi-exercise machine exists');
+layout.machines.forEach((m) => {
   assert.ok(Array.isArray(m.muscles) && m.muscles.length, `${m.label} has muscles`);
   assert.ok(Array.isArray(m.settingsFields), `${m.label} has settingsFields`);
-  assert.ok(m.x >= 0 && m.y >= 0 && m.x + m.w <= gym.grid.w && m.y + m.h <= gym.grid.h,
+  assert.ok(m.x >= 0 && m.y >= 0 && m.x + m.w <= layout.grid.w && m.y + m.h <= layout.grid.h,
     `${m.label} inside the grid`);
 });
-// no two machine boxes overlap (the studio's collision rule)
-gym.machines.forEach((a, i) => gym.machines.slice(i + 1).forEach((b) => {
+// no two machine boxes overlap (the layout's collision rule)
+layout.machines.forEach((a, i) => layout.machines.slice(i + 1).forEach((b) => {
   const apart = a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
   assert.ok(apart, `${a.label} must not overlap ${b.label}`);
 }));
 
 // --- entry invariants ---
-const byId = new Map(gym.machines.map((m) => [m.id, m]));
+const byId = new Map(layout.machines.map((m) => [m.id, m]));
 let sawCardio = 0; let sawBodyweight = 0; let sawExercise = 0;
 workouts.forEach((w) => w.entries.forEach((e) => {
   const m = byId.get(e.machineId);
-  assert.ok(m, `entry machine ${e.machineId} exists in the gym`);
+  assert.ok(m, `entry machine ${e.machineId} exists in the layout`);
   assert.equal(e.num, m.num);
   assert.equal(e.label, m.label);
   assert.equal(typeof e.settings, 'object');
@@ -98,13 +98,13 @@ const tpl = JSON.parse(readFileSync(
 const base = ({ id, num, label, x, y, w, h, settingsFields, muscles }) =>
   ({ id, num, label, x, y, w, h, settingsFields, muscles });
 tpl.machines.forEach((tm) => {
-  const dm = gym.machines.find((m) => m.id === tm.id);
-  assert.ok(dm, `demo gym carries template machine ${tm.id}`);
+  const dm = layout.machines.find((m) => m.id === tm.id);
+  assert.ok(dm, `demo layout carries template machine ${tm.id}`);
   assert.deepEqual(base(dm), base(tm), `${tm.id} mirrors the template`);
 });
-assert.deepEqual(gym.shapes, tpl.shapes, 'zone shapes mirror the template');
+assert.deepEqual(layout.shapes, tpl.shapes, 'zone shapes mirror the template');
 
-// --- a load around midnight still produces a valid "today" session ---
+// --- a load around midnight still produces a valid "today" workout ---
 for (const offset of [0, 10 * 60000]) {
   const night = new Date('2026-08-12T00:00:00').getTime() + offset;
   const b = demo.buildDemoData({ now: night, settings: KG });
@@ -112,18 +112,18 @@ for (const offset of [0, 10 * 60000]) {
     `${w.id} keeps a positive duration at midnight+${offset / 60000}min`));
   const today = b.workouts.filter((w) =>
     new Date(w.startedAt).toDateString() === new Date(night).toDateString());
-  assert.equal(today.length, 1, 'exactly one session lands on the load day');
+  assert.equal(today.length, 1, 'exactly one workout lands on the load day');
   assert.ok(today[0].finishedAt <= night + 60000,
-    'the today session never reaches further than a minute past now');
+    'the today workout never reaches further than a minute past now');
   assert.equal(store.planDayState(
     b.plans.find((p) => p.id === 'demo-plan-pull'), b.workouts, night).state,
   'done', 'pull still reads done on a night load');
 }
 
-// --- sessions keep their local evening hour across a DST transition ---
+// --- workouts keep their local evening hour across a DST transition ---
 // Berlin leaves DST on 25 Oct 2026; eight weeks of history built in early
 // November reach back across it. Day arithmetic in fixed 86400000-ms
-// steps would put the pre-transition sessions an hour off (18:xx).
+// steps would put the pre-transition workouts an hour off (18:xx).
 const dstNow = new Date('2026-11-04T14:00:00').getTime(); // a Wednesday
 const dst = demo.buildDemoData({ now: dstNow, settings: KG });
 dst.workouts.forEach((w) => {
@@ -161,59 +161,59 @@ const lbsTarget = lbs.plans.find((p) => p.id === 'demo-plan-core')
 assert.ok(lbsTarget.distance < 5, 'plan targets converted too');
 
 // --- loadDemoData: replaces, never duplicates, never touches real data ---
-const realGym = store.newGym('Real gym');
+const realGym = store.newLayout('Real gym');
 realGym.machines.push({ id: 'r1', num: 1, label: 'Rack', x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles: [] });
-store.saveGym(realGym);
+store.saveLayout(realGym);
 store.saveWorkouts([{ id: 'rw1', startedAt: 1000, finishedAt: 2000, entries: [
   { machineId: 'r1', num: 1, label: 'Rack', settings: {}, sets: [{ reps: 5, weight: 100 }] }] }]);
-const realId = store.getProfiles().activeId;
-const realJson = JSON.stringify([store.getGym(), store.getWorkouts()]);
+const realId = store.getGyms().activeId;
+const realJson = JSON.stringify([store.getLayout(), store.getWorkouts()]);
 
 const r1 = demo.loadDemoData({ now: NOW, settings: KG });
 assert.equal(r1.created, true);
-assert.equal(store.getProfiles().activeId, r1.profileId, 'Demo profile active');
-assert.equal(store.getGym().machines.length, 16);
+assert.equal(store.getGyms().activeId, r1.gymId, 'Demo gym active');
+assert.equal(store.getLayout().machines.length, 16);
 assert.equal(store.getWorkouts().length, r1.workouts);
 assert.equal(store.getPlans().length, 3);
 
 // a stale in-progress workout must not survive a reload
 store.saveActive({ id: 'stale', startedAt: NOW, entries: [] });
 const r2 = demo.loadDemoData({ now: NOW, settings: KG });
-assert.equal(r2.created, false, 'second load reuses the profile');
-assert.equal(r2.profileId, r1.profileId);
-assert.equal(store.getProfiles().list.filter((p) => p.name === 'Demo').length, 1,
-  'exactly one Demo profile');
+assert.equal(r2.created, false, 'second load reuses the gym');
+assert.equal(r2.gymId, r1.gymId);
+assert.equal(store.getGyms().list.filter((p) => p.name === 'Demo').length, 1,
+  'exactly one Demo gym');
 assert.equal(store.getActive(), null, 'stale active cleared');
 assert.equal(store.getWorkouts().length, r1.workouts, 'reload replaces, not appends');
 
-// the real profile is untouched
-store.setActiveProfile(realId);
-assert.equal(JSON.stringify([store.getGym(), store.getWorkouts()]), realJson,
+// the real gym is untouched
+store.setActiveGym(realId);
+assert.equal(JSON.stringify([store.getLayout(), store.getWorkouts()]), realJson,
   'real data byte-identical after the demo load');
 
 // identity is the demo FLAG, not the name: a real gym renamed to "Demo"
 // must never be adopted and overwritten by a reload
-store.renameProfile(realId, 'Demo');
+store.renameGym(realId, 'Demo');
 const r3 = demo.loadDemoData({ now: NOW, settings: KG });
-assert.equal(r3.profileId, r1.profileId, 'reload sticks to the flagged profile');
-store.setActiveProfile(realId);
-assert.equal(JSON.stringify([store.getGym(), store.getWorkouts()]), realJson,
+assert.equal(r3.gymId, r1.gymId, 'reload sticks to the flagged gym');
+store.setActiveGym(realId);
+assert.equal(JSON.stringify([store.getLayout(), store.getWorkouts()]), realJson,
   'a real gym named Demo survives a reload untouched');
-store.renameProfile(realId, 'Real gym');
+store.renameGym(realId, 'Real gym');
 
-// ...and the identity survives renaming the demo profile itself
-store.renameProfile(r1.profileId, 'Playground');
+// ...and the identity survives renaming the demo gym itself
+store.renameGym(r1.gymId, 'Playground');
 const r4 = demo.loadDemoData({ now: NOW, settings: KG });
-assert.equal(r4.created, false, 'a renamed demo profile is still recognized');
-assert.equal(r4.profileId, r1.profileId);
+assert.equal(r4.created, false, 'a renamed demo gym is still recognized');
+assert.equal(r4.gymId, r1.gymId);
 
-// the demo profile can ALWAYS be deleted — even as the last profile, where
+// the demo gym can ALWAYS be deleted — even as the last gym, where
 // Settings' removal promise would otherwise break — and the registry
 // self-heals into a fresh default afterwards
-store.setActiveProfile(realId);
-assert.equal(store.deleteProfile(realId), true);
-assert.equal(store.deleteProfile(r1.profileId), true, 'sole demo profile deletable');
-assert.equal(store.getProfiles().list.length, 1, 'fresh default after the demo left');
-assert.ok(!store.getProfiles().list[0].demo, 'the fresh default is a normal profile');
+store.setActiveGym(realId);
+assert.equal(store.deleteGym(realId), true);
+assert.equal(store.deleteGym(r1.gymId), true, 'sole demo gym deletable');
+assert.equal(store.getGyms().list.length, 1, 'fresh default after the demo left');
+assert.ok(!store.getGyms().list[0].demo, 'the fresh default is a normal gym');
 
 console.log('demo.test.mjs: all assertions passed');

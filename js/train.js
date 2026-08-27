@@ -1,12 +1,12 @@
 import {
-  getGym, saveGym, getSettings, saveSettings, getActive, saveActive, finishWorkout,
+  getLayout, saveLayout, getSettings, saveSettings, getActive, saveActive, finishWorkout,
   lastEntryFor, getWorkouts, getPlans, savePlan, planFromText, uid,
-  usageByMachine, gymMuscles, distUnit, newGym, addMachine,
+  usageByMachine, layoutMuscles, distUnit, newLayout, addMachine,
   bindOrCreateMachine, newEntry, nameChipsFor, todayStatus, skipPlanDay,
 } from './store.js';
-import { drawGym, usagePayload, findMachineByNum } from './map.js';
+import { drawLayout, usagePayload, findMachineByNum } from './map.js';
 import { renderPlanBuilder, DAY_LABELS } from './plan.js';
-import { focusMachine } from './studio.js';
+import { focusMachine } from './gym.js';
 import {
   esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural, machineChain,
   primeAudio, playTimerSound, keepInView,
@@ -17,8 +17,8 @@ import {
 //     currentMachineId|null, currentExercise|null, entries: [] }
 // plan is the guided order — one slot per (machine, exercise) pair when
 // repeating a workout (so "Next:" walks every exercise of a multi-exercise
-// station), growing as machines are opened in a free session. exercise null
-// means the slot covers the whole station. currentMachineId null shows the
+// machine), growing as machines are opened in a free workout. exercise null
+// means the slot covers the whole machine. currentMachineId null shows the
 // workout overview hub instead of a machine's logging screen. Slots started
 // from a stored plan may carry a target ({sets,reps,weight} or
 // {distance,seconds}) — older/free slots simply lack the key.
@@ -49,7 +49,7 @@ export function goToStart() { screen = 'start'; }
 export function goToPlans() { screen = 'plans'; }
 
 // Locker number noted on the start screen, before any workout exists —
-// consumed by the next startWorkoutFrom, whichever way the session then
+// consumed by the next startWorkoutFrom, whichever way the workout then
 // starts (machine pick, plan button, repeat, quick start), so the number
 // lives on the workout itself from its first second.
 let pendingLocker = '';
@@ -58,11 +58,11 @@ let pendingLocker = '';
 // the seed for "turn this routine into a plan". Targets are NOT set here;
 // the builder seeds them from the machine's own history, which is exactly
 // what this routine last did.
-function planSeedFrom(workout, gym) {
+function planSeedFrom(workout, layout) {
   const pairs = workout.entries
     .filter((e) => e.sets.length)
     .map((e) => {
-      const machine = gym.machines.find((m) => m.id === e.machineId);
+      const machine = layout.machines.find((m) => m.id === e.machineId);
       return machine ? {
         machineId: e.machineId,
         exercise: machine.exercises?.includes(e.exercise) ? e.exercise : null,
@@ -93,7 +93,7 @@ export const screenKey = (active, builder, screen) => {
 let lastScreenKey = null;
 
 export function renderTrain(root, message = '') {
-  const gym = getGym();
+  const layout = getLayout();
   const active = getActive();
   // Reset BEFORE the render: the old (tall) content is still in place, so
   // the container can actually scroll to the top, and replacing the markup
@@ -107,12 +107,12 @@ export function renderTrain(root, message = '') {
   lockForWorkout = getSettings().keepAwake === 'workout' && !!active;
   syncWakeLock();
   // An in-progress workout outranks onboarding: machines can be wiped
-  // mid-workout by an import or a studio edit, and the quick start must
+  // mid-workout by an import or a gym edit, and the quick start must
   // never overwrite logged sets. The plan builder outranks it too — a plan
   // is exactly what someone without a gym starts with — and so does a
   // SAVED plan: once one exists there is something to start, and sending
   // its owner back to the first-run screen would hide it.
-  if (!active && !builder && !getPlans().length && (!gym || !gym.machines.length)) {
+  if (!active && !builder && !getPlans().length && (!layout || !layout.machines.length)) {
     renderOnboarding(root, message);
     return;
   }
@@ -127,9 +127,9 @@ export function renderTrain(root, message = '') {
       saveActive(active);
     }
     // an unbound slot answers "which machine is this?" before it can log
-    if (active.binding != null) renderBind(root, gym, active);
-    else if (active.currentMachineId) renderLog(root, gym, active);
-    else renderOverview(root, gym, active);
+    if (active.binding != null) renderBind(root, layout, active);
+    else if (active.currentMachineId) renderLog(root, layout, active);
+    else renderOverview(root, layout, active);
   } else if (builder) {
     // the second onClose arg is a plan to start right away (Save & start —
     // plan.js can't call startWorkoutFrom without an import cycle)
@@ -145,26 +145,26 @@ export function renderTrain(root, message = '') {
       renderTrain(root, startPlan ? '' : message2);
     });
   } else if (screen === 'plans') {
-    renderPlans(root, gym, message);
+    renderPlans(root, layout, message);
   } else if (screen === 'start') {
-    renderStart(root, gym, message);
+    renderStart(root, layout, message);
   } else {
-    renderHub(root, gym, message);
+    renderHub(root, layout, message);
   }
 }
 
 // Start a guided workout from a past one (or empty/free with one machine).
 // Exported so History can offer "repeat this workout" too.
 export function startWorkoutFrom(source, firstMachineId = null) {
-  let gym = getGym();
+  let layout = getLayout();
   // A plan of unbound items can be started before any gym exists; every
   // screen below this point assumes one, so it gets created empty here
-  // (the studio does the same on first visit) and grows as slots bind.
-  if (!gym) { gym = newGym(); saveGym(gym); }
+  // (the gym does the same on first visit) and grows as slots bind.
+  if (!layout) { layout = newLayout(); saveLayout(layout); }
   // One plan slot per (machine, exercise) pair, deduped — the guided flow
-  // then walks every exercise of a multi-exercise station. An exercise the
-  // machine no longer offers falls back to a whole-station slot, and such
-  // station slots are dropped again when exercise slots for the same
+  // then walks every exercise of a multi-exercise machine. An exercise the
+  // machine no longer offers falls back to a whole-machine slot, and such
+  // machine slots are dropped again when exercise slots for the same
   // machine exist (the overview would double-report their sets).
   // Unbound items pass through untouched: they carry a name instead of a
   // machine and are deduped by nothing — two "Leg press" lines are two
@@ -179,7 +179,7 @@ export function startWorkoutFrom(source, firstMachineId = null) {
             ...(e.target ? { target: e.target } : {}),
           } : null;
       }
-      const machine = gym.machines.find((m) => m.id === e.machineId);
+      const machine = layout.machines.find((m) => m.id === e.machineId);
       if (!machine) return null;
       const exercise = machine.exercises?.includes(e.exercise) ? e.exercise : null;
       // a stored plan's items carry their target through to the slot
@@ -200,7 +200,7 @@ export function startWorkoutFrom(source, firstMachineId = null) {
     // routine group would split into a named and an unnamed half
     ...(source?.name ? { name: source.name } : {}),
     // the plan this came from, so a slot bound on the floor can be
-    // written back into it (asked once, not once per session)
+    // written back into it (asked once, not once per workout)
     ...(source?.planId ? { planId: source.planId } : {}),
     // a locker noted on the start screen moves onto the workout
     ...(pendingLocker ? { locker: pendingLocker } : {}),
@@ -261,8 +261,8 @@ function statusText(status) {
 
 // Distinct machine nums of a plan, in item order — the plan-list twin of
 // machineChain (which reads a workout's entries).
-const planChain = (plan, gym) => [...new Set(plan.items
-  .map((it) => gym?.machines.find((m) => m.id === it.machineId))
+const planChain = (plan, layout) => [...new Set(plan.items
+  .map((it) => layout?.machines.find((m) => m.id === it.machineId))
   .filter(Boolean).map((m) => `#${m.num}`))].join(' → ');
 
 // "last done" for a plan comes from history via its name
@@ -288,7 +288,7 @@ const startPlanWorkout = (root, plan) => {
 
 // Shared "Planned workouts" card — the start screen and the hub's Plans
 // screen render the identical list, so its markup and wiring live once.
-function planListCard(gym, plans, workouts) {
+function planListCard(layout, plans, workouts) {
   const sortedPlans = sortPlansToday(plans);
   const html = `
     <section class="card">
@@ -297,14 +297,14 @@ function planListCard(gym, plans, workouts) {
         ${sortedPlans.map((p) => {
     const done = planLastDone(workouts, p);
     // counted as exercises, not machines: an unbound item is a real part
-    // of the plan that simply has no station yet
+    // of the plan that simply has no machine yet
     const count = p.items.length;
     const open = p.items.filter((it) => !it.machineId).length;
     return `<div class="recent-row">
           <button type="button" class="recent-info row-open" data-pid="${p.id}">
-            <strong>${p.name ? esc(p.name) : planChain(p, gym) || 'Unnamed plan'}${isTodayPlan(p)
+            <strong>${p.name ? esc(p.name) : planChain(p, layout) || 'Unnamed plan'}${isTodayPlan(p)
     ? ' <span class="muted">· today</span>' : ''}</strong>
-            <span class="muted">${p.name && planChain(p, gym) ? `${planChain(p, gym)} · ` : ''}${plural(count, 'exercise')}${open
+            <span class="muted">${p.name && planChain(p, layout) ? `${planChain(p, layout)} · ` : ''}${plural(count, 'exercise')}${open
     ? ` · ${open} to assign` : ''}${p.days?.length
     ? ` · ${p.days.map((d) => DAY_LABELS[d]).join(' ')}` : ''}${done
     ? ` · last: ${new Date(done.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>
@@ -315,7 +315,7 @@ function planListCard(gym, plans, workouts) {
   }).join('')}
       </div>
       <button id="plan-new" class="btn">+ Plan a workout</button>
-      ${plans.length ? '' : `<p class="muted">Write down the session you already
+      ${plans.length ? '' : `<p class="muted">Write down the workout you already
         have — one exercise per line — or pick machines by muscle. Set target
         sets × reps × weight, then start it any day.
         (Your AI can draft one too, via the AI tab.)</p>`}
@@ -350,7 +350,7 @@ function planListCard(gym, plans, workouts) {
 // or plan — renderStart carries both) plus small tiles to the areas that
 // used to hide further down the page or behind Settings. Deliberately
 // nothing else — the hub navigates, the screens behind it do the work.
-function renderHub(root, gym, message) {
+function renderHub(root, layout, message) {
   const plans = getPlans();
   const workouts = getWorkouts();
   const last = workouts[workouts.length - 1] ?? null;
@@ -373,11 +373,11 @@ function renderHub(root, gym, message) {
         <span class="tile-title">Plans</span>
         <span class="tile-sub">${plural(plans.length, 'plan')}</span>
       </button>
-      <button type="button" class="tile" id="hub-studio">
+      <button type="button" class="tile" id="hub-gym">
         <span class="tile-icon">🗺</span>
-        <span class="tile-title">Studio</span>
-        <span class="tile-sub">${gym?.machines.length
-    ? plural(gym.machines.length, 'machine') : 'Draw your gym'}</span>
+        <span class="tile-title">Gym</span>
+        <span class="tile-sub">${layout?.machines.length
+    ? plural(layout.machines.length, 'machine') : 'Draw your gym'}</span>
       </button>
       <button type="button" class="tile wide" id="hub-history">
         <span class="tile-icon">📅</span>
@@ -395,14 +395,14 @@ function renderHub(root, gym, message) {
     renderTrain(root);
   });
   // real route changes — the hash router takes it from here
-  root.querySelector('#hub-studio').addEventListener('click', () => { location.hash = '#studio'; });
+  root.querySelector('#hub-gym').addEventListener('click', () => { location.hash = '#gym'; });
   root.querySelector('#hub-history').addEventListener('click', () => { location.hash = '#history'; });
 }
 
 // The Plans tile's own screen: just the shared card, nothing of the start
 // screen — the hero and the Plans tile must lead to distinct places.
-function renderPlans(root, gym, message) {
-  const { html, wire } = planListCard(gym, getPlans(), getWorkouts());
+function renderPlans(root, layout, message) {
+  const { html, wire } = planListCard(layout, getPlans(), getWorkouts());
   root.innerHTML = `
     <button type="button" id="back-hub" class="back-row">‹ Train</button>
     <h1>Plans</h1>
@@ -415,7 +415,7 @@ function renderPlans(root, gym, message) {
   wire(root);
 }
 
-function renderStart(root, gym, message) {
+function renderStart(root, layout, message) {
   const workouts = getWorkouts();
   const last = workouts[workouts.length - 1];
   const s = getSettings();
@@ -433,7 +433,7 @@ function renderStart(root, gym, message) {
   // every DIFFERENT machine set in history (a push/pull/legs rotation,
   // say) gets its own start row — routines emerge from the log, no
   // manual routine management. Keyed on machine IDs, not the displayed
-  // #num chain, so renumbering in the studio doesn't split a routine.
+  // #num chain, so renumbering in the gym doesn't split a routine.
   // An optional workout name outranks that chain: two routines on the
   // same machines but with different exercises stay apart once named.
   const routineKey = (w) => (w.name
@@ -469,9 +469,9 @@ function renderStart(root, gym, message) {
     ?? null;
   const repeatIsPrimaryPlan = !!(primaryPlan?.name && last?.name === primaryPlan.name);
   const primaryDone = primaryPlan ? planLastDone(workouts, primaryPlan) : null;
-  const planCard = planListCard(gym, plans, workouts);
+  const planCard = planListCard(layout, plans, workouts);
 
-  // Machine-first: the screen leads with the picker — a session starts at
+  // Machine-first: the screen leads with the picker — a workout starts at
   // the machine in front of you. Today's plan and the repeat follow below as
   // the calmer options, not the headline.
   root.innerHTML = `
@@ -482,7 +482,7 @@ function renderStart(root, gym, message) {
       <input id="locker-num" type="text" inputmode="numeric" placeholder="🔒 Locker #"
         value="${esc(pendingLocker)}">
     </div>
-    ${gym?.machines.length ? `
+    ${layout?.machines.length ? `
     <section class="card">
       <h2>Start at a machine</h2>
       <div id="picker"></div>
@@ -506,7 +506,7 @@ function renderStart(root, gym, message) {
       ${primaryPlan.name ? esc(primaryPlan.name) : 'your plan'}
       <span class="sub">${[
     isTodayPlan(primaryPlan) ? 'today' : '',
-    planChain(primaryPlan, gym),
+    planChain(primaryPlan, layout),
     primaryPlan.items.filter((it) => !it.machineId).length
       ? `${primaryPlan.items.filter((it) => !it.machineId).length} to assign` : '',
     primaryDone
@@ -570,7 +570,7 @@ function renderStart(root, gym, message) {
     const workout = workouts.find((w) => w.id === btn.dataset.wid);
     if (!workout) return;
     if (btn.classList.contains('row-open')) {
-      const seed = planSeedFrom(workout, gym);
+      const seed = planSeedFrom(workout, layout);
       if (!seed.length) return; // every machine of it has been deleted
       builder = {
         planId: null,
@@ -585,8 +585,8 @@ function renderStart(root, gym, message) {
     renderTrain(root);
   });
 
-  if (gym?.machines.length) {
-    machinePicker(root.querySelector('#picker'), gym, (machineId) => {
+  if (layout?.machines.length) {
+    machinePicker(root.querySelector('#picker'), layout, (machineId) => {
       startWorkoutFrom(null, machineId);
       renderTrain(root);
     }, { actionLabel: 'Start training' });
@@ -596,7 +596,7 @@ function renderStart(root, gym, message) {
 }
 
 // Quick start: name the machine in front of you, gymii adds it and starts
-// logging there. The start screen (gym without machines) and the first-run
+// logging there. The start screen (layout without machines) and the first-run
 // screen offer the same two controls, so they share one wiring — the two
 // copies had already drifted apart over the backstop below.
 function wireQuickStart(root) {
@@ -605,9 +605,9 @@ function wireQuickStart(root) {
     if (!label) return;
     // backstop: never clobber a workout that already has logged sets
     if (getActive()?.entries.some((e) => e.sets.length)) return;
-    const gym = getGym() ?? newGym();
-    const machine = addMachine(gym, gym.machines.length + 1, label);
-    saveGym(gym);
+    const layout = getLayout() ?? newLayout();
+    const machine = addMachine(layout, layout.machines.length + 1, label);
+    saveLayout(layout);
     startWorkoutFrom(null, machine.id);
     renderTrain(root);
   };
@@ -629,7 +629,7 @@ function renderOnboarding(root, message) {
     <section class="card">
       <h2>Type in your plan</h2>
       <p class="muted">One exercise per line, the way it's written on your
-        plan. Machines come later — gymii asks which is which at the gym.</p>
+        plan. Machines come later — gymii asks which is which at the layout.</p>
       <textarea id="ob-plan" rows="5"
         placeholder="Leg press 3x10 80&#10;Lat pulldown 3x12 45&#10;Chest press 3x8-12 40kg&#10;Treadmill 20min"></textarea>
       <button id="ob-read" class="btn btn-primary btn-big">Read my plan</button>
@@ -644,7 +644,7 @@ function renderOnboarding(root, message) {
       </div>
     </section>
     <p class="muted">Prefer to set up first? Draw the floor plan or load a
-      ready-made gym in the <a href="#studio">Studio</a>, or import a backup
+      ready-made gym in the <a href="#gym">Gym</a>, or import a backup
       in <a href="#settings">Settings</a>.</p>`;
 
   const readPlan = () => {
@@ -672,12 +672,12 @@ function renderOnboarding(root, message) {
 // Number input, muscle filter and a tappable mini-map; calls
 // onPick(machineId). The action button says what a pick actually does here —
 // "Start training" on the start screen, "Add" mid-workout — because the same
-// picker starts a whole session in one place and only appends in the other.
+// picker starts a whole workout in one place and only appends in the other.
 // The map is collapsed by default (settings.pickerMap) — number and muscle
 // are the picker's primary inputs, the map is the on-demand answer to
 // "where?", not the main navigation surface.
-function machinePicker(container, gym, onPick, { actionLabel = 'Open' } = {}) {
-  const allMuscles = gymMuscles(gym);
+function machinePicker(container, layout, onPick, { actionLabel = 'Open' } = {}) {
+  const allMuscles = layoutMuscles(layout);
 
   container.innerHTML = `
     <div class="row">
@@ -700,7 +700,7 @@ function machinePicker(container, gym, onPick, { actionLabel = 'Open' } = {}) {
 
   const svg = container.querySelector('svg');
   // drawn lazily on first expand — most picks go via number or muscle
-  const drawMap = () => drawGym(svg, gym, {
+  const drawMap = () => drawLayout(svg, layout, {
     usage: getSettings().mapColors === 'usage' ? usagePayload(usageByMachine()) : null,
   });
 
@@ -737,15 +737,15 @@ function machinePicker(container, gym, onPick, { actionLabel = 'Open' } = {}) {
   const go = () => {
     const num = Math.round(parseFloat(input.value));
     if (!num || num < 1) return;
-    const machine = findMachineByNum(gym, num);
+    const machine = findMachineByNum(layout, num);
     if (!machine) {
       // create-on-miss: standing at a real machine whose number gymii
-      // doesn't know yet, one tap adds it — rename/arrange later in Studio
+      // doesn't know yet, one tap adds it — rename/arrange later in Gym
       err.innerHTML = `No machine #${num} yet — <button type="button"
         class="btn btn-inline pick-create">Create #${num} &amp; ${esc(actionLabel.toLowerCase())}</button>`;
       err.querySelector('.pick-create').addEventListener('click', () => {
-        const created = addMachine(gym, num, `Machine ${num}`);
-        saveGym(gym);
+        const created = addMachine(layout, num, `Machine ${num}`);
+        saveLayout(layout);
         onPick(created.id);
       });
       return;
@@ -764,7 +764,7 @@ function machinePicker(container, gym, onPick, { actionLabel = 'Open' } = {}) {
   const applyMuscleFilter = () => {
     const muscle = muscleSelect?.value || '';
     const matching = muscle
-      ? gym.machines.filter((m) => (m.muscles || []).includes(muscle))
+      ? layout.machines.filter((m) => (m.muscles || []).includes(muscle))
       : [];
     const matchIds = new Set(matching.map((m) => m.id));
     svg.querySelectorAll('.machine').forEach((g) => {
@@ -808,7 +808,7 @@ function machinePicker(container, gym, onPick, { actionLabel = 'Open' } = {}) {
 
 // Fullscreen read-only floor map with one machine highlighted — answers
 // "where is it?", the map's one job during training. Any tap closes it.
-function showMapOverlay(gym, machine) {
+function showMapOverlay(layout, machine) {
   const overlay = document.createElement('div');
   overlay.className = 'overlay map-overlay';
   overlay.innerHTML = `
@@ -819,14 +819,14 @@ function showMapOverlay(gym, machine) {
     <div class="map-wrap"><svg xmlns="http://www.w3.org/2000/svg"></svg></div>
     <div class="muted">Tap anywhere to close</div>`;
   document.body.appendChild(overlay);
-  drawGym(overlay.querySelector('svg'), gym, { highlightId: machine.id });
+  drawLayout(overlay.querySelector('svg'), layout, { highlightId: machine.id });
   overlay.addEventListener('click', () => overlay.remove());
 }
 
 // --- workout overview hub ---
 
 // Exact-match lookup for the logging screen (exercise-scoped entries at
-// multi-exercise stations); slotEntries aggregates a whole station when the
+// multi-exercise machines); slotEntries aggregates a whole machine when the
 // slot's exercise is null. A slot is done once any of its entries has sets.
 const entryFor = (active, machineId, exercise = null) =>
   active.entries.find((e) => e.machineId === machineId && (e.exercise ?? null) === exercise);
@@ -837,7 +837,7 @@ const slotSetCount = (active, slot) =>
   slotEntries(active, slot).reduce((n, e) => n + e.sets.length, 0);
 // Done means any set logged — or, when the slot carries a plan target,
 // the target's set count reached: the "Next" walk then keeps pulling the
-// workout back to stations with unfinished targets.
+// workout back to machines with unfinished targets.
 const slotDone = (active, slot) => (slot.target?.sets
   ? slotSetCount(active, slot) >= slot.target.sets
   : slotEntries(active, slot).some((e) => e.sets.length));
@@ -852,23 +852,23 @@ function targetTally(active) {
   };
 }
 
-// Sets logged anywhere this session — the "has the workout actually begun?"
+// Sets logged anywhere in the active workout — the "has it actually begun?"
 // signal that both locker asks (overview card, log-screen row) key on.
 const workoutSetCount = (active) => active.entries.reduce((n, e) => n + e.sets.length, 0);
 
-function renderOverview(root, gym, active) {
+function renderOverview(root, layout, active) {
   const s = getSettings();
   const sets = workoutSetCount(active);
   const mins = Math.max(1, Math.round((Date.now() - active.startedAt) / 60000));
 
   // Muscle coverage today: muscles of every machine with ≥1 set this
-  // session, read live from the gym (entries don't snapshot muscles;
+  // workout, read live from the layout (entries don't snapshot muscles;
   // deleted machines contribute none). The chips double as navigation —
   // tapping one drives the picker's muscle filter below.
-  const allMuscles = gymMuscles(gym);
+  const allMuscles = layoutMuscles(layout);
   const trained = new Set(active.entries
     .filter((e) => e.sets.length)
-    .flatMap((e) => gym.machines.find((m) => m.id === e.machineId)?.muscles ?? []));
+    .flatMap((e) => layout.machines.find((m) => m.id === e.machineId)?.muscles ?? []));
 
   // Name suggestions: what was actually trained (one id per logged set,
   // so the dominant region wins) plus the names already in use. Offered as
@@ -876,9 +876,9 @@ function renderOverview(root, gym, active) {
   // optional bookkeeping, and this is the screen you pass through on the
   // way out, so it costs a tap, not a step.
   const nameChips = nameChipsFor(
-    active.entries.flatMap((e) => e.sets.map(() => e.machineId)), gym);
+    active.entries.flatMap((e) => e.sets.map(() => e.machineId)), layout);
 
-  // The locker number is a start-of-session errand: you note it once, on
+  // The locker number is a start-of-workout errand: you note it once, on
   // the way in — usually on the first machine's log screen, which asks the
   // same question. Once the first set is logged (or the ask was skipped
   // there) the screen belongs to the next machine and the next reps, so the
@@ -891,7 +891,7 @@ function renderOverview(root, gym, active) {
   const lockerLeads = !sets && !active.lockerDismissed;
 
   const rows = active.plan.map((slot, i) => {
-    const machine = gym.machines.find((m) => m.id === slot.machineId);
+    const machine = layout.machines.find((m) => m.id === slot.machineId);
     const entries = slotEntries(active, slot);
     // an unbound slot has no machine and no entries yet — it still gets a
     // row, because assigning it IS the next action
@@ -1008,7 +1008,7 @@ function renderOverview(root, gym, active) {
     });
   });
 
-  const picker = machinePicker(root.querySelector('#picker'), gym, (machineId) => {
+  const picker = machinePicker(root.querySelector('#picker'), layout, (machineId) => {
     if (!active.plan.some((p) => p.machineId === machineId)) {
       active.plan.push({ machineId, exercise: null });
     }
@@ -1036,12 +1036,12 @@ function renderOverview(root, gym, active) {
 
 // --- binding a planned exercise to a real machine ---
 
-// The moment the gym builds itself. Standing at the station, one number
+// The moment the gym builds itself. Standing at the machine, one number
 // turns "Leg press" from a line in a trainer's note into machine #14 —
 // created under the note's own name when gymii doesn't know that number
 // yet. The binding is written back into the stored plan, so the question
-// is asked once per exercise, not once per session.
-function renderBind(root, gym, active) {
+// is asked once per exercise, not once per workout.
+function renderBind(root, layout, active) {
   const i = active.binding;
   const slot = active.plan[i];
   if (!slot || slot.machineId) { // stale (already bound, or plan edited)
@@ -1052,8 +1052,8 @@ function renderBind(root, gym, active) {
   }
   const name = slot.name ?? '';
   const n = name.toLowerCase();
-  const machines = gym.machines.slice().sort((a, b) => a.num - b.num);
-  // stations whose label looks like this exercise come first — in a gym
+  const machines = layout.machines.slice().sort((a, b) => a.num - b.num);
+  // machines whose label looks like this exercise come first — in a gym
   // that already exists, binding a second plan is taps, not typing
   const likely = machines.filter((m) => {
     const label = String(m.label || '').toLowerCase();
@@ -1090,10 +1090,10 @@ function renderBind(root, gym, active) {
     slot.machineId = machine.id;
     delete slot.name;
     delete slot.num;
-    // a station of the other type can't honour this target's shape
+    // a machine of the other type can't honour this target's shape
     if (!!machine.cardio !== (slot.target?.distance != null)) delete slot.target;
     // write the binding back into the stored plan: asked once, not every
-    // session (matched by name — the item this slot was built from)
+    // workout (matched by name — the item this slot was built from)
     if (active.planId) {
       const plan = getPlans().find((p) => p.id === active.planId);
       const item = plan?.items.find((it) => !it.machineId && it.name === name);
@@ -1115,16 +1115,16 @@ function renderBind(root, gym, active) {
   root.querySelector('#bind-go').addEventListener('click', () => {
     const wanted = Math.round(parseFloat(root.querySelector('#bind-num').value) || 0);
     if (wanted < 1) return;
-    // an unknown number creates the station under the item's own name,
+    // an unknown number creates the machine under the item's own name,
     // inheriting the target's type — see bindOrCreateMachine
-    const machine = bindOrCreateMachine(gym, wanted, name, slot.target);
-    saveGym(gym);
+    const machine = bindOrCreateMachine(layout, wanted, name, slot.target);
+    saveLayout(layout);
     bindSlot(machine);
   });
 
   root.querySelectorAll('.bind-pick').forEach((chip) => {
     chip.addEventListener('click', () => {
-      const machine = gym.machines.find((m) => m.id === chip.dataset.id);
+      const machine = layout.machines.find((m) => m.id === chip.dataset.id);
       if (machine) bindSlot(machine);
     });
   });
@@ -1146,7 +1146,7 @@ function renderBind(root, gym, active) {
 
 // Next unfinished plan slot after the current one, wrapping around so a
 // skipped (busy) machine comes up again at the end. Another exercise at
-// the SAME station is a valid next stop — only the current slot is out.
+// the SAME machine is a valid next stop — only the current slot is out.
 function nextOpenSlot(active, afterId, afterExercise = null) {
   const idx = planSlotIndex(active, afterId, afterExercise);
   const order = [...active.plan.slice(idx + 1), ...active.plan.slice(0, Math.max(idx, 0))];
@@ -1162,14 +1162,14 @@ function planSlotIndex(active, machineId, exercise = null) {
     : active.plan.findIndex((p) => p.machineId === machineId);
 }
 
-// The physically closest OTHER station with an open slot — the escape
+// The physically closest OTHER machine with an open slot — the escape
 // hatch when the plan's next machine is busy. The user stands at
 // `machine` (its center is the location proxy); the plan-ordered walk
 // stays untouched, this is pure display logic with no stored state: a
 // skipped slot stays open and resurfaces via nextOpenSlot's wrap-around.
-// First open slot per station wins (plan order = exercise order there).
+// First open slot per machine wins (plan order = exercise order there).
 // Exported for the logic tests.
-export function nearbyAlternative(active, gym, machine, excludeMachineId = null) {
+export function nearbyAlternative(active, layout, machine, excludeMachineId = null) {
   const center = (m) => [m.x + m.w / 2, m.y + m.h / 2];
   const [fx, fy] = center(machine);
   const seen = new Set();
@@ -1178,7 +1178,7 @@ export function nearbyAlternative(active, gym, machine, excludeMachineId = null)
     if (slot.machineId === machine.id || slot.machineId === excludeMachineId) continue;
     if (seen.has(slot.machineId) || slotDone(active, slot)) continue;
     seen.add(slot.machineId);
-    const m = gym.machines.find((mm) => mm.id === slot.machineId);
+    const m = layout.machines.find((mm) => mm.id === slot.machineId);
     if (!m) continue;
     const [cx, cy] = center(m);
     const d = (cx - fx) ** 2 + (cy - fy) ** 2;
@@ -1206,11 +1206,11 @@ const targetStr = (t, type, s) => (type === 'cardio'
 // --- logging screen ---
 
 // Resolves which entry the logging screen edits. At multi-exercise
-// stations (free weights) each exercise gets its own entry; until one is
+// machines (free weights) each exercise gets its own entry; until one is
 // picked (pickPending) there is no entry and no logging UI. Entries are
 // created eagerly so settings edits stick; set-less ones are dropped again
 // when the workout is finished. The snapshot itself (num/label, type flags,
-// exercise) is store's newEntry. `last` is the previous session's entry for
+// exercise) is store's newEntry. `last` is the previous workout's entry for
 // set prefills.
 function resolveEntry(machine, active) {
   const exercises = machine.exercises ?? [];
@@ -1227,7 +1227,7 @@ function resolveEntry(machine, active) {
     saveActive(active);
   } else if (!entry.sets.length
     && (!!entry.cardio !== !!machine.cardio || !!entry.bodyweight !== !!machine.bodyweight)) {
-    // machine type was toggled in the studio before any set was logged
+    // machine type was toggled in the gym before any set was logged
     if (machine.cardio) entry.cardio = true; else delete entry.cardio;
     if (machine.bodyweight) entry.bodyweight = true; else delete entry.bodyweight;
     saveActive(active);
@@ -1237,9 +1237,9 @@ function resolveEntry(machine, active) {
 
 // `reveal` names a selector to scroll back into view once the markup is
 // rebuilt — passed by the actions that grow the set list above the inputs.
-function renderLog(root, gym, active, reveal = null) {
-  const machine = gym.machines.find((m) => m.id === active.currentMachineId);
-  if (!machine) { // machine was deleted in the studio mid-workout
+function renderLog(root, layout, active, reveal = null) {
+  const machine = layout.machines.find((m) => m.id === active.currentMachineId);
+  if (!machine) { // machine was deleted in the gym mid-workout
     active.currentMachineId = null;
     active.currentExercise = null;
     saveActive(active);
@@ -1250,14 +1250,14 @@ function renderLog(root, gym, active, reveal = null) {
   const { exercises, exercise, pickPending, entry, last } = resolveEntry(machine, active);
 
   const machineSlots = active.plan.filter((p) => p.machineId === machine.id);
-  if (!machineSlots.length) { // free sessions grow the plan
+  if (!machineSlots.length) { // free workouts grow the plan
     active.plan.push({ machineId: machine.id, exercise: null });
     saveActive(active);
   } else if (exercise && !machineSlots.some((p) => !p.exercise)
     && !machineSlots.some((p) => p.exercise === exercise)) {
-    // a fresh exercise at a station whose slots are exercise-scoped gets
+    // a fresh exercise at a machine whose slots are exercise-scoped gets
     // its own slot (after its siblings) so the overview and "Next:" see
-    // it; a whole-station slot already aggregates it otherwise
+    // it; a whole-machine slot already aggregates it otherwise
     const lastIdx = active.plan.findLastIndex((p) => p.machineId === machine.id);
     active.plan.splice(lastIdx + 1, 0, { machineId: machine.id, exercise });
     saveActive(active);
@@ -1301,33 +1301,33 @@ function renderLog(root, gym, active, reveal = null) {
     `✓ Log set${setGoal && !targetDone ? ` ${setPos}/${setGoal}` : ''} — ${setLabel(d)}`;
   const nextSlot = nextOpenSlot(active, machine.id, exercise);
   const nextMachine = nextSlot?.machineId
-    ? gym.machines.find((m) => m.id === nextSlot.machineId) : null;
+    ? layout.machines.find((m) => m.id === nextSlot.machineId) : null;
   // an unbound next stop is still a next stop — it just asks which
   // machine it is before it can log anything
   const nextUnbound = !nextMachine && nextSlot?.name ? nextSlot : null;
   // offered only when it differs from the plan's next (excludeMachineId)
-  const nearby = nextMachine ? nearbyAlternative(active, gym, machine, nextMachine.id) : null;
+  const nearby = nextMachine ? nearbyAlternative(active, layout, machine, nextMachine.id) : null;
 
-  // Quick-switch: the OTHER stations most recently trained this session,
+  // Quick-switch: the OTHER machines most recently trained this workout,
   // ranked by their newest `at`-stamped set. Superset workouts swing
   // between machines constantly — one tap back beats an overview detour,
   // and this stays visible even at the superset end-game where every slot
   // is done and no Next button shows.
-  const otherStations = new Map(); // machineId -> { at, exercise }
+  const otherMachines = new Map(); // machineId -> { at, exercise }
   active.entries.forEach((e) => {
     if (e.machineId === machine.id) return;
     e.sets.forEach((st) => {
       if (typeof st.at !== 'number') return;
-      const cur = otherStations.get(e.machineId);
-      if (!cur || st.at > cur.at) otherStations.set(e.machineId, { at: st.at, exercise: e.exercise ?? null });
+      const cur = otherMachines.get(e.machineId);
+      if (!cur || st.at > cur.at) otherMachines.set(e.machineId, { at: st.at, exercise: e.exercise ?? null });
     });
   });
-  const quickSwitch = [...otherStations].map(([machineId, v]) => ({
-    machineId, ...v, m: gym.machines.find((mm) => mm.id === machineId),
+  const quickSwitch = [...otherMachines].map(([machineId, v]) => ({
+    machineId, ...v, m: layout.machines.find((mm) => mm.id === machineId),
   })).filter((c) => c.m).sort((a, b) => b.at - a.at).slice(0, 2);
 
-  // Locker ask: a machine-first session never sees the overview before the
-  // first set, so the one start-of-session errand is asked here — a single
+  // Locker ask: a machine-first workout never sees the overview before the
+  // first set, so the one start-of-workout errand is asked here — a single
   // row, gone once a set is logged or it's skipped, never nagging after.
   const lockerAsk = !active.locker && !active.lockerDismissed && !workoutSetCount(active);
 
@@ -1442,7 +1442,7 @@ function renderLog(root, gym, active, reveal = null) {
     if (!chip) return;
     active.currentExercise = chip.dataset.exercise;
     saveActive(active);
-    renderLog(root, gym, active);
+    renderLog(root, layout, active);
   });
 
   // Everything below the exercise picker only exists once an entry is
@@ -1459,7 +1459,7 @@ function renderLog(root, gym, active, reveal = null) {
     if (!btn) return;
     entry.sets.splice(parseInt(btn.dataset.i, 10), 1);
     saveActive(active);
-    renderLog(root, gym, active, '.next-set');
+    renderLog(root, layout, active, '.next-set');
   });
 
   // per-machine rest override, remembered on the machine itself
@@ -1467,7 +1467,7 @@ function renderLog(root, gym, active, reveal = null) {
     const v = Math.max(0, Math.round(parseFloat(e.target.value) || 0));
     e.target.value = v;
     machine.restSeconds = v;
-    saveGym(gym);
+    saveLayout(layout);
   });
 
   root.querySelector('#log-set')?.addEventListener('click', () => {
@@ -1484,7 +1484,7 @@ function renderLog(root, gym, active, reveal = null) {
     saveActive(active);
     // the set list just grew a row above the inputs — put them back under
     // the thumb, so the next set is one tap and not a scroll away
-    renderLog(root, gym, active, '.next-set');
+    renderLog(root, layout, active, '.next-set');
     startRest(rest);
   });
 
@@ -1520,28 +1520,28 @@ function renderLog(root, gym, active, reveal = null) {
   });
 
   root.querySelector('#locate-current').addEventListener('click',
-    () => showMapOverlay(gym, machine));
+    () => showMapOverlay(layout, machine));
   root.querySelector('#locate-next')?.addEventListener('click',
-    () => showMapOverlay(gym, nextMachine));
+    () => showMapOverlay(layout, nextMachine));
 
-  // hands the machine to the Studio's editor — the full one, not a copy
+  // hands the machine to the Gym's editor — the full one, not a copy
   root.querySelector('#edit-machine').addEventListener('click', () => {
     focusMachine(machine.id);
-    location.hash = '#studio';
+    location.hash = '#gym';
   });
 
   root.querySelector('#locker-num')?.addEventListener('change', (e) => {
     active.locker = e.target.value.trim();
     saveActive(active);
-    renderLog(root, gym, active); // collapse the row right away — noted, done
+    renderLog(root, layout, active); // collapse the row right away — noted, done
   });
   root.querySelector('#locker-skip')?.addEventListener('click', () => {
     active.lockerDismissed = true;
     saveActive(active);
-    renderLog(root, gym, active);
+    renderLog(root, layout, active);
   });
 
-  // same move as a Next tap, just to the nearby station instead
+  // same move as a Next tap, just to the nearby machine instead
   root.querySelector('#nearby-machine')?.addEventListener('click', () => {
     active.currentMachineId = nearby.slot.machineId;
     active.currentExercise = nearby.slot.exercise;
@@ -1574,11 +1574,11 @@ function renderLog(root, gym, active, reveal = null) {
   if (reveal) keepInView(root, reveal);
 }
 
-// Default for the next set: the set just done this session, else the first
-// set of the previous session. Once a set is logged, this session is the
+// Default for the next set: the set just done this workout, else the first
+// set of the previous workout. Once a set is logged, this workout is the
 // truth — history seeds only the opener. `last` and `target` must already
 // be type-matched to the entry (caller gates on the flags). A plan target
-// is the goal for THIS session: it beats history as the first-set prefill,
+// is the goal for THIS workout: it beats history as the first-set prefill,
 // but never what was actually just lifted — after a deviation (50 instead
 // of the planned 55) the prefill follows the real working weight.
 // Exported for the logic tests (same reason as nearbyAlternative): the
@@ -1609,7 +1609,7 @@ const setsSummary = (sets, s, bodyweight = false) => {
 
 function finish(root, active) {
   // the hub is the resting point after the loop closes — not whatever
-  // sub-screen the session happened to start from
+  // sub-screen the workout happened to start from
   screen = 'hub';
   // target tally must run BEFORE finishWorkout clears the active state
   const { total: goalTotal, hit: goalHit } = targetTally(active);
@@ -1619,16 +1619,17 @@ function finish(root, active) {
     return;
   }
   const sets = saved.entries.reduce((n, e) => n + e.sets.length, 0);
-  // count stations, not entries — a multi-exercise station is one machine
-  const stations = new Set(saved.entries.map((e) => e.machineId)).size;
-  renderTrain(root, `Workout saved: ${plural(stations, 'machine')}, `
+  // count machines, not entries — several exercises at one machine still
+  // add up to a single machine trained
+  const machines = new Set(saved.entries.map((e) => e.machineId)).size;
+  renderTrain(root, `Workout saved: ${plural(machines, 'machine')}, `
     + `${plural(sets, 'set')}, ${workoutTotals(saved, getSettings())} total`
     + `${goalTotal ? `, ${goalHit}/${goalTotal} target sets` : ''}.`);
 }
 
 // --- screen wake lock ---
 // Module-level, because its scope may outlive the rest overlay: with
-// settings.keepAwake = 'workout' the lock is held for the whole session,
+// settings.keepAwake = 'workout' the lock is held for the whole workout,
 // with 'break' only while the timer runs. Two reasons can want it, so they
 // are tracked separately and reconciled — a re-render mid-break must not
 // drop the break's lock. Guarded for Node (the logic tests have no
