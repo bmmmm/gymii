@@ -162,7 +162,7 @@ assert.equal(srv.log[1].body.includes('Chest press'), false, '1: no plaintext on
 const { code } = first;
 assert.ok(code.startsWith('gymii-sync:v1:'), '1: sync code prefix');
 const parsed = JSON.parse(Buffer.from(code.slice('gymii-sync:v1:'.length), 'base64url').toString());
-assert.equal(parsed.server, 'http://sync.local/');
+assert.equal(parsed.server, 'http://sync.local'); // normalized: no trailing slash
 assert.equal(parsed.token, 'tok-1');
 assert.equal(parsed.gymId, gid, '1: the code carries the blob id — pairing depends on it');
 assert.match(parsed.pass, /^[a-z1-9]{4}(-[a-z1-9]{4}){6}$/, '1: ~140 bits in readable groups');
@@ -283,7 +283,7 @@ srv.blob = goodBlob;
 // state survives a bad round: the config still knows the server
 const state = sync.getSyncState(gid);
 assert.equal(state.configured, true);
-assert.equal(state.server, 'http://sync.local/');
+assert.equal(state.server, 'http://sync.local'); // normalized: no trailing slash
 assert.equal(state.lastError, 'decrypt', '6: the last failure is kept');
 
 // --- 7. unit normalization at the wire ---
@@ -416,5 +416,27 @@ store.saveSyncKey(gid, { pass: 'x-y', salt: b64(new Uint8Array(16)) });
 store.clearAll();
 assert.equal(store.getSyncConfig(gid), null, '11: clearAll wipes the sync config');
 assert.equal(store.getSyncKey(gid), null, '11: clearAll wipes the key');
+
+// --- 12. a bare domain means https; an explicit scheme is respected ---
+// The reference deployment fronts the server with a real certificate, and
+// the https-served app cannot fetch plain http anyway (mixed content) — so
+// the field takes just the domain. http://localhost stays possible for dev
+// and same-origin setups by typing the scheme out.
+devices.E = new Map();
+useDevice('E');
+seedRegistry();
+srv = fakeServer();
+await sync.enableSync(gid, { server: 'sync.example.org/', token: 'tok-12' });
+assert.ok(srv.log[0].url.startsWith('https://sync.example.org/v1/gyms/'),
+  '12: bare domain got https:// and lost its trailing slash');
+assert.equal(sync.getSyncState(gid).server, 'https://sync.example.org',
+  '12: the normalized form is what the config stores');
+sync.disableSync(gid);
+srv.log.length = 0;
+await sync.enableSync(gid, { server: 'http://localhost:8639', token: 'tok-12' });
+assert.ok(srv.log[0].url.startsWith('http://localhost:8639/v1/gyms/'),
+  '12: an explicit scheme is respected');
+await assert.rejects(() => sync.enableSync(gid, { server: '   ', token: 'tok-12' }),
+  /bad-server/, '12: whitespace is not a server');
 
 console.log('sync client: all assertions passed');

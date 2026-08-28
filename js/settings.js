@@ -63,9 +63,11 @@ function syncCard(gym, shownCode) {
         per gym: this switches on "${esc(gym.name)}" alone. You get one sync code, and
         it is the only key — there is no recovery, and nobody can bring the data back
         without it, us included. Export and import keep working without any of this.</p>
-      <label class="field-block"><span>Server URL</span>
+      <label class="field-block"><span>Server</span>
         <div class="row"><input id="sync-server" type="text" autocomplete="off"
-          placeholder="https://sync.example.org"></div>
+          placeholder="sync.example.org"></div>
+        <p class="muted">Just the domain — https is assumed. An explicit
+          http:// works only for localhost setups.</p>
       </label>
       <label class="field-block"><span>Token</span>
         <div class="row"><input id="sync-token" type="text" autocomplete="off"

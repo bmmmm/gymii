@@ -487,7 +487,12 @@ export async function enableSync(gid, { server, token } = {}) {
   const gym = getGyms().list.find((g) => g.id === gid);
   if (!gym) throw new Error('unknown-gym');
   if (gym.demo) throw new Error('demo-gym'); // sync-plan decision 10
-  const url = String(server ?? '').trim();
+  // A bare domain means https — the reference deployment fronts the server
+  // with a real certificate, and the https-served app cannot reach plain
+  // http anyway (mixed content). An explicit scheme is respected: that is
+  // what keeps http://localhost working for dev and same-origin setups.
+  const raw = String(server ?? '').trim().replace(/\/+$/, '');
+  const url = !raw ? '' : (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
   const bearer = String(token ?? '').trim();
   if (!url || !bearer) throw new Error('bad-server');
   saveSyncKey(gid, { v: 1, pass: generatePassphrase(), salt: bytesToB64(randomBytes(SALT_BYTES)) });
