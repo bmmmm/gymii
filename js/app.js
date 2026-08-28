@@ -4,6 +4,7 @@ import { renderHistory } from './history.js';
 import { renderAi } from './ai.js';
 import { renderSettings } from './settings.js';
 import { initSteppers, initNumericOverwrite } from './ui.js';
+import { initAmbientSync } from './sync.js';
 
 const routes = {
   train: renderTrain,
@@ -27,6 +28,7 @@ function route() {
 
 initSteppers();
 initNumericOverwrite();
+initAmbientSync(); // M2: pull on open/visible, debounced push after edits
 window.addEventListener('hashchange', route);
 route();
 

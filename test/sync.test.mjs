@@ -101,6 +101,11 @@ function fakeServer(initial = {}) {
       s.revision += 1;
       return response(200, null, s.revision);
     }
+    if (method === 'DELETE') {
+      s.blob = null;
+      s.revision = 0; // the server forgets the revision (protocol: restart at 1)
+      return response(204);
+    }
     return response(405);
   };
   return s;
@@ -181,14 +186,22 @@ assert.equal('timerSound' in pushed.userSettings, false, 'device-scoped settings
 assert.equal('keepAwake' in pushed.userSettings, false);
 
 // --- 2. nothing changed ---
-// 304 on the conditional GET: the blob is unchanged, so the client falls
-// back to pushing local state under the revision it knows.
+// Without local edits a 304 ends the sync: nothing pushed, revision never
+// bumps (M2's dirty flag — without it every ambient pull would re-push).
 srv.log.length = 0;
 const cached = await sync.syncNow(gid);
 assert.equal(cached.status, 'synced', '2: 304 counts as synced');
-assert.deepEqual(methods(srv), ['GET', 'PUT'], '2: 304 -> push');
+assert.deepEqual(methods(srv), ['GET'], '2: no edits, no push');
 assert.equal(srv.log[0].headers['if-none-match'], '"1"', '2: If-None-Match carries the known revision');
-assert.equal(srv.log[1].headers['if-match'], '"1"', '2: If-Match carries it too');
+
+// with the dirty flag up (an edit not yet pushed) the 304 still pushes
+store.saveSyncConfig(gid, { ...store.getSyncConfig(gid), dirty: true });
+srv.log.length = 0;
+const dirtySync = await sync.syncNow(gid);
+assert.equal(dirtySync.status, 'synced', '2: dirty 304 syncs');
+assert.deepEqual(methods(srv), ['GET', 'PUT'], '2: dirty means push');
+assert.equal(srv.log[1].headers['if-match'], '"1"', '2: If-Match carries the revision');
+assert.equal(store.getSyncConfig(gid).dirty, false, '2: the push lowered the flag');
 
 // a full 200 whose content already matches the merge result pushes nothing
 srv.log.length = 0;
@@ -519,5 +532,89 @@ const plainCode = `gymii-sync:v1:${Buffer.from(JSON.stringify({
 const pairedSecure = await sync.pairWithCode(gid, plainCode);
 assert.equal(pairedSecure.sync.status, 'synced', '13: plain code pairs on a secure page too');
 assert.equal(sync.getSyncState(gid).plain, true, '13: and stays honestly plain');
+
+// --- 14. ambient sync (M2): coalescing, suppression, offline, deletes ---
+const puts = () => methods(srv).filter((m) => m === 'PUT').length;
+devices.M = new Map();
+useDevice('M');
+seedRegistry();
+srv = fakeServer();
+await sync.initAmbientSync({ editDebounceMs: 0, pullThrottleMs: 0 });
+const enabledM = await sync.enableSync(gid, { server: 'http://sync.local', token: 'tok-14' });
+assert.equal(enabledM.sync.status, 'synced', '14: setup');
+const passM = JSON.parse(
+  Buffer.from(enabledM.code.slice('gymii-sync:v1:'.length), 'base64url').toString()).pass;
+
+// a burst of edits coalesces: the run in flight absorbs later triggers
+// into ONE follow-up instead of racing (debounce 0 = every edit fires)
+srv.log.length = 0;
+store.savePlan({ id: 'pm1', name: 'Burst 1', items: [] });
+store.savePlan({ id: 'pm2', name: 'Burst 2', items: [] });
+store.savePlan({ id: 'pm3', name: 'Burst 3', items: [] });
+await sync.ambientSettled();
+assert.ok(puts() >= 1 && puts() <= 2, `14: burst coalesced into <=2 pushes, got ${puts()}`);
+const afterBurst = await decryptBlob(srv.blob, passM);
+assert.equal(afterBurst.plans.length, 3, '14: every edit of the burst arrived');
+
+// suppression: applying a pull must not echo into another push
+devices.N = new Map();
+useDevice('N');
+seedRegistry();
+srv.log.length = 0;
+await sync.pairWithCode(gid, enabledM.code);
+await sync.ambientSettled();
+assert.equal(puts(), 0, "14: applying M's data on N triggered no echo push");
+assert.equal(store.getPlans().length, 3, '14: and the data landed');
+
+// idle visible: GET only, the revision never bumps
+srv.log.length = 0;
+const revBefore = srv.revision;
+await sync.ambientVisible();
+await sync.ambientSettled();
+assert.deepEqual(methods(srv), ['GET'], '14: idle pull pushes nothing');
+assert.equal(srv.revision, revBefore, '14: revision untouched');
+
+// pull throttle: the visible above just stamped lastPull — with a real
+// window set, the next visible makes no request at all
+sync.initAmbientSync({ pullThrottleMs: 60000 }); // retune only, no re-wire
+srv.log.length = 0;
+await sync.ambientVisible();
+await sync.ambientSettled();
+assert.equal(srv.log.length, 0, '14: a visible inside the window is throttled');
+sync.initAmbientSync({ pullThrottleMs: 0 });
+
+// offline edit -> pending flag; back online -> replayed and cleared
+srv.mode = 'offline';
+store.savePlan({ id: 'pn1', name: 'Offline edit', items: [] });
+await sync.ambientSettled();
+assert.equal(sync.getSyncState(gid).pending, true, '14: offline edit is pending');
+srv.mode = null;
+await sync.ambientOnline();
+await sync.ambientSettled();
+assert.equal(sync.getSyncState(gid).pending, false, '14: replay cleared the flag');
+assert.equal((await decryptBlob(srv.blob, passM)).plans.length, 4, '14: the offline edit arrived');
+
+// a held cross-tab lock skips the run entirely
+Object.defineProperty(globalThis.navigator, 'locks', {
+  configurable: true,
+  value: { request: async (_name, _opts, cb) => cb(null) }, // lock is taken
+});
+srv.log.length = 0;
+await sync.ambientFinished();
+await sync.ambientSettled();
+assert.equal(srv.log.length, 0, '14: the losing tab makes no requests');
+delete globalThis.navigator.locks;
+
+// deleting the gym queues the server blob's DELETE and drains it
+store.createGym('Keeper'); // deleteGym refuses to remove the last gym
+assert.equal(store.deleteGym(gid), true, '14: gym deleted locally');
+assert.equal(store.getPendingDeletes().length, 1, '14: blob delete queued');
+assert.equal(store.getPendingDeletes()[0].remoteId, gid, '14: under the blob id');
+srv.log.length = 0;
+await sync.ambientOnline();
+await sync.ambientSettled();
+assert.ok(methods(srv).includes('DELETE'), '14: the queued DELETE went out');
+assert.equal(store.getPendingDeletes().length, 0, '14: and left the queue');
+assert.equal(srv.blob, null, '14: the blob is gone from the server');
 
 console.log('sync client: all assertions passed');

@@ -591,4 +591,73 @@ assert.ok([...ids].every((id) => /^[0-9a-z]{16}$/.test(id)), 'uids are 16 base-3
 
 store.clearAll();
 
+// --- change notifier (M2 ambient sync) ---
+// Interactive writers announce, restore* twins stay silent — announcing an
+// applied sync would echo it straight back into another sync.
+let changes = 0;
+const unsubscribe = store.onStoreChange(() => { changes += 1; });
+const gymA = store.getGyms().activeId; // fresh default gym after clearAll
+
+store.savePlan({ id: 'note1', name: 'Notify', items: [] });
+assert.equal(changes, 1, 'savePlan notifies (via savePlans)');
+store.saveWorkouts([]);
+assert.equal(changes, 2, 'saveWorkouts notifies');
+const notifyLayout = store.newLayout('Notify layout');
+store.saveLayout(notifyLayout);
+assert.equal(changes, 3, 'saveLayout notifies');
+store.saveSettings({ ...store.getSettings(), restSeconds: 45 });
+assert.equal(changes, 4, 'saveSettings notifies');
+store.renameGym(gymA, 'Renamed');
+assert.equal(changes, 5, 'renameGym notifies');
+
+store.restoreLayout(notifyLayout);
+store.restoreSettings(store.getSettings());
+store.restoreGymEntry({ id: gymA, name: 'Renamed', updatedAt: 1 });
+assert.equal(changes, 5, 'the restore twins never notify');
+
+unsubscribe();
+store.savePlan({ id: 'note2', name: 'Silent', items: [] });
+assert.equal(changes, 5, 'unsubscribe works');
+
+// --- deleteGym queues the server blob's DELETE (M2) ---
+// The pending entry must be built BEFORE the GYM_PARTS sweep wipes the
+// sync config it is made of.
+store.saveSyncConfig(gymA, {
+  server: 'https://sync.example', token: 'tok-del', remoteId: 'remote-77',
+});
+const gymB = store.createGym('Survivor');
+assert.equal(store.deleteGym(gymA), true);
+const pending = store.getPendingDeletes();
+assert.equal(pending.length, 1, 'one pending delete queued');
+assert.deepEqual(pending[0], {
+  server: 'https://sync.example', token: 'tok-del', remoteId: 'remote-77', tries: 0,
+}, 'built from the config, addressed by the blob id');
+store.savePendingDeletes([]);
+assert.equal(store.getPendingDeletes().length, 0, 'queue clears');
+assert.equal(store.deleteGym(gymB), false, 'the last gym still refuses to die');
+
+// --- a backup of a layout-less gym round-trips (pre-existing bug) ---
+// A user who only ever logged against plans has gym: null in the backup;
+// importData must accept it instead of refusing the whole file.
+store.savePlan({ id: 'plan-nl', name: 'No-layout plan', items: [] });
+store.saveWorkouts([{
+  id: 'w-nl',
+  startedAt: 1000,
+  finishedAt: 2000,
+  updatedAt: 1000,
+  entries: [{
+    machineId: 'mx', num: 1, label: 'Somewhere', settings: {}, sets: [{ reps: 5, weight: 20 }],
+  }],
+}]);
+const noLayoutBackup = JSON.parse(JSON.stringify(store.exportBackup()));
+assert.equal(noLayoutBackup.gym, null, 'no editor visit means gym: null');
+store.clearAll();
+assert.equal(store.importData(noLayoutBackup), 'backup', 'null-layout backup imports');
+assert.equal(store.getPlans().length, 1, 'plans survived the round-trip');
+assert.equal(store.getWorkouts()[0].id, 'w-nl', 'workouts survived the round-trip');
+assert.throws(() => store.importData({ app: 'gymii', kind: 'backup', gym: { broken: true }, workouts: [] }),
+  /Invalid backup/, 'a malformed layout is still refused');
+
+store.clearAll();
+
 console.log('store roundtrip: all assertions passed');

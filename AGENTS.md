@@ -15,7 +15,9 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   tombstones, v1/v2 backup compat), `merge` (the pure sync merge matrix —
   union by id, LWW, tombstones), `sync` (the client sync engine: protocol
   conformance over a stubbed fetch, WebCrypto roundtrip, sync-code parsing,
-  wire unit conversion, synckey-never-in-backup), `settings` (the Sync
+  wire unit conversion, synckey-never-in-backup, plain mode, and the M2
+  ambient matrix — coalescing, suppression, dirty/304, offline replay,
+  queued deletes, tab lock, throttle), `settings` (the Sync
   card's states over the stub DOM), `train` (guided-plan
   construction, hub/start/plans navigation), `plan` (stored plans, the note parser/serialiser, AI
   import, binding, targets), `history` (name filter, muscle card + filter,
@@ -188,9 +190,24 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   `crypto-available` (no downgrade where E2E works), `mode-mismatch`
   (client mode vs envelope shape). The Settings card renders its
   unencrypted variant exactly when `e2eAvailable()` is false; pairing
-  follows the code's mode either way. M1 limit, deliberate: a local gym
-  deletion is not yet mirrored via DELETE (M2 — the other device would
-  re-push it).
+  follows the code's mode either way.
+  AMBIENT SYNC (M2): `initAmbientSync()` (called once from app.js) wires
+  visibilitychange/online plus the store notifier; edits debounce 8 s into
+  a push, pulls throttle to one per minute, `ambientFinished()` /
+  `ambientWorkoutStart()` are called from train.js. One sync in flight per
+  gym ever (a mid-run trigger sets `again`, the run repeats once); across
+  tabs Web Locks picks one winner. THE DIRTY FLAG is load-bearing: raised
+  by a module-load `onStoreChange` subscription on any interactive write
+  (so manual "Sync now" sees edits too), lowered by a completed sync — a
+  304 with the flag down ends the run, which is what keeps idle pulls
+  from re-pushing and bumping the revision forever. reconcile brackets
+  its synchronous apply with `applying` so its own bulk writes neither
+  re-trigger nor re-dirty. Offline outcomes set `syncPending`
+  (`getSyncState().pending`); `deleteGym` queues the blob's DELETE in
+  `gymii.sync.pendingDeletes` BEFORE its sweep wipes the config, and the
+  ambient layer drains it. Gym deletion does not propagate to other
+  devices (documented in the protocol) — the account-level registry that
+  could carry it is M3.
 - `js/app.js` — hash-router, renders views into `#view`. The `#gym`
   route is deliberately NOT in the tabbar (the map is a setup tool, not a
   daily surface — user decision); it is reached via links in onboarding,

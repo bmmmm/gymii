@@ -23,6 +23,7 @@ import {
   getTombstones, saveTombstones,
   getSettings, restoreSettings, setUnit, convertWeight, convertDistance,
   getSyncConfig, saveSyncConfig, getSyncKey, saveSyncKey,
+  onStoreChange, getPendingDeletes, savePendingDeletes,
 } from './store.js';
 import {
   stamp, mergeWorkouts, mergePlans, mergeLayout, mergeSettings, USER_SETTINGS,
@@ -327,6 +328,19 @@ function normalizeUnits(remote, unit) {
 // writers (never the interactive ones — incoming state owns its stamps),
 // and hand back the payload that should be on the server.
 function reconcile(gid, remote, rid) {
+  // reconcile writes through the same bulk writers user actions end in, so
+  // the store notifier would echo every sync back into the ambient layer.
+  // The flag brackets exactly this SYNCHRONOUS block — a real user edit can
+  // only land between awaits, where the flag is down again.
+  applying = true;
+  try {
+    return reconcileInner(gid, remote, rid);
+  } finally {
+    applying = false;
+  }
+}
+
+function reconcileInner(gid, remote, rid) {
   return withGym(gid, () => {
     // 1. settings decide the unit, so they go first
     const before = getSettings();
@@ -427,6 +441,11 @@ async function runSync(gid, cfg, keyMaterial) {
     // revision is known-stale and the blob is exactly what we need
     // eslint-disable-next-line no-await-in-loop
     const got = await pull(cfg, rid, attempt === 0 ? rev : 0);
+    // 304 with no local edits since the last push (the ambient layer's
+    // dirty flag, M2): both sides are where they were — done. Without the
+    // flag every visibility pull would re-push and bump the revision,
+    // making the other devices re-download an unchanged blob forever.
+    if (got.kind === 'unchanged' && cfg.dirty !== true) return { rev, salt };
     let remote = null;
     if (got.kind === 'blob') {
       rev = got.revision;
@@ -453,9 +472,8 @@ async function runSync(gid, cfg, keyMaterial) {
     if (!plainMode && !salt) salt = bytesToB64(randomBytes(SALT_BYTES));
 
     const payload = reconcile(gid, remote, rid);
-    // 304 says the blob is unchanged since our last pull, not that our
-    // local side is unchanged — M1 has no dirty flag (M2's offline queue
-    // brings one), so it re-pushes rather than sit on unsynced edits.
+    // a 304 with the dirty flag up still lands here: the blob is
+    // unchanged but the local side is not, so the edit gets pushed
     if (remote && same(payload, remote)) return { rev, salt };
 
     // eslint-disable-next-line no-await-in-loop
@@ -481,6 +499,7 @@ export function getSyncState(gid) {
     configured: true,
     server: cfg.server,
     plain: cfg.plain === true, // unencrypted mode — the card must say so
+    pending: cfg.syncPending === true, // offline edits waiting for a retry
     lastSyncAt: cfg.lastSyncAt ?? null,
     lastError: cfg.lastError ?? null,
   };
@@ -508,7 +527,11 @@ export async function syncNow(gid) {
   try {
     const { rev, salt } = await runSync(gid, cfg, keyMaterial);
     if (keyMaterial && salt !== keyMaterial.salt) saveSyncKey(gid, { ...keyMaterial, salt });
-    record({ rev, lastSyncAt: Date.now(), lastError: null });
+    // a completed run means local state is on the server (or unchanged) —
+    // the dirty flag the ambient triggers raise comes down here
+    record({
+      rev, lastSyncAt: Date.now(), lastError: null, dirty: false,
+    });
     return { status: 'synced' };
   } catch (e) {
     const status = e instanceof SyncFail ? e.status : 'error';
@@ -604,4 +627,158 @@ export function disableSync(gid) {
   if (key) keyCache.delete(`${key.salt}:${key.pass}`);
   saveSyncConfig(gid, null);
   saveSyncKey(gid, null);
+}
+
+// --- ambient sync (M2) ---
+// Sync without a button: edits debounce into a push, coming into view
+// throttles into a pull, finishing a workout pushes immediately, offline
+// outcomes set `syncPending` and replay on the next trigger or `online`
+// event. Everything funnels through ambientSync(): one sync in flight per
+// gym EVER — a trigger landing mid-run sets `again` instead of racing, and
+// the run repeats once after finishing. Across tabs the Web Locks API
+// picks one winner (both tabs share localStorage, so the loser loses
+// nothing); without the API (Node, old browsers) the guard is a no-op.
+
+const AMBIENT = {
+  // 8 s of quiet after the last edit — long enough to swallow a burst of
+  // logging, short enough that the phone is still unlocked when it fires
+  editDebounceMs: 8000,
+  // pulls (visible / workout start) at most once a minute
+  pullThrottleMs: 60000,
+};
+
+let applying = false;
+let ambientWired = false;
+let debounceTimer = null;
+let lastPullAt = 0;
+const inFlight = new Map(); // gid -> { again }
+
+// The dirty flag is raised by ANY interactive write, subscribed at module
+// load — a manual "Sync now" must see local edits even in a session where
+// the ambient wiring never ran. reconcile's echoes through the bulk
+// writers are filtered by the same `applying` flag that guards the
+// ambient debounce.
+onStoreChange(() => {
+  if (applying) return;
+  const { activeId } = getGyms();
+  const cfg = getSyncConfig(activeId);
+  if (cfg && cfg.dirty !== true) saveSyncConfig(activeId, { ...cfg, dirty: true });
+});
+
+async function withTabLock(fn) {
+  const locks = globalThis.navigator?.locks;
+  if (!locks?.request) return fn();
+  return locks.request('gymii-sync', { ifAvailable: true }, async (lock) => {
+    if (!lock) return null; // another tab holds it and syncs the same storage
+    return fn();
+  });
+}
+
+async function ambientSync(gid) {
+  if (!gid || !getSyncConfig(gid)) return;
+  const running = inFlight.get(gid);
+  if (running) { running.again = true; return; }
+  const state = { again: false };
+  inFlight.set(gid, state);
+  try {
+    await withTabLock(async () => {
+      const r = await syncNow(gid);
+      const cfg = getSyncConfig(gid);
+      if (cfg) {
+        if (r.status === 'offline' && cfg.syncPending !== true) {
+          saveSyncConfig(gid, { ...cfg, syncPending: true });
+        } else if (r.status === 'synced' && cfg.syncPending) {
+          saveSyncConfig(gid, { ...cfg, syncPending: false });
+        }
+      }
+      if (r.status === 'synced') await flushPendingDeletes();
+    });
+  } finally {
+    inFlight.delete(gid);
+  }
+  if (state.again) await ambientSync(gid);
+}
+
+// deleteGym queued these while the config was still readable; 2xx and 404
+// both mean "gone". HTTP failures retry a few times (a revoked token never
+// succeeds — the cap is what stops it); a dead network keeps the entry
+// without counting, the queue itself is capped in the store.
+async function flushPendingDeletes() {
+  const queue = getPendingDeletes();
+  if (!queue.length) return;
+  const keep = [];
+  for (const entry of queue) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await fetch(
+        `${String(entry.server).replace(/\/+$/, '')}/v1/gyms/${encodeURIComponent(entry.remoteId)}`,
+        { method: 'DELETE', headers: { Authorization: `Bearer ${entry.token}` } },
+      );
+      if (!res.ok && res.status !== 404 && (entry.tries ?? 0) + 1 < 5) {
+        keep.push({ ...entry, tries: (entry.tries ?? 0) + 1 });
+      }
+    } catch {
+      keep.push(entry);
+    }
+  }
+  savePendingDeletes(keep);
+}
+
+// The triggers are exported so train.js and the tests call policies, not
+// fake DOM events. A debounce of 0 runs synchronously into the returned
+// promise — that is what makes the ambient tests awaitable.
+export function ambientEdited() {
+  if (applying) return null; // reconcile echoing through the bulk writers
+  const { activeId } = getGyms();
+  if (!getSyncConfig(activeId)) return null;
+  if (AMBIENT.editDebounceMs <= 0) return ambientSync(activeId);
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => ambientSync(activeId), AMBIENT.editDebounceMs);
+  return null;
+}
+
+export function ambientVisible() {
+  const now = Date.now();
+  if (AMBIENT.pullThrottleMs > 0 && now - lastPullAt < AMBIENT.pullThrottleMs) return null;
+  lastPullAt = now;
+  return ambientSync(getGyms().activeId);
+}
+
+// Same policy as becoming visible: freshen before the workout, never block it.
+export const ambientWorkoutStart = () => ambientVisible();
+
+export function ambientFinished() {
+  clearTimeout(debounceTimer); // the finish push covers any pending edits
+  return ambientSync(getGyms().activeId);
+}
+
+export async function ambientOnline() {
+  // the queue must drain even when no gym has a config anymore (the last
+  // synced gym may be exactly what was deleted)
+  await ambientSync(getGyms().activeId);
+  await flushPendingDeletes();
+}
+
+// Waits until no ambient run is in flight — the tests' (and a future UI's)
+// way to observe "the dust settled" without reaching into module state.
+export async function ambientSettled() {
+  // eslint-disable-next-line no-await-in-loop
+  while (inFlight.size) await new Promise((resolve) => { setTimeout(resolve, 0); });
+}
+
+export function initAmbientSync({ editDebounceMs, pullThrottleMs } = {}) {
+  if (editDebounceMs != null) AMBIENT.editDebounceMs = editDebounceMs;
+  if (pullThrottleMs != null) AMBIENT.pullThrottleMs = pullThrottleMs;
+  if (ambientWired) return undefined; // re-calls may retune, never re-wire
+  ambientWired = true;
+  onStoreChange(() => ambientEdited());
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') ambientVisible();
+    });
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online', () => ambientOnline());
+  }
+  return ambientOnline(); // initial kick: sync the active gym, drain the queue
 }

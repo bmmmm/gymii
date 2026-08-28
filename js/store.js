@@ -27,6 +27,26 @@ function write(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+// --- change notification (M2 ambient sync) ---
+// Interactive writers announce "something changed" so the sync layer can
+// debounce a push. Deliberately at the BULK-writer level: every interactive
+// path ends in one (savePlan → savePlans, finishWorkout → saveWorkouts, the
+// editor → saveLayout, imports too — which SHOULD push). The restore* twins
+// never notify: they exist for applying synced state, and announcing that
+// would echo a sync back into a sync.
+const changeListeners = new Set();
+
+export function onStoreChange(fn) {
+  changeListeners.add(fn);
+  return () => changeListeners.delete(fn);
+}
+
+function touched() {
+  changeListeners.forEach((fn) => {
+    try { fn(); } catch { /* a listener must never break a write */ }
+  });
+}
+
 // 16 chars of crypto-quality randomness (~82 bits) — enough that two
 // devices minting ids offline can never realistically collide. Legacy
 // 8-char Math.random() ids stay valid forever: every consumer compares
@@ -109,6 +129,7 @@ export function createGym(name, extra = {}) {
   });
   gyms.activeId = id;
   write(KEYS.gyms, gyms);
+  touched();
   return id;
 }
 
@@ -120,6 +141,7 @@ export function renameGym(id, name) {
   g.name = trimmed;
   g.updatedAt = Date.now();
   write(KEYS.gyms, gyms);
+  touched();
 }
 
 // Bulk twin of renameGym (same split as restoreLayout/saveLayout): writes a
@@ -166,7 +188,18 @@ export function deleteGym(id) {
     if (gyms.activeId === id) gyms.activeId = gyms.list[0].id;
     write(KEYS.gyms, gyms);
   }
+  // The server blob must go too (M2) — queue it BEFORE the sweep below
+  // wipes the sync config this entry is built from. Deletion does not
+  // propagate to other devices (documented: a paired device that still
+  // wants the gym re-pushes it); this is server hygiene, not consensus.
+  const syncCfg = getSyncConfig(id);
+  if (syncCfg?.server) {
+    savePendingDeletes([...getPendingDeletes(), {
+      server: syncCfg.server, token: syncCfg.token, remoteId: syncCfg.remoteId ?? id, tries: 0,
+    }]);
+  }
   GYM_PARTS.forEach((part) => localStorage.removeItem(scopedKey(id, part)));
+  touched();
   return true;
 }
 
@@ -265,6 +298,7 @@ export function saveLayout(layout) {
     });
     saveTombstones(t);
   }
+  touched();
 }
 
 export function restoreLayout(layout) {
@@ -337,6 +371,7 @@ export function getWorkouts() {
 export function saveWorkouts(list) {
   write(scopedKey(activeGymId(), 'workouts'),
     list.slice().sort((a, b) => a.startedAt - b.startedAt));
+  touched();
 }
 
 // Deletes a workout by id; no-op if unknown.
@@ -427,6 +462,7 @@ export function getPlans() {
 
 export function savePlans(list) {
   write(scopedKey(activeGymId(), 'plans'), list);
+  touched();
 }
 
 // Upserts by id so the builder saves new and edited plans alike. A plan
@@ -827,6 +863,7 @@ export function workoutsWithMuscle(workouts, layout, muscle) {
 
 export function saveSettings(settings) {
   write(KEYS.settings, { ...settings, updatedAt: Date.now() });
+  touched();
 }
 
 // Bulk twin of saveSettings: no re-stamping, because merged settings arrive
@@ -853,6 +890,21 @@ export function saveSyncConfig(gid, config) {
     return;
   }
   write(scopedKey(gid, 'sync'), { v: 1, ...config });
+}
+
+// Server blobs whose local gym died (M2): deleteGym queues them here while
+// the config is still readable, the ambient sync layer drains the queue.
+// Global by necessity — the gym's own keys are gone by definition. Capped:
+// a queue nobody can drain (dead server) must not grow forever.
+const PENDING_DELETES_KEY = 'gymii.sync.pendingDeletes';
+
+export function getPendingDeletes() {
+  return read(PENDING_DELETES_KEY, []);
+}
+
+export function savePendingDeletes(list) {
+  if (!list.length) localStorage.removeItem(PENDING_DELETES_KEY);
+  else write(PENDING_DELETES_KEY, list.slice(-20));
 }
 
 export function getSyncKey(gid) {
@@ -1194,8 +1246,12 @@ export function importData(data) {
     return 'gym-template';
   }
   if (data.kind === 'backup') {
-    if (!isValidLayout(data.gym) || !Array.isArray(data.workouts)) throw new Error('Invalid backup');
-    restoreLayout(data.gym);
+    // gym may be null: a gym that never opened the editor has no layout,
+    // and its backup must still round-trip (workouts/plans only)
+    if ((data.gym != null && !isValidLayout(data.gym)) || !Array.isArray(data.workouts)) {
+      throw new Error('Invalid backup');
+    }
+    if (data.gym != null) restoreLayout(data.gym);
     saveWorkouts(data.workouts);
     if (Array.isArray(data.plans)) {
       savePlans(data.plans.filter((p) => p && p.id && Array.isArray(p.items)));

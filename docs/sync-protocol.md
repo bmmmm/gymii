@@ -149,16 +149,24 @@ settings, plus the sync-relevant sidecars:
 
 1. `GET` blob (or 304) → decrypt → `remote`.
 2. If remote revision == last pushed revision: encrypt local, `PUT If-Match`.
-   (On a 304 the M1 client re-pushes local state — it has no dirty flag yet,
-   M2's offline queue brings one; a merge whose result equals the remote
-   blob pushes nothing, so idle syncs never bump the revision.)
+   (A 304 with the dirty flag down — no interactive write since the last
+   completed sync, M2 — ends the run without a push; with it up, local
+   state is pushed under the known revision. A merge whose result equals
+   the remote blob pushes nothing either way, so idle syncs never bump
+   the revision.)
 3. Else: `merge*` (js/merge.js) per kind → apply locally via the bulk
    writers (`restoreLayout`, `saveWorkouts`, `savePlans`, `saveTombstones`) →
    encrypt merged → `PUT If-Match: <remote revision>`.
 4. On 409: re-GET, re-merge, re-PUT (the loop IS the conflict protocol).
-5. Triggers: pull on app open / visibilitychange / before workout start;
-   push on finishWorkout and debounced after gym/plan edits. Offline: a
-   `syncPending` flag retries on the next trigger or `online` event.
+5. Triggers (implemented in M2's ambient layer): pull on app open /
+   visibilitychange / before workout start (throttled, one per minute);
+   push on finishWorkout and debounced (8 s of quiet) after gym/plan
+   edits. Offline: a `syncPending` flag retries on the next trigger or
+   `online` event. One sync in flight per gym ever; across tabs the Web
+   Locks API picks one winner. A local gym deletion queues the blob's
+   `DELETE` (drained on the next sync) — deletion does NOT propagate to
+   other devices: a paired device that still wants the gym re-pushes it
+   and keeps it (an account-level registry is M3 territory).
 
 ## Open questions
 

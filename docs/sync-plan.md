@@ -38,11 +38,17 @@ never order anything at the protocol level. Pairing a second device is one
   claim (README, SECURITY.md, in-app copy, meta description — "never
   unencrypted / not unless you turn it on", never an unconditional
   "never leaves" again).
-- **M2 — ambient sync**: pull on app open / visibilitychange / before a
-  workout starts; push on `finishWorkout` and debounced after gym/plan
-  edits; offline queue + retry; multi-tab guard; convergence tests; mirror
-  a local gym deletion via `DELETE /v1/gyms/{id}` (M1 never calls it — the
-  other device would re-push the gym).
+- **M2 — ambient sync (DONE 2026-08-28 — proven against the live nutc
+  server: ambient edit-push, idle pulls that never bump the revision,
+  visible-pull convergence, live blob DELETE)**: pull on app open /
+  visibilitychange / before a workout starts; push on `finishWorkout` and
+  debounced after gym/plan edits; offline `syncPending` + retry on the
+  next trigger or `online`; Web-Locks multi-tab guard; a `dirty` flag so a
+  304 without local edits ends the run (without it every ambient pull
+  re-pushed and bumped the revision); convergence tests; local gym
+  deletion queues the blob's `DELETE`. Deletion does NOT propagate — a
+  paired device that still wants the gym re-pushes and keeps it
+  (account-level registry is M3).
 - **M3 — pairing polish**: QR code, device list + token revocation,
   gym discovery on a fresh device (listing the account's other blobs via
   `GET /v1/gyms`; single-gym pairing already works — the sync code carries

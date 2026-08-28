@@ -5,6 +5,7 @@ import {
   bindOrCreateMachine, newEntry, nameChipsFor, todayStatus, skipPlanDay,
 } from './store.js';
 import { drawLayout, usagePayload, findMachineByNum } from './map.js';
+import { ambientWorkoutStart, ambientFinished } from './sync.js';
 import { renderPlanBuilder, DAY_LABELS } from './plan.js';
 import { focusMachine } from './gym.js';
 import {
@@ -156,6 +157,9 @@ export function renderTrain(root, message = '') {
 // Start a guided workout from a past one (or empty/free with one machine).
 // Exported so History can offer "repeat this workout" too.
 export function startWorkoutFrom(source, firstMachineId = null) {
+  // freshen from the other devices before training starts — fire and
+  // forget, a workout must never wait for the network (M2)
+  ambientWorkoutStart();
   let layout = getLayout();
   // A plan of unbound items can be started before any gym exists; every
   // screen below this point assumes one, so it gets created empty here
@@ -1614,6 +1618,7 @@ function finish(root, active) {
   // target tally must run BEFORE finishWorkout clears the active state
   const { total: goalTotal, hit: goalHit } = targetTally(active);
   const saved = finishWorkout(active);
+  ambientFinished(); // the workout just landed — push it now, not in 8 s
   if (!saved) {
     renderTrain(root, 'Workout discarded — no sets were logged.');
     return;

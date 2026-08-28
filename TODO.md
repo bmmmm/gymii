@@ -74,15 +74,19 @@ sync code now carries the blob's gymId and a paired device maps its local
 gym via `remoteId` (decision 14). E2E proven both ways with a fresh
 second device.
 
+Shipped 2026-08-28 — sync M2, ambient: edits debounce into a push, coming
+into view throttles into a pull, finishing a workout pushes immediately;
+offline edits set `syncPending` and replay on `online`; Web-Locks multi-tab
+guard; a load-bearing `dirty` flag (raised by any interactive write via the
+new store notifier, lowered by a completed sync) so idle pulls never
+re-push — the first test run proved they otherwise bump the revision
+forever; deleting a gym queues the server blob's DELETE (drained by the
+ambient layer; deletion deliberately does not propagate to other devices).
+Proven against the live nutc server both ways, including the live DELETE →
+404. Also fixed: a backup of a layout-less gym (`gym: null`) now imports.
+
 ## Open
 
-- **A backup of a layout-less gym cannot be imported.** `exportBackup()`
-  writes `gym: getLayout()`, which is `null` until the Gym editor ever
-  ran — and `importData` then refuses the file as an invalid backup.
-  Surfaced by the sync E2E run (pre-existing, not introduced by M1): a
-  user who only logs workouts against a plan, never drawing a floor plan,
-  exports a backup that won't restore. Either export a valid empty layout
-  or accept `gym: null` on import.
 - **Verify the issue forms in a signed-in browser.** The chooser
   (`/issues/new/choose`) should show four forms + two contact links with
   "Blank issue" as maintainers-only, and the template form must block
