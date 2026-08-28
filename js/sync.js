@@ -42,6 +42,15 @@ const MAX_ATTEMPTS = 3;
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
+// crypto.subtle only exists in secure contexts (https or localhost). On a
+// plain-http page — the one-container docker-net setup with no TLS and no
+// internal DNS — the browser refuses E2E entirely; the explicit unencrypted
+// mode below is what keeps sync possible there (sync-plan decision 15).
+// Checked at call time so tests can simulate an insecure context. Exported
+// so the Settings card can offer the unencrypted mode exactly where E2E is
+// impossible — and never anywhere else.
+export const e2eAvailable = () => !!globalThis.crypto?.subtle;
+
 // --- small encodings (browser + Node, no Buffer) ---
 
 function bytesToB64(bytes) {
@@ -131,8 +140,15 @@ async function decryptEnvelope(envelope, pass) {
 
 export function getSyncCode(gid) {
   const cfg = getSyncConfig(gid);
+  if (!cfg) return null;
+  if (cfg.plain) {
+    const body = JSON.stringify({
+      server: cfg.server, token: cfg.token, gymId: cfg.remoteId ?? gid, plain: true,
+    });
+    return CODE_PREFIX + b64url(bytesToB64(enc.encode(body)));
+  }
   const key = getSyncKey(gid);
-  if (!cfg || !key?.pass) return null;
+  if (!key?.pass) return null;
   const body = JSON.stringify({
     server: cfg.server, token: cfg.token, pass: key.pass, gymId: cfg.remoteId ?? gid,
   });
@@ -149,11 +165,17 @@ function parseSyncCode(code) {
     throw new Error('bad-code');
   }
   const {
-    server, token, pass, gymId,
+    server, token, pass, gymId, plain,
   } = data ?? {};
-  if (!server || !token || !pass || !gymId) throw new Error('bad-code');
+  // The mode rides in the code: a plain code carries no passphrase — there
+  // is deliberately no key material that could later pretend to be E2E.
+  if (!server || !token || !gymId || (!pass && plain !== true)) throw new Error('bad-code');
   return {
-    server: String(server), token: String(token), pass: String(pass), gymId: String(gymId),
+    server: String(server),
+    token: String(token),
+    pass: pass ? String(pass) : null,
+    gymId: String(gymId),
+    plain: plain === true,
   };
 }
 
@@ -204,7 +226,9 @@ async function pull(cfg, gid, knownRev) {
   } catch {
     throw new SyncFail('error', 'bad-envelope');
   }
-  if (!envelope || envelope.v !== 1 || !envelope.ciphertext || !envelope.iv || !envelope.salt) {
+  const encrypted = envelope?.ciphertext && envelope?.iv && envelope?.salt;
+  const plain = envelope?.plain && typeof envelope.plain === 'object';
+  if (!envelope || envelope.v !== 1 || (!encrypted && !plain)) {
     throw new SyncFail('error', 'bad-envelope');
   }
   return { kind: 'blob', envelope, revision: revisionOf(res) };
@@ -390,12 +414,13 @@ function reconcile(gid, remote, rid) {
 // --- the flow ---
 
 async function runSync(gid, cfg, keyMaterial) {
-  const { pass } = keyMaterial;
+  const plainMode = cfg.plain === true;
+  const pass = keyMaterial?.pass;
   // the blob's address on the server — the paired device's local id and the
   // blob id differ, and the wire only ever sees the latter
   const rid = cfg.remoteId ?? gid;
   let rev = cfg.rev ?? 0;
-  let salt = keyMaterial.salt || null;
+  let salt = keyMaterial?.salt || null;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     // only the first round may be answered with 304: after a 409 our
@@ -404,19 +429,28 @@ async function runSync(gid, cfg, keyMaterial) {
     const got = await pull(cfg, rid, attempt === 0 ? rev : 0);
     let remote = null;
     if (got.kind === 'blob') {
-      salt = got.envelope.salt; // the per-gym salt lives in the envelope
       rev = got.revision;
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        remote = await decryptEnvelope(got.envelope, pass);
-      } catch {
-        throw new SyncFail('decrypt');
+      // the mode is per blob and travels in the sync code — a client whose
+      // config disagrees with the envelope must say so, not guess
+      if (plainMode !== !!got.envelope.plain) {
+        throw new SyncFail('error', 'mode-mismatch');
+      }
+      if (plainMode) {
+        remote = got.envelope.plain;
+      } else {
+        salt = got.envelope.salt; // the per-gym salt lives in the envelope
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          remote = await decryptEnvelope(got.envelope, pass);
+        } catch {
+          throw new SyncFail('decrypt');
+        }
       }
     } else if (got.kind === 'absent') {
       rev = 0;
     }
     // a device that paired but never pulled a blob has no salt yet
-    if (!salt) salt = bytesToB64(randomBytes(SALT_BYTES));
+    if (!plainMode && !salt) salt = bytesToB64(randomBytes(SALT_BYTES));
 
     const payload = reconcile(gid, remote, rid);
     // 304 says the blob is unchanged since our last pull, not that our
@@ -425,7 +459,9 @@ async function runSync(gid, cfg, keyMaterial) {
     if (remote && same(payload, remote)) return { rev, salt };
 
     // eslint-disable-next-line no-await-in-loop
-    const envelope = await encryptPayload(payload, pass, salt, rid);
+    const envelope = plainMode
+      ? { v: 1, gymId: rid, plain: payload }
+      : await encryptPayload(payload, pass, salt, rid);
     // eslint-disable-next-line no-await-in-loop
     const put = await push(cfg, rid, rev, envelope);
     if (put.kind === 'ok') return { rev: put.revision, salt };
@@ -444,6 +480,7 @@ export function getSyncState(gid) {
   return {
     configured: true,
     server: cfg.server,
+    plain: cfg.plain === true, // unencrypted mode — the card must say so
     lastSyncAt: cfg.lastSyncAt ?? null,
     lastError: cfg.lastError ?? null,
   };
@@ -460,7 +497,7 @@ export async function syncNow(gid) {
     const current = getSyncConfig(gid);
     if (current) saveSyncConfig(gid, { ...current, ...patch });
   };
-  if (!keyMaterial?.pass) {
+  if (!cfg.plain && !keyMaterial?.pass) {
     record({ lastError: 'no-key' });
     return { status: 'error', detail: 'no-key' };
   }
@@ -470,7 +507,7 @@ export async function syncNow(gid) {
   }
   try {
     const { rev, salt } = await runSync(gid, cfg, keyMaterial);
-    if (salt !== keyMaterial.salt) saveSyncKey(gid, { ...keyMaterial, salt });
+    if (keyMaterial && salt !== keyMaterial.salt) saveSyncKey(gid, { ...keyMaterial, salt });
     record({ rev, lastSyncAt: Date.now(), lastError: null });
     return { status: 'synced' };
   } catch (e) {
@@ -483,22 +520,43 @@ export async function syncNow(gid) {
 
 // First device: mint the passphrase and the per-gym salt, then sync once so
 // the blob exists. The code is shown ONCE — there is no recovery.
-export async function enableSync(gid, { server, token } = {}) {
+// `plain: true` is the explicit unencrypted mode for a page the browser
+// serves without a secure context (plain-http docker-net, no TLS): E2E is
+// impossible there, so the server stores readable blobs — the user's own
+// server, the user's explicit call. Where crypto works, plain is refused:
+// a downgrade must never sit next to working encryption.
+export async function enableSync(gid, { server, token, plain } = {}) {
   const gym = getGyms().list.find((g) => g.id === gid);
   if (!gym) throw new Error('unknown-gym');
   if (gym.demo) throw new Error('demo-gym'); // sync-plan decision 10
   // A bare domain means https — the reference deployment fronts the server
   // with a real certificate, and the https-served app cannot reach plain
   // http anyway (mixed content). An explicit scheme is respected: that is
-  // what keeps http://localhost working for dev and same-origin setups.
+  // what keeps http://localhost and the same-origin docker-net setup working.
   const raw = String(server ?? '').trim().replace(/\/+$/, '');
   const url = !raw ? '' : (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
   const bearer = String(token ?? '').trim();
   if (!url || !bearer) throw new Error('bad-server');
-  saveSyncKey(gid, { v: 1, pass: generatePassphrase(), salt: bytesToB64(randomBytes(SALT_BYTES)) });
-  saveSyncConfig(gid, {
-    v: 1, server: url, token: bearer, remoteId: gid, rev: 0, lastSyncAt: null, lastError: null,
-  });
+  if (plain === true && e2eAvailable()) throw new Error('crypto-available');
+  if (plain !== true && !e2eAvailable()) throw new Error('no-crypto');
+  if (plain === true) {
+    saveSyncKey(gid, null);
+    saveSyncConfig(gid, {
+      v: 1,
+      server: url,
+      token: bearer,
+      remoteId: gid,
+      plain: true,
+      rev: 0,
+      lastSyncAt: null,
+      lastError: null,
+    });
+  } else {
+    saveSyncKey(gid, { v: 1, pass: generatePassphrase(), salt: bytesToB64(randomBytes(SALT_BYTES)) });
+    saveSyncConfig(gid, {
+      v: 1, server: url, token: bearer, remoteId: gid, rev: 0, lastSyncAt: null, lastError: null,
+    });
+  }
   return { code: getSyncCode(gid), sync: await syncNow(gid) };
 }
 
@@ -512,12 +570,31 @@ export async function pairWithCode(gid, code) {
   if (!gym) throw new Error('unknown-gym');
   if (gym.demo) throw new Error('demo-gym');
   const {
-    server, token, pass, gymId,
+    server, token, pass, gymId, plain,
   } = parseSyncCode(code);
-  saveSyncKey(gid, { v: 1, pass, salt: null });
-  saveSyncConfig(gid, {
-    v: 1, server, token, remoteId: gymId, rev: 0, lastSyncAt: null, lastError: null,
-  });
+  // The mode was decided when the blob was first enabled and travels in the
+  // code: a plain code pairs plain even on a secure page (the blob IS
+  // readable — pretending otherwise here would be theater), and an E2E code
+  // cannot pair where the browser refuses crypto.
+  if (!plain && !e2eAvailable()) throw new Error('no-crypto');
+  if (plain) {
+    saveSyncKey(gid, null);
+    saveSyncConfig(gid, {
+      v: 1,
+      server,
+      token,
+      remoteId: gymId,
+      plain: true,
+      rev: 0,
+      lastSyncAt: null,
+      lastError: null,
+    });
+  } else {
+    saveSyncKey(gid, { v: 1, pass, salt: null });
+    saveSyncConfig(gid, {
+      v: 1, server, token, remoteId: gymId, rev: 0, lastSyncAt: null, lastError: null,
+    });
+  }
   return { code: getSyncCode(gid), sync: await syncNow(gid) };
 }
 

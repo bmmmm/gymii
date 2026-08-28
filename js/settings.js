@@ -10,6 +10,7 @@ import {
 import { loadDemoData } from './demo.js';
 import {
   getSyncState, getSyncCode, enableSync, pairWithCode, syncNow, disableSync,
+  e2eAvailable,
 } from './sync.js';
 
 // --- the Sync card (M1, docs/sync-plan.md) ---
@@ -37,43 +38,72 @@ const SYNC_ERRORS = {
   'bad-code': 'That is not a gymii sync code — copy the whole line, it starts with "gymii-sync:v1:".',
   'demo-gym': 'The demo gym never syncs.',
   'unknown-gym': 'This gym is gone — switch gyms and try again.',
+  'no-crypto': 'This code is for an encrypted gym, and this page runs without HTTPS, '
+    + 'so the browser refuses to decrypt here. Open gymii over HTTPS (or localhost) to pair it.',
+  'crypto-available': 'This page can encrypt — unencrypted sync is only offered where it cannot.',
 };
 
 const syncErrorText = (err, prefix) => SYNC_ERRORS[err?.message] ?? `${prefix}: ${err?.message}`;
 
 // The code plus the one warning that has to sit next to it, never a screen
-// away: this string is the account.
-const codeBlock = (code) => `
+// away: this string is the account. The unencrypted variant warns about the
+// right thing — there is no key, but the code still opens the account.
+const codeBlock = (code, plain) => `
   <code id="sync-code-out" class="synccode">${esc(code)}</code>
   <button id="sync-copy" class="btn">Copy sync code</button>
-  <div class="notice">Keep this somewhere safe now — a password manager, or on paper.
+  <div class="notice">${plain
+    ? `Keep this somewhere safe now — a password manager, or on paper. Anyone who
+    has it can read and change this gym's sync data on your server. And remember:
+    this sync is unencrypted — the server itself stores your data readably.`
+    : `Keep this somewhere safe now — a password manager, or on paper.
     It is the only key to this gym's encrypted data: anyone who has it can read the
     sync, nobody without it can (not whoever runs the server, not us). Lose every
-    paired device and the code, and the data is gone. There is no recovery.</div>`;
+    paired device and the code, and the data is gone. There is no recovery.`}</div>`;
 
 function syncCard(gym, shownCode) {
   const state = getSyncState(gym.id);
   if (!state.configured) {
-    return `
-    <section class="card">
-      <h2>Sync</h2>
-      <p class="muted">Sync is off. Turn it on and this gym — floor plan, workouts and
+    // No secure context (a plain-http page, e.g. the one-container setup on
+    // a LAN address) means the browser refuses crypto.subtle: E2E cannot
+    // run here, so the card offers the one thing that can — unencrypted
+    // sync, named as exactly that. Where crypto works, this variant never
+    // renders: a downgrade must not sit next to working encryption.
+    const plain = !e2eAvailable();
+    const intro = plain
+      ? `<p class="muted">This page runs without HTTPS, so the browser refuses to
+        encrypt here. Sync can still run <strong>unencrypted</strong>: this gym —
+        floor plan, workouts and plans — is stored readably on the sync server you
+        run yourself. On your own box in your own network that can be a fine
+        trade; it is your server and your call. Opt-in per gym: this switches on
+        "${esc(gym.name)}" alone. Serve gymii over HTTPS (or localhost) and this
+        same card offers end-to-end encryption instead.</p>`
+      : `<p class="muted">Sync is off. Turn it on and this gym — floor plan, workouts and
         plans — is encrypted on this device before it leaves it, and stored on a sync
         server you run yourself; the server only ever holds the encrypted blob. Opt-in
         per gym: this switches on "${esc(gym.name)}" alone. You get one sync code, and
         it is the only key — there is no recovery, and nobody can bring the data back
-        without it, us included. Export and import keep working without any of this.</p>
+        without it, us included. Export and import keep working without any of this.</p>`;
+    const serverHelp = plain
+      ? `<p class="muted">Just the domain — https is assumed. On a plain-http setup
+        like this one, type the scheme out: http://your-server:8639.</p>`
+      : `<p class="muted">Just the domain — https is assumed. An explicit http://
+        works only when gymii itself is served without https (see the note this
+        card shows there) or for localhost.</p>`;
+    return `
+    <section class="card">
+      <h2>Sync</h2>
+      ${intro}
       <label class="field-block"><span>Server</span>
         <div class="row"><input id="sync-server" type="text" autocomplete="off"
-          placeholder="sync.example.org"></div>
-        <p class="muted">Just the domain — https is assumed. An explicit
-          http:// works only for localhost setups.</p>
+          placeholder="${plain ? 'http://your-server:8639' : 'sync.example.org'}"></div>
+        ${serverHelp}
       </label>
       <label class="field-block"><span>Token</span>
         <div class="row"><input id="sync-token" type="text" autocomplete="off"
           placeholder="printed by your sync server"></div>
       </label>
-      <button id="sync-enable" class="btn btn-primary">Turn on sync</button>
+      <button id="sync-enable" class="btn btn-primary">${plain
+    ? 'Turn on unencrypted sync' : 'Turn on sync'}</button>
       <p id="sync-msg" class="muted" role="status"></p>
       <div class="field-block"><span>Have a sync code?</span>
         <div class="row">
@@ -91,6 +121,8 @@ function syncCard(gym, shownCode) {
       <h2>Sync</h2>
       <div class="spread"><span class="muted">Server</span>
         <span class="sync-val">${esc(state.server)}</span></div>
+      ${state.plain ? `<div class="spread"><span class="muted">Mode</span>
+        <span class="sync-val">Unencrypted — the server stores this gym readably</span></div>` : ''}
       <div class="spread"><span class="muted">Last sync</span>
         <span class="sync-val">${state.lastSyncAt
     ? `${fmtDate(state.lastSyncAt)} · ${fmtTime(state.lastSyncAt)}` : 'never'}</span></div>
@@ -98,10 +130,11 @@ function syncCard(gym, shownCode) {
         <span class="sync-val">${esc(state.lastError)}</span></div>` : ''}
       <button id="sync-now" class="btn btn-primary">Sync now</button>
       <p id="sync-msg" class="muted" role="status"></p>
-      ${shownCode ? codeBlock(shownCode)
+      ${shownCode ? codeBlock(shownCode, state.plain)
     : '<button id="sync-show-code" class="btn">Show sync code</button>'}
       <button id="sync-off" class="btn btn-danger">Turn off sync</button>
-      <p class="muted">Turning sync off removes the server, the token and the key from
+      <p class="muted">Turning sync off removes the ${state.plain
+    ? 'server and the token' : 'server, the token and the key'} from
         this device only. Your floor plan, workouts and plans stay exactly where they
         are.</p>
     </section>`;
@@ -361,6 +394,9 @@ export function renderSettings(root) {
       const { code, sync } = await enableSync(gid, {
         server: root.querySelector('#sync-server').value,
         token: root.querySelector('#sync-token').value,
+        // the card only renders its unencrypted variant when crypto.subtle
+        // is missing — this flag simply says which card the user pressed
+        plain: !e2eAvailable(),
       });
       codeOnce = code; // the code block only exists after the re-render
       renderSettings(root);

@@ -180,8 +180,17 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   id, the store only ever sees the local one. Config lives in
   `gymii.<gid>.sync`, key material in `gymii.<gid>.synckey` — both wiped
   with the gym and NEVER in a backup (test-pinned). The demo gym never
-  syncs. M1 limit, deliberate: a local gym deletion is not yet mirrored
-  via DELETE (M2 — the other device would re-push it).
+  syncs. PLAIN MODE (decision 15): pages without a secure context have no
+  `crypto.subtle`, so `enableSync(gid, {…, plain: true})` runs sync
+  unencrypted — envelope `{v:1, gymId, plain: <payload>}`, sync code
+  carries `plain: true` and no passphrase, no synckey is stored. The mode
+  is explicit on both ends: `no-crypto` (nothing silently unencrypted),
+  `crypto-available` (no downgrade where E2E works), `mode-mismatch`
+  (client mode vs envelope shape). The Settings card renders its
+  unencrypted variant exactly when `e2eAvailable()` is false; pairing
+  follows the code's mode either way. M1 limit, deliberate: a local gym
+  deletion is not yet mirrored via DELETE (M2 — the other device would
+  re-push it).
 - `js/app.js` — hash-router, renders views into `#view`. The `#gym`
   route is deliberately NOT in the tabbar (the map is a setup tool, not a
   daily surface — user decision); it is reached via links in onboarding,

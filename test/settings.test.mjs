@@ -214,4 +214,35 @@ assert.ok(root.innerHTML.includes('Turn on sync'), 'the card is back in its unco
 assert.ok(!root.innerHTML.includes('Sync now'), 'with nothing left to sync');
 assert.ok(!root.innerHTML.includes('class="synccode"'), 'and no key on screen');
 
+// --- the unencrypted variant renders only where the browser cannot encrypt ---
+// (plain-http docker-net setups: crypto.subtle is missing there, and the
+// card must name the trade instead of hiding it — sync-plan decision 15)
+
+server.blob = null;
+server.revision = 0;
+store.setActiveGym(realId);
+const realCrypto = globalThis.crypto;
+Object.defineProperty(globalThis, 'crypto', {
+  configurable: true,
+  value: { getRandomValues: realCrypto.getRandomValues.bind(realCrypto) },
+});
+try {
+  renderSettings(root);
+  assert.ok(root.innerHTML.includes('Turn on unencrypted sync'),
+    'the insecure page names the trade on the button itself');
+  assert.match(root.innerHTML, /refuses to\s+encrypt/, 'and says why encryption is off the table');
+
+  root.querySelector('#sync-server').value = 'http://box:8639';
+  root.querySelector('#sync-token').value = 'tok-plain';
+  await root.querySelector('#sync-enable').listeners.click();
+  assert.ok(server.blob && !server.blob.ciphertext && server.blob.plain,
+    'the pushed envelope is the readable payload, not ciphertext');
+  assert.match(root.innerHTML, /Unencrypted — the server stores this gym readably/,
+    'the configured card states the mode');
+  assert.match(root.innerHTML, /read and change/,
+    'the code warning warns about access — there is no key to warn about');
+} finally {
+  Object.defineProperty(globalThis, 'crypto', { configurable: true, value: realCrypto });
+}
+
 console.log('settings sync card: all assertions passed');

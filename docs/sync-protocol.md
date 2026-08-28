@@ -103,6 +103,23 @@ settings, plus the sync-relevant sidecars:
 - `gym` is the LAYOUT (the frozen backup wire field — see AGENTS.md's
   naming note); `gymEntry` is the registry entry riding next to it. The
   first draft used the key `gym` for both, which JSON cannot hold.
+- **Plain-mode outer envelope** (sync-plan decision 15 — the explicit
+  unencrypted mode for pages the browser serves without a secure context,
+  where `crypto.subtle` does not exist):
+
+  ```json
+  { "v": 1, "gymId": "…", "plain": { …the inner envelope, readable… } }
+  ```
+
+  There is no key material at all in this mode. The sync code names it —
+  `{ server, token, gymId, plain: true }`, no passphrase — and pairing
+  follows the code: a plain code pairs plain even on a secure page (the
+  blob IS readable; pretending otherwise would be theater), while an E2E
+  code refuses to pair where crypto is unavailable (`no-crypto`). A client
+  whose configured mode disagrees with the envelope it pulls fails with
+  `mode-mismatch` instead of guessing, and a downgrade is refused where
+  crypto works (`crypto-available`). The server treats both shapes as the
+  same opaque JSON.
 - `userSettings` carries ONLY the user-scoped fields (`USER_SETTINGS` in
   `js/merge.js`); device-scoped settings never leave the device.
 - **Unit normalization**: weights/distances are stored in the display unit,

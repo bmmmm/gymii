@@ -4,8 +4,10 @@ gymii is a local-first PWA: no server, no accounts, no network calls beyond
 fetching its own static files — unless you turn on cross-device sync. Sync
 is opt-in and end-to-end encrypted (AES-256-GCM) in the browser before
 anything is sent; the self-hosted server stores nothing but ciphertext.
-Your data lives in your browser's `localStorage` and never leaves
-unencrypted.
+One explicit exception: on a page served over plain http the browser
+refuses WebCrypto, and gymii offers a clearly-labeled unencrypted mode
+there — chosen by the user, never silent, meant for a server they run in
+their own network. Everywhere else, data never leaves unencrypted.
 
 ## Report privately
 

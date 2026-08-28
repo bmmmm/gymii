@@ -69,9 +69,13 @@ show up on plain reload. No build step, no dependencies, no `node_modules`.
 
 ## Your data
 
-localStorage, under `gymii.*` keys. Nothing leaves the browser unencrypted,
-and nothing leaves at all unless you turn on sync — until then, export a
-backup before you switch devices or browsers.
+localStorage, under `gymii.*` keys. Nothing leaves the browser unless you
+turn on sync, and sync is end-to-end encrypted wherever the browser allows
+it. The one exception is explicit: served over plain http (your own server
+in your own network), the browser refuses crypto entirely — gymii then
+offers sync only as a clearly-labeled unencrypted mode, never silently.
+Until you turn anything on, export a backup before you switch devices or
+browsers.
 
 ## Contributing
 

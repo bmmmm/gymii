@@ -439,4 +439,85 @@ assert.ok(srv.log[0].url.startsWith('http://localhost:8639/v1/gyms/'),
 await assert.rejects(() => sync.enableSync(gid, { server: '   ', token: 'tok-12' }),
   /bad-server/, '12: whitespace is not a server');
 
+// --- 13. the explicit unencrypted mode (plain-http docker-net setups) ---
+// crypto.subtle only exists in secure contexts; on a plain-http page the
+// browser refuses E2E. The mode is explicit on both ends: never silently
+// unencrypted, never a downgrade where crypto works, and the envelope/code
+// both say what they are.
+const realCrypto = globalThis.crypto;
+const insecureContext = () => Object.defineProperty(globalThis, 'crypto', {
+  configurable: true,
+  value: { getRandomValues: realCrypto.getRandomValues.bind(realCrypto) },
+});
+const secureContext = () => Object.defineProperty(globalThis, 'crypto', {
+  configurable: true, value: realCrypto,
+});
+
+devices.F = new Map();
+useDevice('F');
+seedRegistry();
+store.savePlans([{
+  id: 'pF', name: 'Visible plan', createdAt: 500, updatedAt: 500, items: [],
+}]);
+srv = fakeServer();
+assert.equal(sync.e2eAvailable(), true, '13: secure context detected');
+await assert.rejects(() => sync.enableSync(gid, { server: 'http://box:8639', token: 't', plain: true }),
+  /crypto-available/, '13: no downgrade next to working crypto');
+
+insecureContext();
+try {
+  assert.equal(sync.e2eAvailable(), false, '13: insecure context detected');
+  await assert.rejects(() => sync.enableSync(gid, { server: 'http://box:8639', token: 't' }),
+    /no-crypto/, '13: nothing goes unencrypted silently');
+  const plainEnable = await sync.enableSync(gid, {
+    server: 'http://box:8639', token: 'tok-13', plain: true,
+  });
+  assert.equal(plainEnable.sync.status, 'synced', '13: plain enable syncs');
+  assert.equal(srv.blob.ciphertext, undefined, '13: no ciphertext in the plain envelope');
+  assert.equal(srv.blob.plain.kind, 'sync-gym', '13: the payload rides readably');
+  assert.ok(srv.log.some((r) => String(r.body).includes('Visible plan')),
+    '13: readable on the wire — that is the stated trade');
+  const parsedPlain = JSON.parse(
+    Buffer.from(plainEnable.code.slice('gymii-sync:v1:'.length), 'base64url').toString());
+  assert.equal(parsedPlain.plain, true, '13: the code names the mode');
+  assert.equal(parsedPlain.pass, undefined, '13: and carries no passphrase');
+  assert.equal(sync.getSyncState(gid).plain, true, '13: state reports the mode');
+  assert.equal(store.getSyncKey(gid), null, '13: no key material is stored');
+
+  // an E2E code cannot pair where the browser refuses crypto
+  await assert.rejects(() => sync.pairWithCode(gid, code), /no-crypto/,
+    '13: an encrypted gym needs a secure context');
+
+  // a second insecure device pairs with the plain code and receives data
+  devices.G = new Map();
+  useDevice('G');
+  seedRegistry();
+  const pairedPlain = await sync.pairWithCode(gid, plainEnable.code);
+  assert.equal(pairedPlain.sync.status, 'synced', '13: plain pairing syncs');
+  assert.ok(store.getPlans().some((p) => p.name === 'Visible plan'), "13: F's plan arrived on G");
+
+  // a client whose mode disagrees with the blob says so instead of guessing
+  srv.blob = {
+    v: 1, gymId: gid, salt: 'c2FsdA==', iv: 'aXYxMjM0NTY3OA==', ciphertext: 'Y3Q=',
+  };
+  srv.revision += 1;
+  const mismatch = await sync.syncNow(gid);
+  assert.equal(mismatch.status, 'error', '13: mode mismatch is an error');
+  assert.equal(mismatch.detail, 'mode-mismatch');
+} finally {
+  secureContext();
+}
+
+// the mode follows the blob: a plain code pairs plain even on a secure page
+devices.H = new Map();
+useDevice('H');
+seedRegistry();
+srv = fakeServer();
+const plainCode = `gymii-sync:v1:${Buffer.from(JSON.stringify({
+  server: 'http://box:8639', token: 'tok-13', gymId: gid, plain: true,
+})).toString('base64url')}`;
+const pairedSecure = await sync.pairWithCode(gid, plainCode);
+assert.equal(pairedSecure.sync.status, 'synced', '13: plain code pairs on a secure page too');
+assert.equal(sync.getSyncState(gid).plain, true, '13: and stays honestly plain');
+
 console.log('sync client: all assertions passed');

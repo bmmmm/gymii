@@ -89,10 +89,12 @@ option, never a requirement.
      too — the server must answer the PNA preflight
      (`Access-Control-Allow-Private-Network: true`) next to its CORS
      headers.
-  3. Plain `http://<lan-ip>` without either only works when the app is
-     served from that same origin AND the browser grants no-crypto…
-     it doesn't (`crypto.subtle` missing) — so E2E makes option 1 or 2
-     effectively mandatory. Documented, not left to be discovered.
+  3. Plain `http://<lan-ip>` same-origin (the no-TLS docker-net setup):
+     `crypto.subtle` is missing there, so E2E cannot run — since decision
+     15 gymii offers the EXPLICIT unencrypted mode for exactly this case
+     (note: no secure context also means no service worker, so no offline
+     app shell — the server has to be reachable). E2E still requires
+     option 1 or 2.
 - **Going public later is a config change, not a code change**: same
   container, a public router rule, `SYNC_ALLOWED_ORIGIN` updated.
 
@@ -133,3 +135,11 @@ option, never a requirement.
     never travel (backups restore content, not identity), so without the
     id in the code a paired device pushed a second blob and never
     converged, while the UI said "Synced."
+15. Unencrypted sync exists as an EXPLICIT mode, offered only where E2E is
+    impossible (2026-08-28 — "not everyone runs split DNS"): a page served
+    without a secure context has no `crypto.subtle`, so the Settings card
+    offers clearly-labeled unencrypted sync there and nowhere else. Nothing
+    goes unencrypted silently (`no-crypto`), no downgrade sits next to
+    working crypto (`crypto-available`), envelope and sync code both name
+    the mode, and mode mismatches error instead of guessing. The privacy
+    claims carry the carve-out honestly (README, SECURITY, meta).
