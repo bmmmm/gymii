@@ -76,7 +76,17 @@ const response = (status, body, revision) => ({
 
 function fakeServer(initial = {}) {
   const s = {
-    blob: null, revision: 0, log: [], mode: null, ignoreIfNoneMatch: false, hook: null, ...initial,
+    blob: null,
+    revision: 0,
+    log: [],
+    mode: null,
+    ignoreIfNoneMatch: false,
+    hook: null,
+    // set `tokens` ([{token, hash, mintedAt, name}]) to arm the M3 token
+    // API plus real bearer checking; null keeps the M1/M2 behavior
+    tokens: null,
+    gymsList: null, // override for GET /v1/gyms (discovery listing)
+    ...initial,
   };
   globalThis.fetch = async (url, opts = {}) => {
     const method = opts.method ?? 'GET';
@@ -85,6 +95,42 @@ function fakeServer(initial = {}) {
     if (s.mode === 'offline') throw new TypeError('fetch failed');
     if (s.mode === 'auth') return response(401);
     if (s.mode === 'boom') return response(500);
+    if (s.tokens) {
+      const holder = s.tokens.find((t) => headers.authorization === `Bearer ${t.token}`);
+      if (!holder) return response(401);
+      if (url.includes('/v1/tokens')) {
+        if (method === 'GET') {
+          return response(200, s.tokens.map(({ token, ...rest }) => ({
+            ...rest, self: token === holder.token,
+          })));
+        }
+        if (method === 'POST') {
+          const body = JSON.parse(opts.body || '{}');
+          const n = s.tokens.length + 1;
+          const t = {
+            token: `minted-${n}`,
+            hash: '0'.repeat(60) + String(n).padStart(4, '0'),
+            mintedAt: `2026-08-31T00:0${n}:00Z`,
+            name: body.name ?? '',
+          };
+          s.tokens.push(t);
+          const { token, ...rest } = t;
+          return response(201, { token, ...rest });
+        }
+        if (method === 'DELETE') {
+          const hash = url.split('/v1/tokens/')[1];
+          const idx = s.tokens.findIndex((t) => t.hash === hash);
+          if (idx === -1) return response(404);
+          if (s.tokens.length === 1) return response(409);
+          s.tokens.splice(idx, 1);
+          return response(204);
+        }
+      }
+      if (method === 'GET' && url.endsWith('/v1/gyms')) {
+        return response(200, s.gymsList
+          ?? (s.blob ? [{ gymId: s.blob.gymId, revision: s.revision, updatedAt: 'x' }] : []));
+      }
+    }
     if (method === 'GET') {
       if (!s.blob) return response(404);
       if (!s.ignoreIfNoneMatch && headers['if-none-match'] === `"${s.revision}"`) {
@@ -616,5 +662,131 @@ await sync.ambientSettled();
 assert.ok(methods(srv).includes('DELETE'), '14: the queued DELETE went out');
 assert.equal(store.getPendingDeletes().length, 0, '14: and left the queue');
 assert.equal(srv.blob, null, '14: the blob is gone from the server');
+
+// --- 15. devices & discovery (M3): per-device tokens, adopt-a-blob ---
+devices.P = new Map();
+useDevice('P');
+seedRegistry();
+srv = fakeServer({
+  tokens: [{
+    token: 'tok-15', hash: 'a'.repeat(64), mintedAt: '2026-08-31T00:00:00Z', name: 'first',
+  }],
+});
+let activity = 0;
+const offActivity = sync.onSyncActivity(() => { activity += 1; });
+const en15 = await sync.enableSync(gid, { server: 'http://sync.local', token: 'tok-15' });
+assert.equal(en15.sync.status, 'synced', '15: setup');
+assert.ok(activity >= 1, '15: sync activity notified');
+store.savePlan({ id: 'p15', name: 'Device plan', items: [] });
+await sync.ambientSettled();
+
+const devicesP = await sync.listDevices(gid);
+assert.equal(devicesP.length, 1, '15: one device');
+assert.equal(devicesP[0].self, true, '15: marked as this device');
+assert.equal(devicesP[0].name, 'first');
+
+// pairing mints a FRESH token — this device's own never leaves it
+const minted = await sync.mintPairingCode(gid, 'phone');
+const parsed15 = JSON.parse(
+  Buffer.from(minted.code.slice('gymii-sync:v1:'.length), 'base64url').toString());
+assert.equal(parsed15.token, 'minted-2', '15: the code carries the fresh token');
+assert.notEqual(parsed15.token, 'tok-15', '15: never the minting device\'s own');
+assert.ok(parsed15.pass, '15: passphrase rides along (E2E gym)');
+
+devices.Q = new Map();
+useDevice('Q');
+seedRegistry();
+const pairedQ = await sync.pairWithCode(gid, minted.code);
+assert.equal(pairedQ.sync.status, 'synced', '15: fresh token pairs');
+assert.ok(store.getPlans().some((p) => p.name === 'Device plan'), '15: data arrived on Q');
+const devicesQ = await sync.listDevices(gid);
+assert.equal(devicesQ.length, 2, '15: both devices listed');
+assert.equal(devicesQ.find((d) => d.self)?.name, 'phone', '15: self follows the requester');
+
+// revoking Q's token from P cuts Q off — and only Q
+useDevice('P');
+await sync.revokeDevice(gid, devicesQ.find((d) => d.self).hash);
+useDevice('Q');
+const cut = await sync.syncNow(gid);
+assert.equal(cut.status, 'auth', '15: revoked device gets 401');
+useDevice('P');
+assert.equal((await sync.syncNow(gid)).status, 'synced', '15: the other device keeps syncing');
+
+// the last token refuses to die (lockout guard)
+await assert.rejects(() => sync.revokeDevice(gid, 'a'.repeat(64)), /last-token/,
+  '15: the last token is protected');
+
+// discovery: the account's other blobs, minus what is already mapped
+srv.gymsList = [
+  { gymId: gid, revision: srv.revision, updatedAt: 'x' },
+  { gymId: 'otherblob0000001', revision: 3, updatedAt: 'y' },
+];
+const found = await sync.listRemoteGyms(gid);
+assert.deepEqual(found.map((b) => b.gymId), ['otherblob0000001'],
+  '15: only unmapped blobs are listed');
+
+// adopt a PLAIN blob: one tap, no key needed
+const gymCountBefore = store.getGyms().list.length;
+const keepBlob = { blob: srv.blob, revision: srv.revision };
+srv.blob = {
+  v: 1,
+  gymId: 'otherblob0000001',
+  plain: {
+    app: 'gymii',
+    kind: 'sync-gym',
+    v: 1,
+    gym: null,
+    workouts: [],
+    plans: [{
+      id: 'padopt', name: 'Adopted plan', createdAt: 5, updatedAt: 5, items: [],
+    }],
+    tombstones: {
+      workouts: [], plans: [], machines: [], shapes: [],
+    },
+    gymEntry: { id: 'otherblob0000001', name: 'Garage gym', updatedAt: 7 },
+    userSettings: { unit: 'kg', updatedAt: 0 },
+  },
+};
+srv.revision = 3;
+const adopted = await sync.adoptRemoteGym(gid, 'otherblob0000001', null);
+assert.equal(adopted.sync.status, 'synced', '15: plain blob adopts without a key');
+assert.equal(store.getGyms().list.length, gymCountBefore + 1, '15: a new local gym exists');
+useDevice('P'); // adoption switched activeId to the new gym — stay explicit
+store.setActiveGym(adopted.gid);
+assert.ok(store.getPlans().some((p) => p.name === 'Adopted plan'), '15: its data arrived');
+assert.equal(store.getGyms().list.find((g) => g.id === adopted.gid).name, 'Garage gym',
+  '15: the real name arrived with the first pull');
+assert.equal(store.getSyncConfig(adopted.gid).plain, true, '15: mode followed the blob');
+store.setActiveGym(gid);
+
+// adopting an ENCRYPTED blob needs that gym's own passphrase — and a wrong
+// one leaves no local trace
+const encPayload = { ...srv.blob.plain, gymEntry: { id: 'encblob000000001', name: 'Enc gym', updatedAt: 7 } };
+const encSalt = b64(globalThis.crypto.getRandomValues(new Uint8Array(16)));
+srv.blob = await encryptBlob(encPayload, 'right-pass', encSalt, 'encblob000000001');
+srv.revision = 4;
+await assert.rejects(() => sync.adoptRemoteGym(gid, 'encblob000000001', null), /need-pass/,
+  '15: encrypted blob demands the passphrase');
+const before15 = store.getGyms().list.length;
+await assert.rejects(() => sync.adoptRemoteGym(gid, 'encblob000000001', 'wrong-pass'), /decrypt/,
+  '15: wrong passphrase is refused');
+assert.equal(store.getGyms().list.length, before15, '15: and leaves nothing behind');
+const adoptedEnc = await sync.adoptRemoteGym(gid, 'encblob000000001', 'right-pass');
+assert.equal(adoptedEnc.sync.status, 'synced', '15: right passphrase adopts');
+assert.equal(store.getSyncKey(adoptedEnc.gid).pass, 'right-pass', '15: key stored for the new gym');
+
+// health aggregates worst-of across configured gyms
+assert.deepEqual(sync.syncHealth(), { state: 'ok' }, '15: all quiet');
+store.saveSyncConfig(adoptedEnc.gid, {
+  ...store.getSyncConfig(adoptedEnc.gid), syncPending: true,
+});
+assert.deepEqual(sync.syncHealth(), { state: 'pending' }, '15: pending surfaces');
+store.saveSyncConfig(adopted.gid, {
+  ...store.getSyncConfig(adopted.gid), lastError: 'HTTP 500',
+});
+assert.deepEqual(sync.syncHealth(), { state: 'error' }, '15: error beats pending');
+offActivity();
+srv.blob = keepBlob.blob;
+srv.revision = keepBlob.revision;
 
 console.log('sync client: all assertions passed');

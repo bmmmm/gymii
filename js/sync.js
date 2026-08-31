@@ -16,7 +16,7 @@
 // the gym's registry entry travels next to it as `gymEntry`.
 
 import {
-  getGyms, setActiveGym, restoreGymEntry,
+  getGyms, setActiveGym, createGym, restoreGymEntry,
   getLayout, restoreLayout,
   getWorkouts, saveWorkouts,
   getPlans, savePlans,
@@ -139,21 +139,35 @@ async function decryptEnvelope(envelope, pass) {
 // never converge. The paired device keeps its LOCAL gym id and maps to the
 // blob via `remoteId` in the sync config.
 
+// One builder for every code shape — getSyncCode re-shows this device's
+// own credentials, mintPairingCode (M3) wraps a freshly minted token.
+function buildSyncCode({
+  server, token, gymId, pass, plain,
+}) {
+  const body = plain
+    ? JSON.stringify({
+      server, token, gymId, plain: true,
+    })
+    : JSON.stringify({
+      server, token, pass, gymId,
+    });
+  return CODE_PREFIX + b64url(bytesToB64(enc.encode(body)));
+}
+
 export function getSyncCode(gid) {
   const cfg = getSyncConfig(gid);
   if (!cfg) return null;
+  const gymId = cfg.remoteId ?? gid;
   if (cfg.plain) {
-    const body = JSON.stringify({
-      server: cfg.server, token: cfg.token, gymId: cfg.remoteId ?? gid, plain: true,
+    return buildSyncCode({
+      server: cfg.server, token: cfg.token, gymId, plain: true,
     });
-    return CODE_PREFIX + b64url(bytesToB64(enc.encode(body)));
   }
   const key = getSyncKey(gid);
   if (!key?.pass) return null;
-  const body = JSON.stringify({
-    server: cfg.server, token: cfg.token, pass: key.pass, gymId: cfg.remoteId ?? gid,
+  return buildSyncCode({
+    server: cfg.server, token: cfg.token, gymId, pass: key.pass,
   });
-  return CODE_PREFIX + b64url(bytesToB64(enc.encode(body)));
 }
 
 function parseSyncCode(code) {
@@ -532,11 +546,13 @@ export async function syncNow(gid) {
     record({
       rev, lastSyncAt: Date.now(), lastError: null, dirty: false,
     });
+    notifySyncActivity();
     return { status: 'synced' };
   } catch (e) {
     const status = e instanceof SyncFail ? e.status : 'error';
     const detail = (e instanceof SyncFail ? e.detail : e?.message) || undefined;
     record({ lastError: detail || status });
+    notifySyncActivity();
     return detail ? { status, detail } : { status };
   }
 }
@@ -781,4 +797,170 @@ export function initAmbientSync({ editDebounceMs, pullThrottleMs } = {}) {
     window.addEventListener('online', () => ambientOnline());
   }
   return ambientOnline(); // initial kick: sync the active gym, drain the queue
+}
+
+// --- devices & discovery (M3) ---
+// Per-device tokens over the server's /v1/tokens API: pairing mints a
+// FRESH named token for the next device (so revoking one device never cuts
+// off the others), the Devices card lists and revokes them, and discovery
+// lists the account's other blobs — adoptable directly when plain, or by
+// typing that gym's own passphrase (the passphrase is per gym, docs/
+// sync-plan.md; without it an encrypted blob is honestly unreadable).
+
+const syncActivityListeners = new Set();
+
+// Fired after every syncNow outcome (ambient runs included) — the Settings
+// tab badge feeds on this.
+export function onSyncActivity(fn) {
+  syncActivityListeners.add(fn);
+  return () => syncActivityListeners.delete(fn);
+}
+
+function notifySyncActivity() {
+  syncActivityListeners.forEach((fn) => {
+    try { fn(); } catch { /* a listener must never break a sync */ }
+  });
+}
+
+// Worst state across every configured gym: 'error' beats 'pending' beats
+// 'ok'. Gyms without a sync config do not count.
+export function syncHealth() {
+  let state = 'ok';
+  getGyms().list.forEach((g) => {
+    const cfg = getSyncConfig(g.id);
+    if (!cfg) return;
+    if (cfg.lastError) state = 'error';
+    else if (cfg.syncPending === true && state !== 'error') state = 'pending';
+  });
+  return { state };
+}
+
+function requireConfig(gid) {
+  const cfg = getSyncConfig(gid);
+  if (!cfg) throw new Error('not-configured');
+  return cfg;
+}
+
+async function tokenApi(cfg, method, path, body) {
+  const url = `${String(cfg.server).replace(/\/+$/, '')}${path}`;
+  const res = await request(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${cfg.token}`,
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+  guardAuth(res);
+  return res;
+}
+
+// → [{hash, mintedAt, name, self}] — `self` is marked by the server (a
+// plain-mode client has no crypto to hash its own token).
+export async function listDevices(gid) {
+  const cfg = requireConfig(gid);
+  const res = await tokenApi(cfg, 'GET', '/v1/tokens');
+  if (!res.ok) throw new SyncFail('error', `HTTP ${res.status}`);
+  const list = await res.json();
+  if (!Array.isArray(list)) throw new SyncFail('error', 'bad-response');
+  return list;
+}
+
+// Mints a fresh named token and wraps it in a sync code for the NEXT
+// device — this device's own token never leaves this device.
+export async function mintPairingCode(gid, name) {
+  const cfg = requireConfig(gid);
+  const res = await tokenApi(cfg, 'POST', '/v1/tokens', { name: String(name ?? '').trim() });
+  if (res.status !== 201) throw new SyncFail('error', `HTTP ${res.status}`);
+  const minted = await res.json();
+  if (!minted?.token) throw new SyncFail('error', 'bad-response');
+  const gymId = cfg.remoteId ?? gid;
+  if (cfg.plain) {
+    return {
+      code: buildSyncCode({
+        server: cfg.server, token: minted.token, gymId, plain: true,
+      }),
+    };
+  }
+  const key = getSyncKey(gid);
+  if (!key?.pass) throw new Error('no-key');
+  return {
+    code: buildSyncCode({
+      server: cfg.server, token: minted.token, gymId, pass: key.pass,
+    }),
+  };
+}
+
+export async function revokeDevice(gid, hash) {
+  const cfg = requireConfig(gid);
+  const res = await tokenApi(cfg, 'DELETE', `/v1/tokens/${encodeURIComponent(hash)}`);
+  if (res.status === 404) throw new Error('unknown-device');
+  if (res.status === 409) throw new Error('last-token');
+  if (!res.ok && res.status !== 204) throw new SyncFail('error', `HTTP ${res.status}`);
+}
+
+// The account's blobs that no local gym maps to yet (via remoteId).
+export async function listRemoteGyms(gid) {
+  const cfg = requireConfig(gid);
+  const res = await tokenApi(cfg, 'GET', '/v1/gyms');
+  if (!res.ok) throw new SyncFail('error', `HTTP ${res.status}`);
+  const list = await res.json();
+  if (!Array.isArray(list)) throw new SyncFail('error', 'bad-response');
+  const known = new Set();
+  getGyms().list.forEach((g) => {
+    const c = getSyncConfig(g.id);
+    if (c) known.add(c.remoteId ?? g.id);
+  });
+  return list.filter((b) => !known.has(b.gymId));
+}
+
+// Adopt one of those blobs as a new local gym. The probe runs BEFORE any
+// local state exists: a wrong passphrase leaves nothing behind. The mode
+// follows the blob (plain adopts without a pass), same rule as pairing.
+export async function adoptRemoteGym(gid, remoteGymId, pass) {
+  const cfg = requireConfig(gid);
+  const got = await pull(cfg, remoteGymId, 0);
+  if (got.kind !== 'blob') throw new Error('gone');
+  const isPlain = !!got.envelope.plain;
+  if (!isPlain) {
+    if (!pass) throw new Error('need-pass');
+    if (!e2eAvailable()) throw new Error('no-crypto');
+    try {
+      await decryptEnvelope(got.envelope, String(pass).trim());
+    } catch {
+      throw new Error('decrypt');
+    }
+  }
+  // the placeholder name lasts exactly one sync: the first pull applies
+  // the blob's gymEntry through restoreGymEntry. createGym stamps NOW,
+  // which would make the placeholder beat the blob's real name in the
+  // LWW merge (and push it back out!) — re-stamp it to epoch 0 so any
+  // remote name wins.
+  const newGid = createGym('Synced gym');
+  restoreGymEntry({ id: newGid, name: 'Synced gym', updatedAt: 0 });
+  if (isPlain) {
+    saveSyncKey(newGid, null);
+    saveSyncConfig(newGid, {
+      v: 1,
+      server: cfg.server,
+      token: cfg.token,
+      remoteId: remoteGymId,
+      plain: true,
+      rev: 0,
+      lastSyncAt: null,
+      lastError: null,
+    });
+  } else {
+    saveSyncKey(newGid, { v: 1, pass: String(pass).trim(), salt: null });
+    saveSyncConfig(newGid, {
+      v: 1,
+      server: cfg.server,
+      token: cfg.token,
+      remoteId: remoteGymId,
+      rev: 0,
+      lastSyncAt: null,
+      lastError: null,
+    });
+  }
+  return { gid: newGid, sync: await syncNow(newGid) };
 }

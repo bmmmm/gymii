@@ -85,8 +85,24 @@ ambient layer; deletion deliberately does not propagate to other devices).
 Proven against the live nutc server both ways, including the live DELETE →
 404. Also fixed: a backup of a layout-less gym (`gym: null`) now imports.
 
+Shipped 2026-08-31 — sync M3, pairing polish: per-device tokens (pairing
+mints a fresh named token over the new `/v1/tokens` API; a device's own
+token never leaves it; revocation per device with a last-token lockout
+guard), the Devices list, QR pairing (hand-written zero-dep encoder in
+`js/qr.js`, mutation-tested 28/28 and bit-for-bit against two independent
+oracles; the QR wraps `<app-url>#pair=<code>` — the camera opens gymii
+with the field prefilled, the fragment is scrubbed from history, pairing
+still needs the tap), gym discovery with full adoption (plain one-tap,
+encrypted by that gym's own passphrase, wrong keys leave no trace), and
+the Settings-tab sync badge. Proven live against nutc end-to-end;
+QR/#pair/badge verified in a real browser. All three sync milestones
+(M1-M3) are now done — M4 (live workout handoff) stays deliberately
+on-demand only.
+
 ## Open
 
+- **Scan a pairing QR with a real phone camera once** — the only step no
+  automation can take; everything up to the prefilled field is verified.
 - **Verify the issue forms in a signed-in browser.** The chooser
   (`/issues/new/choose`) should show four forms + two contact links with
   "Blank issue" as maintainers-only, and the template form must block

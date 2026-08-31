@@ -28,6 +28,39 @@ const response = (status, body, revision) => ({
 globalThis.fetch = async (url, opts = {}) => {
   if (server.mode === 'offline') throw new TypeError('fetch failed');
   const method = opts.method ?? 'GET';
+  // M3 token API — armed by setting server.tokens ([{token, hash, ...}])
+  if (server.tokens && url.includes('/v1/tokens')) {
+    if (method === 'GET') {
+      const auth = opts.headers?.Authorization ?? '';
+      return response(200, server.tokens.map(({ token, ...rest }) => ({
+        ...rest, self: auth === `Bearer ${token}`,
+      })));
+    }
+    if (method === 'POST') {
+      const n = server.tokens.length + 1;
+      const t = {
+        token: `minted-${n}`,
+        hash: '0'.repeat(60) + String(n).padStart(4, '0'),
+        mintedAt: '2026-08-31T00:00:00Z',
+        name: JSON.parse(opts.body || '{}').name ?? '',
+      };
+      server.tokens.push(t);
+      const { token, ...rest } = t;
+      return response(201, { token, ...rest });
+    }
+    if (method === 'DELETE') {
+      const hash = url.split('/v1/tokens/')[1];
+      const idx = server.tokens.findIndex((t) => t.hash === hash);
+      if (idx === -1) return response(404);
+      if (server.tokens.length === 1) return response(409);
+      server.tokens.splice(idx, 1);
+      return response(204);
+    }
+  }
+  if (server.tokens && method === 'GET' && url.endsWith('/v1/gyms')) {
+    return response(200, server.blob
+      ? [{ gymId: server.blob.gymId, revision: server.revision, updatedAt: 'x' }] : []);
+  }
   if (method === 'GET') {
     return server.blob ? response(200, server.blob, server.revision) : response(404);
   }
@@ -52,7 +85,7 @@ Object.defineProperty(globalThis.navigator, 'clipboard', {
 });
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
-const { renderSettings } = await import(new URL('../js/settings.js', import.meta.url).href);
+const { renderSettings, setPendingPairCode } = await import(new URL('../js/settings.js', import.meta.url).href);
 
 // --- DOM stubs: stable per selector, stateful classList for the two-tap ---
 // The stub answers EVERY selector, rendered or not (AGENTS.md), so every
@@ -244,5 +277,62 @@ try {
 } finally {
   Object.defineProperty(globalThis, 'crypto', { configurable: true, value: realCrypto });
 }
+
+// --- M3: pair-another-device (QR), devices list, discovery, #pair handoff ---
+
+// fresh E2E setup with the token API armed
+store.setActiveGym(realId);
+store.saveSyncConfig(realId, null);
+store.saveSyncKey(realId, null);
+server.blob = null;
+server.revision = 0;
+server.tokens = [{
+  token: 'tok-m3', hash: 'b'.repeat(64), mintedAt: '2026-08-30T00:00:00Z', name: 'first',
+}];
+renderSettings(root);
+root.querySelector('#sync-server').value = 'sync.example.org';
+root.querySelector('#sync-token').value = 'tok-m3';
+await root.querySelector('#sync-enable').listeners.click();
+assert.ok(root.innerHTML.includes('Pair another device'), 'm3: configured card offers pairing');
+assert.ok(root.innerHTML.includes('Other gyms on this server'), 'm3: and discovery');
+
+// minting shows QR + code once; the code carries the FRESH token
+await root.querySelector('#sync-pair-new').listeners.click();
+assert.ok(root.innerHTML.includes('sync-qr') && root.innerHTML.includes('<svg'),
+  'm3: the pairing code renders as a QR');
+const mintedCode = JSON.parse(Buffer.from(
+  root.innerHTML.match(/gymii-sync:v1:([A-Za-z0-9_-]+)/)[1], 'base64url').toString());
+assert.equal(mintedCode.token, 'minted-2', 'm3: the QR code carries the fresh token');
+renderSettings(root);
+assert.ok(!root.innerHTML.includes('sync-qr'), 'm3: shown once — the next render clears it');
+
+// devices list marks this device and loads on open
+const devicesEl = root.querySelector('#sync-devices');
+devicesEl.open = true;
+await devicesEl.listeners.toggle();
+const devicesHtml = root.querySelector('#sync-devices-body').innerHTML;
+assert.ok(devicesHtml.includes('first · this device'), 'm3: self is marked');
+assert.ok(devicesHtml.includes('data-revoke'), 'm3: other devices get a revoke button');
+
+// discovery: nothing foreign on the server → says so honestly
+const discoverEl = root.querySelector('#sync-discover');
+discoverEl.open = true;
+await discoverEl.listeners.toggle();
+assert.ok(root.querySelector('#sync-discover-body').innerHTML.includes('already on this device'),
+  'm3: an all-known server reads as done, not empty');
+
+// #pair handoff: configured gym says why it cannot pair; unconfigured prefills
+setPendingPairCode('gymii-sync:v1:handoff');
+renderSettings(root);
+assert.ok(root.querySelector('#sync-msg').textContent.includes('already syncs'),
+  'm3: a configured gym explains instead of failing');
+store.saveSyncConfig(realId, null);
+store.saveSyncKey(realId, null);
+setPendingPairCode('gymii-sync:v1:handoff');
+renderSettings(root);
+assert.equal(root.querySelector('#sync-code').value, 'gymii-sync:v1:handoff',
+  'm3: an unconfigured gym prefills the pairing field');
+assert.ok(root.querySelector('#sync-msg').textContent.includes('tap Pair'),
+  'm3: and never auto-pairs');
 
 console.log('settings sync card: all assertions passed');

@@ -84,6 +84,23 @@ body {
 #tabbar a.active { color: var(--accent); }
 #tabbar a.active .tab-icon { background: var(--accent-dim); }
 
+/* Sync state on the Settings tab (M3): a dot means "look here" — accent
+   while offline edits wait for a retry, danger once a sync actually
+   failed. Sits on the icon, ringed by the surface so it reads on both
+   the plain and the active-pill background. */
+.tab-icon { position: relative; }
+.tab-badge {
+  position: absolute;
+  top: -2px;
+  right: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+}
+.tab-badge.error { background: var(--danger); }
+
 /* --- typography & layout bits --- */
 
 h1 { font-size: 22px; margin: 10px 0 16px; }

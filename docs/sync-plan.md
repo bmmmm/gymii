@@ -49,10 +49,18 @@ never order anything at the protocol level. Pairing a second device is one
   deletion queues the blob's `DELETE`. Deletion does NOT propagate — a
   paired device that still wants the gym re-pushes and keeps it
   (account-level registry is M3).
-- **M3 — pairing polish**: QR code, device list + token revocation,
-  gym discovery on a fresh device (listing the account's other blobs via
-  `GET /v1/gyms`; single-gym pairing already works — the sync code carries
-  the blob's gymId), a failure badge on the Settings tab.
+- **M3 — pairing polish (DONE 2026-08-31 — proven against the live nutc
+  server: mint→pair with a fresh token, revoke→401 for exactly that
+  device, last-token 409, discovery + adopt-by-passphrase both ways;
+  QR/#pair/badge browser-verified)**: QR pairing (hand-written encoder in
+  `js/qr.js`, QR wraps `<app-url>#pair=<code>` so the camera opens gymii
+  with the field prefilled — never auto-paired, and the fragment is
+  scrubbed from history), per-device tokens over `GET/POST/DELETE
+  /v1/tokens` (named, `self` server-computed, the last token refuses to
+  die), the Devices list with two-tap revocation, gym discovery with full
+  adoption (plain blobs one-tap, encrypted ones by typing that gym's own
+  passphrase — keys are per gym), and the Settings-tab badge fed by
+  `syncHealth()` (accent = pending, danger = error).
 - **M4 — only on demand**: live handoff of a running workout. Needs a UI
   decision ("already running on your phone — resume here?"), not merge
   logic; deliberately deferred.
@@ -132,9 +140,11 @@ option, never a requirement.
 12. Same-origin mode (`-app-dir` serving gymii itself) — recommended as
     THE local-first setup; it dissolves CORS/PNA/mixed-content entirely.
 13. Token provisioning, M1: the server CLI mints ONE account token and the
-    sync code carries it to every device — decided. Per-device tokens (and
-    revocation) arrive with M3's device registry; the protocol's
-    "one token per device" is the M3 target, not an M1 requirement.
+    sync code carries it to every device — decided. Redeemed in M3: the
+    CLI mints only the FIRST token, every further device gets a fresh
+    named one over `POST /v1/tokens`, revocable individually; the last
+    token is protected (409) so no account locks itself out. Pre-M3
+    setups keep working on their shared token until re-paired.
 14. The sync code carries the blob's gymId, and a paired device maps its
     LOCAL gym onto that blob via `remoteId` in its sync config — decided
     after the first end-to-end run proved the alternative broken: gym ids

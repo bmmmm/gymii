@@ -30,12 +30,17 @@ they were decided during implementation and are now part of the contract.
 | `GET` | `/v1/gyms/{id}` | returns the outer envelope; `ETag: "<revision>"`; 404 if never pushed; honors `If-None-Match` → 304 |
 | `PUT` | `/v1/gyms/{id}` | requires `If-Match: "<revision>"` (`"0"` for first push); atomically bumps revision; **409** on stale revision |
 | `DELETE` | `/v1/gyms/{id}` | mirrors a local gym deletion |
+| `GET` | `/v1/tokens` | the account's tokens as `[{hash, mintedAt, name, self}]` — `self` marks the requesting token (M3 device list) |
+| `POST` | `/v1/tokens` | mint a fresh token; body `{name?}` (≤64 chars); `201` with the token value, which appears exactly once |
+| `DELETE` | `/v1/tokens/{hash}` | revoke by full hash; `409` on the account's LAST token — the lockout guard, the server CLI can always mint |
 
 - Auth: `Authorization: Bearer <device-token>` — one token per device, all
   resolving to one account; revocable individually. Never in the URL.
-  **M1 scope**: the server CLI mints one account token and the sync code
-  shares it across devices; per-device tokens + revocation land with M3's
-  device registry (sync-plan decision 13).
+  **Since M3** the tokens are per device: pairing mints a FRESH named
+  token via `POST /v1/tokens` and puts that into the sync code — a
+  device's own token never leaves it, and revoking one device never cuts
+  off the others. (M1 shared the single CLI-minted token; existing setups
+  keep working and simply hold one shared token until re-paired.)
 - CORS: allowed origin from server config (`SYNC_ALLOWED_ORIGIN`), plus
   `Access-Control-Expose-Headers: ETag`, `Allow-Headers: Authorization,
   If-Match, If-None-Match, Content-Type` (`If-None-Match` is required —

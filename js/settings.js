@@ -11,7 +11,9 @@ import { loadDemoData } from './demo.js';
 import {
   getSyncState, getSyncCode, enableSync, pairWithCode, syncNow, disableSync,
   e2eAvailable,
+  mintPairingCode, listDevices, revokeDevice, listRemoteGyms, adoptRemoteGym,
 } from './sync.js';
+import { qrSvg } from './qr.js';
 
 // --- the Sync card (M1, docs/sync-plan.md) ---
 // The sync code is the ONLY key to an account (sync-plan decision 7), so it
@@ -20,6 +22,23 @@ import {
 // clears it again. Every later re-render therefore takes it back off the
 // screen by itself — "shown once" is a mechanism, not a promise in the copy.
 let codeOnce = null;
+let codeOnceQr = false; // freshly minted pairing codes also show as a QR
+
+// A scanned #pair= URL lands its code here (app.js hands it over — the
+// focusMachine pattern): the next renderSettings prefills the pairing
+// field and clears it. Never rendered anywhere else, never persisted.
+let pendingPairCode = null;
+
+export function setPendingPairCode(code) {
+  pendingPairCode = String(code ?? '').trim() || null;
+}
+
+// The QR carries this page's own URL with the code in the fragment, so the
+// phone's camera opens gymii directly and Settings prefills itself. In
+// Node (tests) there is no location — the raw code is fine there.
+const pairUrl = (code) => (typeof location === 'undefined'
+  ? code
+  : `${location.origin}${location.pathname}#pair=${encodeURIComponent(code)}`);
 
 const SYNC_RESULT = {
   synced: 'Synced.',
@@ -41,6 +60,15 @@ const SYNC_ERRORS = {
   'no-crypto': 'This code is for an encrypted gym, and this page runs without HTTPS, '
     + 'so the browser refuses to decrypt here. Open gymii over HTTPS (or localhost) to pair it.',
   'crypto-available': 'This page can encrypt — unencrypted sync is only offered where it cannot.',
+  'not-configured': 'Sync is not set up for this gym.',
+  offline: 'The server did not answer — try again when you are back online.',
+  'last-token': 'That is the only token left — revoking it would lock every device out. '
+    + 'Pair another device first, or mint a token on the server.',
+  'unknown-device': 'That device is already gone — reopen the list.',
+  'need-pass': 'This gym is encrypted — its own sync passphrase is needed to add it.',
+  decrypt: 'That passphrase does not open this gym.',
+  gone: 'That gym is no longer on the server.',
+  'qr-overflow': 'This code is too long for a QR — copy the text instead.',
 };
 
 const syncErrorText = (err, prefix) => SYNC_ERRORS[err?.message] ?? `${prefix}: ${err?.message}`;
@@ -48,7 +76,12 @@ const syncErrorText = (err, prefix) => SYNC_ERRORS[err?.message] ?? `${prefix}: 
 // The code plus the one warning that has to sit next to it, never a screen
 // away: this string is the account. The unencrypted variant warns about the
 // right thing — there is no key, but the code still opens the account.
-const codeBlock = (code, plain) => `
+const codeBlock = (code, plain, withQr) => `
+  ${withQr ? `<div class="sync-qr">${(() => {
+    try { return qrSvg(pairUrl(code)); } catch { return ''; }
+  })()}</div>
+  <p class="muted">Scan with the other device's camera — it opens gymii with
+    the code already filled in. Or copy the text below.</p>` : ''}
   <code id="sync-code-out" class="synccode">${esc(code)}</code>
   <button id="sync-copy" class="btn">Copy sync code</button>
   <div class="notice">${plain
@@ -60,7 +93,7 @@ const codeBlock = (code, plain) => `
     sync, nobody without it can (not whoever runs the server, not us). Lose every
     paired device and the code, and the data is gone. There is no recovery.`}</div>`;
 
-function syncCard(gym, shownCode) {
+function syncCard(gym, shownCode, shownQr) {
   const state = getSyncState(gym.id);
   if (!state.configured) {
     // No secure context (a plain-http page, e.g. the one-container setup on
@@ -130,8 +163,20 @@ function syncCard(gym, shownCode) {
         <span class="sync-val">${esc(state.lastError)}</span></div>` : ''}
       <button id="sync-now" class="btn btn-primary">Sync now</button>
       <p id="sync-msg" class="muted" role="status"></p>
-      ${shownCode ? codeBlock(shownCode, state.plain)
-    : '<button id="sync-show-code" class="btn">Show sync code</button>'}
+      ${shownCode ? codeBlock(shownCode, state.plain, shownQr)
+    : `<button id="sync-pair-new" class="btn">Pair another device</button>
+      <button id="sync-show-code" class="btn">Show sync code</button>`}
+      <p class="muted">"Pair another device" mints that device its own token —
+        revoking one later never cuts off the others. "Show sync code" re-shows
+        THIS device's code.</p>
+      <details id="sync-devices"><summary>Devices</summary>
+        <div id="sync-devices-body"><p class="muted">Open to load the list from
+          the server.</p></div>
+      </details>
+      <details id="sync-discover"><summary>Other gyms on this server</summary>
+        <div id="sync-discover-body"><p class="muted">Open to check the server
+          for gyms this device does not have yet.</p></div>
+      </details>
       <button id="sync-off" class="btn btn-danger">Turn off sync</button>
       <p class="muted">Turning sync off removes the ${state.plain
     ? 'server and the token' : 'server, the token and the key'} from
@@ -147,7 +192,9 @@ export function renderSettings(root) {
   const gid = gyms.activeId;
   // consumed by THIS render — see codeOnce
   const shownCode = codeOnce;
+  const shownQr = codeOnceQr;
   codeOnce = null;
+  codeOnceQr = false;
   root.innerHTML = `
     <h1>Settings</h1>
 
@@ -243,7 +290,7 @@ export function renderSettings(root) {
 
     <!-- The demo gym never syncs (sync-plan decision 10), so the card is not
          rendered at all rather than shown disabled. -->
-    ${activeGym.demo ? '' : syncCard(activeGym, shownCode)}
+    ${activeGym.demo ? '' : syncCard(activeGym, shownCode, shownQr)}
 
     <section class="card">
       <h2>Test data</h2>
@@ -467,6 +514,115 @@ export function renderSettings(root) {
     renderSettings(root);
   });
 
+  // --- M3: pair-another-device, the device list, discovery ---
+
+  const pairNewBtn = root.querySelector('#sync-pair-new');
+  pairNewBtn?.addEventListener('click', async () => {
+    pairNewBtn.disabled = true;
+    try {
+      // a FRESH named token per device — revoking one never cuts the others
+      const { code } = await mintPairingCode(gid, `Paired ${fmtDate(Date.now())}`);
+      codeOnce = code;
+      codeOnceQr = true;
+      renderSettings(root);
+      root.querySelector('#sync-msg').textContent = 'Scan the QR with the other device, or copy the code.';
+      keepInView(root, '#sync-code-out');
+    } catch (err) {
+      pairNewBtn.disabled = false;
+      syncMsg.textContent = syncErrorText(err, 'Could not mint a pairing code');
+    }
+  });
+
+  const devicesEl = root.querySelector('#sync-devices');
+  const renderDevices = async () => {
+    const body = root.querySelector('#sync-devices-body');
+    body.innerHTML = '<p class="muted">Loading…</p>';
+    try {
+      const list = await listDevices(gid);
+      body.innerHTML = list.map((d) => `
+        <div class="spread">
+          <span>${esc(d.name || '(unnamed)')}${d.self ? ' · this device' : ''}
+            <span class="muted">· ${esc(String(d.mintedAt).slice(0, 10))}</span></span>
+          ${d.self ? '' : `<button class="btn btn-inline btn-danger" data-revoke="${esc(d.hash)}">Revoke</button>`}
+        </div>`).join('')
+        + '<p class="muted">Revoking a device invalidates its token — its next sync is refused. '
+        + 'This device disconnects via "Turn off sync" instead.</p>';
+      body.querySelectorAll('[data-revoke]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          if (!twoTapConfirm(btn, 'Tap again to revoke', 'Revoke')) return;
+          try {
+            await revokeDevice(gid, btn.dataset.revoke);
+            await renderDevices();
+          } catch (err) {
+            syncMsg.textContent = syncErrorText(err, 'Could not revoke');
+          }
+        });
+      });
+    } catch (err) {
+      body.innerHTML = `<p class="muted">${esc(syncErrorText(err, 'Could not load devices'))}</p>`;
+    }
+  };
+  // returns the promise so the logic tests can await the load
+  devicesEl?.addEventListener('toggle', () => (devicesEl.open ? renderDevices() : null));
+
+  const discoverEl = root.querySelector('#sync-discover');
+  const renderDiscover = async () => {
+    const body = root.querySelector('#sync-discover-body');
+    body.innerHTML = '<p class="muted">Loading…</p>';
+    try {
+      const blobs = await listRemoteGyms(gid);
+      if (!blobs.length) {
+        body.innerHTML = '<p class="muted">Every gym on this server is already on this device.</p>';
+        return;
+      }
+      body.innerHTML = blobs.map((b) => `
+        <div class="field-block" data-blob="${esc(b.gymId)}">
+          <div class="spread">
+            <span>Gym <code>${esc(b.gymId.slice(0, 8))}…</code>
+              <span class="muted">· updated ${esc(String(b.updatedAt).slice(0, 10))}</span></span>
+            <button class="btn btn-inline" data-adopt="${esc(b.gymId)}">Add</button>
+          </div>
+          <div class="row" data-pass-row hidden>
+            <input type="text" autocomplete="off" data-pass
+              placeholder="this gym's sync passphrase (xxxx-xxxx-…)">
+            <button class="btn btn-inline" data-adopt-pass="${esc(b.gymId)}">Add with key</button>
+          </div>
+        </div>`).join('')
+        + '<p class="muted">Names are encrypted — a gym shows its real name after the '
+        + 'first sync. Encrypted gyms need their own passphrase (shown next to the '
+        + 'sync code on the device that created them).</p>';
+      const adopt = async (blobId, pass, btn) => {
+        btn.disabled = true;
+        try {
+          const { sync } = await adoptRemoteGym(gid, blobId, pass);
+          renderSettings(root); // the adopted gym is active now
+          root.querySelector('#sync-msg').textContent = `Gym added. ${syncResultText(sync)}`;
+        } catch (err) {
+          btn.disabled = false;
+          if (err?.message === 'need-pass') {
+            // unfold the key field for exactly this blob
+            body.querySelector(`[data-blob="${blobId}"] [data-pass-row]`).hidden = false;
+            syncMsg.textContent = SYNC_ERRORS['need-pass'];
+          } else {
+            syncMsg.textContent = syncErrorText(err, 'Could not add the gym');
+          }
+        }
+      };
+      body.querySelectorAll('[data-adopt]').forEach((btn) => {
+        btn.addEventListener('click', () => adopt(btn.dataset.adopt, null, btn));
+      });
+      body.querySelectorAll('[data-adopt-pass]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const pass = body.querySelector(`[data-blob="${btn.dataset.adoptPass}"] [data-pass]`)?.value ?? '';
+          adopt(btn.dataset.adoptPass, pass.trim() || null, btn);
+        });
+      });
+    } catch (err) {
+      body.innerHTML = `<p class="muted">${esc(syncErrorText(err, 'Could not reach the server'))}</p>`;
+    }
+  };
+  discoverEl?.addEventListener('toggle', () => (discoverEl.open ? renderDiscover() : null));
+
   // Two-step confirm instead of a blocking confirm() dialog.
   const clearBtn = root.querySelector('#clear-all');
   clearBtn.addEventListener('click', () => {
@@ -474,4 +630,21 @@ export function renderSettings(root) {
     clearAll();
     renderSettings(root);
   });
+
+  // A scanned #pair= link parked its code here (app.js) — consume it into
+  // the pairing field, or say plainly why it cannot pair right now. Never
+  // auto-pair: the user sees which server the code names, then taps Pair.
+  if (pendingPairCode) {
+    const scanned = pendingPairCode;
+    pendingPairCode = null;
+    if (activeGym.demo) {
+      root.querySelector('#data-msg').textContent = 'The demo gym never syncs — switch to a real gym and scan again.';
+    } else if (getSyncState(gid).configured) {
+      root.querySelector('#sync-msg').textContent = 'This gym already syncs. Switch to another gym (or add one) and scan the code again.';
+    } else {
+      root.querySelector('#sync-code').value = scanned;
+      root.querySelector('#sync-msg').textContent = 'Sync code received — check it and tap Pair.';
+      keepInView(root, '#sync-pair');
+    }
+  }
 }

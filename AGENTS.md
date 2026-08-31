@@ -17,8 +17,11 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   conformance over a stubbed fetch, WebCrypto roundtrip, sync-code parsing,
   wire unit conversion, synckey-never-in-backup, plain mode, and the M2
   ambient matrix — coalescing, suppression, dirty/304, offline replay,
-  queued deletes, tab lock, throttle), `settings` (the Sync
-  card's states over the stub DOM), `train` (guided-plan
+  queued deletes, tab lock, throttle — plus M3 devices/discovery: fresh
+  pairing tokens, revoke→401, last-token, adopt plain/with-pass/wrong-pass),
+  `settings` (the Sync
+  card's states over the stub DOM), `qr` (the encoder: pinned reference
+  matrix, RS vectors, full decode round-trip, penalty rules, overflow), `train` (guided-plan
   construction, hub/start/plans navigation), `plan` (stored plans, the note parser/serialiser, AI
   import, binding, targets), `history` (name filter, muscle card + filter,
   full editor, back-logging), `gym` (editor rendering, collision),
@@ -206,8 +209,25 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   (`getSyncState().pending`); `deleteGym` queues the blob's DELETE in
   `gymii.sync.pendingDeletes` BEFORE its sweep wipes the config, and the
   ambient layer drains it. Gym deletion does not propagate to other
-  devices (documented in the protocol) — the account-level registry that
-  could carry it is M3.
+  devices (documented in the protocol).
+  DEVICES & DISCOVERY (M3): pairing mints a FRESH named token per device
+  over `POST /v1/tokens` (`mintPairingCode`) — a device's own token never
+  leaves it, revoking one (`revokeDevice`, Devices list in the Sync card)
+  never cuts the others, and the server refuses the last token (409 →
+  `last-token`). `self` in `listDevices` is server-computed. The QR on the
+  pairing code is `js/qr.js` (hand-written encoder, byte mode, EC M, SVG
+  string — hard black/white, cameras need the contrast) wrapping
+  `<app-url>#pair=<code>`; app.js intercepts `#pair=` BEFORE the route
+  lookup, parks the code via `setPendingPairCode` (the focusMachine
+  handoff) and `location.replace('#settings')` so the credential never
+  enters browser history — Settings prefills the field and never
+  auto-pairs. Discovery (`listRemoteGyms`/`adoptRemoteGym`): unknown blobs
+  probe-first — plain adopts directly, encrypted needs that gym's own
+  passphrase (per-gym keys), a wrong one leaves no local state; the
+  adopted placeholder entry is re-stamped to epoch 0 so the blob's real
+  name wins the LWW merge instead of being pushed back out. The
+  Settings-tab badge (`#sync-badge`, app.js `updateSyncBadge`) feeds on
+  `syncHealth()`/`onSyncActivity` — accent = pending, danger = error.
 - `js/app.js` — hash-router, renders views into `#view`. The `#gym`
   route is deliberately NOT in the tabbar (the map is a setup tool, not a
   daily surface — user decision); it is reached via links in onboarding,
