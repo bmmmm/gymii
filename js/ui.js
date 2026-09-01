@@ -145,6 +145,34 @@ export function keepInView(root, selector, { focus = false } = {}) {
   if (focus) el.focus?.();
 }
 
+// These views re-render by replacing whole subtrees, so a text field that
+// TRIGGERED the render is a different node afterwards: the keyboard drops
+// and the caret is gone mid-word. Wrap such a render and the field comes
+// back focused, with its selection where it was — found again by id, which
+// is what every one of them already has. Only text-ish fields are restored:
+// a number input handed back focused would pop the keyboard and hand
+// initNumericOverwrite an empty field (see keepInView above).
+// `document` genuinely does not exist in the logic tests, so the whole
+// thing degrades to "just render".
+const RESTORABLE = new Set(['text', 'search', 'url', 'email', 'tel', 'textarea']);
+
+export function preserveFocus(root, render) {
+  if (typeof document === 'undefined') return render();
+  const el = document.activeElement;
+  const kind = el?.tagName === 'TEXTAREA' ? 'textarea' : el?.type;
+  const keep = el?.id && RESTORABLE.has(kind) && root?.contains?.(el)
+    ? { id: el.id, start: el.selectionStart, end: el.selectionEnd }
+    : null;
+  render();
+  if (!keep) return;
+  const next = root.querySelector?.(`#${CSS.escape(keep.id)}`);
+  if (!next || next === el) return;
+  next.focus?.();
+  // setSelectionRange throws on inputs that don't support selection (email,
+  // number); the focus alone is the part that matters.
+  try { next.setSelectionRange(keep.start, keep.end); } catch { /* not selectable */ }
+}
+
 // --- rest-timer sound ---
 // Played through ONE shared HTMLAudioElement, deliberately NOT WebAudio:
 // iOS mutes WebAudio with the ring/silent switch, but treats media-element

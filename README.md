@@ -12,7 +12,11 @@ ever sees ciphertext.
 ## What's inside
 
 - 🗺️ **Gym** — a real floor-plan editor: walls, zones, doors, mirrors,
-  lockers, and machines you can tap. Undo/redo included, and typing a machine
+  lockers, and machines you can tap. Everything starts locked so nothing gets
+  nudged by accident — double-tap an item to unlock it for moving and
+  resizing, double-tap again to lock it. Zones and walls sit on three
+  layers, so a small area inside a big one stays visible. Machines carry a brand and model, the gym its full address with a
+  link straight to OpenStreetMap. Undo/redo included, and typing a machine
   number lights it up on the plan. One tap away from the Train hub. Optional:
   draw it once your gym is in there and gymii can point you at the next
   machine.

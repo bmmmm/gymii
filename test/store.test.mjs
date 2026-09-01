@@ -660,4 +660,47 @@ assert.throws(() => store.importData({ app: 'gymii', kind: 'backup', gym: { brok
 
 store.clearAll();
 
+// --- gym address: postcode is part of the shape, and rides the wire ---
+// meta lives INSIDE the layout, so template/backup/sync carry it for free —
+// what this pins is that a fresh layout offers the field at all.
+assert.deepEqual(Object.keys(store.newLayout('Meta').meta).sort(),
+  ['address', 'city', 'country', 'postcode'], 'a fresh layout has a postcode slot');
+const withMeta = store.newLayout('Meta');
+withMeta.meta = { address: 'Demostr. 1', postcode: '10115', city: 'Berlin', country: 'DE' };
+withMeta.machines.push({
+  id: 'mb1', num: 1, label: 'Chest press', brand: 'Technogym',
+  model: 'Selection Pro', x: 2, y: 2, w: 4, h: 3, settingsFields: [], muscles: [],
+});
+store.saveLayout(withMeta);
+const exported = JSON.parse(JSON.stringify(store.exportGymTemplate()));
+assert.equal(exported.gym.meta.postcode, '10115', 'the postcode travels with the template');
+assert.equal(exported.gym.machines[0].brand, 'Technogym', 'so does the brand');
+assert.equal(exported.gym.machines[0].model, 'Selection Pro', 'and the model');
+store.clearAll();
+assert.equal(store.importData(exported), 'gym-template', 'the template imports back');
+assert.equal(store.getLayout().meta.postcode, '10115', 'postcode survived the round-trip');
+assert.equal(store.getLayout().machines[0].brand, 'Technogym', 'brand survived the round-trip');
+
+// The brand pick list is a starting point, not a taxonomy — but it must not
+// be empty, or the chip row renders as a bare text field.
+assert.ok(store.MACHINE_BRANDS.length > 5, 'the brand pick list has usable entries');
+assert.equal(new Set(store.MACHINE_BRANDS).size, store.MACHINE_BRANDS.length,
+  'no duplicate brands (a dupe would render two chips that toggle each other)');
+
+store.clearAll();
+
+// --- map layers survive the wire, and the merge does not need array order ---
+assert.deepEqual(store.MAP_LAYERS.map((l) => l.z), [-1, 0, 1],
+  'three layers, Normal in the middle as the absent default');
+const layered = store.newLayout('Layers');
+layered.shapes.push({ id: 'sl1', kind: 'rect', label: 'Turf', x: 2, y: 2, w: 8, h: 8, z: -1 });
+store.saveLayout(layered);
+const tpl = JSON.parse(JSON.stringify(store.exportGymTemplate()));
+assert.equal(tpl.gym.shapes[0].z, -1, 'the layer travels with the template');
+store.clearAll();
+store.importData(tpl);
+assert.equal(store.getLayout().shapes[0].z, -1, 'and comes back on import');
+
+store.clearAll();
+
 console.log('store roundtrip: all assertions passed');

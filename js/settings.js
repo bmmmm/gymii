@@ -4,7 +4,7 @@ import {
   exportGymTemplate, exportBackup, importData, clearAll,
 } from './store.js';
 import {
-  download, esc, twoTapConfirm, keepInView, fmtDate, fmtTime,
+  download, esc, twoTapConfirm, keepInView, preserveFocus, fmtDate, fmtTime,
   TIMER_SOUNDS, playTimerSound,
 } from './ui.js';
 import { loadDemoData } from './demo.js';
@@ -185,7 +185,15 @@ function syncCard(gym, shownCode, shownQr) {
     </section>`;
 }
 
+// Almost every control here re-renders the whole tab, including the gym's
+// own name field: `change` fires on Enter with the field still focused, and
+// the re-render then dropped the keyboard mid-rename. The wrapper puts the
+// caret back; the recursive calls below go through it too.
 export function renderSettings(root) {
+  preserveFocus(root, () => renderSettingsView(root));
+}
+
+function renderSettingsView(root) {
   const s = getSettings();
   const gyms = getGyms();
   const activeGym = gyms.list.find((p) => p.id === gyms.activeId);

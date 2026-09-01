@@ -1350,6 +1350,9 @@ function renderLog(root, layout, active, reveal = null) {
         ${target ? `<div class="muted">Target: ${targetStr(target, type, s)}${targetDone
     ? ' · ✓ done' : setGoal ? ` · set ${setPos}/${setGoal}` : ''}</div>` : ''}
         ${machine.muscles?.length ? `<div class="muted">${machine.muscles.map(esc).join(' · ')}</div>` : ''}
+        ${machine.brand || machine.model
+    ? `<div class="muted">${[machine.brand, machine.model].filter(Boolean).map(esc).join(' · ')}</div>`
+    : ''}
         ${machine.docUrl ? `<a class="doc-link" href="${esc(machine.docUrl)}"
           target="_blank" rel="noopener">Machine docs ↗</a>` : ''}
       </div>

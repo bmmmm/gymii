@@ -1,9 +1,9 @@
 import {
   getLayout, saveLayout, newLayout, uid, importData, defaultOutline, exportGymTemplate,
   getSettings, saveSettings, usageByMachine, getActive,
-  MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS,
+  MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS, MACHINE_BRANDS, MAP_LAYERS,
 } from './store.js';
-import { esc, download, twoTapConfirm, keepInView } from './ui.js';
+import { esc, download, twoTapConfirm, keepInView, preserveFocus } from './ui.js';
 import {
   drawLayout, usagePayload, findMachineByNum, findItem, fits, freeSpot,
   snapDoorToWall, snap, clamp, FIXTURES, WALL_SNAPPED, ITEM_COLORS, OUTLINE_ID,
@@ -15,6 +15,31 @@ import {
 // switching the hash to #gym (module state survives; the app never
 // reloads between tabs).
 let pendingFocus = null;
+
+// The gym's address as one search string, in postal order — empty when
+// nothing is filled in, which is what hides the link.
+function osmQuery(meta = {}) {
+  const town = [meta.postcode, meta.city].filter(Boolean).join(' ');
+  return [meta.address, town, meta.country].filter(Boolean).join(', ');
+}
+
+// A search link, not a pin: gymii stores an address, never coordinates, so
+// OpenStreetMap does the geocoding. Opens in a new tab (target=_blank),
+// because losing an unsaved layout to a map lookup would be absurd.
+// Exported for the logic tests (same precedent as train's nextSetDefaults).
+export function osmUrl(meta = {}) {
+  return `https://www.openstreetmap.org/search?query=${encodeURIComponent(osmQuery(meta))}`;
+}
+
+// Two taps on the same item within this window unlock it for editing.
+// Deliberately generous: a thumb on a phone is slower than a mouse.
+const DOUBLE_TAP_MS = 450;
+// How far a contact may travel and still count as a TAP, in grid units
+// (~2.5% of the floor width, so roughly a finger's worth of wobble). Beyond
+// it the contact was a DRAG, and a drag must not pair with the next one into
+// a double tap — otherwise pushing an item twice in quick succession would
+// lock it again mid-arrangement.
+const TAP_SLOP = 1.5;
 
 export function focusMachine(id) {
   pendingFocus = id;
@@ -30,6 +55,15 @@ export function renderGym(root) {
   let selectedVertex = null; // outline corner index, for deletion
   let drag = null; // { mode: 'move'|'resize'|'vertex', item?, index?, offX, offY, moved }
   let findHighlightId = null; // "find a machine by number" pulse — cleared on the next svg pointerdown
+  // EVERYTHING STARTS LOCKED. A plain tap only selects an item and opens
+  // its card; moving and resizing need a deliberate double tap on it first
+  // (`lastTap` remembers the previous one). A tap that drifts a few pixels
+  // used to shove a whole zone across the floor, and the resize handle sat
+  // under the same thumb that pushes an item around. At most one item is
+  // unlocked at a time, and nothing survives a re-entry into the editor —
+  // opening the Gym is always a read-only starting point.
+  let unlockedId = null;
+  let lastTap = null; // { id, t, x, y } — the last contact that still counts as a tap
 
   root.innerHTML = `
     <div class="spread gym-head">
@@ -70,7 +104,7 @@ export function renderGym(root) {
   const redraw = () => drawLayout(svg, layout, {
     selectedId, editor: true, selectedVertex,
     usage: usageOn() ? usagePayload(usageByMachine()) : null,
-    highlightId: findHighlightId,
+    highlightId: findHighlightId, unlockedId,
   });
   // Touch targets are sized from the SVG's on-screen width, so re-render
   // on resize/orientation change. Observing the element (not window)
@@ -115,6 +149,7 @@ export function renderGym(root) {
     saveLayout(layout); // persist without recording — undo/redo just moves the pointer
     selectedId = null; // the selected item may not exist in this state
     selectedVertex = null;
+    unlockedId = null;
     redraw();
     renderProps();
     updateUndoButtons();
@@ -138,6 +173,7 @@ export function renderGym(root) {
   function select(id) {
     if (selectedId === id) return;
     selectedId = id;
+    unlockedId = null; // one item at a time; picking another locks the old
     renderProps();
   }
 
@@ -147,7 +183,9 @@ export function renderGym(root) {
     findHighlightId = null;
     // outline corner / midpoint handles sit on top of everything
     const handle = e.target.closest('[data-vertex], [data-mid]');
-    if (handle) {
+    // handles only render while the outline is unlocked; the guard also
+    // stops a stale one from a render that raced the re-lock
+    if (handle && unlockedId === OUTLINE_ID) {
       if (handle.dataset.vertex !== undefined) {
         const i = parseInt(handle.dataset.vertex, 10);
         if (selectedVertex !== i) {
@@ -173,9 +211,11 @@ export function renderGym(root) {
 
     const target = e.target.closest('[data-id]');
     if (!target) {
+      lastTap = null;
       if (selectedId !== null || selectedVertex !== null) {
         selectedId = null;
         selectedVertex = null;
+        unlockedId = null;
         renderProps();
       }
       redraw();
@@ -183,11 +223,23 @@ export function renderGym(root) {
       return;
     }
     if (target.dataset.id === OUTLINE_ID) {
+      // the outline takes the same lock as every item — a tap on the outer
+      // wall used to hand over draggable corners straight away
+      const wasUnlocked = unlockedId === OUTLINE_ID;
+      const t = Date.now();
+      const dbl = lastTap?.id === OUTLINE_ID && t - lastTap.t < DOUBLE_TAP_MS;
+      const q = svgPoint(e);
+      lastTap = { id: OUTLINE_ID, t, x: q.x, y: q.y };
       if (selectedId !== OUTLINE_ID) {
         selectedId = OUTLINE_ID;
         selectedVertex = null;
-        renderProps();
+        unlockedId = null;
       }
+      if (dbl) {
+        unlockedId = wasUnlocked ? null : OUTLINE_ID;
+        lastTap = null;
+      }
+      renderProps();
       redraw();
       e.preventDefault();
       return;
@@ -195,7 +247,30 @@ export function renderGym(root) {
     const item = findItem(layout, target.dataset.id);
     if (!item) return;
     selectedVertex = null;
+    // read the lock BEFORE select(), which re-locks on a selection change
+    const wasUnlocked = unlockedId === item.id;
+    const now = Date.now();
+    const doubleTap = lastTap?.id === item.id && now - lastTap.t < DOUBLE_TAP_MS;
+    lastTap = { id: item.id, t: now, x: svgPoint(e).x, y: svgPoint(e).y };
     select(item.id);
+    if (doubleTap && !target.dataset.handle) {
+      // the gesture TOGGLES: the same double tap that unlocked the item
+      // locks it again, so getting back to a safe map never requires
+      // hunting for empty floor to tap
+      unlockedId = wasUnlocked ? null : item.id;
+      lastTap = null; // a third tap opens a fresh pair, not a rolling toggle
+      renderProps(); // the card's hint line names the state it just entered
+    }
+    // LOCKED IS THE DEFAULT: a single tap selects and opens the card, but
+    // starts no drag at all — neither a move nor a resize. Reading the lock
+    // from before select() also means a stale handle from a render that
+    // raced the re-lock cannot stretch anything.
+    if (!wasUnlocked) {
+      drag = null;
+      redraw();
+      e.preventDefault();
+      return;
+    }
     const p = svgPoint(e);
     drag = target.dataset.handle
       ? { mode: 'resize', item, moved: false }
@@ -206,6 +281,13 @@ export function renderGym(root) {
   });
 
   svg.addEventListener('pointermove', (e) => {
+    // A contact that travels is a drag, not a tap — drop it from the
+    // double-tap pairing. Checked before the drag guard, because a LOCKED
+    // item starts no drag at all and would otherwise keep pairing.
+    if (lastTap && Date.now() - lastTap.t < DOUBLE_TAP_MS) {
+      const q = svgPoint(e);
+      if (Math.hypot(q.x - lastTap.x, q.y - lastTap.y) > TAP_SLOP) lastTap = null;
+    }
     if (!drag) return;
     const p = svgPoint(e);
     if (drag.mode === 'vertex') {
@@ -321,6 +403,11 @@ export function renderGym(root) {
     }
     save();
     select(item.id);
+    // you just created this on purpose, so it starts unlocked — otherwise
+    // every new item would need a double tap before it could be placed
+    unlockedId = item.id;
+    lastTap = null;
+    renderProps();
     redraw();
   }
 
@@ -411,6 +498,31 @@ export function renderGym(root) {
       data-color="${c}" style="background:${c}" aria-label="color ${c}"></button>`).join('')}
   </div>`;
 
+  // Layer chips, for every shape that can end up under another one: zones,
+  // walls and free-standing furniture. Wall-snapped fixtures are left out —
+  // they glue to a wall in their own layer, where stacking means nothing.
+  // Machines are left out too: fits() keeps them from overlapping at all.
+  const layerRow = (item) => `
+    <div class="field-block"><span>Layer — what sits in front of what</span>
+      <div class="chip-select" id="item-layer">
+        ${MAP_LAYERS.map((l) => `<button type="button"
+          class="chip${(item.z ?? 0) === l.z ? ' sel' : ''}" data-z="${l.z}">${esc(l.label)}</button>`).join('')}
+      </div>
+    </div>`;
+
+  const wireLayerRow = (item) => {
+    props.querySelector('#item-layer').addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      const z = parseInt(chip.dataset.z, 10);
+      if (z) item.z = z;
+      else delete item.z; // absent = Normal, so exports stay clean
+      save();
+      redraw();
+      renderProps();
+    });
+  };
+
   const wireColorRow = (sel, item) => {
     props.querySelector(sel).addEventListener('click', (e) => {
       const sw = e.target.closest('.swatch');
@@ -423,14 +535,23 @@ export function renderGym(root) {
     });
   };
 
+  // Every props re-render replaces the whole card, and a chip tap is a
+  // re-render — so the text field you were typing in would lose the caret
+  // and the keyboard mid-word. preserveFocus puts both back (the fields
+  // stage their value on `input`, so nothing typed is lost either).
   function renderProps() {
+    preserveFocus(props, renderPropsCard);
+  }
+
+  function renderPropsCard() {
     if (selectedId === OUTLINE_ID) {
       const canDelete = selectedVertex !== null && layout.outline.length > 3;
       props.innerHTML = `
         <section class="card">
           <h2>Floor outline</h2>
-          <p class="muted">${layout.outline.length} corners. Drag a white corner to reshape the floor;
-          tap a hollow dot between two corners to add a new one.</p>
+          <p class="muted">${layout.outline.length} corners. ${unlockedId === OUTLINE_ID
+    ? '🔓 Unlocked — drag a white corner to reshape the floor, tap a hollow dot between two corners to add one. Double-tap the outline again to lock.'
+    : '🔒 Locked so the floor cannot be reshaped by accident. Double-tap the outer wall to unlock its corners.'}</p>
           <button id="del-vertex" class="btn btn-danger" ${canDelete ? '' : 'disabled'}>
             ${selectedVertex === null
               ? 'Tap a corner to delete it'
@@ -481,17 +602,25 @@ export function renderGym(root) {
             </div>
           </label>
           <p class="muted">Add rooms, walls and machines, then drag them into place.
-          Tap an item to edit it; drag the white corner handle to resize.
-          Tap the outer wall to reshape the floor outline.</p>
+          Everything on the plan is 🔒 locked: a tap only opens an item for
+          editing. Double-tap an item to unlock it for moving and resizing,
+          double-tap again to lock it. Tap the outer wall to reshape the floor
+          outline.</p>
         </section>
         <section class="card">
           <h2>Location</h2>
           <label class="field"><span>Address</span><input id="gym-address" type="text"
             value="${esc(layout.meta?.address || '')}"></label>
+          <label class="field"><span>Postcode</span><input id="gym-postcode" type="text"
+            inputmode="numeric" autocomplete="postal-code"
+            value="${esc(layout.meta?.postcode || '')}"></label>
           <label class="field"><span>City</span><input id="gym-city" type="text"
             value="${esc(layout.meta?.city || '')}"></label>
           <label class="field"><span>Country</span><input id="gym-country" type="text"
             value="${esc(layout.meta?.country || '')}"></label>
+          <a id="gym-osm" class="linkish" target="_blank" rel="noopener"
+            href="${esc(osmUrl(layout.meta))}" ${osmQuery(layout.meta) ? '' : 'hidden'}>Find
+            this address on OpenStreetMap ↗</a>
           <p class="muted">Travels with the template so others can find this gym when you share it.</p>
         </section>
         <section class="card">
@@ -501,13 +630,19 @@ export function renderGym(root) {
           <div id="template-browser"></div>
         </section>`;
 
+      // The card is not re-rendered on a meta edit (that would fight the
+      // keyboard), so the link has to be refreshed by hand.
+      const osmLink = props.querySelector('#gym-osm');
       const bindMeta = (sel, key) => {
         props.querySelector(sel).addEventListener('change', (e) => {
           layout.meta = { ...(layout.meta || {}), [key]: e.target.value.trim() };
           save();
+          osmLink.href = osmUrl(layout.meta);
+          osmLink.hidden = !osmQuery(layout.meta);
         });
       };
       bindMeta('#gym-address', 'address');
+      bindMeta('#gym-postcode', 'postcode');
       bindMeta('#gym-city', 'city');
       bindMeta('#gym-country', 'country');
 
@@ -546,6 +681,7 @@ export function renderGym(root) {
       const muscles = item.muscles || [];
       const muscleOptions = [...MUSCLE_GROUPS, ...muscles.filter((m) => !MUSCLE_GROUPS.includes(m))];
       const settingsOptions = [...new Set([...COMMON_SETTINGS, ...item.settingsFields])];
+      const brandOptions = [...new Set([...MACHINE_BRANDS, ...(item.brand ? [item.brand] : [])])];
       const chipRow = (options, selected) => options.map((o) =>
         `<button type="button" class="chip${selected.includes(o) ? ' sel' : ''}"
           data-value="${esc(o)}">${esc(o)}</button>`).join('');
@@ -561,6 +697,18 @@ export function renderGym(root) {
             </div>
           </label>
           <label class="field"><span>Label</span><input id="m-label" type="text" value="${esc(item.label)}"></label>
+          <div class="field-block"><span>Brand — tap to set, tap again to clear</span>
+            <div class="chip-select" id="m-brands">
+              ${brandOptions.map((b) => `<button type="button"
+                class="chip${item.brand === b ? ' sel' : ''}" data-value="${esc(b)}">${esc(b)}</button>`).join('')}
+            </div>
+            <div class="row">
+              <input id="m-brand-custom" type="text" placeholder="Other brand…">
+              <button type="button" id="m-brand-set" class="btn btn-inline">Set</button>
+            </div>
+          </div>
+          <label class="field"><span>Model</span><input id="m-model" type="text"
+            placeholder="e.g. Selection Pro Chest Press" value="${esc(item.model || '')}"></label>
           <div class="field-block"><span>Type</span>
             <div class="chip-select">
               <button type="button" id="m-cardio"
@@ -591,6 +739,9 @@ export function renderGym(root) {
           </div>
           <label class="field"><span>Doc link</span><input id="m-doc" type="text" inputmode="url"
             placeholder="https://…" value="${esc(item.docUrl || '')}"></label>
+          <p class="muted">${unlockedId === item.id
+    ? '🔓 Unlocked — drag it on the plan to move it, drag the handle to resize. Double-tap it again to lock.'
+    : '🔒 Locked so it cannot be nudged by accident. Double-tap it on the plan to move or resize it.'}</p>
           <button id="del-item" class="btn btn-danger">Delete machine</button>
         </section>`;
 
@@ -600,10 +751,53 @@ export function renderGym(root) {
         save();
         redraw();
       });
-      props.querySelector('#m-label').addEventListener('change', (e) => {
-        item.label = e.target.value.trim() || `Machine ${item.num}`;
-        e.target.value = item.label;
+      // Text fields commit on `change` — which only fires on blur or Enter,
+      // while a chip tap right next to them re-renders the card. Staging
+      // every keystroke into the item means the re-render prints back what
+      // was typed instead of eating it; `change` still owns the undo
+      // snapshot, the trim and the fallback.
+      const stageText = (sel, onInput, onChange) => {
+        const el = props.querySelector(sel);
+        el.addEventListener('input', () => onInput(el.value));
+        el.addEventListener('change', () => {
+          el.value = onChange(el.value.trim()) ?? el.value;
+          save();
+        });
+      };
+      stageText('#m-label', (v) => { item.label = v; }, (v) => {
+        item.label = v || `Machine ${item.num}`;
+        return item.label;
+      });
+      // Absent, never empty: exports and templates stay clean, and
+      // "has a brand" is a plain truthiness check everywhere else.
+      const optionalText = (key) => (v) => {
+        if (v) item[key] = v;
+        else delete item[key];
+        return v;
+      };
+      stageText('#m-model', (v) => { item.model = v; }, optionalText('model'));
+
+      props.querySelector('#m-brands').addEventListener('click', (e) => {
+        const chip = e.target.closest('.chip');
+        if (!chip) return;
+        if (item.brand === chip.dataset.value) delete item.brand;
+        else item.brand = chip.dataset.value;
         save();
+        renderProps();
+      });
+      const setBrand = () => {
+        const input = props.querySelector('#m-brand-custom');
+        const v = input.value.trim();
+        if (!v) return;
+        item.brand = v;
+        save();
+        renderProps();
+        // the chip row above grew by one — keep the field where it was
+        keepInView(props, '#m-brand-custom');
+      };
+      props.querySelector('#m-brand-set').addEventListener('click', setBrand);
+      props.querySelector('#m-brand-custom').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') setBrand();
       });
 
       // The two type flags are mutually exclusive; absent = strength
@@ -680,9 +874,9 @@ export function renderGym(root) {
         if (e.key === 'Enter') addExercise();
       });
 
-      props.querySelector('#m-doc').addEventListener('change', (e) => {
-        item.docUrl = e.target.value.trim();
-        save();
+      stageText('#m-doc', (v) => { item.docUrl = v; }, (v) => {
+        item.docUrl = v;
+        return v;
       });
     } else if (item.kind === 'rect') {
       const zoneOptions = [...ZONE_LABELS,
@@ -703,9 +897,14 @@ export function renderGym(root) {
           <div class="field-block"><span>Color on the plan</span>
             <div id="z-color">${colorRow(item.color)}</div>
           </div>
+          ${layerRow(item)}
+          <p class="muted">${unlockedId === item.id
+    ? '🔓 Unlocked — drag it on the plan to move it, drag the handle to resize. Double-tap it again to lock.'
+    : '🔒 Locked so it cannot be nudged by accident. Double-tap it on the plan to move or resize it.'}</p>
           <button id="del-item" class="btn btn-danger">Delete</button>
         </section>`;
       wireColorRow('#z-color', item);
+      wireLayerRow(item);
       props.querySelector('#z-labels').addEventListener('click', (e) => {
         const chip = e.target.closest('.chip');
         if (!chip) return;
@@ -729,6 +928,8 @@ export function renderGym(root) {
     } else {
       const isDoor = item.fixture === 'door';
       const isEntrance = item.fixture === 'entrance';
+      // doors/windows/entrances ride their own layer on the wall
+      const stackable = !WALL_SNAPPED.has(item.fixture);
       props.innerHTML = `
         <section class="card">
           <h2>${item.kind === 'line' ? 'Wall' : (FIXTURES[item.fixture]?.label ?? 'Element')}</h2>
@@ -736,8 +937,10 @@ export function renderGym(root) {
             <button id="flip-swing" class="btn">Flip swing side (in/out)</button>
             <button id="flip-hinge" class="btn">Flip hinge side (left/right)</button>` : ''}
           ${isEntrance ? '<button id="flip-swing" class="btn">Flip direction (in/out)</button>' : ''}
+          ${stackable ? layerRow(item) : ''}
           <button id="del-item" class="btn btn-danger">Delete</button>
         </section>`;
+      if (stackable) wireLayerRow(item);
       if (isDoor || isEntrance) {
         props.querySelector('#flip-swing').addEventListener('click', () => {
           item.flipV = !item.flipV;

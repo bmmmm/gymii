@@ -97,7 +97,7 @@ function pxPerUnit(svg, viewBoxWidth) {
 
 export function drawLayout(svg, layout, {
   selectedId = null, editor = false, selectedVertex = null, usage = null,
-  highlightId = null,
+  highlightId = null, unlockedId = null,
 } = {}) {
   // Margin around the floor: outline handles and wall-snapped fixtures
   // straddle the boundary — without it they are clipped and only
@@ -123,7 +123,15 @@ export function drawLayout(svg, layout, {
   // editing handles; tap pads sit below the machines so a visible machine
   // always wins hit-testing over a neighbor's padding
   const wallPieces = layout.shapes.filter((s) => WALL_SNAPPED.has(s.fixture));
-  const floorPieces = layout.shapes.filter((s) => !WALL_SNAPPED.has(s.fixture));
+  // Stacking order comes from each shape's own `z` (store's MAP_LAYERS),
+  // never from the array order — mergeById hands its items back in
+  // unspecified order, so array order does not survive a sync. Sort is
+  // stable, so shapes sharing a layer keep the order they were created in.
+  // Machines are deliberately NOT in here: fits() keeps them from ever
+  // overlapping, and their number has to stay readable above everything.
+  const floorPieces = layout.shapes
+    .filter((s) => !WALL_SNAPPED.has(s.fixture))
+    .sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
   const shapePpu = editor ? ppu : null;
   svg.innerHTML =
     outlineFloorSvg(layout.outline) +
@@ -133,8 +141,12 @@ export function drawLayout(svg, layout, {
     wallPieces.map((s) => shapeSvg(s, shapePpu)).join('') +
     (editor ? hitPadSvg(padded, ppu) : '') +
     layout.machines.map((m) => machineSvg(m, usage, highlightId)).join('') +
-    (editor && selected ? selectionSvg(selected, ppu, layout.grid, pad) : '') +
-    (editor && selectedId === OUTLINE_ID ? outlineHandlesSvg(layout.outline, selectedVertex, ppu, layout.grid, pad) : '');
+    (editor && selected
+      ? selectionSvg(selected, ppu, layout.grid, pad, unlockedId === selected.id) : '') +
+    // the floor outline locks like every item: its corner handles only
+    // appear once it has been double-tapped
+    (editor && selectedId === OUTLINE_ID && unlockedId === OUTLINE_ID
+      ? outlineHandlesSvg(layout.outline, selectedVertex, ppu, layout.grid, pad) : '');
 }
 
 // Builds the usage payload for drawLayout from all-time set counts.
@@ -393,15 +405,27 @@ function bbox(item) {
   };
 }
 
-function selectionSvg(item, ppu, grid, pad) {
+// `unlocked` is the double-tap arming. Everything on the map starts LOCKED:
+// a selected item shows a dashed outline and nothing else, and gym.js
+// refuses to drag it at all. On a phone a tap that drifts a few pixels used
+// to shove a whole zone across the floor, and the resize handle sat exactly
+// where the thumb grabs an item. One deliberate double tap unlocks THAT
+// item — solid outline, resize handle, draggable — see gym.js's
+// `unlockedId`. Wall pieces glue to a wall and have no handle, but they get
+// the same lock treatment (and the same visual tell).
+function selectionSvg(item, ppu, grid, pad, unlocked = false) {
+  const cls = `selected-outline${unlocked ? ' unlocked' : ''}`;
   if (WALL_SNAPPED.has(item.fixture)) { // wall pieces rotate along and have no resize handle
     const cx = item.x + item.w / 2;
     const cy = item.y + item.h / 2;
-    return `<rect class="selected-outline" x="${item.x - 0.4}" y="${cy - 1.2}"
+    return `<rect class="${cls}" x="${item.x - 0.4}" y="${cy - 1.2}"
       width="${item.w + 0.8}" height="2.4" pointer-events="none"
       transform="rotate(${item.rot || 0} ${cx} ${cy})"/>`;
   }
   const b = bbox(item);
+  const outline = `<rect class="${cls}" x="${b.x - 0.4}" y="${b.y - 0.4}"
+    width="${b.w + 0.8}" height="${b.h + 0.8}" pointer-events="none"/>`;
+  if (!unlocked) return outline;
   const visR = HANDLE_VISIBLE_PX / ppu / 2;
   const hitR = HANDLE_HIT_PX / ppu / 2;
   // Clamp the handle center (visible + hit together — it is a UI
@@ -412,8 +436,7 @@ function selectionSvg(item, ppu, grid, pad) {
   const hy = clamp(item.y + item.h, hitR - pad, grid.h + pad - hitR);
   const a = visR * 0.5; // diagonal arrow half-length
   const t = visR * 0.32; // arrowhead tick length
-  return `<rect class="selected-outline" x="${b.x - 0.4}" y="${b.y - 0.4}"
-      width="${b.w + 0.8}" height="${b.h + 0.8}" pointer-events="none"/>
+  return `${outline}
     <circle class="tap-hit handle-hit" data-id="${item.id}" data-handle="1"
       cx="${hx}" cy="${hy}" r="${hitR}"/>
     <circle class="handle" cx="${hx}" cy="${hy}" r="${visR}"

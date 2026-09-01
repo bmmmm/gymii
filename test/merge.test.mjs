@@ -187,4 +187,20 @@ const gymWith = (machines, extra = {}) => ({
   assert.deepEqual(r.tombstones, [{ id: 'x', at: 9 }], 'tombstones keep the newest at per id');
 }
 
+// The map's stacking order is a FIELD (`z`), never the array order — this is
+// why. mergeById unions by id and says nothing about order, so a stack kept
+// as array order would come back scrambled; carried on the record it rides
+// the same whole-record LWW as every other field.
+{
+  const l = { shapes: [{ id: 'a', z: -1, updatedAt: 5 }, { id: 'b', updatedAt: 5 }], machines: [] };
+  const r = { shapes: [{ id: 'b', updatedAt: 5 }, { id: 'a', z: -1, updatedAt: 5 }], machines: [] };
+  const out = mergeLayout(l, r).merged.shapes;
+  assert.equal(out.find((x) => x.id === 'a').z, -1, 'z survives the merge on its record');
+  // a newer layer change on the remote wins like any other field edit
+  const bumped = mergeLayout(
+    { shapes: [{ id: 'a', z: -1, updatedAt: 5 }], machines: [] },
+    { shapes: [{ id: 'a', z: 1, updatedAt: 9 }], machines: [] });
+  assert.equal(bumped.merged.shapes[0].z, 1, 'the newer layer edit wins');
+}
+
 console.log('merge matrix: all assertions passed');

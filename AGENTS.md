@@ -106,7 +106,12 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   fill the name chips on the overview and in the builder. A name is
   proposed, never asked for. Pick lists:
   `MUSCLE_GROUPS`, `COMMON_SETTINGS`, `ZONE_LABELS` (its 'Cardio' string
-  is a room label — unrelated to the `machine.cardio` flag). Stored plans
+  is a room label — unrelated to the `machine.cardio` flag),
+  `MACHINE_BRANDS`, `MAP_LAYERS` (map stacking as three named layers —
+  `{z, label}`, stored as `shape.z`, absent = 0 = Normal). Machines carry
+  optional `brand`/`model` (absent when empty), `layout.meta` is
+  `{address, postcode, city, country}` — meta lives INSIDE the layout, so
+  template/backup/sync carry it for free. Stored plans
   live under `gymii.<gid>.plans`: `{id, name, createdAt, days?, skippedOn?,
   items:[{machineId?, name?, num?, exercise|null, target?}]}` with target
   `{sets,reps,weight}` or `{distance,seconds}`; `days` is getDay()-coded
@@ -240,7 +245,24 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   map surface (editor, train mini-maps, builder); its `highlightId` opt
   marks one machine `.locate` (white stroke, CSS pulse) and dims the rest
   — visual machine state belongs here, never as post-render DOM pokes in
-  train.js. Also exports `findMachineByNum`, the collision helpers
+  train.js. STACKING ORDER of the floor shapes comes from each shape's own
+  `z` (store's `MAP_LAYERS`), sorted stably so a shared layer keeps creation
+  order — never from the array order, because merge.js's `mergeById` returns
+  its items in unspecified order and a stack kept that way would not survive
+  the first sync (pinned in test/merge.test.mjs). Machines are deliberately
+  outside it: `fits()` keeps them from ever overlapping, and their number
+  must stay readable above every zone. Wall-snapped fixtures keep their own
+  layer on the wall. Layering also decides HIT-TESTING, which is the other
+  half of the feature — `hitPadSvg` only pads items under 44px, so a small
+  zone under a big one was unreachable until the big one moved back.
+  Its `unlockedId` opt is the EDIT LOCK: a selected item draws its
+  outline (dashed, `.selected-outline`) and nothing else; only the unlocked
+  one gets the solid outline (`.unlocked`) and the corner handle, and the
+  floor outline only hands out its vertex/midpoint handles while it is the
+  unlocked one. On a phone a tap that drifts used to shove a whole zone
+  across the floor, and the resize handle sat exactly where the thumb grabs
+  an item — both now need a deliberate double tap first, and a second one
+  takes it back (gym.js owns the gesture). Also exports `findMachineByNum`, the collision helpers
   (`overlapsSolid`/`fits`/`freeSpot`), `snapDoorToWall`, `FIXTURES`,
   `WALL_SNAPPED`, `ITEM_COLORS`. Its only import is `esc` from ui.js —
   keep it free of store/gym imports so the cycle cannot reappear.
@@ -251,7 +273,30 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
 - `js/gym.js` — floor-plan editor (renderer imported from map.js).
   Polygon outline with vertex/midpoint editing; wall-snapped fixtures
   (entrance/door/window) glue to the nearest wall segment with rotation +
-  flips. Find-by-number row above the map: a hit selects the machine
+  flips. EVERYTHING ON THE MAP STARTS LOCKED — machines, zones, walls,
+  fixtures AND the floor outline. A single tap only selects an item and opens
+  its card; `unlockedId` (TOGGLED by a double tap within `DOUBLE_TAP_MS` on
+  the item BODY — the same gesture locks it again, so getting back to a safe
+  map never means hunting for empty floor to tap; also cleared by `select()`
+  on any selection change, and never persisted: re-entering the Gym is always
+  a read-only starting point) drives map.js's handles AND the pointerdown
+  guard, which starts no drag at all — neither move nor resize — on a locked
+  item. A freshly added item is unlocked (`addItem`): you just made it on
+  purpose. The props card's last line names the current state.
+  A DRAG IS NOT A TAP: `lastTap` carries the down point and pointermove drops
+  it once the contact travels past `TAP_SLOP`, or two quick drags on the same
+  item would pair into a double tap and lock it again mid-arrangement.
+  The Layer chips (`layerRow`/`wireLayerRow`, shared by the zone and
+  wall/furniture cards) write `item.z` — deleted when Normal, so exports stay
+  clean. Machines and wall-snapped fixtures deliberately have no layer row. The machine card's Brand row is `MACHINE_BRANDS` + free text
+  (single-valued, tap again to clear); its text fields stage every keystroke
+  into the item on `input` and only `save()` on `change`, because a chip tap
+  re-renders the card and would otherwise eat a half-typed name. The
+  Location card holds `meta.postcode` and an `#gym-osm` search link built by
+  `osmUrl()` (exported for the tests) — the card is NOT re-rendered on a
+  meta edit (that would fight the keyboard), so `bindMeta` refreshes the
+  link's href and `hidden` by hand.
+  Find-by-number row above the map: a hit selects the machine
   (props open) and pulses it via `highlightId`; the next pointerdown on
   the map clears the pulse. `focusMachine(id)` is the in-memory handoff
   for the log screen's ✏️ button (same pattern as train's
@@ -505,7 +550,14 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   `keepInView(root, selector)` from ui.js after the re-render — instantly,
   never smooth, and with `focus: true` only for text fields likely to be
   filled again (never number inputs: the keyboard would pop and
-  `initNumericOverwrite` would hand over an empty field). Navigation is the
+  `initNumericOverwrite` would hand over an empty field). A re-render that a
+  TEXT FIELD triggered is the sharper case — the field is a different node
+  afterwards, so the keyboard drops and the caret is gone mid-word: wrap
+  such a render in `preserveFocus(root, render)` (ui.js) and the field comes
+  back focused with its selection intact, found again by its id. Both
+  `renderProps()` (gym.js) and `renderSettings()` are wrapped whole, so
+  every field inside them is covered once instead of per call site.
+  Navigation is the
   opposite case: the Train tab renders its screens (hub, start, plans,
   builder, bind, log, overview, onboarding) into one container, so
   `screenKey()` detects a screen CHANGE and resets the scroll to the top —

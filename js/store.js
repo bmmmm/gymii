@@ -240,6 +240,31 @@ export const ZONE_LABELS = [
   'Turf', 'Entrance', 'Changing room',
 ];
 
+// Manufacturers you actually read off the frame in a commercial gym, plus
+// the free-weight names for racks and bars. A pick list, not a taxonomy:
+// anything missing is typed in and becomes a chip of its own, exactly like
+// COMMON_SETTINGS. Kept short — a list nobody can scan is a text field with
+// extra steps.
+export const MACHINE_BRANDS = [
+  'Technogym', 'Life Fitness', 'Matrix', 'Precor', 'Cybex', 'Hammer Strength',
+  'Nautilus', 'gym80', 'Panatta', 'Hoist', 'Body-Solid', 'Keiser',
+  'Concept2', 'Eleiko', 'Rogue', 'Milon', 'Schnell', 'Woodway', 'StairMaster',
+];
+
+// Stacking order for map shapes, as a pick list rather than a free number:
+// three named layers are what someone arranging a floor plan actually
+// thinks in, and they stay scannable as chips. Stored as `z` on the shape
+// (absent = 0 = Normal), so the value is already a number if a finer
+// ordering ever becomes necessary — no migration needed. It has to be a
+// FIELD and not the array order: merge.js's mergeById returns its items in
+// unspecified order, so a stack kept as array order would not survive the
+// first sync between two devices.
+export const MAP_LAYERS = [
+  { z: -1, label: 'Background' },
+  { z: 0, label: 'Normal' },
+  { z: 1, label: 'On top' },
+];
+
 export const COMMON_SETTINGS = [
   'Seat', 'Seat angle', 'Back pad', 'Chest pad', 'Thigh pad', 'Shin pad',
   'Ankle pad', 'Arm pads', 'Pad height', 'Pulley height', 'Handle position',
@@ -351,7 +376,7 @@ export function newLayout(name = 'My layout') {
   const grid = { w: 60, h: 40 };
   return {
     v: 1, name, grid,
-    meta: { address: '', city: '', country: '' },
+    meta: { address: '', postcode: '', city: '', country: '' },
     outline: defaultOutline(grid),
     shapes: [], machines: [],
   };

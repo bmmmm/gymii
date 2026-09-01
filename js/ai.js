@@ -161,6 +161,8 @@ export function buildAiExport() {
       machines: layout.machines.map((m) => ({
         num: m.num,
         label: m.label,
+        ...(m.brand ? { brand: m.brand } : {}),
+        ...(m.model ? { model: m.model } : {}),
         ...(m.cardio ? { cardio: true } : {}),
         ...(m.bodyweight ? { bodyweight: true } : {}),
         ...(m.exercises?.length ? { exercises: m.exercises } : {}),

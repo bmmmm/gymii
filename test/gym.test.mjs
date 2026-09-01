@@ -76,9 +76,21 @@ assert.ok(close(num(padM1, 'x'), 10 + (4 - minUnits) / 2), 'm1 pad centered on t
 assert.ok(svg.innerHTML.indexOf('tap-hit') < svg.innerHTML.indexOf('machine-box'),
   'pad layer sits below the machine layer so visible machines win hit-testing');
 
-// --- selected machine: icon handle + big hit circle ---
+// --- selected but LOCKED: a dashed outline and nothing else ---
 svg = fakeSvg();
 drawLayout(svg, layout, { editor: true, selectedId: 'm1' });
+const lockedOutline = tagsWith(svg.innerHTML, 'selected-outline');
+assert.equal(lockedOutline.length, 1, 'selection is still marked while locked');
+assert.ok(!lockedOutline[0].includes('unlocked'), 'a locked outline stays dashed');
+assert.equal(tagsWith(svg.innerHTML, 'handle-hit').length, 0,
+  'no resize handle until the item is double-tapped');
+assert.ok(!svg.innerHTML.includes('handle-icon'), 'no resize icon under the thumb either');
+
+// --- unlocked by a double tap: solid outline, icon handle, big hit circle ---
+svg = fakeSvg();
+drawLayout(svg, layout, { editor: true, selectedId: 'm1', unlockedId: 'm1' });
+assert.ok(tagsWith(svg.innerHTML, 'selected-outline')[0].includes('unlocked'),
+  'an unlocked outline says so, so the state reads at arm\'s length');
 const hits = tagsWith(svg.innerHTML, 'handle-hit');
 assert.equal(hits.length, 1, 'exactly one resize hit circle');
 assert.equal(attr(hits[0], 'data-handle'), '1', 'hit circle carries data-handle');
@@ -93,15 +105,28 @@ assert.equal(tagsWith(svg.innerHTML, 'handle-icon').length, 1, 'diagonal arrow i
 
 // --- machine flush against the corner: handle clamped into the viewBox ---
 svg = fakeSvg();
-drawLayout(svg, layout, { editor: true, selectedId: 'm2' });
+drawLayout(svg, layout, { editor: true, selectedId: 'm2', unlockedId: 'm2' });
 const hitR = 22 / ppu;
 const hit2 = tagsWith(svg.innerHTML, 'handle-hit')[0];
 assert.ok(close(num(hit2, 'cx'), 60 + PAD - hitR) && close(num(hit2, 'cy'), 40 + PAD - hitR),
   'corner handle clamps fully inside the padded viewBox');
 
-// --- outline selected: enlarged, clamped vertex/midpoint handles ---
+// --- the unlock belongs to ONE item: a stale id never unlocks the selected one ---
+svg = fakeSvg();
+drawLayout(svg, layout, { editor: true, selectedId: 'm1', unlockedId: 'm2' });
+assert.equal(tagsWith(svg.innerHTML, 'handle-hit').length, 0,
+  'another item being unlocked does not hand m1 a handle');
+
+// --- outline selected but LOCKED: no corner handles to grab by accident ---
 svg = fakeSvg();
 drawLayout(svg, layout, { editor: true, selectedId: 'outline' });
+assert.equal(tagsWith(svg.innerHTML, 'vertex-hit').length, 0,
+  'a locked outline hands out no corner handles');
+assert.equal(tagsWith(svg.innerHTML, 'mid-hit').length, 0, 'and no midpoint dots');
+
+// --- outline unlocked: enlarged, clamped vertex/midpoint handles ---
+svg = fakeSvg();
+drawLayout(svg, layout, { editor: true, selectedId: 'outline', unlockedId: 'outline' });
 const verts = tagsWith(svg.innerHTML, 'vertex-hit');
 assert.equal(verts.length, layout.outline.length, 'one hit rect per outline corner');
 const vertHit = 40 / ppu;
@@ -115,6 +140,41 @@ assert.ok(close(num(vVis[0], 'x'), -(20 / ppu) / 2),
   'visible vertex stays on the true (unclamped) corner');
 assert.equal(tagsWith(svg.innerHTML, 'mid-hit').length, layout.outline.length,
   'one hit circle per edge midpoint');
+
+// --- layers: `z` decides the stacking order, not the array order ---
+// Array order cannot carry it: merge.js's mergeById documents "order
+// unspecified", so a stack kept as array order dies on the first sync.
+const layered = store.newLayout('Layers');
+layered.shapes.push(
+  { id: 's-top', kind: 'rect', label: 'Top', x: 2, y: 2, w: 10, h: 10, z: 1 },
+  { id: 's-mid', kind: 'rect', label: 'Mid', x: 3, y: 3, w: 10, h: 10 },
+  { id: 's-bot', kind: 'rect', label: 'Bot', x: 4, y: 4, w: 10, h: 10, z: -1 },
+);
+svg = fakeSvg();
+drawLayout(svg, layered, { editor: true });
+const order = ['s-bot', 's-mid', 's-top'].map((id) => svg.innerHTML.indexOf(id));
+assert.deepEqual([...order].sort((a, b) => a - b), order,
+  'shapes render background -> normal -> on top, whatever the array says');
+
+// an absent z is Normal, and equal layers keep their creation order (stable sort)
+const tied = store.newLayout('Tied');
+tied.shapes.push(
+  { id: 's-first', kind: 'rect', x: 2, y: 2, w: 5, h: 5 },
+  { id: 's-second', kind: 'rect', x: 3, y: 3, w: 5, h: 5, z: 0 },
+);
+svg = fakeSvg();
+drawLayout(svg, tied, { editor: true });
+assert.ok(svg.innerHTML.indexOf('s-first') < svg.innerHTML.indexOf('s-second'),
+  'same layer keeps creation order — the sort is stable');
+
+// machines stay above every shape, including an "On top" one
+svg = fakeSvg();
+const overMachine = store.newLayout('Over');
+overMachine.shapes.push({ id: 's-over', kind: 'rect', x: 2, y: 2, w: 20, h: 20, z: 1 });
+overMachine.machines.push({ id: 'm-under', num: 1, x: 4, y: 4, w: 4, h: 3, settingsFields: [] });
+drawLayout(svg, overMachine, { editor: true });
+assert.ok(svg.innerHTML.indexOf('s-over') < svg.innerHTML.indexOf('m-under'),
+  'a machine is never hidden behind a zone, whatever its layer');
 
 // --- read-only mini-map: no editor artifacts, no layout measurement ---
 svg = fakeSvg();
@@ -143,7 +203,7 @@ assert.ok(!svg.innerHTML.includes('locate') && !svg.innerHTML.includes('opacity=
 // --- zero-width fallback: sizes stay finite ---
 svg = fakeSvg();
 svg.getBoundingClientRect = () => ({ width: 0 });
-drawLayout(svg, layout, { editor: true, selectedId: 'm1' });
+drawLayout(svg, layout, { editor: true, selectedId: 'm1', unlockedId: 'm1' });
 const fallbackHit = tagsWith(svg.innerHTML, 'handle-hit')[0];
 assert.ok(Number.isFinite(num(fallbackHit, 'r')) && num(fallbackHit, 'r') > 0,
   'ASSUMED_SVG_PX fallback keeps handle sizes finite');
@@ -203,7 +263,7 @@ globalThis.DOMPoint = class {
   matrixTransform(m) { return { x: m.a * this.x + m.e, y: m.d * this.y + m.f }; }
 };
 
-const { renderGym, focusMachine } = await import(new URL('../js/gym.js', import.meta.url).href);
+const { renderGym, focusMachine, osmUrl } = await import(new URL('../js/gym.js', import.meta.url).href);
 const S = SVG_PX / (60 + 2 * PAD); // screen px per unit, editor viewBox
 
 // Permissive element stub: every selector resolves, every listener is
@@ -252,6 +312,10 @@ const onItem = (id, handle = false) => ({
   closest: (sel) => (sel.includes('data-vertex') ? null
     : { dataset: handle ? { id, handle: '1' } : { id } }),
 });
+// what closest() must answer for a tap on an outline corner handle
+const onVertex = (i) => ({
+  closest: (sel) => (sel.includes('data-vertex') ? { dataset: { vertex: String(i) } } : null),
+});
 const fire = (floor, type, props = {}) => {
   (floor.listeners[type] || []).forEach((fn) => fn({
     pointerId: 1,
@@ -264,6 +328,22 @@ const dragSeq = (floor, target, from, to) => {
   fire(floor, 'pointerdown', { ...at(...from), target });
   fire(floor, 'pointermove', at(...to));
   fire(floor, 'pointerup');
+};
+// Everything starts LOCKED: a double tap on the item body unlocks it for
+// moving and resizing, and the same gesture locks it again — so calling this
+// twice returns to the safe state. Both taps land synchronously, well inside
+// the 450 ms window.
+const doubleTap = (floor, id, spot) => {
+  fire(floor, 'pointerdown', { ...at(...spot), target: onItem(id) });
+  fire(floor, 'pointerup');
+  fire(floor, 'pointerdown', { ...at(...spot), target: onItem(id) });
+  fire(floor, 'pointerup');
+};
+// The everyday sequence: unlock, then drag. Most assertions below are about
+// what the drag does, not about the lock, so they go through this.
+const unlockAndDrag = (floor, target, from, to) => {
+  doubleTap(floor, target.closest('[data-id]').dataset.id, from);
+  dragSeq(floor, target, from, to);
 };
 
 function gymWith(machines, shapes = []) {
@@ -281,51 +361,118 @@ function gymWith(machines, shapes = []) {
 const machineAt = (id) => store.getLayout().machines.find((m) => m.id === id);
 const mk = (id, num, x, y) => ({ id, num, x, y, w: 4, h: 3, settingsFields: [] });
 
-// --- move drag persists through the real handler chain ---
+// --- LOCKED BY DEFAULT: a plain drag on a fresh editor moves nothing ---
+// This is the accident the lock exists for — a tap on a zone that drifts a
+// few pixels used to shove the whole thing across the floor.
 let root = gymWith([mk('m1', 1, 10, 10), mk('m2', 2, 20, 10)]);
 dragSeq(root.floor, onItem('m1'), [12, 11.5], [14, 21.5]);
+assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [10, 10],
+  'a locked machine does not move');
+assert.equal(root.querySelector('#undo').disabled, true,
+  'and records no undo entry, so there is nothing to take back');
+// the tap still SELECTED it — locking is not the same as being inert
+dragSeq(root.floor, onItem('m1', true), [14, 13], [16, 15]);
+assert.deepEqual([machineAt('m1').w, machineAt('m1').h], [4, 3],
+  'a handle target on a locked item resizes nothing either');
+
+// --- move drag persists through the real handler chain, once unlocked ---
+root = gymWith([mk('m1', 1, 10, 10), mk('m2', 2, 20, 10)]);
+unlockAndDrag(root.floor, onItem('m1'), [12, 11.5], [14, 21.5]);
 assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [12, 20], 'drag moved the machine');
 assert.equal(root.querySelector('#undo').disabled, false, 'real move recorded an undo entry');
 
+// --- the unlocking double tap itself moves nothing ---
+root = gymWith([mk('m1', 1, 10, 10)]);
+doubleTap(root.floor, 'm1', [12, 11.5]);
+assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [10, 10],
+  'the gesture that unlocks does not also nudge');
+assert.equal(root.querySelector('#undo').disabled, true, 'and writes no history');
+
 // --- sub-snap wiggle is a no-op: nothing saved, no undo entry ---
 root = gymWith([mk('m1', 1, 10, 10), mk('m2', 2, 20, 10)]);
-dragSeq(root.floor, onItem('m1'), [12, 11.5], [12.3, 11.6]);
+unlockAndDrag(root.floor, onItem('m1'), [12, 11.5], [12.3, 11.6]);
 assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [10, 10], 'wiggle did not move');
 assert.equal(root.querySelector('#undo').disabled, true, 'no-op drag left undo history clean');
 
 // --- fully blocked move: machine stays put, still no undo entry ---
 root = gymWith([mk('m1', 1, 10, 10), mk('m2', 2, 20, 10)]);
-dragSeq(root.floor, onItem('m1'), [12, 11.5], [22, 11.5]);
+unlockAndDrag(root.floor, onItem('m1'), [12, 11.5], [22, 11.5]);
 assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [10, 10], 'blocked drag did not move');
 assert.equal(root.querySelector('#undo').disabled, true, 'blocked drag left undo history clean');
 
 // --- axis slide: x blocked by the neighbor, y still follows the finger ---
 root = gymWith([mk('m1', 1, 10, 10), mk('m2', 2, 20, 10)]);
-dragSeq(root.floor, onItem('m1'), [12, 11.5], [22, 12.5]);
+unlockAndDrag(root.floor, onItem('m1'), [12, 11.5], [22, 12.5]);
 assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [10, 11], 'slid along the free axis');
 
-// --- resize via the handle target ---
+// --- resize via the handle target, once unlocked ---
 root = gymWith([mk('m1', 1, 10, 10)]);
+doubleTap(root.floor, 'm1', [12, 11.5]);
 dragSeq(root.floor, onItem('m1', true), [14, 13], [16, 15]);
 assert.deepEqual([machineAt('m1').w, machineAt('m1').h], [6, 5], 'handle drag resized');
 
+// --- the double tap TOGGLES: the same gesture locks the item again ---
+root = gymWith([mk('m1', 1, 10, 10)]);
+doubleTap(root.floor, 'm1', [12, 11.5]);
+doubleTap(root.floor, 'm1', [12, 11.5]);
+dragSeq(root.floor, onItem('m1', true), [14, 13], [16, 15]);
+assert.deepEqual([machineAt('m1').w, machineAt('m1').h], [4, 3],
+  'a second double tap took the handle away again');
+assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [10, 10],
+  'and the item is fully locked again — the drag moves nothing either');
+// a third pair unlocks it once more — the toggle is not a one-shot
+doubleTap(root.floor, 'm1', [12, 11.5]);
+dragSeq(root.floor, onItem('m1', true), [14, 13], [16, 15]);
+assert.deepEqual([machineAt('m1').w, machineAt('m1').h], [6, 5],
+  'the lock can be opened again');
+
+// --- the unlock survives a move, and dies when another item is picked ---
+root = gymWith([mk('m1', 1, 10, 10), mk('m2', 2, 30, 10)]);
+doubleTap(root.floor, 'm1', [12, 11.5]);
+dragSeq(root.floor, onItem('m1'), [12, 11.5], [14, 11.5]);
+dragSeq(root.floor, onItem('m1', true), [16, 13], [18, 14]);
+assert.deepEqual([machineAt('m1').w, machineAt('m1').h], [6, 4],
+  'the unlock stays put across a move of the same machine');
+dragSeq(root.floor, onItem('m2'), [32, 11.5], [32, 11.5]); // pick the other one
+dragSeq(root.floor, onItem('m1'), [12, 11.5], [12, 11.5]); // back to m1, single tap
+dragSeq(root.floor, onItem('m1', true), [18, 14], [22, 16]);
+assert.deepEqual([machineAt('m1').w, machineAt('m1').h], [6, 4],
+  'selecting another item locked m1 again');
+assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [12, 10],
+  'and it cannot be moved either — the single tap only re-selected it');
+
 // --- resize into a neighbor is blocked per axis ---
 root = gymWith([mk('m1', 1, 10, 10), mk('m2', 2, 16, 10)]);
+doubleTap(root.floor, 'm1', [12, 11.5]);
 dragSeq(root.floor, onItem('m1', true), [14, 13], [18, 14]);
 assert.deepEqual([machineAt('m1').w, machineAt('m1').h], [4, 4],
   'width growth blocked by the neighbor, height still grew');
 
-// --- solid fixture: blocked from covering a machine, free floor still works ---
+// --- solid fixture: locked like everything else, then the same rules ---
 root = gymWith([mk('m1', 1, 10, 10)],
   [{ id: 'f1', kind: 'fixture', fixture: 'water', x: 16, y: 10, w: 2, h: 2 }]);
-dragSeq(root.floor, onItem('f1'), [17, 11], [12, 11]);
+dragSeq(root.floor, onItem('f1'), [17, 11], [17, 21]);
 let f1 = store.getLayout().shapes.find((s) => s.id === 'f1');
+assert.deepEqual([f1.x, f1.y], [16, 10], 'a fixture is locked too, not just machines');
+unlockAndDrag(root.floor, onItem('f1'), [17, 11], [12, 11]);
+f1 = store.getLayout().shapes.find((s) => s.id === 'f1');
 assert.deepEqual([f1.x, f1.y], [16, 10], 'fixture blocked from covering the machine');
 dragSeq(root.floor, onItem('f1'), [17, 11], [17, 21]);
 f1 = store.getLayout().shapes.find((s) => s.id === 'f1');
 assert.deepEqual([f1.x, f1.y], [16, 20], 'fixture still moves onto free floor');
 
+// --- a freshly added item starts UNLOCKED: you just made it on purpose ---
+root = gymWith([]);
+root.querySelector('#add-machine').listeners.click[0]();
+const fresh = store.getLayout().machines[0];
+dragSeq(root.floor, onItem(fresh.id), [fresh.x + 2, fresh.y + 1.5],
+  [fresh.x + 7, fresh.y + 1.5]);
+assert.equal(store.getLayout().machines[0].x, fresh.x + 5,
+  'a new machine can be placed without a double tap first');
+
 // --- add-machine button lands new machines on non-overlapping spots ---
+// A fresh root each time: the previous editor's button closes over its own
+// in-memory layout, so reusing it would add to the wrong one.
 root = gymWith([]);
 const addBtn = root.querySelector('#add-machine');
 addBtn.listeners.click[0]();
@@ -335,6 +482,26 @@ assert.equal(after.machines.length, 2, 'two machines added');
 const second = after.machines[1];
 assert.ok(!overlapsSolid(after, second, second.x, second.y, second.w, second.h),
   'second machine does not overlap the first');
+
+// --- the floor outline locks like everything else ---
+// A tap on the outer wall used to hand over draggable corners straight away,
+// which is the same accident one level out: reshaping the floor by mistake.
+root = gymWith([]);
+const corner = () => store.getLayout().outline[0];
+dragSeq(root.floor, onItem('outline'), [0, 0], [0, 0]); // select the outline
+dragSeq(root.floor, onVertex(0), [0, 0], [5, 5]);
+assert.deepEqual([corner().x, corner().y], [0, 0],
+  'a locked outline does not reshape, even with a corner target');
+assert.equal(root.querySelector('#undo').disabled, true, 'and writes no history');
+
+doubleTap(root.floor, 'outline', [0, 0]);
+dragSeq(root.floor, onVertex(0), [0, 0], [5, 5]);
+assert.deepEqual([corner().x, corner().y], [5, 5], 'unlocked, the corner follows the finger');
+
+// and the same gesture locks it again
+doubleTap(root.floor, 'outline', [0, 0]);
+dragSeq(root.floor, onVertex(0), [5, 5], [10, 10]);
+assert.deepEqual([corner().x, corner().y], [5, 5], 'a second double tap re-locks the outline');
 
 // --- find-by-number: hit selects + highlights the map, miss reports without selecting ---
 root = gymWith([mk('m1', 1, 10, 10), mk('m2', 2, 20, 10)]);
@@ -386,5 +553,21 @@ root = gymWith([mk('m1', 1, 10, 10)]);
 assert.ok(root.innerHTML.includes('href="#train"') && root.innerHTML.includes('Back to your workout'),
   'active workout: header offers a one-tap link back to Train');
 store.clearActive();
+
+// --- the gym's address as an OpenStreetMap search ---
+// Postal order, and the postcode glued to the city the way an address is
+// written — a comma between them would read as two separate places.
+assert.equal(
+  decodeURIComponent(osmUrl({ address: 'Demostr. 1', postcode: '10115', city: 'Berlin', country: 'DE' })
+    .split('query=')[1]),
+  'Demostr. 1, 10115 Berlin, DE', 'full address searches in postal order');
+assert.equal(
+  decodeURIComponent(osmUrl({ city: 'Berlin' }).split('query=')[1]), 'Berlin',
+  'a partial address still searches');
+assert.equal(osmUrl({}).split('query=')[1], '', 'an empty address yields an empty query');
+assert.equal(osmUrl().split('query=')[1], '', 'no meta at all is not a crash');
+assert.ok(osmUrl({ city: 'Berlin' }).startsWith('https://www.openstreetmap.org/search?'),
+  'searches OpenStreetMap over https');
+assert.ok(!osmUrl({ address: 'A & B, 1' }).includes(' '), 'the query is url-encoded');
 
 console.log('gym editor rendering + collision + drag integration: all assertions passed');
