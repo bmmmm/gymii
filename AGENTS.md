@@ -17,12 +17,17 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   of every `await import('../js/store.js')`. It exports `mem` (the backing
   Map, a live binding) and `useStore(map)` to point the stub at another Map;
   one call is a device switch, which is how sync.test.mjs runs two devices in
-  one process. The helper is deliberately outside the CI glob — neither the
+  one process. `failWritesAfter(n)` lets `n` writes through and then throws
+  a real `QuotaExceededError` from `setItem` (Infinity by default, so tests
+  that ignore it see the plain stub); `removeItem` stays exempt, because
+  deleting frees space and the store depends on that. The helper is deliberately outside the CI glob — neither the
   `helpers/` directory nor the name matches `test/*.test.mjs`, so it never
   runs as a suite of its own.
   `store` (store roundtrips, outline migration,
   template validation, locker carry-over, sync groundwork: stamps,
-  tombstones, v1/v2 backup compat), `merge` (the pure sync merge matrix —
+  tombstones, v1/v2 backup compat, the refused-write path and
+  `storedBytes` across gyms), `persist` (origin durability over a stubbed
+  StorageManager: no API, already-granted, ask-once, refusal, rejections), `merge` (the pure sync merge matrix —
   union by id, LWW, tombstones), `sync` (the client sync engine: protocol
   conformance over a stubbed fetch, WebCrypto roundtrip, sync-code parsing,
   wire unit conversion, synckey-never-in-backup, plain mode, and the M2
@@ -187,6 +192,43 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   backs the builder's Text view. `#2 Dumbbells: Biceps curls` names a
   movement AT a machine — only a marked num unlocks that reading, or
   "Day A: Leg press" would lose half its name to a false heading.
+  WRITE FAILURES: every write goes through the one `write()` (a refused
+  `setItem` — quota gone, private mode — is a synchronous `DOMException`).
+  It ANNOUNCES over `onWriteError(fn)` and RETHROWS; do not "fix" that by
+  swallowing it. A swallowed failure would let `touched()` hand the sync
+  layer a state that is nowhere on disk, and let callers tidy up after
+  data they never saved. Only the transition is announced, so a run of
+  failing writes raises one banner and the next good write reports `null`;
+  `getWriteError()` reads the current state. No retry, no queue, no second
+  store — `js/app.js` shows `#storage-alert` and the user acts.
+  ORDER INVARIANT in `finishWorkout()`: `saveWorkouts()` FIRST, then
+  `clearActive()`. `removeItem` cannot fail, `setItem` can — the other
+  order deletes a finished workout that never reached history. Same rule
+  as the gym migrations (parts before the registry). Two writers stay
+  knowingly outside it: `deleteWorkout` (tombstone before list — a half
+  failure resolves to "deleted" on the next merge, which is what was
+  wanted) and `setUnit` (writes across all gyms and can stop midway; the
+  banner makes it visible, a transaction would be a framework).
+  `storedBytes()` is the honest occupancy figure: every gymii key across
+  EVERY gym, `key.length + value.length` in UTF-16 units. It exists
+  because `navigator.storage.estimate()` cannot answer it — that API
+  covers IndexedDB and the Cache API and leaves Web Storage out of its
+  numbers entirely, so it is shown as context beside this count, never
+  instead of it.
+- `js/persist.js` — origin DURABILITY, deliberately not part of store.js
+  (that file is the localStorage layer; this one asks the browser to keep
+  it, and stubs `navigator.storage` rather than `localStorage`). It
+  imports nothing. Running out of room is not the risk — a workout costs
+  ~890 bytes against a ~5 MB budget — being CLEARED is: WebKit's ITP wipes
+  script-writable storage after seven days without interaction, on every
+  site, and Home Screen web apps are the documented exemption. So
+  `ensurePersisted()` is called from `finish()` in train.js, once a
+  workout has actually been saved: the first moment something exists that
+  cannot be reconstructed, and a user gesture, which Firefox's permission
+  prompt requires — never on load, or Firefox prompts unasked. At most one
+  `persist()` per page load, guarded on the StorageManager's IDENTITY, so
+  a test stub is a fresh load for free. Everything returns `null` rather
+  than throwing.
 - `js/sync.js` — the cross-device sync engine (M1; docs/sync-protocol.md
   is the wire contract, docs/sync-plan.md the decision log, gymii-sync the
   reference server in its own repo). Public API is a FROZEN contract the
@@ -667,7 +709,9 @@ from main; every asset reference must stay RELATIVE (project subpath).
 DONE = deployed, and a deploy says which build it is: any push to main that
 touches `js/`, `css/`, `index.html` or `sw.js` must bump `APP_VERSION` in
 `js/version.js` to the deploy date in the SAME push, or `static-checks` goes
-red before Pages sees it. Settings shows the string; a PWA updates itself in
+red before Pages sees it — a second deploy on the same day takes a letter
+(`2026-09-02b`), since the gate wants the FILE changed and two builds must
+not share one name. Settings shows the string; a PWA updates itself in
 the background, so it is the only way to tell what is installed.
 Community template PRs are adopted locally like Dependabot ones, never merged
 in the UI. The mechanics — workflow names, the Pages "Multiple artifacts"

@@ -14,6 +14,14 @@ one localStorage stub for every test, CI parses every shipped script
 (`node --check` alone does NOT — it silently passes broken ESM) and blocks
 a deploy that ships changes without bumping `js/version.js`.
 
+Shipped 2026-09-02, wave A — storage that survives: finishWorkout() wrote
+history BEFORE clearing the active workout (the other order loses a
+finished workout when a write is refused), write() gained an error channel
+that announces and rethrows instead of letting callers believe they saved,
+a banner says so, and Settings gained a Storage card with the honest
+occupancy count plus the ask for persistent storage — which gymii raises
+in finish(), the first user gesture after something irreplaceable exists.
+
 Shipped 2026-08-14, in five waves: plans that exist before the gym does
 (typed note → unbound items → bind on the floor), the builder's text view,
 proposed workout names, the history name filter, and a complete workout

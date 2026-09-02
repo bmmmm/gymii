@@ -88,6 +88,14 @@ offers sync only as a clearly-labeled unencrypted mode, never silently.
 Until you turn anything on, export a backup before you switch devices or
 browsers.
 
+Settings shows how much of the browser's storage gymii occupies and whether
+the browser has promised to keep it. Browsers do clear sites nobody has
+opened in a while — on iPhone after seven days, unless the app was added to
+the Home Screen — so gymii asks for persistent storage the first time you
+finish a workout, when there is finally something that cannot be
+reconstructed. And if a write is ever refused, it says so at the top of the
+screen rather than pretending the set was saved.
+
 ## Contributing
 
 Vanilla HTML/CSS/JS (ES modules), zero dependencies. Tests are plain `node`,
