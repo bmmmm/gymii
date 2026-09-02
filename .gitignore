@@ -1,3 +1,15 @@
 .DS_Store
 .claude/
 
+# The browser smoke tests are the repo's only dependency, and none of what
+# they leave behind ships. node_modules/ first: it must be ignored BEFORE
+# any install runs, or a working tree fills with untracked files — and the
+# deploy job uploads `path: .`.
+node_modules/
+# npm writes its lockfile before the preinstall guard can refuse it
+package-lock.json
+yarn.lock
+# Playwright's run output
+test-results/
+playwright-report/
+blob-report/
