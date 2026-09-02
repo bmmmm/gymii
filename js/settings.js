@@ -128,11 +128,13 @@ function syncCard(gym, shownCode, shownQr) {
       ${intro}
       <label class="field-block"><span>Server</span>
         <div class="row"><input id="sync-server" type="text" autocomplete="off"
+          inputmode="url" enterkeyhint="done" autocapitalize="none" autocorrect="off" spellcheck="false"
           placeholder="${plain ? 'http://your-server:8639' : 'sync.example.org'}"></div>
         ${serverHelp}
       </label>
       <label class="field-block"><span>Token</span>
         <div class="row"><input id="sync-token" type="text" autocomplete="off"
+          autocapitalize="none" autocorrect="off" spellcheck="false"
           placeholder="printed by your sync server"></div>
       </label>
       <button id="sync-enable" class="btn btn-primary">${plain
@@ -141,6 +143,7 @@ function syncCard(gym, shownCode, shownQr) {
       <div class="field-block"><span>Have a sync code?</span>
         <div class="row">
           <input id="sync-code" type="text" autocomplete="off" aria-label="Sync code"
+            autocapitalize="none" autocorrect="off" spellcheck="false"
             placeholder="gymii-sync:v1:…">
           <button id="sync-pair" class="btn btn-inline">Pair</button>
         </div>

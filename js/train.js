@@ -503,7 +503,7 @@ function renderStart(root, layout, message) {
       <p class="muted">Your gym has no machines yet — name the one in front of
         you and gymii adds it.</p>
       <div class="row">
-        <input id="qs-label" type="text" placeholder="e.g. Chest press">
+        <input id="qs-label" type="text" enterkeyhint="go" placeholder="e.g. Chest press">
         <button id="qs-start" class="btn btn-inline">Start</button>
       </div>
     </section>`}
@@ -647,7 +647,7 @@ function renderOnboarding(root, message) {
       <h2>At the gym right now?</h2>
       <p class="muted">Name the machine in front of you and start logging.</p>
       <div class="row">
-        <input id="qs-label" type="text" placeholder="e.g. Chest press">
+        <input id="qs-label" type="text" enterkeyhint="go" placeholder="e.g. Chest press">
         <button id="qs-start" class="btn btn-inline">Start</button>
       </div>
     </section>
@@ -739,6 +739,7 @@ function machinePicker(container, layout, onPick, { actionLabel = 'Open' } = {})
     applyMapState();
   });
 
+  // no enterkeyhint on .pick-num — the iOS number keypad has no return key
   const input = container.querySelector('.pick-num');
   const err = container.querySelector('.pick-err');
 

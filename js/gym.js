@@ -418,7 +418,10 @@ export function renderGym(root) {
     btn.addEventListener('click', () => addItem('fixture', btn.dataset.fixture));
   });
 
-  // "find a machine by number" — mirrors the Train picker's number lookup
+  // "find a machine by number" — mirrors the Train picker's number lookup.
+  // No enterkeyhint on the field: a type=number keypad has no return key on
+  // iOS, so the hint would be a promise the keyboard can't keep — the Go
+  // button beside it is the way in.
   const findInput = root.querySelector('#find-num');
   const findErr = root.querySelector('#find-err');
   const findGo = () => {
@@ -703,7 +706,7 @@ export function renderGym(root) {
                 class="chip${item.brand === b ? ' sel' : ''}" data-value="${esc(b)}">${esc(b)}</button>`).join('')}
             </div>
             <div class="row">
-              <input id="m-brand-custom" type="text" placeholder="Other brand…">
+              <input id="m-brand-custom" type="text" enterkeyhint="done" placeholder="Other brand…">
               <button type="button" id="m-brand-set" class="btn btn-inline">Set</button>
             </div>
           </div>
@@ -726,14 +729,14 @@ export function renderGym(root) {
           <div class="field-block"><span>Settings — the machine's adjustable parts</span>
             <div class="chip-select" id="m-fields">${chipRow(settingsOptions, item.settingsFields)}</div>
             <div class="row">
-              <input id="m-field-custom" type="text" placeholder="Other setting…">
+              <input id="m-field-custom" type="text" enterkeyhint="done" placeholder="Other setting…">
               <button type="button" id="m-field-add" class="btn btn-inline">Add</button>
             </div>
           </div>
           <div class="field-block"><span>Exercises — for free-weight or multi-exercise machines</span>
             <div class="chip-select" id="m-exercises">${chipRow(item.exercises ?? [], item.exercises ?? [])}</div>
             <div class="row">
-              <input id="m-exercise-custom" type="text" placeholder="e.g. Biceps curls…">
+              <input id="m-exercise-custom" type="text" enterkeyhint="done" placeholder="e.g. Biceps curls…">
               <button type="button" id="m-exercise-add" class="btn btn-inline">Add</button>
             </div>
           </div>
@@ -890,7 +893,7 @@ export function renderGym(root) {
                 class="chip${item.label === z ? ' sel' : ''}" data-value="${esc(z)}">${esc(z)}</button>`).join('')}
             </div>
             <div class="row">
-              <input id="z-custom" type="text" placeholder="Custom label…">
+              <input id="z-custom" type="text" enterkeyhint="done" placeholder="Custom label…">
               <button type="button" id="z-set" class="btn btn-inline">Set</button>
             </div>
           </div>

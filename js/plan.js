@@ -221,7 +221,7 @@ export function renderPlanBuilder(
       <section class="card">
         <h2>Add an exercise</h2>
         <div class="row">
-          <input id="add-line" type="text" placeholder="e.g. Leg press 3x10 80">
+          <input id="add-line" type="text" enterkeyhint="enter" placeholder="e.g. Leg press 3x10 80">
           <button type="button" id="add-line-go" class="btn btn-inline">Add</button>
         </div>
         <p class="muted">One line, like your plan is written: sets × reps and a
