@@ -10,6 +10,7 @@ import { renderPlanBuilder, DAY_LABELS } from './plan.js';
 import { focusMachine } from './gym.js';
 import {
   esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural, machineChain,
+  minsBetween,
   primeAudio, playTimerSound, keepInView,
 } from './ui.js';
 
@@ -868,7 +869,7 @@ const workoutSetCount = (active) => active.entries.reduce((n, e) => n + e.sets.l
 function renderOverview(root, layout, active) {
   const s = getSettings();
   const sets = workoutSetCount(active);
-  const mins = Math.max(1, Math.round((Date.now() - active.startedAt) / 60000));
+  const mins = minsBetween(active.startedAt, Date.now());
 
   // Muscle coverage today: muscles of every machine with ≥1 set this
   // workout, read live from the layout (entries don't snapshot muscles;
@@ -1648,7 +1649,8 @@ function finish(root, active) {
   // count machines, not entries — several exercises at one machine still
   // add up to a single machine trained
   const machines = new Set(saved.entries.map((e) => e.machineId)).size;
-  renderTrain(root, `Workout saved: ${plural(machines, 'machine')}, `
+  renderTrain(root, `Workout saved: ${minsBetween(saved.startedAt, saved.finishedAt)} min, `
+    + `${plural(machines, 'machine')}, `
     + `${plural(sets, 'set')}, ${workoutTotals(saved, getSettings())} total`
     + `${goalTotal ? `, ${goalHit}/${goalTotal} target sets` : ''}.`);
 }

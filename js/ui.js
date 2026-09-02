@@ -81,6 +81,10 @@ export const esc = (s) =>
 // "3 sets", "1 workout" — count plus s-pluralized noun, in one spelling.
 export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+// How long a workout took, in whole minutes and never zero — three
+// places said this in three slightly different ways.
+export const minsBetween = (from, to) => Math.max(1, Math.round((to - from) / 60000));
+
 export const fmtDuration = (sec) => {
   const s = Math.max(0, Math.round(sec) || 0); // imported data may be fractional/absent
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;

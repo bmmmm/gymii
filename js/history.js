@@ -5,7 +5,7 @@ import {
 } from './store.js';
 import {
   esc, fmtDate, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
-  dateValue, timeValue, machineChain, keepInView,
+  dateValue, timeValue, machineChain, keepInView, minsBetween,
 } from './ui.js';
 import { lineChart } from './chart.js';
 import { startWorkoutFrom } from './train.js';
@@ -450,7 +450,7 @@ export function renderHistory(root) {
 
 const setCount = (w) => w.entries.reduce((n, e) => n + e.sets.length, 0);
 const minsOf = (w) => // finishedAt can be absent in imported data
-  Math.max(1, Math.round(((w.finishedAt ?? w.startedAt) - w.startedAt) / 60000));
+  minsBetween(w.startedAt, w.finishedAt ?? w.startedAt);
 
 const entryTitle = (e) => `#${e.num} ${esc(e.label)}${e.exercise ? ` · ${esc(e.exercise)}` : ''}`;
 

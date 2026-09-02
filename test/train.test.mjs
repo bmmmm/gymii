@@ -700,6 +700,8 @@ assert.ok(store.getActive(), 'and nothing is saved yet');
 fin.listeners.click();
 assert.strictEqual(store.getActive(), null, 'the second tap ends the workout');
 assert.equal(store.getWorkouts().length, 1, 'and it lands in history');
+assert.ok(root.innerHTML.includes('47 min'),
+  'the summary leads with how long the workout took');
 
 // no sets logged: the same button asks the opposite question
 byId.clear();
