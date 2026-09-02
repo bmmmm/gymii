@@ -128,7 +128,7 @@ jobs:
       # Playwright is deliberately off onlyBuiltDependencies, so the browser
       # download is this explicit step — which is what makes it cacheable.
       - name: Cache the browser
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
