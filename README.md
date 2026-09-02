@@ -26,7 +26,9 @@ ever sees ciphertext.
   areas keep separate histories per named exercise. 📍 shows where the next
   machine stands, a busy one gets the closest open alternative, and a
   coverage row tracks which muscles you've hit today. Your locker number has a
-  home too — noted at the start, out of the way once you're logging.
+  home too — noted at the start, out of the way once you're logging. 🏁 in
+  the machine header finishes the workout right where you logged the last
+  set, and removing a set takes two taps — it has no undo.
 - 📋 **Plans** — start with the plan you already have: type it in the way
   it's written (`Leg press 3x10 80`, `#7 Chest press 3x8-12 40kg`,
   `Treadmill 20min`) and gymii reads it — no gym needed yet. At the machine
@@ -41,7 +43,11 @@ ever sees ciphertext.
   by is stated once, never tallied, and "skip this week" settles it. gymii
   also notices when you keep training something on Tuesdays and offers to
   write that down.
-- ⏱️ **Rest timer** — starts itself and remembers per machine. The screen
+- ⏱️ **Rest timer** — starts itself and remembers per machine. Tap outside
+  the rest screen and it keeps running above the log button, so putting the
+  screen away never costs you the rest; the screen itself says what's coming
+  ("Next: set 2/3 — 50 kg × 10"). A rest you change mid-workout belongs to
+  that workout — one link makes it the machine's for good. The screen
   stays awake (just the break, or the whole workout — your call) and dims
   itself so a dark gym stays dark: the countdown ticks one brighter beat per
   second, any touch brings it back, and the last seconds are bright again.

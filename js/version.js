@@ -9,4 +9,4 @@
 //
 // So it lives in the app's own module graph, and CI keeps it honest — a push
 // to main that changes what ships without touching this file goes red.
-export const APP_VERSION = '2026-09-03';
+export const APP_VERSION = '2026-09-02';

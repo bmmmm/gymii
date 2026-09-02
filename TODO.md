@@ -1,5 +1,19 @@
 # TODO
 
+Shipped 2026-09-02, in four waves: a mobile sweep (no field under 16px, so
+iOS stops zooming on focus; 44px targets everywhere with two commented
+exceptions; safe-area padding, scrollable overlays, one tap-highlight rule
+instead of eleven, a plan builder that fits 320px), the rest/log flow (the
+rest deadline belongs to the WORKOUT — dismiss the screen and it keeps
+running inline; 🏁 finishes from the log screen; a rest changed mid-workout
+no longer rewrites the machine; a plan with an unbound first stop opens on
+that question; the set ✕ arms first), a service worker that stops waiting
+for a stalled gym wifi after 2.5 s (and its first test at all, running the
+real sw.js in node:vm), and dev-side work: History leads with the workouts,
+one localStorage stub for every test, CI parses every shipped script
+(`node --check` alone does NOT — it silently passes broken ESM) and blocks
+a deploy that ships changes without bumping `js/version.js`.
+
 Shipped 2026-08-14, in five waves: plans that exist before the gym does
 (typed note → unbound items → bind on the floor), the builder's text view,
 proposed workout names, the history name filter, and a complete workout
