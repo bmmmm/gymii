@@ -85,9 +85,16 @@ export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // places said this in three slightly different ways.
 export const minsBetween = (from, to) => Math.max(1, Math.round((to - from) / 60000));
 
+// Serves two roles: a cardio duration and the rest countdown. The hour is
+// therefore named only from 3600 s on — below that every string stays
+// character-for-character what it was, so a 72 s rest still reads "1:12"
+// and only a 90-minute ride stops claiming to be "90:00".
 export const fmtDuration = (sec) => {
   const s = Math.max(0, Math.round(sec) || 0); // imported data may be fractional/absent
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const mins = Math.floor(s / 60) % 60;
+  const secs = String(s % 60).padStart(2, '0');
+  if (s < 3600) return `${Math.floor(s / 60)}:${secs}`;
+  return `${Math.floor(s / 3600)}:${String(mins).padStart(2, '0')}:${secs}`;
 };
 
 // Shared two-tap confirm for destructive actions (AGENTS.md convention).

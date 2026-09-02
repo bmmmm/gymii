@@ -39,7 +39,12 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   matrix, RS vectors, full decode round-trip, penalty rules, overflow), `train` (guided-plan
   construction, hub/start/plans navigation), `plan` (stored plans, the note parser/serialiser, AI
   import, binding, targets), `history` (name filter, muscle card + filter,
-  full editor, back-logging), `gym` (editor rendering, collision),
+  full editor, back-logging), `map` (the shared renderer: px-sized touch
+  targets, viewBox clamping, wall/door geometry, the usage ramp, collision
+  and placement, and ids escaped into attributes), `ui` (the shared
+  helpers, incl. the four DOM-facing ones over hand-made stubs — the file
+  runs under Pacific/Auckland, where local-vs-UTC actually differs),
+  `gym` (editor wiring and drag integration),
   `demo` (generator determinism, entry invariants, weekday plan states,
   unit conversion, load-replaces-gym), `ai` (export plans section,
   paste-back new-vs-replace flow), `templates` (the community-library
@@ -327,7 +332,13 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   takes it back (gym.js owns the gesture). Also exports `findMachineByNum`, the collision helpers
   (`overlapsSolid`/`fits`/`freeSpot`), `snapDoorToWall`, `FIXTURES`,
   `WALL_SNAPPED`, `ITEM_COLORS`. Its only import is `esc` from ui.js —
-  keep it free of store/gym imports so the cycle cannot reappear.
+  keep it free of store/gym imports so the cycle cannot reappear. Every id
+  interpolated into an attribute goes through `esc()`: ids arrive from
+  community template FILES off the network and `isValidLayout()` only
+  checks that they are truthy, so a raw one can end the attribute.
+  `snapDoorToWall` rounds its result to one decimal — an unrounded float
+  would be a new value on every save, and `saveLayout` stamps what changed,
+  so sync would see edits nobody made.
   train.js additionally imports ONE thing straight from gym.js — the
   `focusMachine` edit handoff — which is fine exactly as long as
   gym.js never imports from train.js/plan.js (the direction the map
@@ -549,7 +560,11 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   workout IS a plan that already happened, so `3x10 80` becomes three
   real sets — and reopens the result in edit mode (`openEditId`). It
   shows even on the empty screen: coming over from paper starts there.
-  Shared display helpers live in ui.js: `pad2`/`dateValue`/`timeValue`
+  Shared display helpers live in ui.js. `fmtDuration` serves TWO roles —
+  a cardio duration and the rest countdown — so it names the hour only
+  from 3600 s on: below that every string is unchanged (a 72 s rest is
+  still `1:12`), above it a 90-minute ride reads `1:30:00` instead of
+  claiming to be `90:00`. `pad2`/`dateValue`/`timeValue`
   build LOCAL-time input values (toISOString is UTC and shifts a
   past-midnight workout onto the previous day — ai.js dates its export
   via `dateValue` for the same reason) and `machineChain` is the deduping

@@ -31,6 +31,14 @@ assert.equal(ui.fmtDuration(600), '10:00');
 assert.equal(ui.fmtDuration(90.4), '1:30', 'fractional seconds round');
 assert.equal(ui.fmtDuration(undefined), '0:00', 'imported data may have no seconds at all');
 assert.equal(ui.fmtDuration(-5), '0:00', 'and it may have nonsense; never render a negative clock');
+// The same function serves the rest countdown and a cardio duration, so
+// the hour appears only from 3600 s: everything a rest timer ever shows
+// stays character-for-character what it was.
+assert.equal(ui.fmtDuration(3599), '59:59', 'the last second before the hour is still m:ss');
+assert.equal(ui.fmtDuration(3600), '1:00:00', 'from an hour on, the hour is named');
+assert.equal(ui.fmtDuration(5400), '1:30:00',
+  'a 90-minute ride reads as 1:30:00 — as "90:00" it looked like a 90-second rest');
+assert.equal(ui.fmtDuration(7325), '2:02:05', 'minutes are padded once an hour leads');
 
 assert.equal(ui.minsBetween(0, 60000), 1);
 assert.equal(ui.minsBetween(0, 4_320_000), 72);
