@@ -27,8 +27,28 @@ export const useStore = (map) => {
   return map;
 };
 
+/**
+ * Let the next `n` writes through, then make every further setItem throw the
+ * real thing a browser throws when the quota is gone. Infinity by default,
+ * so a test that never calls this sees the plain stub.
+ *
+ * removeItem stays untouched on purpose: deleting frees space, and the store
+ * relies on that (finishWorkout clears the active workout AFTER saving it).
+ */
+export const failWritesAfter = (n = Infinity) => { writesLeft = n; };
+
+let writesLeft = Infinity;
+
 globalThis.localStorage = {
   getItem: (k) => (mem.has(k) ? mem.get(k) : null),
-  setItem: (k, v) => mem.set(k, String(v)),
+  setItem: (k, v) => {
+    if (writesLeft <= 0) {
+      throw new DOMException(
+        `Failed to execute 'setItem' on 'Storage': quota exceeded (${k})`,
+        'QuotaExceededError');
+    }
+    writesLeft -= 1;
+    mem.set(k, String(v));
+  },
   removeItem: (k) => mem.delete(k),
 };

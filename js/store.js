@@ -23,8 +23,44 @@ function read(key, fallback) {
   }
 }
 
+// A refused write (quota exhausted, private-mode storage disabled) must
+// never look like a successful one, so this both ANNOUNCES the failure and
+// rethrows it: swallowing it would let every caller carry on as if the
+// value were on disk — touched() would hand the sync layer a state that is
+// nowhere, and finishWorkout would tidy up after a workout it never saved.
+// No retry, no queue, no second store: the app says it out loud instead.
 function write(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (err) {
+    announceWriteError({ key, name: err?.name || 'Error' });
+    throw err;
+  }
+  announceWriteError(null); // whatever went wrong before is over
+}
+
+// --- write failures (quota, private mode) ---
+// The twin of onStoreChange below, deliberately kept apart from it:
+// "something changed" and "nothing was saved" are opposite facts and reach
+// different parts of the UI. Only the TRANSITION is announced, so a run of
+// failing writes raises one banner, not one per logged set.
+const writeErrorListeners = new Set();
+let writeError = null;
+
+export function onWriteError(fn) {
+  writeErrorListeners.add(fn);
+  return () => writeErrorListeners.delete(fn);
+}
+
+/** The last write failure, or null once a write succeeded again. */
+export const getWriteError = () => writeError;
+
+function announceWriteError(err) {
+  if (!err && !writeError) return; // the common case: nothing to say
+  writeError = err;
+  writeErrorListeners.forEach((fn) => {
+    try { fn(err); } catch { /* a listener must never break a write */ }
+  });
 }
 
 // --- change notification (M2 ambient sync) ---
@@ -650,8 +686,10 @@ export function clearActive() {
 // Moves the active workout into history; entries without sets are dropped.
 export function finishWorkout(active) {
   const entries = active.entries.filter((e) => e.sets.length);
-  clearActive();
-  if (!entries.length) return null;
+  if (!entries.length) {
+    clearActive();
+    return null;
+  }
   const workout = {
     id: active.id,
     startedAt: active.startedAt,
@@ -667,6 +705,11 @@ export function finishWorkout(active) {
   const list = getWorkouts();
   list.push(workout);
   saveWorkouts(list);
+  // INVARIANT: history first, the active workout last. clearActive() is a
+  // removeItem and cannot fail; saveWorkouts() can. The other order deletes
+  // a finished workout that never reached history — the same rule the gym
+  // migrations follow ("parts move FIRST, the registry last").
+  clearActive();
   return workout;
 }
 

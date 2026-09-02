@@ -1,7 +1,7 @@
 // Logic-level test for gymii's store: workout finishing, last-entry
 // lookup, and the export -> clear -> import roundtrip.
 // Run with: node test/store.test.mjs
-import { mem } from './helpers/localstorage.mjs'; // FIRST: installs the stub
+import { mem, failWritesAfter } from './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
@@ -702,6 +702,56 @@ store.clearAll();
 store.importData(tpl);
 assert.equal(store.getLayout().shapes[0].z, -1, 'and comes back on import');
 
+store.clearAll();
+
+// --- a refused write must not eat the workout it was asked to save ---
+// The failure this pins: finishWorkout() used to clear the active workout
+// BEFORE writing history, so a quota error left the finished workout
+// nowhere at all.
+store.clearAll();
+const quotaLayout = store.newLayout('Quota');
+quotaLayout.machines.push({ id: 'q1', num: 1, label: 'Row', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
+store.saveLayout(quotaLayout);
+
+const announced = [];
+const offWriteError = store.onWriteError((e) => announced.push(e));
+let storeChanges = 0;
+const offChange = store.onStoreChange(() => { storeChanges += 1; });
+
+const doomed = {
+  v: 2, id: 'wq', startedAt: 2000,
+  plan: [{ machineId: 'q1', exercise: null }], currentMachineId: null, currentExercise: null,
+  entries: [{ machineId: 'q1', num: 1, label: 'Row', settings: {}, sets: [{ reps: 10, weight: 40 }] }],
+};
+store.saveActive(doomed);
+const historyBefore = store.getWorkouts();
+
+failWritesAfter(0);
+assert.throws(() => store.finishWorkout(doomed), { name: 'QuotaExceededError' },
+  'a refused write surfaces as a throw, not as a silent no-op');
+failWritesAfter();
+
+assert.equal(store.getActive()?.entries[0].sets.length, 1,
+  'the finished workout is still in the active slot — nothing was lost');
+assert.deepEqual(store.getWorkouts(), historyBefore,
+  'and history is untouched (no in-memory fallback invented one)');
+assert.equal(storeChanges, 0,
+  'a failed write must not announce a change — ambient sync would push a state that is nowhere');
+assert.equal(announced.length, 1, 'exactly one announcement, not one per retry');
+assert.equal(announced[0].name, 'QuotaExceededError', 'the announcement names the error');
+assert.ok(announced[0].key.endsWith('.workouts'), 'and the key that could not be written');
+assert.equal(store.getWriteError()?.name, 'QuotaExceededError', 'the state stays readable');
+
+// and the second attempt, with room again, both saves and revokes the alarm
+const rescued = store.finishWorkout(store.getActive());
+assert.equal(rescued.entries[0].sets.length, 1, 'the same workout finishes once storage is back');
+assert.equal(store.getWorkouts().length, historyBefore.length + 1, 'now it is in history');
+assert.equal(store.getActive(), null, 'and only THEN is the active slot cleared');
+assert.equal(announced.length, 2, 'recovery is announced too');
+assert.equal(announced[1], null, 'as null — nothing is wrong any more');
+assert.equal(store.getWriteError(), null, 'and the state is clear again');
+offWriteError();
+offChange();
 store.clearAll();
 
 console.log('store roundtrip: all assertions passed');
