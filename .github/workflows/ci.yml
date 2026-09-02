@@ -49,6 +49,17 @@ jobs:
             node --input-type=module --check < "$f" || exit 1
           done
 
+      # The app stays dependency-free even though the tests are not. Nothing
+      # that ships may reference node_modules — a bundler-shaped import would
+      # 404 in the browser and be invisible to every other job.
+      - name: Nothing shipped reaches into node_modules
+        run: |
+          if git grep -n 'node_modules' -- 'js/*.js' 'css/*.css' index.html sw.js; then
+            echo "::error::a shipped file references node_modules"
+            exit 1
+          fi
+          echo "No shipped file references node_modules."
+
       # "Which build am I running?" has exactly one answer, js/version.js, and
       # only while it is bumped — a PWA updates itself in the background, so a
       # stale number is worse than none. A push to main that ships changed
@@ -97,6 +108,39 @@ jobs:
           [ "$missing" -eq 0 ] && echo "SHELL list covers every runtime asset."
           exit "$missing"
 
+  # What a stub DOM cannot see, on principle: js/app.js loading at all, five
+  # click handlers in a row across three re-renders, a box's real metrics, a
+  # service worker registering. The app that ships stays dependency-free —
+  # this job is the only place node_modules exists, and nothing from it
+  # reaches the browser.
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      # before setup-node, or `cache: pnpm` has no pnpm to find
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Playwright is deliberately off onlyBuiltDependencies, so the browser
+      # download is this explicit step — which is what makes it cacheable.
+      - name: Cache the browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright test
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: smoke-report
+          path: playwright-report/
+          retention-days: 7
+
   # Flat no-build site: the repo root IS the publish dir. Only main deploys;
   # pull_request runs stop after the checks.
   deploy:
@@ -111,6 +155,17 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+      # `path: .` uploads the whole checkout. It is safe today only because
+      # this job never installs anything — an implicit invariant, made
+      # explicit here rather than left as a trap for the next person who
+      # adds a build step above.
+      - name: The publish directory carries no install
+        run: |
+          if [ -e node_modules ]; then
+            echo "::error::node_modules exists in the publish directory — it would be deployed"
+            exit 1
+          fi
+          echo "Publish directory is install-free."
       - uses: actions/upload-pages-artifact@v5
         with:
           path: .
