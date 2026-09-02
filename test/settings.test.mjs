@@ -92,13 +92,21 @@ const classListStub = () => {
     toggle: () => {}, contains: (c) => set.has(c),
   };
 };
-const stubEl = () => ({
-  innerHTML: '', value: '', textContent: '', disabled: false, dataset: {}, listeners: {},
-  addEventListener(type, fn) { this.listeners[type] = fn; },
-  querySelector: () => stubEl(),
-  querySelectorAll: () => [],
-  classList: classListStub(),
-});
+const stubEl = () => {
+  // memoised like root's, so a handler attached to a nested element is
+  // still there when the test looks the element up again
+  const kids = new Map();
+  return {
+    innerHTML: '', value: '', textContent: '', disabled: false, dataset: {}, listeners: {},
+    addEventListener(type, fn) { this.listeners[type] = fn; },
+    querySelector(sel) {
+      if (!kids.has(sel)) kids.set(sel, stubEl());
+      return kids.get(sel);
+    },
+    querySelectorAll: () => [],
+    classList: classListStub(),
+  };
+};
 const byId = new Map();
 const root = {
   innerHTML: '',
@@ -334,5 +342,59 @@ assert.equal(root.querySelector('#sync-code').value, 'gymii-sync:v1:handoff',
   'm3: an unconfigured gym prefills the pairing field');
 assert.ok(root.querySelector('#sync-msg').textContent.includes('tap Pair'),
   'm3: and never auto-pairs');
+
+// --- the Storage card ---
+// A microtask flush: the card paints synchronously from the last known
+// answer, then repaints once the Storage API has replied.
+const settled = () => new Promise((r) => setTimeout(r, 0));
+const storageBody = () => root.querySelector('#storage-body').innerHTML;
+
+// 1. a browser without the API at all — Node is one, and so is a locked-down
+//    private window. The card still renders, and Settings survives.
+renderSettings(root);
+await settled();
+assert.ok(root.innerHTML.includes('<h2>Storage</h2>'), 'the card is there');
+assert.match(storageBody(), /gymii is using <strong>\d+/,
+  'and leads with the one number the localStorage limit actually applies to');
+assert.ok(storageBody().includes('Home Screen'),
+  'with no API to ask, the honest advice is the only thing said');
+assert.ok(!storageBody().includes('id="storage-persist"'),
+  'and no button that could not do anything');
+assert.ok(root.innerHTML.includes('<h2>Templates &amp; data</h2>'),
+  'the rest of Settings is untouched by a browser that cannot answer');
+
+const installStorage = (value) => Object.defineProperty(globalThis.navigator, 'storage', {
+  configurable: true, value,
+});
+
+// 2. already persistent: report it, and do not offer a button for it
+installStorage({ persisted: async () => true, persist: async () => true });
+renderSettings(root);
+await settled();
+assert.ok(storageBody().includes('marked the data as persistent'), 'it says so');
+assert.ok(!storageBody().includes('id="storage-persist"'), 'and asks for nothing');
+assert.ok(storageBody().includes('backup'),
+  'persistent is not the same as backed up, and the copy says which');
+
+// 3. not persistent: the ask, the reason, and the whole-origin figure beside
+//    gymii's own — neither number alone tells the truth
+installStorage({
+  persisted: async () => false,
+  persist: async () => false,
+  estimate: async () => ({ usage: 3 * 1048576, quota: 2 * 1073741824 }),
+});
+renderSettings(root);
+await settled();
+assert.ok(storageBody().includes('id="storage-persist"'), 'the ask is offered');
+assert.ok(storageBody().includes('seven days'), 'with the concrete reason, once');
+assert.ok(storageBody().includes('3.0 MB') && storageBody().includes('2.0 GB'),
+  "the browser's own estimate stands beside gymii's count");
+
+// 4. a browser that refuses says so — a button that silently does nothing
+//    would be worse than none
+await root.querySelector('#storage-body').querySelector('#storage-persist').listeners.click();
+assert.ok(storageBody().includes('did not grant it'), 'the refusal is reported');
+assert.ok(storageBody().includes('id="storage-persist"'),
+  'and the button stays, because a later attempt can still succeed');
 
 console.log('settings sync card: all assertions passed');

@@ -1338,6 +1338,25 @@ export function importData(data) {
 }
 
 // Full factory reset: every gym's data, the registry, and settings.
+// How much of the ~5 MB localStorage budget gymii itself occupies, in
+// UTF-16 code units — the unit browsers actually charge for. Counted over
+// EVERY gym, not just the active one, because the quota is per origin and
+// an old gym's history weighs exactly as much as today's.
+//
+// navigator.storage.estimate() cannot answer this: it reports IndexedDB and
+// the Cache API, and Web Storage is not in the number at all.
+export function storedBytes() {
+  const gyms = read(KEYS.gyms, null);
+  const keys = [
+    KEYS.gyms, KEYS.settings,
+    ...(gyms?.list ?? []).flatMap((g) => GYM_PARTS.map((part) => scopedKey(g.id, part))),
+  ];
+  return keys.reduce((sum, key) => {
+    const raw = localStorage.getItem(key);
+    return raw == null ? sum : sum + key.length + raw.length;
+  }, 0);
+}
+
 export function clearAll() {
   const gyms = read(KEYS.gyms, null);
   gyms?.list.forEach((g) => GYM_PARTS

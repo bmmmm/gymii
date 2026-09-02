@@ -754,4 +754,33 @@ offWriteError();
 offChange();
 store.clearAll();
 
+// --- storedBytes counts the whole origin's gymii data, not just today's gym ---
+// The quota is per origin: a gym you have not opened in months weighs
+// exactly as much as the one you are in.
+store.clearAll();
+const sized = store.newLayout('Sized');
+sized.machines.push({ id: 's1', num: 1, label: 'Press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
+store.saveLayout(sized);
+const oneGym = store.storedBytes();
+assert.ok(oneGym > 0, 'a gym with a layout occupies something');
+
+// The second gym gets a real history and is then left behind: with the
+// SMALL gym active again, only a count that walks every gym can see it.
+const sizedFirstId = store.getGyms().activeId;
+const sizedSecondId = store.createGym('Second'); // createGym also activates it
+store.saveWorkouts(Array.from({ length: 40 }, (_, i) => ({
+  id: `sw${i}`, startedAt: 1000 + i, finishedAt: 2000 + i, updatedAt: 2000 + i,
+  entries: [{ machineId: 's2', num: 1, label: 'Row', settings: {}, sets: [{ reps: 10, weight: 40 }] }],
+})));
+store.setActiveGym(sizedFirstId);
+const twoGyms = store.storedBytes();
+assert.ok(twoGyms - oneGym > 2000,
+  'the gym you are NOT in is in the count — an active-gym-only implementation '
+  + 'would differ by a registry entry, not by its history');
+
+store.deleteGym(sizedSecondId);
+assert.ok(twoGyms - store.storedBytes() > 2000, 'and deleting it gives the space back');
+store.clearAll();
+assert.ok(store.storedBytes() < 200, 'an empty install counts next to nothing');
+
 console.log('store roundtrip: all assertions passed');

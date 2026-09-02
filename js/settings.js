@@ -1,7 +1,7 @@
 import {
   getSettings, saveSettings, getLayout,
   getGyms, createGym, renameGym, deleteGym, setActiveGym, setUnit,
-  exportGymTemplate, exportBackup, importData, clearAll,
+  exportGymTemplate, exportBackup, importData, clearAll, storedBytes,
 } from './store.js';
 import {
   download, esc, twoTapConfirm, keepInView, preserveFocus, fmtDate, fmtTime,
@@ -13,8 +13,65 @@ import {
   e2eAvailable,
   mintPairingCode, listDevices, revokeDevice, listRemoteGyms, adoptRemoteGym,
 } from './sync.js';
+import { ensurePersisted, isPersisted, estimateOrigin } from './persist.js';
 import { qrSvg } from './qr.js';
 import { APP_VERSION } from './version.js';
+
+// --- the Storage card ---
+// What the browser is keeping, and whether it promised to keep it. Sits
+// directly above "Templates & data" because exporting a backup is the
+// answer a bad status calls for.
+//
+// renderSettings is synchronous and the Storage API is not, so the card
+// paints from the last known answer and refreshStorageStatus() fills it in
+// — the same shape as the devices list.
+let storageStatus = { persisted: null, origin: null, refused: false };
+
+async function refreshStorageStatus() {
+  storageStatus = {
+    ...storageStatus,
+    persisted: await isPersisted(),
+    origin: await estimateOrigin(),
+  };
+}
+
+const fmtBytes = (n) => {
+  if (n < 1024) return `${n} B`;
+  if (n < 1048576) return `${Math.round(n / 1024)} kB`;
+  if (n < 1073741824) return `${(n / 1048576).toFixed(1)} MB`;
+  return `${(n / 1073741824).toFixed(1)} GB`;
+};
+
+// Two numbers, because either alone would mislead. storedBytes() is what
+// gymii occupies in localStorage — the figure the ~5 MB limit applies to —
+// while estimate() covers the whole origin but leaves Web Storage out of
+// its count, so "12 MB of 2 GB" on its own would read as roomier than it is.
+function storageCardBody() {
+  const { persisted, origin, refused } = storageStatus;
+  const mine = `<p>gymii is using <strong>${fmtBytes(storedBytes())}</strong> of this `
+    + "browser's storage for your gyms, workouts and plans.</p>";
+  const whole = origin
+    ? `<p class="muted">This browser reports ${fmtBytes(origin.usage)} used of `
+      + `${fmtBytes(origin.quota)} available for the whole site — a separate figure, `
+      + 'covering offline files but not the storage above.</p>'
+    : '';
+  // Reporting, not nagging: each branch states the situation once and
+  // offers the one action that changes it.
+  let durability;
+  if (persisted === true) {
+    durability = '<p class="muted">This browser has marked the data as persistent: it will not '
+      + 'be cleared to make room. A backup is still the copy that survives a lost phone.</p>';
+  } else if (persisted === false) {
+    durability = '<button id="storage-persist" class="btn">Ask to keep this data</button>'
+      + `<p class="muted">${refused ? 'The browser did not grant it. ' : ''}`
+      + 'Browsers clear sites you have not opened in a while — on iPhone after seven days, '
+      + 'unless gymii has been added to the Home Screen.</p>';
+  } else {
+    durability = '<p class="muted">This browser cannot say whether it will keep the data. '
+      + 'Adding gymii to the Home Screen is what keeps it from being cleared.</p>';
+  }
+  return mine + whole + durability;
+}
 
 // --- the Sync card (M1, docs/sync-plan.md) ---
 // The sync code is the ONLY key to an account (sync-plan decision 7), so it
@@ -292,6 +349,11 @@ function renderSettingsView(root) {
     </section>
 
     <section class="card">
+      <h2>Storage</h2>
+      <div id="storage-body">${storageCardBody()}</div>
+    </section>
+
+    <section class="card">
       <h2>Templates &amp; data</h2>
       <button id="export-gym" class="btn">Export gym template</button>
       <button id="export-backup" class="btn">Export full backup</button>
@@ -407,6 +469,21 @@ function renderSettingsView(root) {
     download('gymii-gym-template.json', exportGymTemplate());
     msg.textContent = 'Gym template exported.';
   });
+
+  // Repaints the card body and re-attaches its one button — the button
+  // exists only in the "not persistent" branch, so it comes and goes.
+  const paintStorage = () => {
+    const body = root.querySelector('#storage-body');
+    if (!body) return;
+    body.innerHTML = storageCardBody();
+    body.querySelector('#storage-persist')?.addEventListener('click', async () => {
+      const ok = await ensurePersisted();
+      storageStatus = { ...storageStatus, persisted: ok === true, refused: ok !== true };
+      paintStorage();
+    });
+  };
+  paintStorage();
+  refreshStorageStatus().then(paintStorage); // fills in what only async can answer
 
   root.querySelector('#export-backup').addEventListener('click', () => {
     download('gymii-backup.json', exportBackup());
