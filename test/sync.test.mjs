@@ -4,18 +4,17 @@
 // its own independent implementation), the 409 loop, unit normalization at
 // the wire, and the promise that sync credentials never enter a backup.
 // Run with: node test/sync.test.mjs
+import { mem, useStore } from './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
 // Two devices, one process: the store keeps no state of its own beyond
 // localStorage, so pointing the stub at another Map IS another device.
+// `mem` is an ESM live binding, so the seeding below always writes into
+// whichever device useDevice() switched to last — same as the local `let`
+// this replaced.
 const devices = { A: new Map(), B: new Map() };
-let mem = devices.A;
-globalThis.localStorage = {
-  getItem: (k) => (mem.has(k) ? mem.get(k) : null),
-  setItem: (k, v) => mem.set(k, String(v)),
-  removeItem: (k) => mem.delete(k),
-};
-const useDevice = (d) => { mem = devices[d]; };
+const useDevice = (d) => useStore(devices[d]);
+useDevice('A');
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const sync = await import(new URL('../js/sync.js', import.meta.url).href);

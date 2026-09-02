@@ -2,14 +2,8 @@
 // (machine, exercise) pair on repeat, dedupe, and fallbacks for machines
 // or exercises that no longer exist.
 // Run with: node test/train.test.mjs
+import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
-
-const mem = new Map();
-globalThis.localStorage = {
-  getItem: (k) => (mem.has(k) ? mem.get(k) : null),
-  setItem: (k, v) => mem.set(k, String(v)),
-  removeItem: (k) => mem.delete(k),
-};
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const {

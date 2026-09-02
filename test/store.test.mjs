@@ -1,14 +1,8 @@
 // Logic-level test for gymii's store: workout finishing, last-entry
 // lookup, and the export -> clear -> import roundtrip.
 // Run with: node test/store.test.mjs
+import { mem } from './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
-
-const mem = new Map();
-globalThis.localStorage = {
-  getItem: (k) => (mem.has(k) ? mem.get(k) : null),
-  setItem: (k, v) => mem.set(k, String(v)),
-  removeItem: (k) => mem.delete(k),
-};
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 

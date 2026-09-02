@@ -10,7 +10,17 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   modules — don't go back to it).
 - Logic tests: `for f in test/*.test.mjs; do node "$f"; done` — CI runs the
   glob, so a new `test/<module>.test.mjs` is picked up without a workflow
-  edit. `store` (localStorage stub, store roundtrips, outline migration,
+  edit. The localStorage stub lives ONCE, in
+  `test/helpers/localstorage.mjs`: importing it installs it, which is why it
+  must be a test's FIRST import — ESM evaluates a dependency completely
+  before the importing module's own body runs, so the stub is in place ahead
+  of every `await import('../js/store.js')`. It exports `mem` (the backing
+  Map, a live binding) and `useStore(map)` to point the stub at another Map;
+  one call is a device switch, which is how sync.test.mjs runs two devices in
+  one process. The helper is deliberately outside the CI glob — neither the
+  `helpers/` directory nor the name matches `test/*.test.mjs`, so it never
+  runs as a suite of its own.
+  `store` (store roundtrips, outline migration,
   template validation, locker carry-over, sync groundwork: stamps,
   tombstones, v1/v2 backup compat), `merge` (the pure sync merge matrix —
   union by id, LWW, tombstones), `sync` (the client sync engine: protocol

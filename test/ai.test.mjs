@@ -3,14 +3,8 @@
 // a new plan lands as a new plan, a revision carrying an exported id
 // replaces its original only after a two-tap confirm.
 // Run with: node test/ai.test.mjs
+import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
-
-const mem = new Map();
-globalThis.localStorage = {
-  getItem: (k) => (mem.has(k) ? mem.get(k) : null),
-  setItem: (k, v) => mem.set(k, String(v)),
-  removeItem: (k) => mem.delete(k),
-};
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const { renderAi, buildAiExport } = await import(new URL('../js/ai.js', import.meta.url).href);

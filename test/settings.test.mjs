@@ -5,14 +5,8 @@
 // The network is stubbed at `fetch` (the real js/sync.js runs, WebCrypto
 // included) — stubbing the module would only pin the test against itself.
 // Run with: node test/settings.test.mjs
+import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
-
-const mem = new Map();
-globalThis.localStorage = {
-  getItem: (k) => (mem.has(k) ? mem.get(k) : null),
-  setItem: (k, v) => mem.set(k, String(v)),
-  removeItem: (k) => mem.delete(k),
-};
 
 // --- the fake blob server (docs/sync-protocol.md): 404 until the first PUT ---
 
