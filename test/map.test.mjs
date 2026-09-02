@@ -8,8 +8,10 @@ import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
-const { drawLayout, overlapsSolid, fits, freeSpot } =
-  await import(new URL('../js/map.js', import.meta.url).href);
+const {
+  drawLayout, overlapsSolid, fits, freeSpot,
+  snapDoorToWall, findMachineByNum, findItem, usagePayload, FIXTURES, WALL_SNAPPED,
+} = await import(new URL('../js/map.js', import.meta.url).href);
 
 // drawLayout renders into whatever quacks like an SVG element, so a plain
 // fake object is enough to assert on the generated markup.
@@ -244,4 +246,97 @@ packed.machines.push(
 assert.deepEqual(freeSpot(packed, 2, 2, 4, 3), { x: 2, y: 2 },
   'packed floor falls back to the preferred spot instead of refusing');
 
-console.log('map renderer + collision: all assertions passed');
+// ---------------------------------------------------------------------------
+// Geometry the renderer's markup assertions above never touch.
+// ---------------------------------------------------------------------------
+
+// --- snapDoorToWall: project onto the NEAREST wall, take its angle ---
+
+const walled = store.newLayout('Walled');
+walled.outline = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }];
+
+const nearTop = { id: 'd1', kind: 'fixture', fixture: 'door', x: 8, y: 1, w: 2.4, h: 1.2 };
+snapDoorToWall(walled, nearTop);
+assert.equal(nearTop.y, -0.6, 'the door centers ON the wall it snapped to, not beside it');
+assert.equal(nearTop.rot, 0, 'a horizontal wall gives rotation 0');
+assert.equal(nearTop.x, 8, 'and the position along the wall is left alone');
+
+const nearRight = { id: 'd2', kind: 'fixture', fixture: 'door', x: 17, y: 9, w: 2.4, h: 1.2 };
+snapDoorToWall(walled, nearRight);
+assert.equal(nearRight.rot, 90, 'the vertical wall on the right gives 90°');
+assert.ok(close(nearRight.x + nearRight.w / 2, 20), 'projected onto x = 20');
+
+// the NEAREST wall, not the first one: an interior wall beats the outline
+walled.shapes.push({ id: 'w1', kind: 'line', x: 0, y: 10, w: 20, h: 0 });
+const nearInner = { id: 'd3', kind: 'fixture', fixture: 'door', x: 8, y: 8.5, w: 2.4, h: 1.2 };
+snapDoorToWall(walled, nearInner);
+assert.ok(close(nearInner.y + nearInner.h / 2, 10),
+  'an interior wall 1 unit away wins over the outline 9 units away');
+
+// a diagonal wall hands over its own angle
+const diag = store.newLayout('Diagonal');
+diag.outline = [{ x: 0, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }];
+const onDiag = { id: 'd4', kind: 'fixture', fixture: 'door', x: 9, y: 11, w: 2.4, h: 1.2 };
+snapDoorToWall(diag, onDiag);
+assert.equal(onDiag.rot, 45, 'a diagonal wall gives 45°, not a snapped-to-axis lie');
+
+// coordinates are ROUNDED: an unrounded float would be a fresh value on
+// every save, and saveLayout stamps changed items — sync would see edits
+// nobody made
+assert.equal(onDiag.x, Math.round(onDiag.x * 10) / 10, 'x is rounded to one decimal');
+assert.equal(onDiag.y, Math.round(onDiag.y * 10) / 10, 'y is rounded to one decimal');
+
+// A duplicated outline point makes a zero-length segment. It must be
+// SKIPPED, not divided by: an unguarded one would set `best` to NaN first,
+// and every later comparison against NaN is false, so the NaN would stand.
+const degenerate = store.newLayout('Degenerate');
+degenerate.outline = [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 20, y: 0 },
+  { x: 20, y: 20 }, { x: 0, y: 20 }];
+const lonely = { id: 'd5', kind: 'fixture', fixture: 'door', x: 8, y: 1, w: 2.4, h: 1.2 };
+snapDoorToWall(degenerate, lonely);
+assert.ok(Number.isFinite(lonely.x) && Number.isFinite(lonely.y),
+  'a wall of length zero is skipped instead of dividing by it');
+assert.equal(lonely.y, -0.6, 'and the real wall beside it still wins');
+
+// no wall at all: the door is left exactly where it was
+const outlineless = store.newLayout('Open');
+outlineless.outline = [];
+const untouched = { id: 'd6', kind: 'fixture', fixture: 'door', x: 3, y: 4, w: 2.4, h: 1.2 };
+snapDoorToWall(outlineless, untouched);
+assert.deepEqual([untouched.x, untouched.y, untouched.rot], [3, 4, undefined],
+  'nothing to snap to leaves the door untouched rather than at the origin');
+
+// --- every wall-snapped kind is a real fixture ---
+WALL_SNAPPED.forEach((kind) => assert.ok(FIXTURES[kind],
+  `${kind} snaps to walls, so it must exist in FIXTURES — a typo here renders "❓"`));
+
+// --- lookups: the contract callers guard on ---
+
+const looked = store.newLayout('Lookups');
+looked.machines.push({ id: 'lm1', num: 7, x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
+looked.shapes.push({ id: 'ls1', kind: 'rect', label: 'Free weights', x: 8, y: 0, w: 6, h: 6 });
+assert.equal(findMachineByNum(looked, 7).id, 'lm1');
+assert.equal(findMachineByNum(looked, 99), null,
+  'an unknown number is null, not undefined — callers test `!m` but the docs promise null');
+assert.equal(findItem(looked, 'lm1').id, 'lm1', 'findItem finds machines');
+assert.equal(findItem(looked, 'ls1').id, 'ls1',
+  'and shapes too — otherwise a zone could not be selected in the editor');
+assert.equal(findItem(looked, 'nope'), null);
+
+// --- usagePayload: the ramp's denominator ---
+
+assert.equal(usagePayload(new Map()).max, 1,
+  'an empty map still yields max 1 — the ramp divides by it');
+assert.equal(usagePayload(new Map([['a', 3], ['b', 9]])).max, 9, 'otherwise the busiest machine sets it');
+
+const usedLayout = store.newLayout('Usage');
+usedLayout.machines.push({ id: 'u1', num: 1, x: 0, y: 0, w: 4, h: 3, color: '#ff0000', settingsFields: [] });
+const usedSvg = fakeSvg();
+drawLayout(usedSvg, usedLayout, { usage: usagePayload(new Map([['u1', 4]])) });
+assert.ok(!usedSvg.innerHTML.includes('#ff0000'),
+  'in the usage view the ramp wins over a custom color — otherwise the map lies about usage');
+const coldSvg = fakeSvg();
+drawLayout(coldSvg, usedLayout, { usage: usagePayload(new Map()) });
+assert.ok(coldSvg.innerHTML.includes('#1c232c'), 'a machine with no sets fades out instead of colouring');
+
+console.log('map renderer + geometry + collision: all assertions passed');
