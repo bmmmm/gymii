@@ -546,8 +546,8 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 /* plan builder: one editable item per machine (reorder, remove, targets) */
 .plan-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
 .plan-item:last-child { border-bottom: 0; }
-.plan-item-head { display: flex; align-items: center; gap: 10px; }
-.plan-item-head .plan-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.plan-item-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.plan-item-head .plan-label { flex: 1 1 96px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .plan-item-actions { display: flex; gap: 4px; flex-shrink: 0; margin-left: auto; }
 .plan-item-actions .x { font-size: 16px; }
 .plan-item .chip-select { margin: 8px 0 2px; }
@@ -564,7 +564,7 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .plan-bind .btn { margin-top: 4px; }
 .plan-targets { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .plan-targets .spread { align-items: center; }
-.plan-targets .label { font-size: 14px; color: var(--muted); width: 96px; }
+.plan-targets .label { font-size: 14px; color: var(--muted); width: 64px; }
 
 .set-row {
   display: flex;
@@ -596,8 +596,8 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .set-row .x { font-size: 18px; }
 
 /* inline history edit: compact weight/reps inputs inside a set row */
-.edit-set { display: flex; gap: 6px; align-items: center; color: var(--muted); }
-.edit-set input { width: 64px; text-align: center; }
+.edit-set { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-items: center; color: var(--muted); }
+.edit-set input { width: 60px; text-align: center; }
 
 /* exercise chips: mark movements already logged this session */
 .chip.done::after { content: ' ✓'; }
