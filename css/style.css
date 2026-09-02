@@ -197,7 +197,7 @@ a { color: var(--accent); }
   color: var(--accent-text);
 }
 
-.btn-inline { display: inline-block; width: auto; padding: 12px 14px; margin: 0; }
+.btn-inline { display: inline-block; width: auto; min-height: 44px; padding: 12px 14px; margin: 0; }
 
 .btn:disabled { opacity: 0.45; cursor: default; }
 
@@ -318,7 +318,7 @@ textarea {
 
 .gym-head { align-items: center; }
 .undo-group { display: flex; gap: 6px; }
-.undo-group .btn { min-width: 48px; font-size: 18px; padding: 10px 12px; }
+.undo-group .btn { min-width: 48px; min-height: 44px; font-size: 18px; padding: 10px 12px; }
 
 .toolbar { display: flex; gap: 8px; margin-bottom: 10px; }
 .toolbar .btn { margin: 0; padding: 12px 8px; font-size: 14px; }
