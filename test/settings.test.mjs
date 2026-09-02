@@ -5,14 +5,8 @@
 // The network is stubbed at `fetch` (the real js/sync.js runs, WebCrypto
 // included) — stubbing the module would only pin the test against itself.
 // Run with: node test/settings.test.mjs
+import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
-
-const mem = new Map();
-globalThis.localStorage = {
-  getItem: (k) => (mem.has(k) ? mem.get(k) : null),
-  setItem: (k, v) => mem.set(k, String(v)),
-  removeItem: (k) => mem.delete(k),
-};
 
 // --- the fake blob server (docs/sync-protocol.md): 404 until the first PUT ---
 
@@ -159,6 +153,12 @@ assert.ok(root.innerHTML.includes('unless you turn on sync'),
   'the footnote qualifies the local-only claim');
 assert.ok(!root.innerHTML.includes('in this browser only'),
   'the unconditional "browser only" claim is gone');
+
+// --- and it says which build is installed ---
+// The date is matched by shape, not by value: pinning the literal would turn
+// every deploy's bump into a failing test instead of a passing one.
+assert.match(root.innerHTML, /Version \d{4}-\d{2}-\d{2}/,
+  'Settings names the installed version');
 
 // --- pairing: a malformed code is a message, never an uncaught rejection ---
 

@@ -47,9 +47,10 @@ ever sees ciphertext.
   second, any touch brings it back, and the last seconds are bright again.
   Four tones to pick from, each one audible before you commit — and they play
   like music, so an iPhone's silent switch doesn't swallow them.
-- 📈 **History** — training heatmap, progress chart, one-tap repeat. Name a
+- 📈 **History** — your workouts lead the screen, one tap repeats any of
+  them; a muscle card, a training heatmap and a progress chart follow. Name a
   workout (gymii suggests one from the muscles you trained) and one tap
-  filters everything down to it. A muscle card shows how many sets each
+  filters everything down to it. The muscle card shows how many sets each
   group got — tap a row and the whole view narrows to that muscle, neglected
   groups collect at the bottom. Past workouts are fully editable — add or
   remove sets and machines, fix the date — and one you trained without your

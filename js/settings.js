@@ -14,6 +14,7 @@ import {
   mintPairingCode, listDevices, revokeDevice, listRemoteGyms, adoptRemoteGym,
 } from './sync.js';
 import { qrSvg } from './qr.js';
+import { APP_VERSION } from './version.js';
 
 // --- the Sync card (M1, docs/sync-plan.md) ---
 // The sync code is the ONLY key to an account (sync-plan decision 7), so it
@@ -321,6 +322,10 @@ function renderSettingsView(root) {
     <p class="muted footnote">gymii keeps everything in this browser (localStorage). Nothing
       leaves this device unless you turn on sync — and then only end-to-end encrypted, to a
       server you run. Export a backup before switching devices.</p>
+    <!-- A PWA updates itself in the background, so "which one am I running?"
+         is otherwise unanswerable — for a bug report as much as for a user
+         wondering whether a fix has landed yet. -->
+    <p class="muted">Version ${APP_VERSION}</p>
   `;
 
   const msg = root.querySelector('#data-msg');

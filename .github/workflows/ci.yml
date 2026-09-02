@@ -23,6 +23,58 @@ jobs:
       # workflow edit to be taken seriously
       - run: for f in test/*.test.mjs; do echo "== $f"; node "$f" || exit 1; done
 
+  # No build step means nothing parses the shipped scripts before a browser
+  # does: a stray typo in js/app.js or sw.js sails through the logic tests
+  # (they import single modules) and only breaks the live page. This parses
+  # every one of them.
+  # NOT `node --check <file>`: for a plain .js file that parses as CommonJS,
+  # node detects the ESM syntax, switches, and then exits 0 without ever
+  # reporting the module parse error — verified red-vs-green on node 24.20
+  # and 26.7, where a deliberately broken js/app.js passed. Feeding the file
+  # in with --input-type=module forces a real module parse, which is also why
+  # the file name is echoed by hand: the error then points at "[stdin]".
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the version gate below diffs against the pushed range
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Every shipped script parses
+        run: |
+          for f in js/*.js sw.js; do
+            echo "== $f"
+            node --input-type=module --check < "$f" || exit 1
+          done
+
+      # "Which build am I running?" has exactly one answer, js/version.js, and
+      # only while it is bumped — a PWA updates itself in the background, so a
+      # stale number is worse than none. A push to main that ships changed
+      # files and leaves it alone stops here, before Pages sees it. Pull
+      # requests are exempt: the bump belongs on the deploy, not on every
+      # review round.
+      - name: The deployed version is named
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          before='${{ github.event.before }}'
+          if [ -z "$before" ] || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+            echo "No comparable previous commit (new branch or force-push) — skipped."
+            exit 0
+          fi
+          changed=$(git diff --name-only "$before" '${{ github.sha }}' -- js css index.html sw.js)
+          if [ -z "$changed" ]; then
+            echo "Nothing that ships changed."
+            exit 0
+          fi
+          if echo "$changed" | grep -qx 'js/version.js'; then
+            echo "Version bumped alongside: $(echo "$changed" | tr '\n' ' ')"
+            exit 0
+          fi
+          echo "::error file=js/version.js::shipped files changed without bumping APP_VERSION: $(echo "$changed" | tr '\n' ' ')"
+          exit 1
+
   # A runtime asset missing from the sw.js SHELL list breaks the app OFFLINE
   # only — invisible in every normal test. icons/icon.svg is the source the
   # PNGs are generated from, never fetched at runtime, so it stays out.
@@ -48,7 +100,7 @@ jobs:
   # Flat no-build site: the repo root IS the publish dir. Only main deploys;
   # pull_request runs stop after the checks.
   deploy:
-    needs: [test, shell-list]
+    needs: [test, static-checks, shell-list]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:

@@ -2,14 +2,8 @@
 // the WHOLE view, not just the list), the full editor (add/remove sets and
 // machines, edit the date) and logging a workout after the fact.
 // Run with: node test/history.test.mjs
+import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
-
-const mem = new Map();
-globalThis.localStorage = {
-  getItem: (k) => (mem.has(k) ? mem.get(k) : null),
-  setItem: (k, v) => mem.set(k, String(v)),
-  removeItem: (k) => mem.delete(k),
-};
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const { renderHistory } = await import(new URL('../js/history.js', import.meta.url).href);
@@ -99,6 +93,14 @@ const options = () => [...root.innerHTML.matchAll(/<option value="[^"]*">([^<]+)
 assert.deepEqual([...new Set(options())].sort(),
   ['#14 Leg press', '#3 Lat pulldown', 'All machines'],
   'unfiltered, every trained machine is selectable');
+
+// What you did comes first: the workout list sits directly under the name
+// chips, everything that analyses or extends it follows.
+const order = ['Workouts', 'Muscles', 'Training days', 'Progress', 'Log a past workout']
+  .map((h) => root.innerHTML.search(new RegExp(`<h2[^>]*>${h}`)));
+assert.ok(order.every((i) => i > 0), 'every card renders');
+assert.deepEqual(order.slice().sort((a, b) => a - b), order,
+  'workouts lead, then muscles, training days, progress, log a past workout');
 
 root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: 'Leg day' }));
 assert.ok(root.innerHTML.includes('Workouts — Leg day'), 'the heading names the active filter');

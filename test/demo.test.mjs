@@ -5,16 +5,14 @@
 
 // Pinned to a DST-observing zone: the hour-of-day assertions below can
 // only catch DAY_MS-style drift where transitions exist (CI runs UTC).
+// It reads as if it ran before the imports and it does not — static imports
+// are hoisted and evaluated first, the helper among them. That stays correct
+// because nothing hoisted looks at the clock, and js/demo.js is pulled in by
+// a dynamic import from the body, i.e. after the zone is set.
 process.env.TZ = 'Europe/Berlin';
 
+import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
-
-const mem = new Map();
-globalThis.localStorage = {
-  getItem: (k) => (mem.has(k) ? mem.get(k) : null),
-  setItem: (k, v) => mem.set(k, String(v)),
-  removeItem: (k) => mem.delete(k),
-};
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const demo = await import(new URL('../js/demo.js', import.meta.url).href);

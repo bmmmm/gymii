@@ -3,14 +3,8 @@
 // edge clamping into the padded viewBox, the machines-never-overlap
 // placement logic — plus gym.js's editor wiring on top of them.
 // Run with: node test/layout.test.mjs
+import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
-
-const mem = new Map();
-globalThis.localStorage = {
-  getItem: (k) => (mem.has(k) ? mem.get(k) : null),
-  setItem: (k, v) => mem.set(k, String(v)),
-  removeItem: (k) => mem.delete(k),
-};
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const { drawLayout, overlapsSolid, fits, freeSpot } =

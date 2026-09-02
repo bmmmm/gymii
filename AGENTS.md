@@ -10,7 +10,17 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   modules — don't go back to it).
 - Logic tests: `for f in test/*.test.mjs; do node "$f"; done` — CI runs the
   glob, so a new `test/<module>.test.mjs` is picked up without a workflow
-  edit. `store` (localStorage stub, store roundtrips, outline migration,
+  edit. The localStorage stub lives ONCE, in
+  `test/helpers/localstorage.mjs`: importing it installs it, which is why it
+  must be a test's FIRST import — ESM evaluates a dependency completely
+  before the importing module's own body runs, so the stub is in place ahead
+  of every `await import('../js/store.js')`. It exports `mem` (the backing
+  Map, a live binding) and `useStore(map)` to point the stub at another Map;
+  one call is a device switch, which is how sync.test.mjs runs two devices in
+  one process. The helper is deliberately outside the CI glob — neither the
+  `helpers/` directory nor the name matches `test/*.test.mjs`, so it never
+  runs as a suite of its own.
+  `store` (store roundtrips, outline migration,
   template validation, locker carry-over, sync groundwork: stamps,
   tombstones, v1/v2 backup compat), `merge` (the pure sync merge matrix —
   union by id, LWW, tombstones), `sync` (the client sync engine: protocol
@@ -469,8 +479,12 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   `fromText()`, so the text is authoritative while it is on screen. Nothing
   persists until Save — which is what lets an imported AI draft, or a
   routine seeded from history, be reviewed and trimmed before it sticks.
-- `js/history.js` — month heatmap (per-machine filter), progress chart
-  (`js/chart.js`), workout list with repeat, and full editing: per-set
+- `js/history.js` — in render order: the workout list with repeat, the
+  Muscles card, the month heatmap (per-machine filter), the progress chart
+  (`js/chart.js`) and `Log a past workout`. What you did comes first, the
+  cards that analyse or extend it follow — which deliberately puts the
+  Muscles card UNDER the "Workouts — Lats" heading it filters. Past workouts
+  are fully editable: per-set
   values, `+ Set` (copies the previous one, minus its `at` — it was not
   logged live), `+ Machine` (snapshots num/label/type flags like the log
   screen), remove set or whole machine, date + time (finishedAt moves
@@ -539,7 +553,14 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   new static files (js modules, css, icons) must be added to the SHELL
   list in `sw.js` — EXCEPT template files: they are on-demand content the
   fetch handler caches on first load, only `templates/index.json` is
-  precached (so a community template PR never touches sw.js). `settings.keepAwake` names the
+  precached (so a community template PR never touches sw.js). CI's
+  `shell-list` job goes red on a forgotten one, and the `CACHE` constant is
+  bumped IN THE SAME COMMIT as any SHELL edit — the precache is filled once
+  per cache name, so a new entry under the old name never gets fetched.
+  The service worker deliberately imports nothing: a module worker
+  (`register(..., { type: 'module' })`) fails on Safari < 16.4, so
+  `js/version.js` is duplicated into SHELL as a plain path rather than
+  shared as code. `settings.keepAwake` names the
   screen wake lock's SCOPE: `break` (default), `workout` (held while an
   active workout exists — battery cost, never the default) or `off`; a
   stored pre-scope boolean migrates in `getSettings()`. The lock lives in
@@ -600,8 +621,15 @@ Push both or the mirror drifts: `git push origin main && git push github main`.
 Dependabot/CodeQL PRs on GitHub are signals only — fix locally and push to
 both remotes, never merge in the GitHub UI.
 
-CI runs the logic tests plus a `sw.js` SHELL cross-check and deploys Pages
+CI runs the logic tests, parses every shipped script (`static-checks` — the
+one job that would catch a typo in js/app.js, since nothing else loads the
+files) plus a `sw.js` SHELL cross-check, and deploys Pages
 from main; every asset reference must stay RELATIVE (project subpath).
+DONE = deployed, and a deploy says which build it is: any push to main that
+touches `js/`, `css/`, `index.html` or `sw.js` must bump `APP_VERSION` in
+`js/version.js` to the deploy date in the SAME push, or `static-checks` goes
+red before Pages sees it. Settings shows the string; a PWA updates itself in
+the background, so it is the only way to tell what is installed.
 Community template PRs are adopted locally like Dependabot ones, never merged
 in the UI. The mechanics — workflow names, the Pages "Multiple artifacts"
 trap, the template manifest and its gate — live in
