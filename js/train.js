@@ -13,6 +13,7 @@ import {
   minsBetween,
   primeAudio, playTimerSound, keepInView,
 } from './ui.js';
+import { ensurePersisted } from './persist.js';
 
 // Active workout shape:
 //   { v: 2, id, startedAt, plan: [{machineId, exercise|null, target?}…],
@@ -1711,6 +1712,12 @@ function finish(root, active) {
   // target tally must run BEFORE finishWorkout clears the active state
   const { total: goalTotal, hit: goalHit } = targetTally(active);
   const saved = finishWorkout(active);
+  // The first moment something exists that cannot be reconstructed — a floor
+  // plan can be redrawn, a training session cannot. It is also a user
+  // gesture, which is what Firefox's permission prompt requires; the same
+  // reason primeAudio() rides on the log tap. Fire-and-forget: nothing here
+  // waits on the browser's answer.
+  if (saved) ensurePersisted();
   ambientFinished(); // the workout just landed — push it now, not in 8 s
   if (!saved) {
     renderTrain(root, 'Workout discarded — no sets were logged.');
