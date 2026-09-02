@@ -25,7 +25,12 @@ store.saveActive({
 const activeBefore = store.getActive();
 activeBefore.locker = '23';
 activeBefore.name = 'Push day';
+// transient in-workout state: state that only steers the running session
+// must not reach history. finishWorkout is an allow-list, so this is a pin
+// on that shape, not on a filter.
+activeBefore.restOverrides = { m1: 75 };
 const saved = store.finishWorkout(activeBefore);
+assert.ok(!('restOverrides' in saved), 'per-workout rest overrides die with the workout');
 assert.equal(saved.entries.length, 1, 'set-less entries dropped');
 assert.equal(saved.locker, '23', 'locker number carried into history');
 assert.equal(saved.name, 'Push day', 'workout name carried into history');

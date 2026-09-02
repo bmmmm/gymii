@@ -1295,7 +1295,13 @@ function renderLog(root, layout, active, reveal = null) {
   const target = rawTarget
     && (cardio ? rawTarget.distance != null : rawTarget.reps != null) ? rawTarget : null;
   const def = pickPending ? null : nextSetDefaults(entry, lastSets, type, s, target);
-  const restSeconds = machine.restSeconds ?? s.restSeconds;
+  // What this machine rests by default, and what it rests TODAY. A rest
+  // changed mid-workout is a fact about this workout ("shoulders are cold
+  // today"), not about the machine — it lives on the active workout, dies
+  // with it (finishWorkout's allow-list drops it), and survives a reload.
+  // `??` throughout, so an explicit 0 (timer off) survives every level.
+  const machineRest = () => machine.restSeconds ?? s.restSeconds;
+  const restSeconds = active.restOverrides?.[machine.id] ?? machineRest();
   const slotIdx = planSlotIndex(active, machine.id, exercise);
   const planPos = `${slotIdx + 1}/${active.plan.length}`;
   // one-tap flow state: which target set is up, and is the target met —
@@ -1433,6 +1439,8 @@ function renderLog(root, layout, active, reveal = null) {
         ${stepperField('Weight', 'set-weight', { step: s.weightStep, min: 0, value: def.weight })}
         ${stepperField('Reps', 'set-reps', { step: 1, min: 1, value: def.reps, mode: 'numeric' })}`}
         ${stepperField('Rest (s)', 'set-rest', { step: 15, min: 0, value: restSeconds, mode: 'numeric' })}
+        <button type="button" id="rest-keep" class="linkish rest-keep"${restSeconds === machineRest()
+    ? ' hidden' : ''}>Keep ${restSeconds} s for #${machine.num}</button>
         <button id="log-set" class="btn ${targetDone && nextMachine ? '' : 'btn-primary '}btn-big">${logLabel(def)}</button>
       </div>
     </section>`}
@@ -1489,12 +1497,37 @@ function renderLog(root, layout, active, reveal = null) {
     renderLog(root, layout, active, '.next-set');
   });
 
-  // per-machine rest override, remembered on the machine itself
+  // The rest stepper writes to the WORKOUT; the machine only learns it if
+  // you say so. Both handlers update #rest-keep by hand instead of
+  // re-rendering — a re-render would replace the + button mid-tap.
+  const restKeep = root.querySelector('#rest-keep');
+  const dropOverride = () => {
+    if (!active.restOverrides) return;
+    delete active.restOverrides[machine.id];
+    if (!Object.keys(active.restOverrides).length) delete active.restOverrides;
+  };
   root.querySelector('#set-rest')?.addEventListener('change', (e) => {
     const v = Math.max(0, Math.round(parseFloat(e.target.value) || 0));
     e.target.value = v;
-    machine.restSeconds = v;
+    if (v === machineRest()) dropOverride();
+    else active.restOverrides = { ...active.restOverrides, [machine.id]: v };
+    saveActive(active);
+    if (restKeep) {
+      restKeep.textContent = `Keep ${v} s for #${machine.num}`;
+      restKeep.hidden = v === machineRest();
+    }
+  });
+
+  restKeep?.addEventListener('click', () => {
+    const v = Math.max(0, Math.round(parseFloat(root.querySelector('#set-rest').value) || 0));
+    // back to the app default means NO value on the machine, so a later
+    // change of the default reaches this machine too
+    if (v === s.restSeconds) delete machine.restSeconds;
+    else machine.restSeconds = v;
     saveLayout(layout);
+    dropOverride();
+    saveActive(active);
+    restKeep.hidden = true;
   });
 
   root.querySelector('#log-set')?.addEventListener('click', () => {

@@ -553,6 +553,7 @@ store.setUnit('lbs');
 html = logAt('p1');
 assert.equal(stepper(html, 'set-weight'), '88', 'e: 40 kg history prefills as 88 lbs');
 assert.ok(html.includes('Last: 88×12, 99×10 lbs'), 'e: the header follows the conversion');
+assert.equal(stepper(html, 'set-rest'), '90', 'e: rest seconds are not a weight and never convert');
 store.setUnit('kg');
 html = logAt('p1');
 assert.equal(stepper(html, 'set-weight'), '40', 'e: and back again on the way home');
@@ -731,6 +732,45 @@ assert.strictEqual(store.getActive(), null, 'and the second tap discards it');
 assert.equal(store.getWorkouts().length, 0, 'nothing empty gets written to history');
 store.clearActive();
 store.saveWorkouts([]);
+
+// --- the rest you change mid-workout belongs to today, not to the machine ---
+byId.clear();
+const restGym = store.newLayout('Rest gym');
+restGym.machines.push({
+  id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
+});
+store.saveLayout(restGym);
+store.saveActive({
+  v: 2, id: 'w-rest', startedAt: Date.now(),
+  plan: [{ machineId: 'm1', exercise: null }],
+  currentMachineId: 'm1', currentExercise: null, entries: [],
+});
+renderTrain(root);
+byId.get('#set-rest').listeners.change({ target: { value: '75' } });
+assert.deepEqual(store.getActive().restOverrides, { m1: 75 },
+  'the stepper writes the rest onto the workout');
+assert.strictEqual(store.getLayout().machines[0].restSeconds, undefined,
+  'and leaves the machine alone');
+assert.equal(byId.get('#rest-keep').textContent, 'Keep 75 s for #1',
+  'the offer to keep it names what it would keep');
+assert.strictEqual(byId.get('#rest-keep').hidden, false, 'and shows itself');
+
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('value="75"'), 'the override survives a re-render');
+assert.ok(root.innerHTML.includes('Keep 75 s for #1'), 'and so does the offer');
+
+byId.get('#set-rest').value = '75';
+byId.get('#rest-keep').listeners.click();
+assert.equal(store.getLayout().machines[0].restSeconds, 75,
+  'Keep writes the rest to the machine');
+assert.ok(!('restOverrides' in store.getActive()),
+  'and the workout stops overriding what is now the machine value');
+byId.clear();
+renderTrain(root);
+assert.ok(/rest-keep"[^>]*\bhidden\b/.test(root.innerHTML),
+  'and the offer hides itself — there is nothing left to keep');
+store.clearActive();
 
 // --- removing a logged set takes two taps ---
 byId.clear();
