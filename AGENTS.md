@@ -28,7 +28,10 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   `demo` (generator determinism, entry invariants, weekday plan states,
   unit conversion, load-replaces-gym), `ai` (export plans section,
   paste-back new-vs-replace flow), `templates` (the community-library
-  gate: manifest ↔ files ↔ real import validation). Modules import
+  gate: manifest ↔ files ↔ real import validation), `sw` (the real
+  `sw.js` run in a `node:vm` sandbox: method/origin gate, cache writes,
+  offline fallback, and the stalled-network timeout — the sandbox owns
+  `setTimeout`, so 2.5 s are proven in microseconds). Modules import
   fine in Node as long as none touches the DOM at top level; the stub DOM
   hands back EVERY selector, rendered or not, so a test must drive view
   switches explicitly rather than assume a branch was skipped.
@@ -524,7 +527,15 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   reuses an id itself; the Settings file-import path always creates new).
   The default prompt tells the LLM the exact plan shape to answer with.
 - `sw.js` + `manifest.webmanifest` — PWA. Network-first with cache
-  fallback (online always fresh, no cache bump per deploy). IMPORTANT:
+  fallback (online always fresh, no cache bump per deploy), capped by
+  `NET_TIMEOUT_MS` (2.5 s) so a stalled gym wifi never spins forever: once
+  the timer fires, a cached copy answers — but only one that EXISTS and
+  does NOT carry `Cache-Control: no-store`, which keeps `serve.py` honest
+  (a slow localhost is never masked by a stale module). With no usable hit
+  the timeout promise never settles at all and the network wins, so first
+  loads and on-demand template files still work on a slow line; a network
+  REJECTION beats the timer immediately, so hard offline stays instant.
+  IMPORTANT:
   new static files (js modules, css, icons) must be added to the SHELL
   list in `sw.js` — EXCEPT template files: they are on-demand content the
   fetch handler caches on first load, only `templates/index.json` is
