@@ -123,19 +123,44 @@ on-demand only.
 
 ## Open
 
-- **Scan a pairing QR with a real phone camera once** — the only step no
-  automation can take; everything up to the prefilled field is verified.
-- **Verify the issue forms in a signed-in browser.** The chooser
+### On a real iPhone
+
+Six checks no emulator settles. All against
+<https://bmmmm.github.io/gymii/>, never `serve.py`: a service worker and
+"Add to Home Screen" need https, and points 2–4 put exactly those on the
+stand. An expectation that fails becomes an issue labelled `bug`.
+
+- [ ] **Stepper on a focused, emptied field.** `initNumericOverwrite`
+  clears a focused number field into its placeholder, and its comment
+  claims `blur` fires before the stepper's click, "so +/− still see a
+  value". *Do:* tap the weight field (placeholder reads "(40)"), then tap
+  **+**. *Expect:* 45, not 5.
+- [ ] **Beep in the background.** Start a 30 s rest, go straight to the
+  Home Screen, wait. *Expect:* open — record whether the tone arrives at
+  zero, arrives late, or never. The answer decides whether a notification
+  is needed.
+- [ ] **Keyboard over the log button.** Tap into the weight field.
+  *Expect:* "✓ Log set …" stays visible, or is reachable without leaving
+  the field.
+- [ ] **Safe area in standalone.** Add to Home Screen, open from there.
+  *Expect:* content starts below the status bar / Dynamic Island — the
+  `env(safe-area-inset-top)` fix, which in a browser can only be checked
+  at inset 0, where it measured the expected 12 px.
+- [ ] **Scan a pairing QR with a real phone camera once** — the only step
+  no automation can take; everything up to the prefilled field is
+  verified. Device A shows the QR, device B's camera app scans it.
+  *Expect:* gymii opens with the pairing field prefilled. Needs the
+  `gymii-sync` server running.
+- [ ] **The issue forms, signed in.** The chooser
   (`/issues/new/choose`) should show four forms + two contact links with
   "Blank issue" as maintainers-only, and the template form must block
   submit while required fields are empty. No API can check this
   (GraphQL `issueTemplates` returns `[]` even for working YAML forms;
   the chooser is login-gated) — it needs real clicks, then close the
   test issue.
-- **test/map.test.mjs split.** test/gym.test.mjs now covers both the
-  renderer (map.js) and the editor; if the test layout should mirror the
-  module split, its renderer/collision half moves out. Cosmetic — the
-  file passes as one.
+
+### Still open
+
 - **Unbound items and the muscle filter.** An exercise with no machine has
   no muscles either, so it is invisible to the builder's muscle chips and
   contributes nothing to name suggestions until it binds. Fine as-is; only
