@@ -1,7 +1,14 @@
 # gymii — agent notes
 
 Minimal gym workout tracker. Vanilla HTML/CSS/JS (ES modules), **no build
-step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
+step**, all data in localStorage. Mobile-first, dark-only.
+
+**The app that ships stays dependency-free — nothing from `node_modules`
+ever reaches the browser; its test infrastructure is not.** The one
+dependency is `@playwright/test`, for the browser smoke suite in `smoke/`,
+and two CI tripwires keep the line where it is: no shipped file may
+mention `node_modules`, and the deploy job refuses to run if an install is
+present in the publish directory.
 
 ## Run & verify
 
@@ -55,6 +62,29 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   fine in Node as long as none touches the DOM at top level; the stub DOM
   hands back EVERY selector, rendered or not, so a test must drive view
   switches explicitly rather than assume a branch was skipped.
+- Browser smoke tests: `pnpm install` once, then `pnpm exec playwright
+  install chromium` once (~170 MB, deliberately NOT an install script —
+  Playwright is kept off `onlyBuiltDependencies`), then `pnpm run smoke`.
+  Six scenarios in `smoke/*.spec.mjs`: the app boots at all (js/app.js is
+  loaded by no Node test and `static-checks` does not resolve imports), a
+  logged set survives a reload, the rest keeps running inline after the
+  overlay closes and across a reload, no route scrolls sideways at 320px,
+  every touch target is 44px and every field 16px, and the service worker
+  registers and precaches every SHELL entry. A NEW browser spec goes in
+  `smoke/` as `*.spec.mjs`, NEVER in `test/` — `testMatch` is pinned
+  because Playwright's collector imports whatever it matches and would run
+  the Node suites as a side effect. Sandbox notes: `serve.py` cannot bind a
+  port under the sandbox (run it un-sandboxed), and `registry.npmjs.org` /
+  `cdn.playwright.dev` are unreachable — but once the browser is in the
+  HOME cache the suite runs sandboxed, since the app makes no outgoing
+  request without sync. OPERATING RULE: a spec that flakes twice in a month
+  is rewritten or deleted — a quarantined smoke test is worse than none.
+  Hygiene: `grep -rn` now needs `--exclude-dir=node_modules`.
+- Dependabot watches the one dependency. A bot PR does NOT know
+  `minimumReleaseAge` and `--frozen-lockfile` does not re-check it, so the
+  existing repo rule (adopt locally, never merge in the UI) carries real
+  weight here: adopt via `pnpm add -D @playwright/test@latest`, which does
+  respect the cooldown.
 - Touch targets are 44px, as real boxes (`min-height`/`min-width`), never
   as an invisible pseudo-element. Two documented exceptions, both commented
   in the stylesheet: `.hm-cell` (seven columns of a week don't fit 44px at

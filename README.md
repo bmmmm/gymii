@@ -76,7 +76,10 @@ python3 serve.py   # → http://localhost:8437
 ```
 
 Any static file server does the job; `serve.py` just turns caching off so edits
-show up on plain reload. No build step, no dependencies, no `node_modules`.
+show up on plain reload. No build step, and nothing from `node_modules` ever
+reaches the browser — the app that ships has no dependencies at all. Its
+browser tests do: `pnpm install && pnpm exec playwright install chromium`,
+then `pnpm run smoke`.
 
 ## Your data
 

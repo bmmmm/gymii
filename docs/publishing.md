@@ -8,11 +8,25 @@ fresh clone, to CI and to cloud agents.
 
 ## CI and the Pages deploy
 
-`.github/workflows/ci.yml` runs all logic tests (`test/*.test.mjs`) and
-cross-checks the `sw.js` SHELL list against `git ls-files`, then deploys the
-repo root to Pages (<https://bmmmm.github.io/gymii/>) once both pass on main.
+`.github/workflows/ci.yml` runs all logic tests (`test/*.test.mjs`), parses
+every shipped script, cross-checks the `sw.js` SHELL list against
+`git ls-files` and drives the browser smoke suite (`smoke/*.spec.mjs`,
+Chromium only), then deploys the repo root to Pages
+(<https://bmmmm.github.io/gymii/>) once they pass on main.
 `security.yml` (gitleaks + forbidden files + token grep) and `shellcheck.yml`
 (only on `scripts/**`) round out the checkers.
+
+The `smoke` job is the only one that installs anything. Two tripwires keep
+the app that ships dependency-free: `static-checks` refuses a shipped file
+that mentions `node_modules`, and `deploy` refuses to run at all if an
+install is present — it uploads `path: .` with no exclude list, and that is
+safe only while the publish directory has none.
+
+Chromium only, on purpose. What the suite checks — the module graph
+loading, click chains, box metrics, SW registration — is the same question
+on every engine, and this repo's engine-specific risks are iOS Safari ones
+that Playwright's WebKit build does not answer. Those live on the device
+checklist in TODO.md.
 
 The site lives on a project subpath, so every asset reference must stay
 RELATIVE (`css/style.css`, not `/css/style.css`) — index.html, the manifest

@@ -14,6 +14,20 @@ one localStorage stub for every test, CI parses every shipped script
 (`node --check` alone does NOT — it silently passes broken ESM) and blocks
 a deploy that ships changes without bumping `js/version.js`.
 
+Shipped 2026-09-02, wave C — the first dependency, and the line it may not
+cross: `@playwright/test` drives six browser smoke scenarios in `smoke/`
+against Chromium in CI, while the app that ships stays dependency-free (two
+tripwires enforce it — no shipped file may name `node_modules`, and the
+deploy job refuses to run with an install present). The first run found
+what a hand sweep had missed: `.btn` was 43px everywhere, and `.doc-link`
+51x34.
+
+Also 2026-09-02, waves T/B/D — test/gym.test.mjs was a map.js test under
+the wrong name; split out, and the gaps it hid (snapDoorToWall had zero
+coverage) closed. js/ui.js got its first test file, ids in map.js are
+escaped into attributes, fmtDuration names the hour past 3600 s, and
+CONTRIBUTING/SECURITY/the issue forms stopped calling sync a non-goal.
+
 Shipped 2026-09-02, wave A — storage that survives: finishWorkout() wrote
 history BEFORE clearing the active workout (the other order loses a
 finished workout when a write is refused), write() gained an error channel

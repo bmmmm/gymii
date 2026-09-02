@@ -31,8 +31,10 @@ numbers matching what's physically posted in the gym.
 
 ## Code contributions
 
-Vanilla HTML/CSS/JS (ES modules), **no build step, no dependencies** — that
-is a feature, not an accident.
+Vanilla HTML/CSS/JS (ES modules), **no build step** — that is a feature, not
+an accident. The app that ships stays dependency-free: nothing from
+`node_modules` ever reaches the browser, and CI enforces it. Its test
+infrastructure is not — `@playwright/test` drives the browser smoke suite.
 
 Two things that sound alike but are not: gymii needs no server and works
 completely without one (everything lives in `localStorage`), and anyone who
@@ -44,6 +46,10 @@ out / paste back, by design).
 - **Run tests:** `for f in test/*.test.mjs; do node "$f" || break; done` —
   one file per module, plain `node:assert`, no framework. CI runs the same
   glob, so a new module's tests need no workflow edit.
+- **Run the browser smoke tests:** `pnpm install`, then once
+  `pnpm exec playwright install chromium`, then `pnpm run smoke`. They live
+  in `smoke/` as `*.spec.mjs` — a new browser test belongs there, never in
+  `test/`.
 - **Module map and conventions:** [AGENTS.md](AGENTS.md) — written for
   coding agents, equally useful for humans: what each module owns, the
   invariants (chronological workouts, filter-narrows-whole-workouts,
