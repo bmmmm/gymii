@@ -492,8 +492,8 @@ function renderStart(root, layout, message) {
     <section class="card">
       <h2>Start at a machine</h2>
       <div id="picker"></div>
-      <p class="muted">This starts your workout — finish it any time from the
-        workout overview.</p>
+      <p class="muted">This starts your workout — finish it any time with 🏁
+        in the machine header, or from the workout overview.</p>
     </section>`
     // no machines yet (a plan-first start): the way in is naming the one
     // in front of you, exactly as on the first-run screen
@@ -1361,10 +1361,14 @@ function renderLog(root, layout, active, reveal = null) {
         ${machine.docUrl ? `<a class="doc-link" href="${esc(machine.docUrl)}"
           target="_blank" rel="noopener">Machine docs ↗</a>` : ''}
       </div>
-      <button type="button" id="edit-machine" class="locate-btn"
-        aria-label="Edit this machine">✏️</button>
-      <button type="button" id="locate-current" class="locate-btn"
-        aria-label="Show this machine on the map">📍</button>
+      <div class="head-actions">
+        <button type="button" id="edit-machine" class="locate-btn"
+          aria-label="Edit this machine">✏️</button>
+        <button type="button" id="locate-current" class="locate-btn"
+          aria-label="Show this machine on the map">📍</button>
+        <button type="button" id="log-finish" class="locate-btn"
+          aria-label="Finish workout">🏁</button>
+      </div>
     </div>
 
     ${lockerAsk ? `
@@ -1535,6 +1539,15 @@ function renderLog(root, layout, active, reveal = null) {
     () => showMapOverlay(layout, machine));
   root.querySelector('#locate-next')?.addEventListener('click',
     () => showMapOverlay(layout, nextMachine));
+
+  // Finishing from the log screen: the overview is two screens away, and
+  // the last set of the workout is logged HERE. twoTapConfirm writes the
+  // label itself, so the button turns into the question it asks.
+  const finishBtn = root.querySelector('#log-finish');
+  finishBtn.addEventListener('click', () => {
+    if (!twoTapConfirm(finishBtn, workoutSetCount(active) ? 'Save?' : 'Discard?', '🏁')) return;
+    finish(root, active);
+  });
 
   // hands the machine to the Gym's editor — the full one, not a copy
   root.querySelector('#edit-machine').addEventListener('click', () => {

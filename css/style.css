@@ -387,6 +387,10 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .machine-badge.sm { min-width: 34px; height: 34px; font-size: 15px; border-radius: 8px; }
 
 .machine-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+/* the header's own actions; each button carries margin-left:auto for the
+   layouts where it stands alone, which the group has to undo */
+.machine-head .head-actions { display: flex; gap: 8px; margin-left: auto; }
+.machine-head .head-actions .locate-btn { margin-left: 0; }
 .machine-head .title { font-size: 19px; font-weight: 700; }
 
 /* a button restyled as a flush tappable row — the plan, recent and muscle
@@ -651,6 +655,17 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 }
 
 .locate-btn:active { filter: brightness(1.4); }
+
+/* armed by twoTapConfirm: the icon has been replaced by the question, so
+   the box has to hold a word instead of a glyph */
+.locate-btn.armed {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0 10px;
+}
 
 .next-row { display: flex; gap: 8px; }
 .next-row #next-machine { flex: 1; min-width: 0; }

@@ -87,9 +87,20 @@ assert.strictEqual(store.getActive().name, undefined, 'unnamed sources start unn
 const stubEl = () => ({
   listeners: {},
   addEventListener(type, fn) { this.listeners[type] = fn; },
-  value: '', innerHTML: '',
+  value: '', innerHTML: '', textContent: '',
   querySelector: () => stubEl(), querySelectorAll: () => [],
-  classList: { toggle() {}, add() {} }, dataset: {}, style: {},
+  // stateful, so twoTapConfirm's arm → confirm cycle works here as it does
+  // in plan.test.mjs
+  classList: (() => {
+    const set = new Set();
+    return {
+      add: (c) => set.add(c),
+      remove: (c) => set.delete(c),
+      toggle: (c) => (set.has(c) ? set.delete(c) : set.add(c)),
+      contains: (c) => set.has(c),
+    };
+  })(),
+  dataset: {}, style: {},
 });
 // Per-id registry so a test can preset input values and capture a
 // specific element's click listener (e.g. #log-set) before invoking it.
@@ -665,5 +676,53 @@ assert.strictEqual(store.getActive().locker, undefined,
 store.clearActive();
 store.saveWorkouts([]);
 store.savePlans([]);
+
+// --- 🏁 in the machine header finishes the workout, two taps ---
+// Always click the PAIR: a single tap leaves twoTapConfirm's 4s disarm
+// timer pending and node would sit there waiting for it.
+byId.clear();
+// the quick-start test above replaced the gym, so put a known machine back
+const finGym = store.newLayout('Finish gym');
+finGym.machines.push({
+  id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
+});
+store.saveLayout(finGym);
+store.saveActive({
+  v: 2, id: 'w-fin', startedAt: Date.now() - 47 * 60000,
+  plan: [{ machineId: 'm1', exercise: null }],
+  currentMachineId: 'm1', currentExercise: null,
+  entries: [{
+    machineId: 'm1', num: 1, label: 'Chest press', settings: {},
+    sets: [{ reps: 8, weight: 40, at: Date.now() }],
+  }],
+});
+renderTrain(root);
+assert.ok(root.innerHTML.includes('id="log-finish"'),
+  'the log screen carries a finish button in the machine header');
+let fin = byId.get('#log-finish');
+fin.listeners.click();
+assert.equal(fin.textContent, 'Save?', 'the first tap turns the button into the question');
+assert.ok(store.getActive(), 'and nothing is saved yet');
+fin.listeners.click();
+assert.strictEqual(store.getActive(), null, 'the second tap ends the workout');
+assert.equal(store.getWorkouts().length, 1, 'and it lands in history');
+
+// no sets logged: the same button asks the opposite question
+byId.clear();
+store.saveWorkouts([]);
+store.saveActive({
+  v: 2, id: 'w-fin-empty', startedAt: Date.now() - 60000,
+  plan: [{ machineId: 'm1', exercise: null }],
+  currentMachineId: 'm1', currentExercise: null, entries: [],
+});
+renderTrain(root);
+fin = byId.get('#log-finish');
+fin.listeners.click();
+assert.equal(fin.textContent, 'Discard?', 'with no sets it offers to discard, not to save');
+fin.listeners.click();
+assert.strictEqual(store.getActive(), null, 'and the second tap discards it');
+assert.equal(store.getWorkouts().length, 0, 'nothing empty gets written to history');
+store.clearActive();
+store.saveWorkouts([]);
 
 console.log('train plan construction: all assertions passed');
