@@ -2,6 +2,8 @@
   "name": "gymii",
   "short_name": "gymii",
   "description": "Minimal gym workout tracker. Client-side only — your data never leaves the browser.",
+  "lang": "en",
+  "categories": ["health", "fitness"],
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
@@ -11,5 +13,13 @@
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
     { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Start training",
+      "short_name": "Train",
+      "url": "./#train",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
   ]
 }

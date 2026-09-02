@@ -40,7 +40,11 @@ function route() {
   view.scrollTop = 0;
   routes[tab](view);
   document.querySelectorAll('#tabbar a').forEach((a) => {
-    a.classList.toggle('active', a.dataset.tab === tab);
+    const here = a.dataset.tab === tab;
+    a.classList.toggle('active', here);
+    // the pill says it to the eye, aria-current says it to a screen reader
+    if (here) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
   });
   updateSyncBadge();
 }
