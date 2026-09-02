@@ -575,7 +575,8 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 0;
+  /* the ✕ brings its own 44px, so the row no longer pads itself tall */
+  padding: 4px 0;
   border-bottom: 1px solid var(--border);
   font-variant-numeric: tabular-nums;
 }
@@ -584,6 +585,9 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 
 /* row actions (remove a set, reorder or remove a plan item): icon-sized
    glyphs on a thumb-sized box */
+/* armed: the glyph has been replaced by the word "Delete?" */
+.set-row .x.armed { color: var(--danger); font-size: 14px; font-weight: 600; }
+
 .set-row .x,
 .plan-item-actions .x {
   display: inline-flex;

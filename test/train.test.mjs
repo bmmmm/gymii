@@ -721,4 +721,27 @@ assert.equal(store.getWorkouts().length, 0, 'nothing empty gets written to histo
 store.clearActive();
 store.saveWorkouts([]);
 
+// --- removing a logged set takes two taps ---
+byId.clear();
+store.saveActive({
+  v: 2, id: 'w-del', startedAt: Date.now() - 60000,
+  plan: [{ machineId: 'm1', exercise: null }],
+  currentMachineId: 'm1', currentExercise: null,
+  entries: [{
+    machineId: 'm1', num: 1, label: 'Chest press', settings: {},
+    sets: [{ reps: 8, weight: 40, at: Date.now() }, { reps: 6, weight: 45, at: Date.now() }],
+  }],
+});
+renderTrain(root);
+const delX = stubEl();
+delX.dataset.i = '1';
+const setsClick = byId.get('#sets-list').listeners.click;
+setsClick({ target: { closest: () => delX } });
+assert.equal(store.getActive().entries[0].sets.length, 2, 'one tap only arms the ✕');
+assert.equal(delX.textContent, 'Delete?', 'and says what the second tap will do');
+setsClick({ target: { closest: () => delX } });
+assert.equal(store.getActive().entries[0].sets.length, 1, 'the second tap removes the set');
+assert.equal(store.getActive().entries[0].sets[0].weight, 40, 'the one it pointed at');
+store.clearActive();
+
 console.log('train plan construction: all assertions passed');

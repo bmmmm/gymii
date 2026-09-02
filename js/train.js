@@ -1474,6 +1474,10 @@ function renderLog(root, layout, active, reveal = null) {
   root.querySelector('#sets-list')?.addEventListener('click', (e) => {
     const btn = e.target.closest('.x');
     if (!btn) return;
+    // A logged set is gone for good and this ✕ sits a thumb's width from
+    // the steppers, so it arms first. The first tap must NOT re-render —
+    // the armed node would be replaced before the second tap finds it.
+    if (!twoTapConfirm(btn, 'Delete?', '✕')) return;
     entry.sets.splice(parseInt(btn.dataset.i, 10), 1);
     saveActive(active);
     renderLog(root, layout, active, '.next-set');
