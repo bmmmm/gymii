@@ -523,11 +523,15 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
   min-width: 0;
   flex: 1;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
   padding: 4px 0;
   margin: 0;
 }
+
+/* the chevron sits INSIDE the button, so the text needs its own column */
+.recent-row .row-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .recent-row .recent-info .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-row .row-chevron { color: var(--muted); flex-shrink: 0; font-size: 18px; }
 .recent-row .btn-inline { flex-shrink: 0; }

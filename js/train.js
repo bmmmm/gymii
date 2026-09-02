@@ -306,14 +306,16 @@ function planListCard(layout, plans, workouts) {
     const open = p.items.filter((it) => !it.machineId).length;
     return `<div class="recent-row">
           <button type="button" class="recent-info row-open" data-pid="${p.id}">
-            <strong>${p.name ? esc(p.name) : planChain(p, layout) || 'Unnamed plan'}${isTodayPlan(p)
+            <span class="row-text">
+              <strong>${p.name ? esc(p.name) : planChain(p, layout) || 'Unnamed plan'}${isTodayPlan(p)
     ? ' <span class="muted">· today</span>' : ''}</strong>
-            <span class="muted">${p.name && planChain(p, layout) ? `${planChain(p, layout)} · ` : ''}${plural(count, 'exercise')}${open
+              <span class="muted">${p.name && planChain(p, layout) ? `${planChain(p, layout)} · ` : ''}${plural(count, 'exercise')}${open
     ? ` · ${open} to assign` : ''}${p.days?.length
     ? ` · ${p.days.map((d) => DAY_LABELS[d]).join(' ')}` : ''}${done
     ? ` · last: ${new Date(done.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>
+            </span>
+            <span class="row-chevron" aria-hidden="true">›</span>
           </button>
-          <span class="row-chevron" aria-hidden="true">›</span>
           <button class="btn btn-inline plan-start" data-pid="${p.id}">Start</button>
         </div>`;
   }).join('')}
@@ -527,11 +529,13 @@ function renderStart(root, layout, message) {
         ${routines.map((w) => `
         <div class="recent-row">
           <button type="button" class="recent-info row-open" data-wid="${w.id}">
-            <strong>${w.name ? esc(w.name) : machineChain(w)}</strong>
-            <span class="muted">${w.name ? `${machineChain(w)} · ` : ''}last: ${new Date(w.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-              · ${workoutTotals(w, s)}</span>
+            <span class="row-text">
+              <strong>${w.name ? esc(w.name) : machineChain(w)}</strong>
+              <span class="muted">${w.name ? `${machineChain(w)} · ` : ''}last: ${new Date(w.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                · ${workoutTotals(w, s)}</span>
+            </span>
+            <span class="row-chevron" aria-hidden="true">›</span>
           </button>
-          <span class="row-chevron" aria-hidden="true">›</span>
           <button class="btn btn-inline repeat-w" data-wid="${w.id}">Repeat</button>
         </div>`).join('')}
       </div>

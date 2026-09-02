@@ -613,7 +613,8 @@ renderTrain(root);
 assert.ok(root.innerHTML.includes('id="routine-list"'), 'derived routines get a list');
 assert.ok(root.innerHTML.includes('row-open" data-wid="r-old"'),
   'the row itself is a button, not dead text');
-assert.ok(root.innerHTML.includes('row-chevron'), 'and it looks tappable');
+assert.ok(/<button[^>]*row-open[^>]*>(?:(?!<\/button>)[\s\S])*row-chevron/.test(root.innerHTML),
+  'and the chevron saying so is INSIDE that button, not dead beside it');
 
 root.querySelector('#routine-list').listeners.click(fakeClick({
   dataset: { wid: 'r-old' }, classList: { contains: (c) => c === 'row-open' },
