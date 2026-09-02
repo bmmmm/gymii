@@ -331,7 +331,10 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   `{machineId, exercise|null, target?}` (null = whole machine) — a repeat
   plans one slot per (machine, exercise) pair so "Next:" walks every
   exercise of a multi-exercise machine; overview hub, per-machine
-  `restSeconds`, locker number, two-tap finish guard. The locker is asked
+  `restSeconds` (changed mid-workout it lands on the WORKOUT, see the rest
+  paragraph below), locker number, two-tap finish guard on TWO surfaces —
+  the overview's Finish button and 🏁 in the machine header, because the
+  last set is logged on the log screen and the overview is two taps away. The locker is asked
   where the workout actually starts: the start screen offers it up front
   (module state `pendingLocker`, no workout exists yet — the next
   `startWorkoutFrom` moves it onto the workout and clears it, whichever
@@ -374,12 +377,18 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   newest set `at`). Slots started from a stored plan carry its target:
   the log header shows it, the first-set prefill uses it (real logged sets
   then outrank it), and `slotDone` counts sets against `target.sets`, so
-  "Next:" pulls the walk back to unfinished targets. The plan follower's
+  "Next:" pulls the walk back to unfinished targets. A plan whose FIRST
+  slot has no machine yet starts with `binding: 0` — the workout opens on
+  "which machine is this?" rather than on an overview of rows to assign;
+  starting at a machine from the picker (`firstMachineId`) overrules it,
+  and `renderBind`'s stale guard covers a plan edited in between. The plan follower's
   happy path is one tap per set: the log button always names what it logs
   ("✓ Log set 2/3 — 50 kg × 10", steppers update it live), and once a
   slot's target is met the Next button takes over as the primary action
   (log button demoted). `targetTally()` reports plan-wide progress on the
-  overview line and in the finish message. The Train tab's ROOT is a
+  overview line and in the finish message, which leads with the duration
+  (`ui.js`'s `minsBetween()` — the overview line and History's `minsOf`
+  share it). The Train tab's ROOT is a
   neutral bento hub (`renderHub`): a hero tile into the merged start flow
   (machine or plan — the start screen carries both) plus tiles to Plans,
   Gym (`#gym`) and History; module state `screen`
@@ -445,6 +454,11 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   map draws lazily on first expand). 📍 buttons on the log screen
   (machine head + next-row) open `showMapOverlay()` — a fullscreen
   read-only map, target machine pulsing, others dimmed, any tap closes.
+  The machine head's third button is 🏁: finish from where the work
+  happens, two-tap like the overview's (🏁 and not ✓ — ✓ is the log-set
+  icon). `twoTapConfirm` writes the label itself, so the armed button
+  BECOMES the question ("Save?" / "Discard?") — which is what
+  `.locate-btn.armed` styles for, a word instead of a glyph.
   The machine head's ✏️ button hands the machine to the Gym's full
   editor (`focusMachine` + `#gym`) — machines stay editable
   mid-workout, no Settings detour, and the Gym's back link returns to
@@ -574,17 +588,42 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   adds `.lit` for ~130 ms, which signals a live timer at a fraction of
   the lit area. A touch buys 4 s of full brightness, the last 5 s never
   dim, and the same chips sit in the overlay itself. ±15s goes through
-  `adjust()`: giving a FINISHED timer more time revives it (cancels the
+  `adjustRest()`: giving a FINISHED timer more time revives it (cancels the
   pending close, clears `done`, so the new zero sounds again) — the overlay
   lingers ~900 ms after the tone, and a tap in that window used to extend a
   countdown that was already scheduled to close. Both the close and the
   jerk-removal timers are held and cleared, never left to stack.
+- **The rest belongs to the WORKOUT, not to the rest screen.** The fact is
+  `active.restUntil`, an epoch deadline that survives a reload and dies
+  with the workout (`finishWorkout` is an allow-list). The overlay and the
+  `.rest-inline` row above the log button are two views of it, painted by
+  one `paintRest()` that looks `#cd`/`#rest-cd` up by id EVERY tick and
+  never holds a node — `renderLog` replaces them. A tap on the backdrop
+  calls `dismissRest()`: screen away, timer running (deliberately narrower
+  than `showMapOverlay`'s "any tap closes" — every button in this overlay
+  keeps its own job). Skip and zero call `endRest()`, which removes the
+  inline row BY ID rather than re-rendering, so a half-typed field
+  survives. `ensureRestTicking()` picks a live deadline up after a reload
+  (no overlay, and the tone may be blocked without a gesture).
+  `restNextUp()` is what the overlay promises next, set by `renderLog`
+  from the values it already has and keyed on `slotDone`, not `targetDone`.
+  A rest CHANGED mid-workout goes to `active.restOverrides[machineId]`,
+  never straight to the machine: writing the machine per ± marked the gym
+  dirty for sync on every tap. The "Keep 75 s for #3" link under the
+  stepper is the only way it reaches `machine.restSeconds` — and back at
+  the app default it DELETES that value instead of pinning it. Neither
+  handler re-renders (the + is under the thumb).
 
 ## Conventions (user-set, follow them)
 
 - Everything in code English, incl. UI strings. German only in chat.
 - Destructive/final actions: hidden + two-tap guard (never `confirm()` —
-  it blocks browser automation). Frequent actions visually dominant.
+  it blocks browser automation). Frequent actions visually dominant. The
+  set-row ✕ follows this rule too: it sits a thumb's width from the
+  steppers and a logged set has no undo. Its first tap must NOT re-render,
+  or the armed node dies before the second tap reaches it. History's editor
+  keeps an unguarded ✕ — nothing there is written until Save.
+- Icon row actions are 44px boxes (`.set-row .x`, `.plan-item-actions .x`).
 - Enumerable input = tappable chips, never free text (typo avoidance).
 - Keep the control you just used under the thumb. These views re-render by
   replacing whole subtrees, so any action that grows a list ABOVE its own
