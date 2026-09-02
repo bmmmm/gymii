@@ -1,7 +1,21 @@
-# No package.json, no build toolchain — github-actions is the only ecosystem here.
+# Two ecosystems. The app that ships still has no dependencies; the browser
+# smoke suite has one, and `npm` is the ecosystem that reads pnpm lockfiles.
+#
+# A Dependabot PR does NOT know minimumReleaseAge, and --frozen-lockfile does
+# not re-check it — so these are adopted locally (`pnpm add -D <pkg>@latest`,
+# which does respect the cooldown), never merged in the UI.
 version: 2
 updates:
   - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: chore(deps)
+    labels:
+      - dependencies
+
+  - package-ecosystem: npm
     directory: /
     schedule:
       interval: monthly
