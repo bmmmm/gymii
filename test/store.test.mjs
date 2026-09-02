@@ -466,42 +466,13 @@ assert.equal(lats[0].entries.length, 3, 'the WHOLE workout survives, entries unt
 assert.deepEqual(store.workoutsWithMuscle(mWorkouts, mGym, 'Chest'), []);
 assert.deepEqual(store.workoutsWithMuscle(mWorkouts, null, 'Lats'), []);
 
-// --- timer sound: settings default names a real TIMER_SOUNDS entry ---
+// --- timer sound: the stored default names a real TIMER_SOUNDS entry ---
+// The coupling belongs here, where the default is defined; everything about
+// the sounds themselves lives in test/ui.test.mjs.
 const ui = await import(new URL('../js/ui.js', import.meta.url).href);
 assert.equal(store.getSettings().timerSound, 'double', 'timer sound defaults to double');
-assert.ok(ui.TIMER_SOUNDS[store.getSettings().timerSound], 'the default names a real sound');
-for (const [name, snd] of Object.entries(ui.TIMER_SOUNDS)) {
-  assert.ok(snd.label && Array.isArray(snd.notes) && snd.notes.length,
-    `${name} has a label and notes`);
-  snd.notes.forEach(([at, freq]) => {
-    assert.ok(Number.isFinite(at) && at >= 0 && Number.isFinite(freq) && freq > 0,
-      `${name} notes are [offset, hz] pairs`);
-  });
-}
-// the WAV renderer is pure and testable headless: valid RIFF/WAVE header,
-// the exact length its notes demand, and actual signal in the data
-const wav = new DataView(ui.renderWav(ui.TIMER_SOUNDS.double.notes));
-const tag = (off) => String.fromCharCode(
-  wav.getUint8(off), wav.getUint8(off + 1), wav.getUint8(off + 2), wav.getUint8(off + 3));
-assert.equal(tag(0), 'RIFF');
-assert.equal(tag(8), 'WAVE');
-assert.equal(tag(36), 'data');
-const expectedSamples = Math.ceil((0.35 + 0.3) * 44100); // last note offset + note length
-assert.equal(wav.byteLength, 44 + expectedSamples * 2, 'wav sized to the notes');
-assert.equal(wav.getUint32(40, true), expectedSamples * 2, 'data chunk length matches');
-let nonzero = false;
-for (let i = 0; i < 2000 && !nonzero; i++) nonzero = wav.getInt16(44 + i * 2, true) !== 0;
-assert.ok(nonzero, 'the wav actually carries signal');
-
-// The gesture prime plays SILENCE, so it can never leak an audible note the
-// way pausing a real sound mid-play did (a tone fired right after "Log set",
-// then again at zero). A zero-frequency note must render pure zeros.
-const silent = new DataView(ui.renderWav([[0, 0]]));
-let silentPeak = 0;
-for (let i = 0; i < (silent.byteLength - 44) / 2; i++) {
-  silentPeak = Math.max(silentPeak, Math.abs(silent.getInt16(44 + i * 2, true)));
-}
-assert.equal(silentPeak, 0, 'the priming wav is pure silence');
+assert.ok(ui.TIMER_SOUNDS[store.getSettings().timerSound],
+  'and that default is a sound that exists — a rename in ui.js must not mute the timer');
 
 // wake-lock scope: 'break' by default, 'workout' never implicitly (battery),
 // and the pre-scope boolean migrates instead of reading as an unknown scope
@@ -515,11 +486,6 @@ assert.equal(store.getSettings().keepAwake, 'off', 'legacy false migrates to off
 store.saveSettings({ ...keptSettings, keepAwake: 'workout' });
 assert.equal(store.getSettings().keepAwake, 'workout', 'an explicit scope survives untouched');
 store.saveSettings(keptSettings);
-
-// no Audio element in Node — playback must stay a silent no-op, never throw
-ui.playTimerSound('double');
-ui.playTimerSound('no-such-sound');
-ui.primeAudio('double');
 
 // --- sync groundwork: stamps, tombstones, and the v2 backup roundtrip ---
 store.clearAll();
