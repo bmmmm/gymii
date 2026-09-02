@@ -16,6 +16,9 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+  <!-- Storage refused a write. First child of the flex column, so it pushes
+       the app down instead of covering a control — no position: fixed. -->
+  <div id="storage-alert" role="alert" hidden></div>
   <main id="view"></main>
   <nav id="tabbar">
     <a href="#train" data-tab="train"><span class="tab-icon">🏋️</span><span class="tab-label">Train</span></a>

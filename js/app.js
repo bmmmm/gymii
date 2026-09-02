@@ -5,6 +5,7 @@ import { renderAi } from './ai.js';
 import { renderSettings, setPendingPairCode } from './settings.js';
 import { initSteppers, initNumericOverwrite } from './ui.js';
 import { initAmbientSync, syncHealth, onSyncActivity } from './sync.js';
+import { onWriteError } from './store.js';
 
 const routes = {
   train: renderTrain,
@@ -22,6 +23,21 @@ function updateSyncBadge() {
   const { state } = syncHealth();
   el.hidden = state === 'ok';
   el.classList.toggle('error', state === 'error');
+}
+
+// A refused write is the one failure no screen can report on its own —
+// it can strike while any of them is open. Three facts, in the order they
+// matter: it is not saved, what is already stored is untouched, and what
+// to do about it.
+function showStorageAlert(err) {
+  const el = document.getElementById('storage-alert');
+  if (!el) return;
+  el.hidden = !err;
+  el.textContent = err
+    ? 'This browser refused to save — your last change is not stored. '
+      + 'Everything saved before is untouched. Free up space on the device, '
+      + 'then export a backup from Settings before you carry on.'
+    : '';
 }
 
 function route() {
@@ -53,6 +69,7 @@ initSteppers();
 initNumericOverwrite();
 initAmbientSync(); // M2: pull on open/visible, debounced push after edits
 onSyncActivity(updateSyncBadge);
+onWriteError(showStorageAlert);
 window.addEventListener('hashchange', route);
 route();
 

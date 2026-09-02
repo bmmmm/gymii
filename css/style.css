@@ -55,6 +55,18 @@ body {
   overscroll-behavior-y: contain;
 }
 
+/* Only ever shown when the browser refused to save something, so it may
+   take the room it needs: this is the one message the app cannot render
+   inside a screen, because every screen might be the one that failed. */
+#storage-alert {
+  flex: none;
+  background: var(--danger);
+  color: #fff;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 /* --- tab bar --- */
 
 #tabbar {
