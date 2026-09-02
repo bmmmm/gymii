@@ -66,6 +66,17 @@ assert.deepEqual(active.plan, [{ machineId: 'm1', exercise: null }]);
 assert.equal(active.currentMachineId, 'm1');
 assert.strictEqual(active.currentExercise, null);
 
+// a plan whose first stop has no machine yet opens on that question
+startWorkoutFrom({ entries: [{ name: 'Leg press' }, entry('m1')] });
+active = store.getActive();
+assert.equal(active.binding, 0, 'an unbound first slot opens the bind screen');
+assert.strictEqual(active.currentMachineId, null, 'with nothing to log at yet');
+// starting AT a machine answers the question before it is asked
+startWorkoutFrom({ entries: [{ name: 'Leg press' }] }, 'm1');
+active = store.getActive();
+assert.ok(!('binding' in active), 'picking a machine to start at overrules the bind screen');
+assert.equal(active.currentMachineId, 'm1');
+
 // an optional workout name is pre-seeded from the source, so repeating a
 // named routine keeps its identity instead of splitting off an unnamed half
 startWorkoutFrom({ name: 'Push day', entries: [entry('m1')] });

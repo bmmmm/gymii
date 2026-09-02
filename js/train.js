@@ -199,6 +199,11 @@ export function startWorkoutFrom(source, firstMachineId = null) {
   if (firstMachineId && !plan.some((p) => p.machineId === firstMachineId)) {
     plan.push({ machineId: firstMachineId, exercise: null });
   }
+  // A plan whose first stop has no machine yet opens on that question
+  // instead of on the overview: "which machine is this?" is the only thing
+  // standing between the tap and the first set. Starting AT a machine
+  // (the picker) always overrules it — that machine is the answer.
+  const openBind = !firstMachineId && plan[0] && !plan[0].machineId;
   saveActive({
     v: 2, id: uid(), startedAt: Date.now(),
     // repeating a named workout keeps its identity — without this the
@@ -210,6 +215,7 @@ export function startWorkoutFrom(source, firstMachineId = null) {
     // a locker noted on the start screen moves onto the workout
     ...(pendingLocker ? { locker: pendingLocker } : {}),
     plan,
+    ...(openBind ? { binding: 0 } : {}),
     currentMachineId: firstMachineId ?? plan[0]?.machineId ?? null,
     currentExercise: firstMachineId ? null : plan[0]?.exercise ?? null,
     entries: [],

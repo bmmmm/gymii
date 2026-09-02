@@ -514,10 +514,16 @@ assert.equal(bound.planId, typed.id, 'the active workout remembers its plan');
 assert.equal(bound.plan.length, 3, 'unbound slots survive into the guided flow');
 assert.ok(store.getLayout(), 'starting a workout creates the empty gym it needs');
 
-byId.clear();
-renderTrain(root); // overview — every slot is unbound
-assert.ok(root.innerHTML.includes('assign'), 'the overview asks for the missing machines');
+assert.equal(bound.binding, 0,
+  'a plan whose first stop is unbound opens on that question, not the overview');
+assert.strictEqual(bound.currentMachineId, null, 'nothing to log at yet');
 root.querySelectorAll = () => [];
+// dismissed, the overview still asks for the missing machines
+delete bound.binding;
+store.saveActive(bound);
+byId.clear();
+renderTrain(root);
+assert.ok(root.innerHTML.includes('assign'), 'the overview asks for the missing machines');
 bound.binding = 0;
 store.saveActive(bound);
 byId.clear();
