@@ -339,4 +339,26 @@ const coldSvg = fakeSvg();
 drawLayout(coldSvg, usedLayout, { usage: usagePayload(new Map()) });
 assert.ok(coldSvg.innerHTML.includes('#1c232c'), 'a machine with no sets fades out instead of colouring');
 
+// --- ids from a template file are attacker-controlled ---
+// A community template comes off the network and isValidLayout() only
+// checks that ids are truthy, so an id can carry a quote. Every attribute
+// in settings.js is escaped already; the map's data-id was not.
+
+const injected = store.newLayout('Injected');
+const nasty = 'x" onclick="boom';
+injected.machines.push({ id: nasty, num: 1, x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
+injected.shapes.push({ id: nasty + '-z', kind: 'rect', x: 8, y: 0, w: 12, h: 8 });
+injected.shapes.push({ id: nasty + '-f', kind: 'fixture', fixture: 'water', x: 30, y: 0, w: 2, h: 2 });
+const injSvg = fakeSvg();
+drawLayout(injSvg, injected, { editor: true, selectedId: nasty, unlockedId: nasty });
+// the payload's own text may appear — what must not is a live attribute,
+// i.e. the quote that would end data-id and start a new one
+assert.ok(!injSvg.innerHTML.includes('onclick="'),
+  'a quote in an id must not break out of the attribute');
+assert.ok(injSvg.innerHTML.includes('onclick=&quot;'), 'it is escaped instead');
+// the escape must be REVERSIBLE by the parser, or gym.js's dataset.id
+// lookups would stop matching the stored id
+assert.equal(attr(tagsWith(injSvg.innerHTML, 'machine')[0], 'data-id'), 'x&quot; onclick=&quot;boom',
+  'and &quot; is what the HTML parser hands back as the original id');
+
 console.log('map renderer + geometry + collision: all assertions passed');

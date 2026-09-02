@@ -261,7 +261,7 @@ function shapeSvg(s, ppu = null) {
     // second, invisible fat line makes thin walls tappable; the inline
     // stroke-width overrides the .hit default from the stylesheet
     const hitStroke = ppu ? ` stroke-width="${WALL_HIT_PX / ppu}"` : '';
-    return `<g class="shape" data-id="${s.id}">
+    return `<g class="shape" data-id="${esc(s.id)}">
       <line class="shape-line" x1="${s.x}" y1="${s.y}" x2="${x2}" y2="${y2}"/>
       <line class="hit" x1="${s.x}" y1="${s.y}" x2="${x2}" y2="${y2}"${hitStroke}/>
     </g>`;
@@ -272,7 +272,7 @@ function shapeSvg(s, ppu = null) {
     if (s.fixture === 'window') return windowSvg(s, ppu);
     const icon = FIXTURES[s.fixture]?.icon ?? '❓';
     const fs = clamp(Math.min(s.w, s.h) * 0.7, 0.8, 2.2);
-    return `<g class="shape" data-id="${s.id}">
+    return `<g class="shape" data-id="${esc(s.id)}">
       <rect class="fixture-box" x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}" rx="0.3"/>
       <text class="fixture-icon" x="${s.x + s.w / 2}" y="${s.y + s.h / 2}" font-size="${fs}"
         text-anchor="middle" dominant-baseline="central" pointer-events="none">${icon}</text>
@@ -280,7 +280,7 @@ function shapeSvg(s, ppu = null) {
   }
   const zoneStyle = s.color
     ? ` style="fill:${s.color};fill-opacity:0.13;stroke:${s.color};stroke-opacity:0.55"` : '';
-  return `<g class="shape" data-id="${s.id}">
+  return `<g class="shape" data-id="${esc(s.id)}">
     <rect class="shape-rect" x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}" rx="0.3"${zoneStyle}/>
     ${s.label ? `<text class="zone-label" x="${s.x + 1}" y="${s.y + 2.1}" font-size="1.4"
       pointer-events="none">${esc(s.label)}</text>` : ''}
@@ -313,7 +313,7 @@ function machineSvg(m, usage = null, highlightId = null) {
   const locate = highlightId != null && m.id === highlightId;
   if (locate) box += `${box ? ';' : ''}stroke:#fff`;
   const dim = highlightId != null && !locate ? ' opacity="0.35"' : '';
-  return `<g class="machine${locate ? ' locate' : ''}" data-id="${m.id}"${dim}>
+  return `<g class="machine${locate ? ' locate' : ''}" data-id="${esc(m.id)}"${dim}>
     <rect class="machine-box" x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="0.4"${box ? ` style="${box}"` : ''}/>
     <text class="machine-num" x="${m.x + m.w / 2}" y="${m.y + m.h / 2}" font-size="${fs}"
       text-anchor="middle" dominant-baseline="central" pointer-events="none"${numStyle}>${m.num}</text>
@@ -332,7 +332,7 @@ function hitPadSvg(items, ppu) {
     if (b.w >= minSize && b.h >= minSize) return '';
     const w = Math.max(b.w, minSize);
     const h = Math.max(b.h, minSize);
-    return `<rect class="tap-hit" data-id="${it.id}"
+    return `<rect class="tap-hit" data-id="${esc(it.id)}"
       x="${b.x + (b.w - w) / 2}" y="${b.y + (b.h - h) / 2}" width="${w}" height="${h}"/>`;
   }).join('');
 }
@@ -360,7 +360,7 @@ function doorSvg(s, ppu) {
   // door's local (unrotated) frame, then the wall rotation applies
   const fx = s.flipH ? -1 : 1;
   const fy = s.flipV ? -1 : 1;
-  return `<g class="shape" data-id="${s.id}" transform="rotate(${s.rot || 0} ${cx} ${cy})
+  return `<g class="shape" data-id="${esc(s.id)}" transform="rotate(${s.rot || 0} ${cx} ${cy})
       translate(${cx} ${cy}) scale(${fx} ${fy}) translate(${-cx} ${-cy})">
     ${wallHitSvg(s, ppu)}
     <rect class="door-gap" x="${hx}" y="${cy - 0.4}" width="${w}" height="0.8"/>
@@ -375,7 +375,7 @@ function entranceSvg(s, ppu) {
   const cx = s.x + s.w / 2;
   const cy = s.y + s.h / 2;
   const fy = s.flipV ? -1 : 1;
-  return `<g class="shape" data-id="${s.id}" transform="rotate(${s.rot || 0} ${cx} ${cy})
+  return `<g class="shape" data-id="${esc(s.id)}" transform="rotate(${s.rot || 0} ${cx} ${cy})
       translate(${cx} ${cy}) scale(1 ${fy}) translate(${-cx} ${-cy})">
     ${wallHitSvg(s, ppu)}
     <rect class="door-gap" x="${s.x}" y="${cy - 0.45}" width="${s.w}" height="0.9"/>
@@ -388,7 +388,7 @@ function entranceSvg(s, ppu) {
 function windowSvg(s, ppu) {
   const cx = s.x + s.w / 2;
   const cy = s.y + s.h / 2;
-  return `<g class="shape" data-id="${s.id}" transform="rotate(${s.rot || 0} ${cx} ${cy})">
+  return `<g class="shape" data-id="${esc(s.id)}" transform="rotate(${s.rot || 0} ${cx} ${cy})">
     ${wallHitSvg(s, ppu)}
     <rect class="window-gap" x="${s.x}" y="${cy - 0.35}" width="${s.w}" height="0.7"/>
     <line class="window-line" x1="${s.x}" y1="${cy - 0.18}" x2="${s.x + s.w}" y2="${cy - 0.18}"/>
@@ -437,7 +437,7 @@ function selectionSvg(item, ppu, grid, pad, unlocked = false) {
   const a = visR * 0.5; // diagonal arrow half-length
   const t = visR * 0.32; // arrowhead tick length
   return `${outline}
-    <circle class="tap-hit handle-hit" data-id="${item.id}" data-handle="1"
+    <circle class="tap-hit handle-hit" data-id="${esc(item.id)}" data-handle="1"
       cx="${hx}" cy="${hy}" r="${hitR}"/>
     <circle class="handle" cx="${hx}" cy="${hy}" r="${visR}"
       pointer-events="none" stroke-width="${visR * 0.08}"/>
