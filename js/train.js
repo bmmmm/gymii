@@ -1348,6 +1348,10 @@ function renderLog(root, layout, active, reveal = null) {
     machineId, ...v, m: layout.machines.find((mm) => mm.id === machineId),
   })).filter((c) => c.m).sort((a, b) => b.at - a.at).slice(0, 2);
 
+  // A rest started before this render is still running: the log screen
+  // shows it inline, so the overlay is never the only place it lives.
+  const restRemaining = restLeft(active);
+
   // Locker ask: a machine-first workout never sees the overview before the
   // first set, so the one start-of-workout errand is asked here — a single
   // row, gone once a set is logged or it's skipped, never nagging after.
@@ -1441,6 +1445,11 @@ function renderLog(root, layout, active, reveal = null) {
         ${stepperField('Rest (s)', 'set-rest', { step: 15, min: 0, value: restSeconds, mode: 'numeric' })}
         <button type="button" id="rest-keep" class="linkish rest-keep"${restSeconds === machineRest()
     ? ' hidden' : ''}>Keep ${restSeconds} s for #${machine.num}</button>
+        ${restRemaining ? `<div class="rest-inline" id="rest-inline">Rest
+          <span class="cd" id="rest-cd">${fmtDuration(restRemaining)}</span>
+          <button type="button" id="rest-plus" class="chip">+15s</button>
+          <button type="button" id="rest-skip" class="chip">Skip</button>
+        </div>` : ''}
         <button id="log-set" class="btn ${targetDone && nextMachine ? '' : 'btn-primary '}btn-big">${logLabel(def)}</button>
       </div>
     </section>`}
@@ -1545,8 +1554,19 @@ function renderLog(root, layout, active, reveal = null) {
     // the set list just grew a row above the inputs — put them back under
     // the thumb, so the next set is one tap and not a scroll away
     renderLog(root, layout, active, '.next-set');
-    startRest(rest);
+    startRest(rest, root, active);
   });
+
+  // "Next:" for the rest screen — this render already knows all of it.
+  // Keyed on slotDone, not targetDone: a slot with no target counts as done
+  // after one set, so the answer jumps to the next machine rather than
+  // promising another set nobody planned. Stored RAW; esc() at interpolation.
+  nextUpLabel = pickPending ? ''
+    : currentSlot && !slotDone(active, currentSlot)
+      ? (setGoal ? `set ${setPos}/${setGoal} — ${setLabel(def)}` : setLabel(def))
+      : nextMachine
+        ? `#${nextMachine.num} ${nextMachine.label}${nextSlot.exercise ? ` · ${nextSlot.exercise}` : ''}`
+        : nextUnbound?.name ?? '';
 
   // the steppers update the one-tap label live, so the button never lies
   if (!pickPending) {
@@ -1578,6 +1598,12 @@ function renderLog(root, layout, active, reveal = null) {
     saveActive(active);
     renderTrain(root);
   });
+
+  if (restRemaining) {
+    ensureRestTicking(root); // after a reload nothing is ticking yet
+    root.querySelector('#rest-plus')?.addEventListener('click', () => adjustRest(15000));
+    root.querySelector('#rest-skip')?.addEventListener('click', endRest);
+  }
 
   root.querySelector('#locate-current').addEventListener('click',
     () => showMapOverlay(layout, machine));
@@ -1677,6 +1703,8 @@ const setsSummary = (sets, s, bodyweight = false) => {
 };
 
 function finish(root, active) {
+  // no ghost tone in the hub: the workout is over, so is its rest
+  stopRest();
   // the hub is the resting point after the loop closes — not whatever
   // sub-screen the workout happened to start from
   screen = 'hub';
@@ -1764,12 +1792,75 @@ const DIM_LIT_MS = 130;
 // The last seconds before zero are never dimmed — look up, the tone is next.
 const DIM_ENDGAME_SECS = 5;
 
-function startRest(secs) {
+// --- rest timer ---
+// The FACT is `active.restUntil`, an epoch deadline on the workout: it
+// survives a reload, it is what the inline row and the overlay both read,
+// and it dies with the workout (finishWorkout's allow-list). Everything
+// below is only the machinery that shows it — held in one module-level
+// `restRun` so a re-render, a dismissed overlay or a second set can take
+// it back. `overlay: null` means the timer runs with no overlay on screen.
+let restRun = null;
+// What the log screen said was coming, raw — the overlay escapes it.
+let nextUpLabel = '';
+
+// Seconds left on the workout's own deadline. A pure function of state, so
+// a headless test can assert the countdown without a DOM.
+export const restLeft = (active) => {
+  const ms = (active?.restUntil ?? 0) - Date.now();
+  return ms > 0 ? Math.ceil(ms / 1000) : 0;
+};
+
+export const restNextUp = () => nextUpLabel;
+
+// Log a set → rest. Called inside the tap that logged it, which is what
+// lets primeAudio() bless the audio element for the tone at zero.
+function startRest(secs, root, active) {
   if (!secs) return; // 0 = rest timer off
   // Prime silently while the tap that logged the set is still the gesture —
   // the sound itself only plays when the countdown reaches zero.
   primeAudio();
+  active.restUntil = Date.now() + secs * 1000;
+  saveActive(active);
+  stopRest(); // a second set mid-rest REPLACES the timer, never stacks one
+  runRest(root, { overlay: true });
+}
 
+// Pick up a deadline that is already running: after a reload, or after the
+// overlay was dismissed and the log screen re-rendered. No overlay, and
+// the tone at zero may be blocked without a gesture — playTimerSound catches.
+function ensureRestTicking(root) {
+  if (restRun) return;
+  runRest(root, { overlay: false });
+}
+
+function runRest(root, { overlay }) {
+  // Headless the deadline on the workout IS the whole fact; there is no
+  // document to paint it on.
+  if (typeof document === 'undefined') return;
+  const active = getActive();
+  if (!restLeft(active)) return;
+  restRun = {
+    endsAt: active.restUntil,
+    done: false,
+    dimAt: Date.now() + dimDelaySeconds(getSettings().timerDim) * 1000,
+    shown: null,
+    interval: null,
+    closeTimer: null,
+    litTimer: null,
+    overlay: null,
+    root,
+  };
+  if (overlay) openRestOverlay();
+  // The break wants the screen awake unless the setting says never; the
+  // module-level manager owns the lock (with 'workout' scope it is already
+  // held and simply stays). It hangs on the TIMER, not on the overlay.
+  lockForBreak = getSettings().keepAwake !== 'off';
+  syncWakeLock();
+  restRun.interval = setInterval(paintRest, 200);
+  paintRest();
+}
+
+function openRestOverlay() {
   const dimChips = (sel) => [['off', 'Never'], ['10s', 'After 10 s'], ['now', 'Now']]
     .map(([v, label]) => `<button type="button" class="chip sm${v === sel ? ' sel' : ''}"
       data-dim="${v}">${label}</button>`).join('');
@@ -1779,30 +1870,29 @@ function startRest(secs) {
   overlay.innerHTML = `
     <div class="muted">REST</div>
     <div class="countdown" id="cd"></div>
+    ${nextUpLabel ? `<div class="muted rest-next">Next: ${esc(nextUpLabel)}</div>` : ''}
     <div class="row">
       <button class="btn" id="rest-minus">−15s</button>
-      <button class="btn" id="rest-plus">+15s</button>
+      <button class="btn" id="rest-plus-big">+15s</button>
     </div>
-    <div class="row"><button class="btn btn-primary" id="rest-skip">Skip</button></div>
+    <div class="row"><button class="btn btn-primary" id="rest-skip-big">Skip</button></div>
     <div class="rest-opts" id="dim-opts">
       <span class="muted">🌙 Darken</span>${dimChips(getSettings().timerDim)}
-    </div>`;
+    </div>
+    <div class="muted">Tap outside to keep training</div>`;
   document.body.appendChild(overlay);
+  restRun.overlay = overlay;
 
-  let endsAt = Date.now() + secs * 1000;
-  let done = false;
-  const cd = overlay.querySelector('#cd');
+  // Any touch buys DIM_WAKE_MS of full brightness.
+  overlay.addEventListener('pointerdown', () => { if (restRun) restRun.dimAt = Date.now() + DIM_WAKE_MS; });
 
-  // Dimming: the overlay darkens itself once `dimAt` passes — the screen
-  // stays ON (that is the wake lock's job), it just stops glaring in a dark
-  // gym. The countdown remains readable and TICKS: every passing second
-  // jerks it brighter for a moment, which is what says the timer is alive
-  // without lighting the whole screen. Any touch buys DIM_WAKE_MS of full
-  // brightness, and the endgame seconds never dim.
-  let dimAt = Date.now() + dimDelaySeconds(getSettings().timerDim) * 1000;
-  let shownRem = null;
-  const brighten = () => { dimAt = Date.now() + DIM_WAKE_MS; };
-  overlay.addEventListener('pointerdown', brighten);
+  // Tapping the backdrop closes the SCREEN, not the timer — the rest keeps
+  // running in the inline row on the log screen. Narrower than
+  // showMapOverlay's "any tap closes": every button here keeps its own job.
+  overlay.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;
+    dismissRest();
+  });
 
   overlay.querySelector('#dim-opts').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
@@ -1810,66 +1900,96 @@ function startRest(secs) {
     saveSettings({ ...getSettings(), timerDim: chip.dataset.dim });
     overlay.querySelector('#dim-opts').innerHTML =
       `<span class="muted">🌙 Darken</span>${dimChips(chip.dataset.dim)}`;
-    dimAt = Date.now() + dimDelaySeconds(chip.dataset.dim) * 1000;
+    restRun.dimAt = Date.now() + dimDelaySeconds(chip.dataset.dim) * 1000;
   });
 
-  // The break wants the screen awake unless the setting says never; the
-  // module-level manager owns the lock (with 'workout' scope it is already
-  // held and simply stays).
-  lockForBreak = getSettings().keepAwake !== 'off';
-  syncWakeLock();
+  overlay.querySelector('#rest-skip-big').addEventListener('click', endRest);
+  overlay.querySelector('#rest-minus').addEventListener('click', () => adjustRest(-15000));
+  overlay.querySelector('#rest-plus-big').addEventListener('click', () => adjustRest(15000));
+}
 
-  // Both timers are held so they can be taken back: the countdown may be
-  // revived by a ±15s tap (see adjust), and a stale removal would otherwise
-  // cut the next jerk short or close a running timer.
-  let closeTimer = null;
-  let litTimer = null;
-
-  const close = () => {
-    clearInterval(interval);
-    clearTimeout(closeTimer);
-    clearTimeout(litTimer);
-    lockForBreak = false;
-    syncWakeLock(); // a 'workout'-scoped lock survives this
-    overlay.remove();
-  };
-  const tick = () => {
-    const rem = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
-    cd.textContent = fmtDuration(rem);
-    overlay.classList.toggle('dim', Date.now() >= dimAt && rem > DIM_ENDGAME_SECS);
-    if (rem !== shownRem) { // a second passed: jerk the countdown brighter
-      shownRem = rem;
+// One painter for both faces of the timer. The nodes are looked up by id
+// EVERY tick and never held: renderLog replaces the inline row wholesale,
+// and a held reference would keep painting a node that is no longer on the
+// page. Dimming and the per-second jerk belong to the overlay alone.
+function paintRest() {
+  if (!restRun) return;
+  const rem = Math.max(0, Math.ceil((restRun.endsAt - Date.now()) / 1000));
+  const text = fmtDuration(rem);
+  const cd = document.getElementById('cd');
+  const inline = document.getElementById('rest-cd');
+  if (cd) cd.textContent = text;
+  if (inline) inline.textContent = text;
+  if (restRun.overlay) {
+    restRun.overlay.classList.toggle('dim', Date.now() >= restRun.dimAt && rem > DIM_ENDGAME_SECS);
+    if (rem !== restRun.shown && cd) { // a second passed: jerk it brighter
       cd.classList.add('lit');
-      clearTimeout(litTimer); // one pending removal, so every jerk lasts its full length
-      litTimer = setTimeout(() => cd.classList.remove('lit'), DIM_LIT_MS);
+      clearTimeout(restRun.litTimer); // one pending removal, so every jerk lasts
+      restRun.litTimer = setTimeout(() => cd.classList.remove('lit'), DIM_LIT_MS);
     }
-    if (rem === 0 && !done) {
-      done = true;
-      cd.classList.add('done');
-      playTimerSound(getSettings().timerSound);
-      navigator.vibrate?.(200);
-      closeTimer = setTimeout(close, 900);
-    }
-  };
-  const interval = setInterval(tick, 200);
-  tick();
+  }
+  restRun.shown = rem;
+  if (rem === 0 && !restRun.done) {
+    restRun.done = true;
+    cd?.classList.add('done');
+    playTimerSound(getSettings().timerSound);
+    navigator.vibrate?.(200);
+    restRun.closeTimer = setTimeout(endRest, 900);
+  }
+}
 
-  // ±15s. Giving a finished timer more time REVIVES it — the overlay lingers
-  // ~900ms after the tone, and a tap in that window used to extend a
-  // countdown that was already scheduled to close (the extra time was
-  // silently thrown away, and the new zero would never have sounded).
-  const adjust = (ms) => {
-    endsAt += ms;
-    if (done && endsAt > Date.now()) {
-      clearTimeout(closeTimer);
-      closeTimer = null;
-      done = false;
-      cd.classList.remove('done');
-    }
-    tick();
-  };
+// ±15s. Giving a finished timer more time REVIVES it — the overlay lingers
+// ~900ms after the tone, and a tap in that window used to extend a
+// countdown that was already scheduled to close (the extra time was
+// silently thrown away, and the new zero would never have sounded).
+function adjustRest(ms) {
+  const active = getActive();
+  if (!active?.restUntil) return;
+  active.restUntil += ms;
+  saveActive(active);
+  if (!restRun) return;
+  restRun.endsAt = active.restUntil;
+  if (restRun.done && restRun.endsAt > Date.now()) {
+    clearTimeout(restRun.closeTimer);
+    restRun.closeTimer = null;
+    restRun.done = false;
+    document.getElementById('cd')?.classList.remove('done');
+  }
+  paintRest();
+}
 
-  overlay.querySelector('#rest-skip').addEventListener('click', close);
-  overlay.querySelector('#rest-minus').addEventListener('click', () => adjust(-15000));
-  overlay.querySelector('#rest-plus').addEventListener('click', () => adjust(15000));
+// Put the rest screen away and keep resting: the log screen takes the
+// countdown over in its inline row.
+function dismissRest() {
+  if (!restRun) return;
+  restRun.overlay?.remove();
+  restRun.overlay = null;
+  const { root } = restRun;
+  renderTrain(root); // same screenKey → no scroll reset
+  keepInView(root, '.next-set');
+}
+
+// Stop the machinery, leave the fact: used when a new rest replaces this
+// one, and when the workout ends under it.
+function stopRest() {
+  if (!restRun) return;
+  clearInterval(restRun.interval);
+  clearTimeout(restRun.closeTimer);
+  clearTimeout(restRun.litTimer);
+  restRun.overlay?.remove();
+  restRun = null;
+  lockForBreak = false;
+  syncWakeLock(); // a 'workout'-scoped lock survives this
+}
+
+// The rest is over — by Skip, or 900ms after the tone. The deadline goes
+// with it. The inline row is removed by id rather than re-rendered: a
+// re-render here would take a half-typed input field with it.
+function endRest() {
+  stopRest();
+  if (typeof document !== 'undefined') document.getElementById('rest-inline')?.remove();
+  const active = getActive();
+  if (!active) return; // the workout may have ended under the timer
+  delete active.restUntil;
+  saveActive(active);
 }

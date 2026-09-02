@@ -8,7 +8,7 @@ import { strict as assert } from 'node:assert';
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const {
   startWorkoutFrom, renderTrain, nearbyAlternative, nextSetDefaults, dimDelaySeconds,
-  screenKey, goToHub, goToStart, goToPlans,
+  screenKey, goToHub, goToStart, goToPlans, restLeft, restNextUp,
 } = await import(new URL('../js/train.js', import.meta.url).href);
 
 const gym = store.newLayout('Test gym');
@@ -772,8 +772,95 @@ assert.ok(/rest-keep"[^>]*\bhidden\b/.test(root.innerHTML),
   'and the offer hides itself — there is nothing left to keep');
 store.clearActive();
 
+// --- the rest belongs to the workout, not to the rest SCREEN ---
+// Headless there is no document, so only the fact lands: `restUntil` on the
+// active workout. That is exactly what the inline row and the overlay both
+// read, which is why it can be asserted without a DOM.
+byId.clear();
+const restNow = Date.now();
+store.saveActive({
+  v: 2, id: 'w-rest2', startedAt: restNow - 60000,
+  plan: [{ machineId: 'm1', exercise: null }],
+  currentMachineId: 'm1', currentExercise: null, entries: [],
+  restUntil: restNow + 72000,
+});
+renderTrain(root);
+assert.ok(root.innerHTML.includes('id="rest-inline"'),
+  'a running rest shows itself on the log screen, not only in the overlay');
+assert.ok(root.innerHTML.includes('1:12'), 'counting down from the workout\'s own deadline');
+assert.equal(restLeft(store.getActive()), 72, 'restLeft reads the deadline as seconds');
+
+byId.get('#rest-plus').listeners.click();
+assert.ok(store.getActive().restUntil >= restNow + 86000,
+  '+15s extends the deadline on the workout');
+
+byId.get('#rest-skip').listeners.click();
+assert.ok(!('restUntil' in store.getActive()), 'Skip ends the rest for good');
+byId.clear();
+renderTrain(root);
+assert.ok(!root.innerHTML.includes('id="rest-inline"'), 'and the row is gone on the next render');
+
+// logging a set with a rest set starts one — the deadline is the whole
+// fact, the overlay is just how a browser shows it
+byId.get('#set-rest').value = '90';
+byId.get('#set-weight').value = '40';
+byId.get('#set-reps').value = '8';
+const beforeLog = Date.now();
+byId.get('#log-set').listeners.click();
+assert.ok(store.getActive().restUntil > beforeLog + 80000,
+  'logging a set starts the rest on the workout');
+store.clearActive();
+
+// --- "Next:" on the rest screen ---
+byId.clear();
+const nextGym = store.newLayout('Next gym');
+nextGym.machines.push({
+  id: 'n1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
+});
+nextGym.machines.push({
+  id: 'n3', num: 3, label: 'Back extension', x: 8, y: 0, w: 4, h: 3, settingsFields: [],
+});
+store.saveLayout(nextGym);
+// a target with one of three sets logged: the answer is the next SET
+store.saveActive({
+  v: 2, id: 'w-next', startedAt: Date.now(),
+  plan: [
+    { machineId: 'n1', exercise: null, target: { sets: 3, reps: 10, weight: 50 } },
+    { machineId: 'n3', exercise: null },
+  ],
+  currentMachineId: 'n1', currentExercise: null,
+  entries: [{
+    machineId: 'n1', num: 1, label: 'Chest press', settings: {},
+    sets: [{ reps: 10, weight: 50, at: Date.now() }],
+  }],
+});
+renderTrain(root);
+assert.equal(restNextUp(), 'set 2/3 — 50 kg × 10',
+  'mid-slot the next thing is the next set of it');
+
+// a slot with NO target counts as done after one set — the answer moves on
+store.saveActive({
+  v: 2, id: 'w-next2', startedAt: Date.now(),
+  plan: [{ machineId: 'n1', exercise: null }, { machineId: 'n3', exercise: null }],
+  currentMachineId: 'n1', currentExercise: null,
+  entries: [{
+    machineId: 'n1', num: 1, label: 'Chest press', settings: {},
+    sets: [{ reps: 10, weight: 50, at: Date.now() }],
+  }],
+});
+byId.clear();
+renderTrain(root);
+assert.equal(restNextUp(), '#3 Back extension',
+  'a finished aimless slot points at the next machine');
+store.clearActive();
+
 // --- removing a logged set takes two taps ---
 byId.clear();
+const delGym = store.newLayout('Delete gym');
+delGym.machines.push({
+  id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
+});
+store.saveLayout(delGym);
 store.saveActive({
   v: 2, id: 'w-del', startedAt: Date.now() - 60000,
   plan: [{ machineId: 'm1', exercise: null }],

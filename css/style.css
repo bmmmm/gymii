@@ -724,6 +724,29 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .rest-opts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
 .chip.sm { min-height: 44px; padding: 0 12px; font-size: 12px; }
 
+/* the rest that keeps running after the rest SCREEN was dismissed —
+   right above the log button, where the eye already is */
+.rest-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--accent-dim);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.rest-inline .cd {
+  flex: 1;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.overlay .rest-next { font-size: 15px; }
+
 /* --- map overlay ("where is it?") --- */
 
 .map-overlay { gap: 16px; }
