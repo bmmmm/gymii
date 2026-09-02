@@ -20,7 +20,21 @@ html, body { margin: 0; height: 100%; }
    double-tap zoom. Set on the root so near-miss taps beside a button
    can't zoom either — scrolling and pinch zoom stay available, and the
    floor map's own touch-action: none still wins (intersection). */
-html { touch-action: manipulation; }
+html {
+  touch-action: manipulation;
+  /* One rule instead of eleven: the grey flash belongs to no control here,
+     the :active brightness is the feedback. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Repeated taps on the same control must not start selecting its label or
+   raise the iOS callout. Deliberately NOT on summary or .synccode — those
+   carry text people copy. */
+button, .btn, .chip, .swatch, .hm-cell {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
 
 body {
   font-family: system-ui, -apple-system, sans-serif;
@@ -66,7 +80,6 @@ body {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  -webkit-tap-highlight-color: transparent;
 }
 
 /* the active tab announces itself with a pill behind the icon, not just a
@@ -155,7 +168,6 @@ a { color: var(--accent); }
   border-radius: 10px;
   cursor: pointer;
   text-align: center;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .btn:active { filter: brightness(1.2); }
@@ -244,7 +256,6 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-col
   border: 2px solid transparent;
   padding: 0;
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .swatch.none {
@@ -299,7 +310,6 @@ textarea {
   border: 1px solid var(--border);
   border-radius: 10px;
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .stepper button:active { filter: brightness(1.3); }
@@ -390,7 +400,6 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
   font: inherit;
   text-align: left;
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .plan-row:active,
@@ -445,7 +454,6 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
   font: inherit;
   text-align: left;
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .tile:active { filter: brightness(1.2); }
@@ -476,7 +484,6 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
   font-size: 14px;
   text-decoration: none;
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .back-row:active { color: var(--accent); }
@@ -615,7 +622,6 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
   font: inherit;
   font-size: 14px;
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .chip:active { filter: brightness(1.2); }
@@ -642,7 +648,6 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
   padding: 0;
   cursor: pointer;
   flex-shrink: 0;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .locate-btn:active { filter: brightness(1.4); }
@@ -778,7 +783,6 @@ details.workout summary::-webkit-details-marker { display: none; }
   font-size: 12px;
   cursor: pointer;
   padding: 0;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .hm-cell.l1 { background: #183b2b; border-color: transparent; color: #b9d6c7; }
@@ -906,3 +910,14 @@ select {
 }
 
 .empty .big { font-size: 40px; margin-bottom: 12px; }
+
+/* Motion here is decoration, except one thing: the locate highlight keeps
+   marking the machine even when its pulse stops — the white stroke comes
+   inline from machineSvg, not from the animation. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
