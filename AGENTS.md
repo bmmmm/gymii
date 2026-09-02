@@ -455,8 +455,12 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   `fromText()`, so the text is authoritative while it is on screen. Nothing
   persists until Save — which is what lets an imported AI draft, or a
   routine seeded from history, be reviewed and trimmed before it sticks.
-- `js/history.js` — month heatmap (per-machine filter), progress chart
-  (`js/chart.js`), workout list with repeat, and full editing: per-set
+- `js/history.js` — in render order: the workout list with repeat, the
+  Muscles card, the month heatmap (per-machine filter), the progress chart
+  (`js/chart.js`) and `Log a past workout`. What you did comes first, the
+  cards that analyse or extend it follow — which deliberately puts the
+  Muscles card UNDER the "Workouts — Lats" heading it filters. Past workouts
+  are fully editable: per-set
   values, `+ Set` (copies the previous one, minus its `at` — it was not
   logged live), `+ Machine` (snapshots num/label/type flags like the log
   screen), remove set or whole machine, date + time (finishedAt moves

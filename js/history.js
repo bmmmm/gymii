@@ -126,6 +126,11 @@ export function renderHistory(root) {
       ${named.map(([n, c]) => `<button type="button" class="chip${nameFilter === n ? ' sel' : ''}"
         data-name="${esc(n)}">${esc(n)} <span class="muted">· ${c}</span></button>`).join('')}
     </div>` : ''}
+    <section class="card">
+      <h2>Workouts${nameFilter ? ` — ${esc(nameFilter)}` : ''}${
+        muscleFilter ? ` — ${esc(muscleFilter)}` : ''}</h2>
+      <div id="workout-list"></div>
+    </section>
     ${muscleCardHtml()}
     <section class="card">
       <h2>Training days</h2>
@@ -156,12 +161,7 @@ export function renderHistory(root) {
       </select>
       <div class="chart-wrap" id="chart"></div>
     </section>
-    ${pastCardHtml()}
-    <section class="card">
-      <h2>Workouts${nameFilter ? ` — ${esc(nameFilter)}` : ''}${
-        muscleFilter ? ` — ${esc(muscleFilter)}` : ''}</h2>
-      <div id="workout-list"></div>
-    </section>`;
+    ${pastCardHtml()}`;
 
   wirePastLog(root, s);
 
