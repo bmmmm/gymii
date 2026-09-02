@@ -11,9 +11,11 @@ body:
         without a follow-up question.
 
         Two things are deliberate non-goals, so proposals depending on them
-        won't land: **no accounts, sync or server** (your data stays in your
-        browser), and **no build step or dependencies** (vanilla JS stays
-        vanilla; AI stays copy/paste, gymii never calls an API itself).
+        won't land: **no third-party accounts and no backend we operate**
+        (your data stays in your browser; cross-device sync exists, but only
+        as an opt-in, end-to-end encrypted one against a server you host),
+        and **no build step or dependencies in the app itself** (vanilla JS
+        stays vanilla; AI stays copy/paste, gymii never calls an API itself).
 
   - type: textarea
     id: problem

@@ -27,9 +27,8 @@ response within a week.
   describe a floor plan when loaded.
 - **Service worker**: cache behaviour that lets one origin's content stand
   in for gymii's, or keeps a known-vulnerable version pinned.
-- **Sync crypto & transport** (once cross-device sync ships): anything that
-  leaks plaintext, key material, or the passphrase to the self-hosted
-  server or over the wire.
+- **Sync crypto & transport**: anything that leaks plaintext, key material,
+  or the passphrase to the self-hosted server or over the wire.
 
 ## Out of scope
 

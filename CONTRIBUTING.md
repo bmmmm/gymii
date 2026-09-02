@@ -32,9 +32,14 @@ numbers matching what's physically posted in the gym.
 ## Code contributions
 
 Vanilla HTML/CSS/JS (ES modules), **no build step, no dependencies** — that
-is a feature, not an accident. Two more deliberate non-goals: no
-accounts/sync/server (data lives in `localStorage` only), and no AI API
-calls (the AI tab is copy out / paste back, by design).
+is a feature, not an accident.
+
+Two things that sound alike but are not: gymii needs no server and works
+completely without one (everything lives in `localStorage`), and anyone who
+wants cross-device sync opts into a self-hosted, end-to-end encrypted one.
+The deliberate non-goals are the other half of that: no third-party
+accounts, no backend we operate, and no AI API calls (the AI tab is copy
+out / paste back, by design).
 
 - **Run tests:** `for f in test/*.test.mjs; do node "$f" || break; done` —
   one file per module, plain `node:assert`, no framework. CI runs the same
