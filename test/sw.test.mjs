@@ -17,12 +17,27 @@ const NETWORK_ERROR = { networkError: true };
 
 // ------------------------------------------------------------- harness
 
-// A response the worker can pass around: `ok` gates the caching branch and
+// A response the worker can pass around: `ok` gates the caching branch,
+// `headers` decides whether a cached copy may answer a timeout, and
 // `clone()` hands back one stable copy, so the test can prove the CLONE
 // (not the body the page reads) is what lands in the cache.
-function makeResponse(label, { ok = true } = {}) {
+function makeResponse(label, { ok = true, headers = {} } = {}) {
   const copy = { label: `${label}#copy` };
-  return { label, ok, copy, clone: () => copy };
+  return { label, ok, copy, headers: new Headers(headers), clone: () => copy };
+}
+
+// A network answer the test releases by hand — a stalled gym wifi.
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
+// Watch a promise without awaiting it, so "still pending" is assertable.
+function track(p) {
+  const state = { done: false, value: undefined };
+  p.then((v) => { state.done = true; state.value = v; });
+  return state;
 }
 
 // A fresh worker per scenario — no state leaks between the branches.
@@ -154,6 +169,92 @@ const flush = async () => { for (let i = 0; i < 6; i++) await new Promise((r) =>
 
   assert.equal(await e.answers[0], NETWORK_ERROR,
     'an uncached miss on a dead network answers with Response.error()');
+}
+
+// -------------------------------------------------------- stalled wifi
+
+// The gym's captive portal accepts the request and then says nothing. After
+// 2.5 s the cached copy answers — and the fetch nobody waits for any more
+// still refreshes the cache when it finally lands.
+{
+  const w = loadWorker();
+  const url = `${ORIGIN}/js/plan.js`;
+  const hit = makeResponse('cached');
+  w.hits.set(url, hit);
+  const slow = deferred();
+  w.network(() => slow.promise);
+  const e = w.dispatch(fetchEvent(url));
+  const answer = track(e.answers[0]);
+
+  await flush();
+  assert.equal(answer.done, false, 'while the network is thinking, nobody is answered yet');
+  assert.equal(w.timers.length, 1, 'exactly one timer is armed');
+  assert.equal(w.timers[0].ms, 2500, 'it gives the wifi 2.5 s');
+  assert.equal(e.waits.length, 1, 'the worker is kept alive for the background put');
+
+  w.timers[0].fn();
+  await flush();
+  assert.equal(answer.value, hit, 'the timer serves the cached copy');
+
+  const late = makeResponse('late');
+  slow.resolve(late);
+  await flush();
+  assert.equal(w.puts.length, 1, 'the late answer still reaches the cache');
+  assert.equal(w.puts[0].res, late.copy, 'and it is the clone that gets stored');
+  await e.waits[0];
+}
+
+// Nothing cached — a first load, or a template file fetched on demand. The
+// timer must not cut the request short; the slow network still wins.
+{
+  const w = loadWorker();
+  const slow = deferred();
+  w.network(() => slow.promise);
+  const e = w.dispatch(fetchEvent(`${ORIGIN}/templates/basic-gym.json`));
+  const answer = track(e.answers[0]);
+
+  w.timers[0].fn();
+  await flush();
+  assert.equal(answer.done, false, 'with nothing cached the timeout must not answer at all');
+
+  const late = makeResponse('late');
+  slow.resolve(late);
+  await flush();
+  assert.equal(answer.value, late, 'a first load on a slow line still gets its file');
+}
+
+// serve.py sends `Cache-Control: no-store`. Such a copy may sit in the
+// cache, but it must never win the race — a slow localhost has to look
+// slow, not stale.
+{
+  const w = loadWorker();
+  const url = `${ORIGIN}/js/store.js`;
+  w.hits.set(url, makeResponse('dev copy', { headers: { 'Cache-Control': 'no-store' } }));
+  const slow = deferred();
+  w.network(() => slow.promise);
+  const e = w.dispatch(fetchEvent(url));
+  const answer = track(e.answers[0]);
+
+  w.timers[0].fn();
+  await flush();
+  assert.equal(answer.done, false, 'a no-store copy is not served on timeout');
+
+  const late = makeResponse('late');
+  slow.resolve(late);
+  await flush();
+  assert.equal(answer.value, late, 'the network answer arrives as it always did');
+}
+
+// The keep-alive promise must swallow a network failure — an offline fetch
+// may not surface as an unhandled rejection inside the worker.
+{
+  const w = loadWorker();
+  w.network(() => Promise.reject(new Error('offline')));
+  const e = w.dispatch(fetchEvent(`${ORIGIN}/js/ui.js`));
+
+  assert.equal(e.waits.length, 1, 'waitUntil got the network promise');
+  await e.waits[0];
+  await e.answers[0];
 }
 
 console.log('sw: all assertions passed');

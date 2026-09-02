@@ -30,19 +30,44 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// How long a gym's captive-portal wifi may stall before the cache answers.
+// A dead network rejects at once; this is for the worse case where the
+// connection accepts the request and then says nothing.
+const NET_TIMEOUT_MS = 2500;
+
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
-  e.respondWith(
-    fetch(e.request)
-      .then((res) => {
-        if (res.ok) {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
-        }
-        return res;
-      })
-      // respondWith(undefined) throws inside the worker — return a real
-      // network error for anything that was never cached
-      .catch(() => caches.match(e.request).then((hit) => hit ?? Response.error())),
-  );
+  networkFirst(e);
 });
+
+function networkFirst(e) {
+  const cached = caches.match(e.request);
+  const network = fetch(e.request).then((res) => {
+    if (res.ok) {
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
+    }
+    return res;
+  });
+  // The escape hatch: after NET_TIMEOUT_MS a cached copy answers instead of
+  // the spinner. Only a copy we actually hold, and never a `Cache-Control:
+  // no-store` one — that keeps serve.py honest, since a slow localhost can
+  // then never be masked by a stale module. Without a usable hit this
+  // promise never settles at all and the network wins outright, so first
+  // loads and on-demand template files still work on a slow line.
+  const timeout = new Promise((resolve) => {
+    setTimeout(() => cached.then((hit) => {
+      if (hit && !/no-store/i.test(hit.headers.get('Cache-Control') || '')) resolve(hit);
+    }), NET_TIMEOUT_MS);
+  });
+  // The put must land even when the cache won the race and the response
+  // the page got is long since delivered.
+  e.waitUntil(network.catch(() => {}));
+  e.respondWith(
+    // A network REJECTION beats the timer immediately, so hard offline
+    // stays as fast as it ever was. respondWith(undefined) throws inside
+    // the worker — anything never cached gets a real network error.
+    Promise.race([network, timeout])
+      .catch(() => cached.then((hit) => hit ?? Response.error())),
+  );
+}
