@@ -170,6 +170,10 @@ a { color: var(--accent); }
 .btn {
   display: block;
   width: 100%;
+  /* 14px padding around a 15px line came to 43px — one pixel short of the
+     guideline, on every plain .btn in the app. The floor is stated here
+     rather than left to arithmetic that changes with the label. */
+  min-height: 44px;
   padding: 14px;
   margin: 8px 0;
   font: inherit;
@@ -649,7 +653,14 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 
 .chip:active { filter: brightness(1.2); }
 
-.doc-link { font-size: 13px; }
+/* A standalone row in the machine header, not a word inside a sentence —
+   so it gets a real 44px box rather than a place on the allowlist. */
+.doc-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 13px;
+}
 
 .map-wrap { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); margin: 10px 0; }
 .map-wrap svg { display: block; width: 100%; }

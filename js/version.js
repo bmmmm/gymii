@@ -13,4 +13,4 @@
 // A second deploy on the same day takes a letter ('…-02b'). The string is
 // only ever displayed, never parsed, and two builds sharing one date would
 // defeat the whole point of naming them.
-export const APP_VERSION = '2026-09-02c';
+export const APP_VERSION = '2026-09-02d';
