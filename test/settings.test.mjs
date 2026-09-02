@@ -154,6 +154,12 @@ assert.ok(root.innerHTML.includes('unless you turn on sync'),
 assert.ok(!root.innerHTML.includes('in this browser only'),
   'the unconditional "browser only" claim is gone');
 
+// --- and it says which build is installed ---
+// The date is matched by shape, not by value: pinning the literal would turn
+// every deploy's bump into a failing test instead of a passing one.
+assert.match(root.innerHTML, /Version \d{4}-\d{2}-\d{2}/,
+  'Settings names the installed version');
+
 // --- pairing: a malformed code is a message, never an uncaught rejection ---
 
 const pairBtn = root.querySelector('#sync-pair');
