@@ -1,0 +1,15 @@
+{
+  "name": "gymii",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.17.0+sha512.cca3cea332ad254bb84145f966d19f4879615210346fc92c79a047f23a0d7b3cca3c3792f0076ba1f1831d277efbcf0a9119b31a9a60eca7fb3d6231f331ef72",
+  "scripts": {
+    "preinstall": "node -e \"const ua=process.env.npm_config_user_agent||'';if(!ua.startsWith('pnpm/')){console.error('\\n  gymii is pnpm-only (supply-chain policy). Use: pnpm install - npm/yarn are blocked.\\n');process.exit(1)}\"",
+    "test": "for f in test/*.test.mjs; do echo \"== $f\"; node \"$f\" || exit 1; done",
+    "smoke": "playwright test",
+    "smoke:ui": "playwright test --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}

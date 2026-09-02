@@ -1,0 +1,12 @@
+# Supply-chain hardening, mandatory for every JS repo here — and doubly so
+# for a repo whose shipped app has no dependencies at all.
+
+# 3-day cooldown: a compromised release is usually yanked within hours, so
+# waiting is what keeps it out of the lockfile in the first place.
+minimumReleaseAge: 4320
+
+# No package may run install scripts. Playwright is deliberately NOT on this
+# list: its postinstall would download ~170 MB of browsers as a silent side
+# effect of `pnpm install`. Keeping it out makes `playwright install
+# chromium` an explicit, cacheable step instead.
+onlyBuiltDependencies: []
