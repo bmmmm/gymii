@@ -32,6 +32,13 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   fine in Node as long as none touches the DOM at top level; the stub DOM
   hands back EVERY selector, rendered or not, so a test must drive view
   switches explicitly rather than assume a branch was skipped.
+- Touch targets are 44px, as real boxes (`min-height`/`min-width`), never
+  as an invisible pseudo-element. Two documented exceptions, both commented
+  in the stylesheet: `.hm-cell` (seven columns of a week don't fit 44px at
+  320px — 34px still clears the 24px minimum, WCAG's essential-layout
+  exception) and `.linkish` (a button reading as a word inside a sentence).
+  Anything focusable and text-shaped stays ≥16px, or iOS zooms the page on
+  focus — a `font:` shorthand silently beats that rule, so split it.
 - UI changes: verify in a real browser (claude-in-chrome). Editor
   interactions are best tested with scripted PointerEvents + localStorage
   asserts — pixel coordinates shift with window size. `setPointerCapture`
@@ -395,7 +402,11 @@ step, zero dependencies**, all data in localStorage. Mobile-first, dark-only.
   "Repeat last workout" moves below it and drops entirely
   when the last workout came from that plan. Stored plans list above
   history-derived routines. EVERY row is tappable (`.row-open` + chevron —
-  a row that looks like a row must not be dead): a plan row opens its
+  a row that looks like a row must not be dead). The chevron lives INSIDE
+  the `.row-open` button, not beside it: the delegated handler only sees
+  `closest('.plan-start, .row-open')`, so a sibling chevron would be the one
+  glyph advertising the tap that doesn't answer it (pinned in
+  `test/plan.test.mjs`): a plan row opens its
   settings (the builder), a derived routine row opens the builder SEEDED
   from it (`planSeedFrom()` — one item per machine/exercise pair; targets
   still come from each machine's own latest workout, not the routine's,
