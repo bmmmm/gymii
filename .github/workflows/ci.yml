@@ -144,7 +144,7 @@ jobs:
   # Flat no-build site: the repo root IS the publish dir. Only main deploys;
   # pull_request runs stop after the checks.
   deploy:
-    needs: [test, static-checks, shell-list]
+    needs: [test, static-checks, shell-list, smoke]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:
