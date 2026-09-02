@@ -185,7 +185,7 @@ a { color: var(--accent); }
   color: var(--accent-text);
 }
 
-.btn-inline { display: inline-block; width: auto; padding: 10px 14px; margin: 0; }
+.btn-inline { display: inline-block; width: auto; padding: 12px 14px; margin: 0; }
 
 .btn:disabled { opacity: 0.45; cursor: default; }
 
@@ -229,17 +229,17 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-col
 .field-block > span { display: block; margin-bottom: 8px; color: var(--muted); font-size: 13px; }
 .field-block .row { margin-top: 8px; }
 
-.chip-select { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-select { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip.sel { background: var(--accent-dim); border-color: var(--accent); color: #dff5e9; }
 
 /* quick-switch: swing back to a recently trained other station */
-.quick-switch { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.quick-switch { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 
 .swatch-row { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .swatch {
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: 2px solid transparent;
   padding: 0;
@@ -312,7 +312,7 @@ textarea {
 
 .toolbar { display: flex; gap: 8px; margin-bottom: 10px; }
 .toolbar .btn { margin: 0; padding: 12px 8px; font-size: 14px; }
-.toolbar-sub .btn { padding: 9px 4px; font-size: 12px; font-weight: 500; }
+.toolbar-sub .btn { padding: 14px 4px; font-size: 12px; font-weight: 500; }
 
 svg .fixture-box { fill: #242d38; stroke: #4a5765; stroke-width: 0.12; }
 svg .door-gap { fill: #10151c; }
@@ -461,11 +461,16 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 /* one flush "‹ destination" line at the top of every sub-screen — works as
    a <button> (train-internal state) and as an <a> (gym's route change) */
 .back-row {
-  display: block;
+  display: inline-flex;
+  align-items: center;
   width: fit-content;
+  min-height: 44px;
   background: none;
   border: 0;
-  padding: 0 0 10px;
+  /* pulled back by its own padding so the text still lines up flush with
+     the content below it */
+  margin: -8px 0 0 -8px;
+  padding: 0 8px;
   color: var(--muted);
   font: inherit;
   font-size: 14px;
@@ -489,7 +494,8 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .day-status.done strong { color: var(--accent); }
 .day-status.missed strong { color: var(--text); }
 
-/* an inline action inside a sentence — a button that reads as a link */
+/* An inline action inside a sentence — a button that reads as a link, and
+   therefore keeps the line's own height rather than a 44px box. */
 .linkish {
   background: none;
   border: 0;
@@ -531,8 +537,8 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .plan-item:last-child { border-bottom: 0; }
 .plan-item-head { display: flex; align-items: center; gap: 10px; }
 .plan-item-head .plan-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.plan-item-actions { display: flex; flex-shrink: 0; }
-.plan-item-actions .x { color: var(--muted); background: none; border: 0; font-size: 16px; padding: 6px 8px; cursor: pointer; }
+.plan-item-actions { display: flex; gap: 4px; flex-shrink: 0; margin-left: auto; }
+.plan-item-actions .x { font-size: 16px; }
 .plan-item .chip-select { margin: 8px 0 2px; }
 .plan-item .it-bind { margin: 8px 0 0; }
 /* the bind prompt, inline under the item it belongs to */
@@ -543,7 +549,7 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
   border-radius: 10px;
 }
 
-.plan-bind .chip-select { margin: 8px 0; max-height: 132px; overflow-y: auto; }
+.plan-bind .chip-select { margin: 8px 0; max-height: 168px; overflow-y: auto; }
 .plan-bind .btn { margin-top: 4px; }
 .plan-targets { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .plan-targets .spread { align-items: center; }
@@ -560,7 +566,23 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 }
 
 .set-row:last-child { border-bottom: 0; }
-.set-row .x { color: var(--muted); background: none; border: 0; font-size: 18px; padding: 6px 10px; cursor: pointer; }
+
+/* row actions (remove a set, reorder or remove a plan item): icon-sized
+   glyphs on a thumb-sized box */
+.set-row .x,
+.plan-item-actions .x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.set-row .x { font-size: 18px; }
 
 /* inline history edit: compact weight/reps inputs inside a set row */
 .edit-set { display: flex; gap: 6px; align-items: center; color: var(--muted); }
@@ -575,12 +597,13 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 
 .pick-muscle { margin-top: 10px; }
 
-.pick-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pick-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 
 .chip {
   display: inline-flex;
   align-items: center;
-  padding: 9px 14px;
+  min-height: 44px;
+  padding: 0 14px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -667,8 +690,8 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .overlay.dim > .muted, .overlay.dim .row, .overlay.dim .rest-opts { opacity: 0.3; }
 
 /* the timer's own settings row — small chips, out of the way */
-.rest-opts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; }
-.chip.sm { padding: 6px 11px; font-size: 12px; }
+.rest-opts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
+.chip.sm { min-height: 44px; padding: 0 12px; font-size: 12px; }
 
 /* --- map overlay ("where is it?") --- */
 
@@ -696,9 +719,20 @@ details.name-edit {
 }
 
 details.locker summary,
-details.name-edit summary { list-style: none; cursor: pointer; padding: 10px 0; color: var(--muted); }
+details.name-edit summary,
+#sync-devices > summary,
+#sync-discover > summary {
+  display: block;
+  list-style: none;
+  cursor: pointer;
+  min-height: 44px;
+  padding: 12px 0;
+  color: var(--muted);
+}
 details.locker summary::-webkit-details-marker,
-details.name-edit summary::-webkit-details-marker { display: none; }
+details.name-edit summary::-webkit-details-marker,
+#sync-devices > summary::-webkit-details-marker,
+#sync-discover > summary::-webkit-details-marker { display: none; }
 details.locker .row,
 details.name-edit .row { margin-bottom: 12px; }
 
@@ -709,7 +743,7 @@ details.name-edit .row { margin-bottom: 12px; }
 /* --- history --- */
 
 details.workout { border-bottom: 1px solid var(--border); padding: 4px 0; }
-details.workout summary { list-style: none; cursor: pointer; padding: 10px 0; }
+details.workout summary { display: block; list-style: none; cursor: pointer; min-height: 44px; padding: 12px 0; }
 details.workout summary::-webkit-details-marker { display: none; }
 .entry-line { padding: 6px 0 6px 12px; font-size: 14px; border-left: 2px solid var(--border); margin: 6px 0; }
 .entry-line .sets { color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -727,6 +761,9 @@ details.workout summary::-webkit-details-marker { display: none; }
 
 .hm-dow { text-align: center; font-size: 11px; color: var(--muted); padding: 2px 0; }
 
+/* Seven columns of a calendar week do not fit 44px on a 320px screen, and
+   splitting the week would stop it reading as one. 34px clears the 24px
+   minimum; WCAG allows the essential-layout exception. */
 .hm-cell {
   aspect-ratio: 1;
   border: 1px solid var(--border);
@@ -848,6 +885,9 @@ select {
   overflow-wrap: anywhere;
   user-select: all;
 }
+
+.sync-qr { margin: 12px 0; }
+.sync-qr svg { display: block; width: 100%; max-width: 280px; height: auto; margin: 0 auto; }
 
 /* Right column of the status rows: a server URL is user input and can be
    any length, so it wraps instead of pushing the label off the card. */
