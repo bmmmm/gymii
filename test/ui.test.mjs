@@ -192,7 +192,7 @@ assert.equal(textField.dataset.prevValue, undefined);
 // No `window` in Node (unlike `document`, stubbed above) — the real
 // visualViewport wiring only exists in a browser and is exercised by
 // smoke/keyboard.spec.mjs. Here the contract is just "never throws".
-ui.initKeyboardScroll('#log-set');
+ui.initKeyboardScroll('#log-set', '.next-set');
 
 // --- twoTapConfirm ---
 

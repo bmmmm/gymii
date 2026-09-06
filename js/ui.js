@@ -36,6 +36,10 @@ export function initSteppers() {
     // AFTER this click, or not before the keyboard finishes animating away).
     // Fall back to the stashed value instead of trusting that ordering: an
     // emptied-but-armed field steps from what it showed before focus, not 0.
+    // A half-typed invalid number ('1e', '4-') also reads as '' per the
+    // type=number value IDL, so it takes this same fallback and steps from
+    // the pre-focus value rather than the (unparsed) partial input — an
+    // acceptable, if incidental, side effect of the same guard.
     const base = input.value !== '' ? input.value : input.dataset?.prevValue;
     const next = (parseFloat(base) || 0) + dir * step;
     input.value = String(Math.max(min, Math.round(next * 100) / 100));
@@ -68,20 +72,37 @@ export function initNumericOverwrite() {
   });
 }
 
-// The iOS keyboard shrinks the VISUAL viewport only — the layout viewport,
-// and everything positioned or scrolled within it, does not move. A control
-// that sits a few rows below the focused field (the log-set button, below
-// the weight/reps/rest steppers) can end up entirely behind the keyboard
-// even though the page itself never changed. `focus` fires too early to
-// react to (the keyboard is still animating in); `visualViewport`'s resize
-// event fires once it has actually settled, which is the only moment the
-// visible height can be trusted — so that is what this scrolls on, not
-// focus. No-op without visualViewport (older browsers, and Node's tests).
-export function initKeyboardScroll(selector) {
+// The iOS keyboard shrinks the VISUAL viewport only — the layout viewport
+// (innerHeight, and everything scrollIntoView measures against) does not
+// move. A control a few rows below the focused field (the log-set button,
+// below the weight/reps/rest steppers) can end up entirely behind the
+// keyboard even though its position in the LAYOUT viewport never changed —
+// which is exactly why `scrollIntoView` cannot fix this: it aligns against
+// the scrollport's full (unshrunk) height, so a button already inside that
+// height is left wherever it was, still under the keyboard. The fix has to
+// read `visualViewport.height`/`offsetTop` itself and scroll only the
+// overlap away. `focus` fires too early to react to (the keyboard is still
+// animating in); `visualViewport`'s resize event fires once it has
+// actually settled, which is the only moment the visible height can be
+// trusted. `withinSelector` scopes which focused fields count — the log
+// screen also carries the locker-number and machine-settings text fields,
+// and scrolling the button into view while one of THOSE is focused would
+// drag the field the user is typing into off-screen instead. No-op without
+// visualViewport (older browsers, and Node's tests).
+export function initKeyboardScroll(selector, withinSelector) {
   if (typeof window === 'undefined' || !window.visualViewport) return;
-  window.visualViewport.addEventListener('resize', () => {
-    if (document.activeElement?.tagName !== 'INPUT') return;
-    document.querySelector(selector)?.scrollIntoView({ block: 'end' });
+  const vv = window.visualViewport;
+  vv.addEventListener('resize', () => {
+    const active = document.activeElement;
+    if (active?.tagName !== 'INPUT' || !active.closest(withinSelector)) return;
+    const btn = document.querySelector(selector);
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    const visibleBottom = vv.offsetTop + vv.height;
+    const covered = rect.bottom - visibleBottom;
+    if (covered <= 0) return; // already above the keyboard (or there is no keyboard) — nothing to do
+    const scroller = btn.closest('#view') || document.scrollingElement;
+    scroller?.scrollBy(0, covered);
   });
 }
 

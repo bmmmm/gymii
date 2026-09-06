@@ -65,12 +65,16 @@ present in the publish directory.
 - Browser smoke tests: `pnpm install` once, then `pnpm exec playwright
   install chromium` once (~170 MB, deliberately NOT an install script —
   Playwright is kept off `onlyBuiltDependencies`), then `pnpm run smoke`.
-  Six scenarios in `smoke/*.spec.mjs`: the app boots at all (js/app.js is
+  Eight scenarios in `smoke/*.spec.mjs`: the app boots at all (js/app.js is
   loaded by no Node test and `static-checks` does not resolve imports), a
   logged set survives a reload, the rest keeps running inline after the
   overlay closes and across a reload, no route scrolls sideways at 320px,
-  every touch target is 44px and every field 16px, and the service worker
-  registers and precaches every SHELL entry. A NEW browser spec goes in
+  every touch target is 44px and every field 16px, the service worker
+  registers and precaches every SHELL entry, the log-set button stays
+  reachable once a stubbed `visualViewport` resize covers it (and unrelated
+  fields on the same screen never trigger that scroll), and the standalone/
+  PWA safe-area padding scales correctly under a CDP-emulated notch inset.
+  A NEW browser spec goes in
   `smoke/` as `*.spec.mjs`, NEVER in `test/` — `testMatch` is pinned
   because Playwright's collector imports whatever it matches and would run
   the Node suites as a side effect. Sandbox notes: `serve.py` cannot bind a

@@ -29,8 +29,8 @@ test('the base padding matches the documented 12px baseline at zero inset', asyn
 
 test('a real notch/Dynamic-Island inset adds on top of the 12px, not instead of it', async ({ page, context }) => {
   await page.goto('/');
-  const cdp = await context.newCDPSession(page);
   try {
+    const cdp = await context.newCDPSession(page);
     // 59px top / 34px bottom: a Dynamic Island phone's status bar and home
     // indicator, roughly — the exact figures do not matter, only that a
     // nonzero inset is reflected at all and additively, not by replacement.
@@ -38,6 +38,9 @@ test('a real notch/Dynamic-Island inset adds on top of the 12px, not instead of 
       insets: { top: 59, topMax: 59, left: 0, leftMax: 0, right: 0, rightMax: 0, bottom: 34, bottomMax: 34 },
     });
   } catch (e) {
+    // A non-Chromium project (or an older Chromium without this CDP command)
+    // has no session to open at all, not just a command that fails —
+    // newCDPSession() itself throws there, so it has to be inside this try.
     test.skip(true, `this engine cannot emulate safe-area insets (${e.message}) — inset 0 is all it can check`);
   }
   const style = await page.evaluate(() => {

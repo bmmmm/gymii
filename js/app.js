@@ -68,8 +68,10 @@ function route() {
 initSteppers();
 initNumericOverwrite();
 // Keeps the log screen's "Log set" button reachable once the keyboard
-// covers it (TODO.md: "Keyboard over the log button").
-initKeyboardScroll('#log-set');
+// covers it (TODO.md: "Keyboard over the log button") — scoped to .next-set
+// so the locker-number and machine-settings fields on the same screen
+// don't trigger it too.
+initKeyboardScroll('#log-set', '.next-set');
 initAmbientSync(); // M2: pull on open/visible, debounced push after edits
 onSyncActivity(updateSyncBadge);
 onWriteError(showStorageAlert);
