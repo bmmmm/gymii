@@ -144,11 +144,13 @@ Six checks no emulator settles. All against
 "Add to Home Screen" need https, and points 2–4 put exactly those on the
 stand. An expectation that fails becomes an issue labelled `bug`.
 
-- [ ] **Stepper on a focused, emptied field.** `initNumericOverwrite`
+- [x] **Stepper on a focused, emptied field.** `initNumericOverwrite`
   clears a focused number field into its placeholder, and its comment
   claims `blur` fires before the stepper's click, "so +/− still see a
   value". *Do:* tap the weight field (placeholder reads "(40)"), then tap
-  **+**. *Expect:* 45, not 5.
+  **+**. *Expect:* 45, not 5. Fixed: on iOS the blur is not guaranteed
+  before the click, so the stepper now falls back to the value
+  `initNumericOverwrite` stashed instead of reading the emptied field.
 - [ ] **Beep in the background.** Start a 30 s rest, go straight to the
   Home Screen, wait. *Expect:* open — record whether the tone arrives at
   zero, arrives late, or never. The answer decides whether a notification

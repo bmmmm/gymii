@@ -30,7 +30,14 @@ export function initSteppers() {
     const step = parseFloat(wrap.dataset.step || '1');
     const min = wrap.dataset.min !== undefined ? parseFloat(wrap.dataset.min) : -Infinity;
     const dir = btn.classList.contains('step-up') ? 1 : -1;
-    const next = (parseFloat(input.value) || 0) + dir * step;
+    // A field initNumericOverwrite emptied on focus stashes its old value in
+    // dataset.prevValue and restores it on blur — but on iOS tapping this
+    // button does not reliably blur the input first (the restore can land
+    // AFTER this click, or not before the keyboard finishes animating away).
+    // Fall back to the stashed value instead of trusting that ordering: an
+    // emptied-but-armed field steps from what it showed before focus, not 0.
+    const base = input.value !== '' ? input.value : input.dataset?.prevValue;
+    const next = (parseFloat(base) || 0) + dir * step;
     input.value = String(Math.max(min, Math.round(next * 100) / 100));
     input.dispatchEvent(new Event('change', { bubbles: true }));
   });
@@ -40,7 +47,8 @@ export function initSteppers() {
 // the placeholder — greyed out as "(40)" for orientation — so the number
 // pad starts on an empty field instead of appending digits to the old
 // value. Leaving the field without typing restores it. Delegated like the
-// steppers; blur fires before a stepper's click, so +/− still see a value.
+// steppers; the stash in dataset.prevValue is also initSteppers's fallback
+// for a stepper tap that lands before (or without) the matching blur.
 export function initNumericOverwrite() {
   document.addEventListener('focusin', (e) => {
     const inp = e.target;

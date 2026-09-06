@@ -149,6 +149,25 @@ fire('click', { target: { closest: () => null } });
 
 ui.initNumericOverwrite();
 
+// initSteppers + initNumericOverwrite: the iOS ordering bug. A focused
+// number field is emptied into its placeholder (armed, dataset.prevValue
+// stashed); the comment used to assume blur always fires before a
+// stepper's click, restoring the value first. On a real iPhone the blur can
+// land AFTER the click (or not at all before it), so the field is still
+// EMPTY when the stepper reads it. Simulate that worst case directly: fire
+// the stepper's click with no focusout in between at all.
+const armedInput = { tagName: 'INPUT', type: 'number', value: '40', placeholder: '', dataset: {},
+  events: [], dispatchEvent(e) { this.events.push(e.type); } };
+const armedWrap = { dataset: { step: '5' }, querySelector: () => armedInput };
+const armedUp = { classList: { contains: (c) => c === 'step-up' },
+  closest: (sel) => (sel === '.stepper' ? armedWrap : armedUp) };
+
+fire('focusin', { target: armedInput });
+assert.equal(armedInput.value, '', 'armed empty, same as any focused number field (placeholder reads "(40)")');
+fire('click', { target: armedUp }); // no focusout first — the iOS case
+assert.equal(armedInput.value, '45',
+  'the stepper must step from the value the field held before focus, not treat the emptied field as 0');
+
 const numField = { tagName: 'INPUT', type: 'number', value: '40', placeholder: '', dataset: {} };
 fire('focusin', { target: numField });
 assert.equal(numField.value, '', 'the number pad starts on an empty field');
