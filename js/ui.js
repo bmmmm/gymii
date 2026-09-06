@@ -68,6 +68,23 @@ export function initNumericOverwrite() {
   });
 }
 
+// The iOS keyboard shrinks the VISUAL viewport only — the layout viewport,
+// and everything positioned or scrolled within it, does not move. A control
+// that sits a few rows below the focused field (the log-set button, below
+// the weight/reps/rest steppers) can end up entirely behind the keyboard
+// even though the page itself never changed. `focus` fires too early to
+// react to (the keyboard is still animating in); `visualViewport`'s resize
+// event fires once it has actually settled, which is the only moment the
+// visible height can be trusted — so that is what this scrolls on, not
+// focus. No-op without visualViewport (older browsers, and Node's tests).
+export function initKeyboardScroll(selector) {
+  if (typeof window === 'undefined' || !window.visualViewport) return;
+  window.visualViewport.addEventListener('resize', () => {
+    if (document.activeElement?.tagName !== 'INPUT') return;
+    document.querySelector(selector)?.scrollIntoView({ block: 'end' });
+  });
+}
+
 export function download(filename, data) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');

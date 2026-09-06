@@ -155,9 +155,11 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   Home Screen, wait. *Expect:* open — record whether the tone arrives at
   zero, arrives late, or never. The answer decides whether a notification
   is needed.
-- [ ] **Keyboard over the log button.** Tap into the weight field.
+- [x] **Keyboard over the log button.** Tap into the weight field.
   *Expect:* "✓ Log set …" stays visible, or is reachable without leaving
-  the field.
+  the field. Fixed: `initKeyboardScroll` (js/ui.js) scrolls it back into
+  view on `visualViewport`'s resize event — the signal a real keyboard
+  sends that a plain `focus` handler fires too early to react to.
 - [ ] **Safe area in standalone.** Add to Home Screen, open from there.
   *Expect:* content starts below the status bar / Dynamic Island — the
   `env(safe-area-inset-top)` fix, which in a browser can only be checked

@@ -188,6 +188,12 @@ fire('focusin', { target: textField });
 assert.equal(textField.value, 'Home gym', 'a text field is not a number pad');
 assert.equal(textField.dataset.prevValue, undefined);
 
+// --- initKeyboardScroll ---
+// No `window` in Node (unlike `document`, stubbed above) — the real
+// visualViewport wiring only exists in a browser and is exercised by
+// smoke/keyboard.spec.mjs. Here the contract is just "never throws".
+ui.initKeyboardScroll('#log-set');
+
 // --- twoTapConfirm ---
 
 const armBtn = { textContent: 'Delete', classes: new Set(),
