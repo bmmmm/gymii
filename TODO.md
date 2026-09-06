@@ -163,7 +163,15 @@ stand. An expectation that fails becomes an issue labelled `bug`.
 - [ ] **Safe area in standalone.** Add to Home Screen, open from there.
   *Expect:* content starts below the status bar / Dynamic Island — the
   `env(safe-area-inset-top)` fix, which in a browser can only be checked
-  at inset 0, where it measured the expected 12 px.
+  at inset 0, where it measured the expected 12 px. No code bug found: the
+  fix (commit f25e4d6) is intact and still measures exactly 12px/96px at
+  inset 0 — `smoke/safe-area.spec.mjs` now pins that, plus a second case
+  Chromium can newly fake via CDP (`Emulation.setSafeAreaInsetsOverride`):
+  a real nonzero inset does scale in additively (71px/130px for a 59/34
+  notch+indicator), proven red against a deliberately flattened rule and
+  green against the real one. Left unchecked: that only proves the CSS
+  math, not the WebKit/iOS Add-to-Home-Screen round trip itself — the
+  actual device check this item describes is still open.
 - [ ] **Scan a pairing QR with a real phone camera once** — the only step
   no automation can take; everything up to the prefilled field is
   verified. Device A shows the QR, device B's camera app scans it.
