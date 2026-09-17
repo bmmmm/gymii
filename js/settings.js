@@ -10,7 +10,7 @@ import {
 import { loadDemoData } from './demo.js';
 import {
   getSyncState, getSyncCode, enableSync, pairWithCode, syncNow, disableSync,
-  e2eAvailable,
+  updateSyncServer, e2eAvailable,
   mintPairingCode, listDevices, revokeDevice, listRemoteGyms, adoptRemoteGym,
 } from './sync.js';
 import { ensurePersisted, isPersisted, estimateOrigin } from './persist.js';
@@ -112,6 +112,7 @@ const syncResultText = (r) => SYNC_RESULT[r.status]
 // verbatim rather than swallowed.
 const SYNC_ERRORS = {
   'bad-server': 'Enter both the server URL and the token your sync server printed.',
+  'empty-server': 'Enter the new server address first.',
   'bad-code': 'That is not a gymii sync code — copy the whole line, it starts with "gymii-sync:v1:".',
   'demo-gym': 'The demo gym never syncs.',
   'unknown-gym': 'This gym is gone — switch gyms and try again.',
@@ -217,6 +218,15 @@ function syncCard(gym, shownCode, shownQr) {
         <span class="sync-val">${esc(state.server)}</span></div>
       ${state.plain ? `<div class="spread"><span class="muted">Mode</span>
         <span class="sync-val">Unencrypted — the server stores this gym readably</span></div>` : ''}
+      <details id="sync-server-edit-block"><summary>Server moved?</summary>
+        <div class="row"><input id="sync-server-edit" type="text" autocomplete="off"
+          inputmode="url" enterkeyhint="done" autocapitalize="none" autocorrect="off" spellcheck="false"
+          value="${esc(state.server)}">
+        <button id="sync-server-update" class="btn btn-inline">Update</button></div>
+        <p class="muted">Update the address here when your own server's domain changes —
+          the token${state.plain ? '' : ' and key'} stay exactly what already worked, only
+          where sync connects changes.</p>
+      </details>
       <div class="spread"><span class="muted">Last sync</span>
         <span class="sync-val">${state.lastSyncAt
     ? `${fmtDate(state.lastSyncAt)} · ${fmtTime(state.lastSyncAt)}` : 'never'}</span></div>
@@ -575,6 +585,19 @@ function renderSettingsView(root) {
     const r = await syncNow(gid);
     renderSettings(root); // last-sync time and lastError have moved
     root.querySelector('#sync-msg').textContent = syncResultText(r);
+  });
+
+  const serverUpdateBtn = root.querySelector('#sync-server-update');
+  serverUpdateBtn?.addEventListener('click', async () => {
+    serverUpdateBtn.disabled = true;
+    try {
+      const { sync } = await updateSyncServer(gid, root.querySelector('#sync-server-edit').value);
+      renderSettings(root);
+      root.querySelector('#sync-msg').textContent = `Server updated. ${syncResultText(sync)}`;
+    } catch (err) {
+      serverUpdateBtn.disabled = false;
+      syncMsg.textContent = syncErrorText(err, 'Could not update the server');
+    }
   });
 
   // one extra tap, deliberately: the key is not on screen by default

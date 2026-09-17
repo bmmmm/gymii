@@ -238,6 +238,24 @@ assert.match(root.querySelector('#sync-msg').textContent, /^Offline/,
 assert.ok(root.innerHTML.includes('Last error'), 'the failure is on the card, not only in the line');
 server.mode = null;
 
+// --- the server moved: only the address changes, token and history stay ---
+
+root.querySelector('#sync-server-edit').value = 'https://sync.example.org.new';
+await root.querySelector('#sync-server-update').listeners.click();
+assert.equal(store.getSyncConfig(realId).server, 'https://sync.example.org.new',
+  'the stored server address moved');
+assert.equal(store.getSyncConfig(realId).token, 'account-token', 'the token stayed put');
+assert.match(root.querySelector('#sync-msg').textContent, /^Server updated\. Synced\./,
+  'the status line names both the move and the outcome');
+assert.ok(root.innerHTML.includes('https://sync.example.org.new'), 'the card shows the new address');
+
+root.querySelector('#sync-server-edit').value = '   ';
+await root.querySelector('#sync-server-update').listeners.click();
+assert.match(root.querySelector('#sync-msg').textContent, /Enter the new server address/,
+  'blanking the field is refused, not silently sent');
+assert.equal(store.getSyncConfig(realId).server, 'https://sync.example.org.new',
+  'and the working address is untouched');
+
 // --- turning sync off: two taps, credentials only ---
 
 const offBtn = root.querySelector('#sync-off');

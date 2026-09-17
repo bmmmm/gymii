@@ -788,4 +788,32 @@ offActivity();
 srv.blob = keepBlob.blob;
 srv.revision = keepBlob.revision;
 
+// --- 16. updateSyncServer: the address moves, the token and key don't ---
+// The domain-migration path — a self-hosted server can change its address
+// (gymii-sync moved from *.6bm.de to *.h.6bm.de) and a device must be able
+// to follow it without minting a fresh token or losing its E2E key.
+devices.R = new Map();
+useDevice('R');
+seedRegistry();
+srv = fakeServer();
+const en16 = await sync.enableSync(gid, { server: 'https://old.example.org', token: 'tok-16' });
+assert.equal(en16.sync.status, 'synced', '16: setup');
+const keyBefore16 = store.getSyncKey(gid);
+
+const moved = await sync.updateSyncServer(gid, 'new.example.org');
+assert.equal(moved.server, 'https://new.example.org', '16: bare domain still gets https');
+assert.equal(moved.sync.status, 'synced', '16: the new address answers');
+assert.equal(sync.getSyncState(gid).server, 'https://new.example.org', '16: config now points there');
+assert.equal(store.getSyncConfig(gid).token, 'tok-16', '16: the token is untouched');
+assert.deepEqual(store.getSyncKey(gid), keyBefore16, '16: and so is the E2E key');
+
+await assert.rejects(() => sync.updateSyncServer(gid, '   '), /empty-server/,
+  '16: blanking the address is refused');
+assert.equal(store.getSyncConfig(gid).server, 'https://new.example.org',
+  '16: and leaves the working address in place');
+
+sync.disableSync(gid);
+await assert.rejects(() => sync.updateSyncServer(gid, 'sync.example.org'), /not-configured/,
+  '16: nothing to move once sync is off');
+
 console.log('sync client: all assertions passed');

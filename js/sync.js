@@ -564,16 +564,21 @@ export async function syncNow(gid) {
 // impossible there, so the server stores readable blobs — the user's own
 // server, the user's explicit call. Where crypto works, plain is refused:
 // a downgrade must never sit next to working encryption.
+// A bare domain means https — the reference deployment fronts the server
+// with a real certificate, and the https-served app cannot reach plain
+// http anyway (mixed content). An explicit scheme is respected: that is
+// what keeps http://localhost and the same-origin docker-net setup working.
+function normalizeServerUrl(raw) {
+  const trimmed = String(raw ?? '').trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 export async function enableSync(gid, { server, token, plain } = {}) {
   const gym = getGyms().list.find((g) => g.id === gid);
   if (!gym) throw new Error('unknown-gym');
   if (gym.demo) throw new Error('demo-gym'); // sync-plan decision 10
-  // A bare domain means https — the reference deployment fronts the server
-  // with a real certificate, and the https-served app cannot reach plain
-  // http anyway (mixed content). An explicit scheme is respected: that is
-  // what keeps http://localhost and the same-origin docker-net setup working.
-  const raw = String(server ?? '').trim().replace(/\/+$/, '');
-  const url = !raw ? '' : (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
+  const url = normalizeServerUrl(server);
   const bearer = String(token ?? '').trim();
   if (!url || !bearer) throw new Error('bad-server');
   if (plain === true && e2eAvailable()) throw new Error('crypto-available');
@@ -643,6 +648,19 @@ export function disableSync(gid) {
   if (key) keyCache.delete(`${key.salt}:${key.pass}`);
   saveSyncConfig(gid, null);
   saveSyncKey(gid, null);
+}
+
+// The server moved — a self-hosted address is not forever. Only `server`
+// changes; the token and (where this gym is encrypted) the key are exactly
+// what already worked and stay untouched. A fresh sync against the new
+// address both proves it and catches up on anything the old address missed.
+export async function updateSyncServer(gid, server) {
+  const cfg = getSyncConfig(gid);
+  if (!cfg) throw new Error('not-configured');
+  const url = normalizeServerUrl(server);
+  if (!url) throw new Error('empty-server');
+  if (url !== cfg.server) saveSyncConfig(gid, { ...cfg, server: url });
+  return { server: url, sync: await syncNow(gid) };
 }
 
 // --- ambient sync (M2) ---
