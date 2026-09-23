@@ -88,5 +88,15 @@ test('the last field on a long screen still reaches the middle', async ({ page }
   });
   await field.focus();
   await openKeyboard(page, KEYBOARD_UP_HEIGHT);
-  await expectCentred(page, '#gym-new-name', 'the new-gym field');
+  // Its .card is centred when it fits the band (font metrics differ between
+  // machines, so the fixture cannot know which), else the field itself.
+  await expect.poll(() => field.evaluate((el, band) => {
+    const card = el.closest('.card')?.getBoundingClientRect();
+    const r = card && card.height <= band ? card : el.getBoundingClientRect();
+    return Math.round(Math.abs((r.top + r.bottom) / 2 - band / 2));
+  }, KEYBOARD_UP_HEIGHT), { message: 'the new-gym field (or its card) should sit in the middle' })
+    .toBeLessThanOrEqual(2);
+  const r = await rectOf(page, '#gym-new-name');
+  expect(r.top, 'the field itself is in sight').toBeGreaterThanOrEqual(0);
+  expect(r.bottom).toBeLessThanOrEqual(KEYBOARD_UP_HEIGHT);
 });
