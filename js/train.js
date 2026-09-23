@@ -11,7 +11,7 @@ import { focusMachine } from './gym.js';
 import {
   esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural, machineChain,
   minsBetween,
-  primeAudio, playTimerSound, keepInView,
+  primeAudio, playTimerSound, keepInView, parseDuration, parseDistance,
 } from './ui.js';
 import { ensurePersisted } from './persist.js';
 
@@ -1435,8 +1435,8 @@ function renderLog(root, layout, active, reveal = null) {
       </div>
       <div class="next-set">
         ${cardio ? `
-        ${stepperField(`Distance (${du})`, 'set-distance', { step: s.unit === 'kg' ? 100 : 0.1, min: 0, value: def.distance })}
-        ${stepperField('Time (min)', 'set-time', { step: 1, min: 0, value: Math.round((def.seconds / 60) * 100) / 100 })}`
+        ${stepperField(`Distance (${du})`, 'set-distance', { step: s.unit === 'kg' ? 100 : 0.1, min: 0, value: def.distance, kind: 'distance', metric: s.unit === 'kg' })}
+        ${stepperField('Time (m:ss)', 'set-time', { step: 60, min: 0, value: def.seconds, kind: 'time' })}`
     : type === 'bodyweight' ? `
         ${stepperField('Reps', 'set-reps', { step: 1, min: 1, value: def.reps, mode: 'numeric' })}
         ${stepperField('Extra weight', 'set-weight', { step: s.weightStep, min: 0, value: def.weight })}`
@@ -1540,12 +1540,16 @@ function renderLog(root, layout, active, reveal = null) {
     restKeep.hidden = true;
   });
 
+  // an unreadable field logs what it was prefilled with, never a zero
+  const readCardio = () => ({
+    distance: parseDistance(root.querySelector('#set-distance').value, s.unit === 'kg') ?? def.distance,
+    seconds: parseDuration(root.querySelector('#set-time').value) ?? def.seconds,
+  });
+
   root.querySelector('#log-set')?.addEventListener('click', () => {
     const rest = Math.max(0, Math.round(parseFloat(root.querySelector('#set-rest').value) || 0));
     if (cardio) {
-      const distance = Math.max(0, parseFloat(root.querySelector('#set-distance').value) || 0);
-      const seconds = Math.max(0, Math.round((parseFloat(root.querySelector('#set-time').value) || 0) * 60));
-      entry.sets.push({ distance, seconds, at: Date.now() });
+      entry.sets.push({ ...readCardio(), at: Date.now() });
     } else {
       const weight = Math.max(0, parseFloat(root.querySelector('#set-weight').value) || 0);
       const reps = Math.max(1, Math.round(parseFloat(root.querySelector('#set-reps').value) || 1));
@@ -1575,15 +1579,18 @@ function renderLog(root, layout, active, reveal = null) {
       const btn = root.querySelector('#log-set');
       if (!btn) return;
       const d = cardio
-        ? {
-          distance: Math.max(0, parseFloat(root.querySelector('#set-distance').value) || 0),
-          seconds: Math.max(0, Math.round((parseFloat(root.querySelector('#set-time').value) || 0) * 60)),
-        }
+        ? readCardio()
         : {
           weight: Math.max(0, parseFloat(root.querySelector('#set-weight').value) || 0),
           reps: Math.max(1, Math.round(parseFloat(root.querySelector('#set-reps').value) || 1)),
         };
       btn.textContent = logLabel(d);
+      // the fields show what will be logged too: a refused entry snaps back
+      // to the prefill, an accepted one to its clean form ("12,30" → 12:30)
+      if (cardio) {
+        root.querySelector('#set-time').value = fmtDuration(d.seconds);
+        root.querySelector('#set-distance').value = d.distance;
+      }
     };
     (cardio ? ['#set-distance', '#set-time'] : ['#set-weight', '#set-reps']).forEach((sel) =>
       root.querySelector(sel)?.addEventListener('change', refreshLogLabel));

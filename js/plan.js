@@ -13,7 +13,9 @@ import {
   parsePlanText, planItemsFrom, planToText, nameChipsFor,
 } from './store.js';
 import { drawLayout } from './map.js';
-import { esc, twoTapConfirm, stepperField, plural, keepInView } from './ui.js';
+import {
+  esc, twoTapConfirm, stepperField, plural, keepInView, fmtDuration, parseDuration, parseDistance,
+} from './ui.js';
 
 // Weekday labels indexed by Date#getDay() (0 = Sunday); chips render
 // Monday-first, like gym weeks are planned.
@@ -139,8 +141,8 @@ export function renderPlanBuilder(
       </div>` : ''}
       <div class="plan-targets">
         ${cardio ? `
-        ${stepperField(`Distance (${du})`, `t-distance-${i}`, { step: s.unit === 'kg' ? 100 : 0.1, min: 0, value: t.distance })}
-        ${stepperField('Time (min)', `t-time-${i}`, { step: 1, min: 0, value: Math.round((t.seconds / 60) * 100) / 100 })}`
+        ${stepperField(`Distance (${du})`, `t-distance-${i}`, { step: s.unit === 'kg' ? 100 : 0.1, min: 0, value: t.distance, kind: 'distance', metric: s.unit === 'kg' })}
+        ${stepperField('Time (m:ss)', `t-time-${i}`, { step: 60, min: 0, value: t.seconds, kind: 'time' })}`
     : `
         ${stepperField('Sets', `t-sets-${i}`, { step: 1, min: 1, value: t.sets, mode: 'numeric' })}
         ${stepperField('Reps', `t-reps-${i}`, { step: 1, min: 1, value: t.reps, mode: 'numeric' })}
@@ -381,8 +383,13 @@ export function renderPlanBuilder(
       if (match[1] === 'sets') { t.sets = Math.max(1, Math.round(v)); e.target.value = t.sets; }
       else if (match[1] === 'reps') { t.reps = Math.max(1, Math.round(v)); e.target.value = t.reps; }
       else if (match[1] === 'weight') { t.weight = Math.max(0, v); e.target.value = t.weight; }
-      else if (match[1] === 'distance') { t.distance = Math.max(0, v); e.target.value = t.distance; }
-      else t.seconds = Math.max(0, Math.round(v * 60));
+      else if (match[1] === 'distance') {
+        t.distance = parseDistance(e.target.value, s.unit === 'kg') ?? t.distance;
+        e.target.value = t.distance;
+      } else {
+        t.seconds = parseDuration(e.target.value) ?? t.seconds;
+        e.target.value = fmtDuration(t.seconds);
+      }
     });
 
     root.querySelector('#muscle-chips')?.addEventListener('click', (e) => {

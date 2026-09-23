@@ -502,9 +502,27 @@ assert.ok(root.innerHTML.includes('Edit plan'), 'review opens in the builder');
 assert.ok(root.innerHTML.includes('Leg press'), 'with the exercise names from the note');
 assert.ok(root.innerHTML.includes('Assign machine'), 'each unbound item offers binding');
 
+// cardio targets are typed as m:ss like the log screen: "12,30" is 12:30
+const tmIdx = typed.items.findIndex((it) => it.name === 'Treadmill');
+assert.ok(new RegExp(`id="t-time-${tmIdx}"[^>]*data-kind="time"[^>]*value="20:00"`).test(root.innerHTML),
+  'the target time shows m:ss');
+const targetChange = (id, value) => {
+  const target = { id, value };
+  root.querySelector('#plan-items').listeners.change({ target });
+  return target.value;
+};
+assert.equal(targetChange(`t-time-${tmIdx}`, '12,30'), '12:30', 'comma time reads as minutes,seconds');
+assert.equal(targetChange(`t-time-${tmIdx}`, '12:75'), '12:30', 'refused input keeps the last good value');
+assert.equal(targetChange(`t-distance-${tmIdx}`, '2.000'), 2000, 'a thousands dot in metres');
+// the list view is on screen — the stub DOM would hand back a #plan-text
+// anyway, and fromText() would re-parse the note over these edits
+byId.set('#plan-text', null);
+
 // --- binding on the gym floor: the gym grows out of the plan ---
 
 root.querySelector('#plan-save').listeners.click();
+assert.deepEqual(store.getPlans()[0].items[tmIdx].target, { distance: 2000, seconds: 750 },
+  'the edited cardio target is what gets saved');
 byId.clear();
 goToStart(); // the primary plan button lives on the start screen
 renderTrain(root);
@@ -552,7 +570,8 @@ root.querySelector('#bind-go').listeners.click();
 const treadmill = store.getLayout().machines.find((m) => m.num === 21);
 assert.equal(treadmill.label, 'Treadmill', 'the cardio line names its machine too');
 assert.equal(treadmill.cardio, true, 'a distance/time target makes the new machine cardio');
-assert.deepEqual(store.getActive().plan[2].target, { distance: 0, seconds: 1200 },
+// (the builder edited it from 20min to 2000 m in 12:30 above)
+assert.deepEqual(store.getActive().plan[2].target, { distance: 2000, seconds: 750 },
   'so the target survives the bind instead of being dropped as the wrong shape');
 
 // --- logging a workout that already happened ---

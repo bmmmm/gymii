@@ -288,4 +288,26 @@ assert.ok(!root.innerHTML.includes('Workouts — Lats'), 'a stranded muscle filt
 assert.ok(root.innerHTML.includes("can't be attributed"),
   'sets of a deleted machine are reported, not hidden');
 
+// --- the editor's cardio fields: m:ss time, a comma distance ---
+// a rower display reads "12:30" and "2.000 m"; typed on the German pad that
+// is "12,30" and "2.000" — 750 s and 2000 m, not decimal minutes or 2 m
+store.saveWorkouts([...store.getWorkouts(), {
+  id: 'wrow', startedAt: Date.UTC(2026, 7, 10, 10), finishedAt: Date.UTC(2026, 7, 10, 11),
+  entries: [{ ...entry('mrow', 9, 'Rower', [{ distance: 1000, seconds: 600 }]), cardio: true }],
+}]);
+render();
+list().listeners.click(clickOn('.edit-w', { wid: 'wrow' }));
+assert.ok(/data-kind="time"[\s\S]*?value="10:00"/.test(list().innerHTML), 'the time field shows m:ss');
+const cardioChange = (cls, value) => {
+  const target = { value, dataset: { ei: '0', si: '0' }, classList: { contains: (c) => c === cls }, closest: () => null };
+  list().listeners.change({ target });
+  return target.value;
+};
+assert.equal(cardioChange('edit-minutes', '12,30'), '12:30', 'the field shows the clean form back');
+assert.equal(cardioChange('edit-distance', '2.000'), 2000);
+assert.equal(cardioChange('edit-minutes', 'xx'), '12:30', 'refused input keeps the last good value');
+list().listeners.click(clickOn('.edit-save'));
+assert.deepEqual(store.getWorkouts().find((w) => w.id === 'wrow').entries[0].sets[0],
+  { distance: 2000, seconds: 750 });
+
 console.log('history: all assertions passed');

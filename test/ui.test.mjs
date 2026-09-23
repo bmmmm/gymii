@@ -40,6 +40,36 @@ assert.equal(ui.fmtDuration(5400), '1:30:00',
   'a 90-minute ride reads as 1:30:00 — as "90:00" it looked like a 90-second rest');
 assert.equal(ui.fmtDuration(7325), '2:02:05', 'minutes are padded once an hour leads');
 
+// --- cardio input: time as the display shows it, distance with a comma ---
+
+assert.equal(ui.parseDuration('12:30'), 750);
+assert.equal(ui.parseDuration('12,30'), 750, 'a comma off the German pad is the colon — 12:30, not 12.3 min (738 s)');
+assert.equal(ui.parseDuration('12.30'), 750, 'and so is a dot');
+assert.equal(ui.parseDuration('12,05'), 725);
+assert.equal(ui.parseDuration('12,5'), 770, 'a lone seconds digit reads as the display would: 12:50');
+assert.equal(ui.parseDuration('12'), 720, 'a bare number is minutes');
+assert.equal(ui.parseDuration('12,'), 720);
+assert.equal(ui.parseDuration('1:02:03'), 3723, 'three parts are h:mm:ss');
+assert.equal(ui.parseDuration(ui.fmtDuration(5400)), 5400, 'round-trips its own display, hours included');
+assert.equal(ui.parseDuration('12:75'), null, 'seconds past 59 are refused, not guessed');
+assert.equal(ui.parseDuration(''), null);
+assert.equal(ui.parseDuration('abc'), null);
+assert.equal(ui.parseDuration('-5'), null);
+assert.equal(ui.parseDuration('12,30,'), null, 'a stray trailing comma is not twelve and a half HOURS');
+assert.equal(ui.parseDuration('1,,2'), null);
+assert.equal(ui.parseDuration('1:60:00'), null, 'minutes past 59 under an hour are refused too');
+assert.equal(ui.parseDuration(' 12 : 30 '), 750, 'spaces are ignored, as in parseDistance');
+
+assert.equal(ui.parseDistance('2000', true), 2000);
+assert.equal(ui.parseDistance('2.000', true), 2000, 'a rower reading "2.000 m" is 2000 m, never 2');
+assert.equal(ui.parseDistance('2,000', true), 2000);
+assert.equal(ui.parseDistance('12.500', true), 12500);
+assert.equal(ui.parseDistance('2,5', true), 2.5, 'not three digits: a decimal comma');
+assert.equal(ui.parseDistance('1,5', false), 1.5, 'miles keep the comma as a decimal');
+assert.equal(ui.parseDistance('1.500', false), 1.5, 'and never read it as a thousands mark');
+assert.equal(ui.parseDistance('', true), null);
+assert.equal(ui.parseDistance('x', true), null);
+
 assert.equal(ui.minsBetween(0, 60000), 1);
 assert.equal(ui.minsBetween(0, 4_320_000), 72);
 assert.equal(ui.minsBetween(0, 1000), 1, 'a workout is never zero minutes long');
@@ -142,6 +172,27 @@ const empty = makeStepper({ step: 1, min: 0, value: '' });
 fire('click', { target: empty.up });
 assert.equal(empty.input.value, '1', 'an empty field counts as 0 rather than NaN');
 
+// a clock field steps in seconds and stays m:ss — the decimal branch would
+// read "10:00" as 10 and write "70", which then parses as 70 minutes
+const clock = makeStepper({ step: 60, min: 0, value: '10:00' });
+clock.input.dataset = { kind: 'time' };
+fire('click', { target: clock.up });
+assert.equal(clock.input.value, '11:00', 'the time stepper adds a minute and shows m:ss');
+clock.input.value = '0:30';
+fire('click', { target: clock.down });
+assert.equal(clock.input.value, '0:00', 'and floors at data-min');
+const metres = makeStepper({ step: 100, min: 0, value: '2.000' });
+metres.input.dataset = { kind: 'distance', metric: '1' };
+fire('click', { target: metres.up });
+assert.equal(metres.input.value, '2100', 'a distance stepper reads "2.000" as 2000 m, not 2');
+
+// the markup the steppers read: kind renders a text field on the decimal pad
+const timeField = ui.stepperField('Time (m:ss)', 'set-time', { step: 60, min: 0, value: 750, kind: 'time' });
+assert.ok(/type="text" inputmode="decimal"[^>]*data-kind="time"[^>]*value="12:30"/.test(timeField),
+  'a time stepper is a text field showing m:ss');
+assert.ok(/data-kind="distance" data-metric="1"/.test(
+  ui.stepperField('Distance (m)', 'd', { step: 100, min: 0, value: 2000, kind: 'distance', metric: true })));
+
 // A click anywhere else must not be mistaken for a stepper
 fire('click', { target: { closest: () => null } });
 
@@ -187,6 +238,15 @@ const textField = { tagName: 'INPUT', type: 'text', value: 'Home gym', placehold
 fire('focusin', { target: textField });
 assert.equal(textField.value, 'Home gym', 'a text field is not a number pad');
 assert.equal(textField.dataset.prevValue, undefined);
+
+// ...unless it is a numeric text field (cardio time/distance carry data-kind
+// so they can take a comma or a colon) — those arm like a number field
+const kindField = { tagName: 'INPUT', type: 'text', value: '12:30', placeholder: '', dataset: { kind: 'time' } };
+fire('focusin', { target: kindField });
+assert.equal(kindField.value, '', 'a data-kind field arms for overwrite');
+assert.equal(kindField.placeholder, '(12:30)');
+fire('focusout', { target: kindField });
+assert.equal(kindField.value, '12:30');
 
 // --- initKeyboardScroll ---
 // No `window` in Node (unlike `document`, stubbed above) — the real

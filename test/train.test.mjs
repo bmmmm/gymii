@@ -162,6 +162,36 @@ assert.equal(loggedSet.weight, 50);
 assert.equal(typeof loggedSet.at, 'number', 'logged set carries a numeric at timestamp');
 assert.ok(loggedSet.at >= before && loggedSet.at <= after, 'at is stamped at log time');
 
+// a rower's display reads "12:30" and "2.000 m"; the German number pad types
+// them as "12,30" and "2.000" — that is 750 s and 2000 m, not 738 s and 2 m
+gym.machines.push({ id: 'row', num: 9, label: 'Rower', x: 30, y: 10, w: 3, h: 3, settingsFields: [], cardio: true });
+store.saveLayout(gym);
+store.saveActive({
+  v: 2, id: 'w-row', startedAt: 1755000000000,
+  plan: [{ machineId: 'row', exercise: null }],
+  currentMachineId: 'row', currentExercise: null, entries: [],
+});
+byId.clear();
+renderTrain(root);
+assert.ok(/id="set-time"[^>]*value="10:00"/.test(root.innerHTML), 'the time field shows m:ss');
+root.querySelector('#set-distance').value = '2.000';
+root.querySelector('#set-time').value = '12,30';
+root.querySelector('#set-rest').value = '0';
+// the field shows back what will be logged, in its clean form
+root.querySelector('#set-time').listeners.change();
+assert.equal(root.querySelector('#set-time').value, '12:30', 'a change rewrites "12,30" as 12:30');
+root.querySelector('#log-set').listeners.click();
+const rowSet = store.getActive().entries.find((e) => e.machineId === 'row').sets.at(-1);
+assert.equal(rowSet.seconds, 750, 'comma time is minutes,seconds');
+assert.equal(rowSet.distance, 2000, 'a dot before three digits is a thousands mark in metres');
+// an unreadable field logs its prefill instead of a zero
+root.querySelector('#set-time').value = '12:75';
+root.querySelector('#log-set').listeners.click();
+assert.equal(store.getActive().entries.find((e) => e.machineId === 'row').sets.at(-1).seconds, 750,
+  'refused input falls back to the prefill (the last set)');
+gym.machines.pop();
+store.saveLayout(gym);
+
 // --- quick-switch chips ---
 // a superset workout logging at machine A with `at`-stamped sets on B and
 // C shows chips for the OTHER machines, newest first-ish (both present),
@@ -532,7 +562,7 @@ assert.deepEqual([stepper(html, 'set-reps'), stepper(html, 'set-weight')], ['10'
 // and a target whose shape no longer matches the machine is dropped as well
 html = logAt('pc', null, { target: goal });
 assert.ok(!html.includes('Target:'), 'd: a strength target at a cardio machine is dropped');
-assert.deepEqual([stepper(html, 'set-distance'), stepper(html, 'set-time')], ['1000', '10'],
+assert.deepEqual([stepper(html, 'set-distance'), stepper(html, 'set-time')], ['1000', '10:00'],
   'd: cardio falls back to its static default');
 
 // (a) render-level: the target leads, a logged set takes over

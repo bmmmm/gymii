@@ -41,8 +41,15 @@ export function initSteppers() {
     // the pre-focus value rather than the (unparsed) partial input — an
     // acceptable, if incidental, side effect of the same guard.
     const base = input.value !== '' ? input.value : input.dataset?.prevValue;
-    const next = (parseFloat(base) || 0) + dir * step;
-    input.value = String(Math.max(min, Math.round(next * 100) / 100));
+    if (input.dataset?.kind === 'time') {
+      // a clock field steps in seconds and shows m:ss, never a decimal
+      input.value = fmtDuration(Math.max(min, (parseDuration(base) ?? 0) + dir * step));
+    } else {
+      const cur = input.dataset?.kind === 'distance'
+        ? parseDistance(base, input.dataset.metric === '1') : parseFloat(base);
+      const next = (cur || 0) + dir * step;
+      input.value = String(Math.max(min, Math.round(next * 100) / 100));
+    }
     input.dispatchEvent(new Event('change', { bubbles: true }));
   });
 }
@@ -56,7 +63,8 @@ export function initSteppers() {
 export function initNumericOverwrite() {
   document.addEventListener('focusin', (e) => {
     const inp = e.target;
-    if (inp.tagName !== 'INPUT' || inp.type !== 'number' || inp.value === '') return;
+    if (inp.tagName !== 'INPUT' || (inp.type !== 'number' && !inp.dataset.kind)
+      || inp.value === '') return;
     inp.dataset.prevValue = inp.value;
     inp.dataset.prevPlaceholder = inp.placeholder;
     inp.placeholder = `(${inp.value})`;
@@ -165,14 +173,48 @@ export function twoTapConfirm(btn, armedLabel, restLabel) {
   return true;
 }
 
+// Cardio time is typed the way the machine's display shows it: m:ss. The
+// number pad has no colon, so a comma or a dot separates just the same —
+// "12,30" off a rower is 12:30, never 12.3 minutes (which is 12:18). A lone
+// seconds digit reads as the display would ("12,5" = 12:50), a bare number
+// is minutes, three parts are h:mm:ss. Anything else — letters, seconds past
+// 59 — is null, so the caller keeps what was there instead of guessing.
+export function parseDuration(str) {
+  // "12," is a thumb that stopped early; "12,30," or "1,,2" is not a clock
+  const t = String(str ?? '').replace(/\s/g, '').replace(/^(\d+)[:.,]$/, '$1');
+  if (!/^\d+([:.,]\d+){0,2}$/.test(t)) return null;
+  const parts = t.split(/[:.,]/);
+  if (parts.length === 2 && parts[1].length === 1) parts[1] += '0';
+  const nums = parts.map(Number);
+  if (nums.length === 1) return nums[0] * 60;
+  if (nums.slice(1).some((n) => n > 59)) return null;
+  return nums.reduce((acc, n) => acc * 60 + n, 0);
+}
+
+// Distance accepts a comma as the decimal mark (the German number pad has
+// no dot), and in metres a separator before exactly three digits is a
+// thousands mark: a display reading "2.000 m" is 2000 m, never 2 m. Miles
+// keep the separator as a decimal ("1,5" = 1.5 mi). null when unreadable.
+export function parseDistance(str, metric) {
+  let t = String(str ?? '').trim().replace(/\s/g, '');
+  if (metric && /^\d{1,3}([.,]\d{3})+$/.test(t)) t = t.replace(/[.,]/g, '');
+  if (!/^\d*[.,]?\d*$/.test(t) || !/\d/.test(t)) return null;
+  return parseFloat(t.replace(',', '.'));
+}
+
 // One labeled stepper row — the logging screen and the plan builder both
 // render several and the markup is identical apart from label/id/step.
-// Pairs with initSteppers()'s delegated +/− handling.
-export const stepperField = (label, id, { step, min, value, mode = 'decimal' }) => `
+// Pairs with initSteppers()'s delegated +/− handling. `kind` 'time' (value
+// in seconds, step in seconds, shown as m:ss) and 'distance' render a text
+// field on the decimal pad, because type=number refuses a comma or a colon
+// outright in some locales and reports the field as empty.
+export const stepperField = (label, id, { step, min, value, mode = 'decimal', kind, metric }) => `
   <div class="spread"><span class="label">${label}</span>
     <div class="stepper" data-step="${step}" data-min="${min}">
       <button type="button" class="step-down" aria-label="decrease ${label.toLowerCase()}">−</button>
-      <input id="${id}" type="number" inputmode="${mode}" value="${value}">
+      ${kind ? `<input id="${id}" type="text" inputmode="decimal" autocomplete="off" data-kind="${kind}"${
+    metric ? ' data-metric="1"' : ''} value="${kind === 'time' ? fmtDuration(value) : value}">`
+    : `<input id="${id}" type="number" inputmode="${mode}" value="${value}">`}
       <button type="button" class="step-up" aria-label="increase ${label.toLowerCase()}">+</button>
     </div>
   </div>`;

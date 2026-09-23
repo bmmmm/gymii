@@ -5,7 +5,8 @@ import {
 } from './store.js';
 import {
   esc, fmtDate, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
-  dateValue, timeValue, machineChain, keepInView, minsBetween,
+  dateValue, timeValue, machineChain, keepInView, minsBetween, fmtDuration,
+  parseDuration, parseDistance,
 } from './ui.js';
 import { lineChart } from './chart.js';
 import { startWorkoutFrom } from './train.js';
@@ -305,13 +306,13 @@ export function renderHistory(root) {
       t.value = v;
       editDraft.entries[+t.dataset.ei].sets[+t.dataset.si].reps = v;
     } else if (t.classList.contains('edit-distance')) {
-      const v = Math.max(0, parseFloat(t.value) || 0);
-      t.value = v;
-      editDraft.entries[+t.dataset.ei].sets[+t.dataset.si].distance = v;
+      const st = editDraft.entries[+t.dataset.ei].sets[+t.dataset.si];
+      st.distance = parseDistance(t.value, getSettings().unit === 'kg') ?? st.distance;
+      t.value = st.distance;
     } else if (t.classList.contains('edit-minutes')) {
-      const v = Math.max(0, parseFloat(t.value) || 0);
-      t.value = v;
-      editDraft.entries[+t.dataset.ei].sets[+t.dataset.si].seconds = Math.round(v * 60);
+      const st = editDraft.entries[+t.dataset.ei].sets[+t.dataset.si];
+      st.seconds = parseDuration(t.value) ?? st.seconds;
+      t.value = fmtDuration(st.seconds);
     } else if (t.classList.contains('edit-locker')) {
       editDraft.locker = t.value.trim();
     } else if (t.classList.contains('edit-name')) {
@@ -555,10 +556,12 @@ function editWorkoutHtml(w, s, layout) {
           <div class="set-row">
             <span>Set ${si + 1}</span>
             <span class="edit-set">${e.cardio ? `
-              <input type="number" inputmode="decimal" class="edit-distance" data-ei="${ei}" data-si="${si}"
+              <input type="text" inputmode="decimal" autocomplete="off" data-kind="distance"
+                class="edit-distance" data-ei="${ei}" data-si="${si}"
                 value="${st.distance}" aria-label="Distance (${du})"> ${du} ·
-              <input type="number" inputmode="decimal" class="edit-minutes" data-ei="${ei}" data-si="${si}"
-                value="${Math.round((st.seconds / 60) * 100) / 100}" aria-label="Time (minutes)"> min` : `
+              <input type="text" inputmode="decimal" autocomplete="off" data-kind="time"
+                class="edit-minutes" data-ei="${ei}" data-si="${si}"
+                value="${fmtDuration(st.seconds)}" aria-label="Time (m:ss)">` : `
               ${e.bodyweight ? 'BW+' : ''}<input type="number" inputmode="decimal" class="edit-weight"
                 data-ei="${ei}" data-si="${si}" value="${st.weight}"
                 aria-label="${e.bodyweight ? 'Extra weight' : 'Weight'} (${s.unit})"> ${s.unit} ×

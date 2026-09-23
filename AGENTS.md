@@ -598,7 +598,16 @@ present in the publish directory.
   a cardio duration and the rest countdown — so it names the hour only
   from 3600 s on: below that every string is unchanged (a 72 s rest is
   still `1:12`), above it a 90-minute ride reads `1:30:00` instead of
-  claiming to be `90:00`. `pad2`/`dateValue`/`timeValue`
+  claiming to be `90:00`. Its inverse is `parseDuration`: cardio time is
+  TYPED as m:ss everywhere (log screen, builder targets, History's editor),
+  and since the decimal pad has no colon a comma or dot separates too —
+  "12,30" off a rower is 12:30 (750 s); the old decimal-minutes field read
+  it as 12.3 min, or as 12 where `type=number` dropped the comma.
+  `parseDistance` takes a decimal comma, and in metres a separator before
+  exactly three digits is a thousands mark ("2.000" = 2000 m). Both return
+  `null` on unreadable input and the caller keeps the old value — so these
+  fields are `type=text` with `data-kind` (stepperField's `kind`), which is
+  what initSteppers/initNumericOverwrite key on. `pad2`/`dateValue`/`timeValue`
   build LOCAL-time input values (toISOString is UTC and shifts a
   past-midnight workout onto the previous day — ai.js dates its export
   via `dateValue` for the same reason) and `machineChain` is the deduping
