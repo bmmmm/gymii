@@ -600,9 +600,14 @@ present in the publish directory.
   still `1:12`), above it a 90-minute ride reads `1:30:00` instead of
   claiming to be `90:00`. Its inverse is `parseDuration`: cardio time is
   TYPED as m:ss everywhere (log screen, builder targets, History's editor),
-  and since the decimal pad has no colon a comma or dot separates too —
-  "12,30" off a rower is 12:30 (750 s); the old decimal-minutes field read
-  it as 12.3 min, or as 12 where `type=number` dropped the comma.
+  and no iPhone pad has a colon — so time fields sit on the DIGIT pad
+  (`inputmode="numeric"`) and type like a microwave: `clockDigits` inserts
+  the colon on every `input` event, the last two digits are the seconds
+  ("1230" shows 12:30), one or two digits are whole minutes. In a live
+  field the listener drops every non-digit, so only digits count there;
+  `parseDuration` itself still reads `:` `,` `.` as separators (stepper
+  values, direct calls). The old decimal-minutes field read "12,30" as
+  12.3 min, or as 12 where `type=number` dropped the comma.
   `parseDistance` takes a decimal comma, and in metres a separator before
   exactly three digits is a thousands mark ("2.000" = 2000 m). Both return
   `null` on unreadable input and the caller keeps the old value — so these

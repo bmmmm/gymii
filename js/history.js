@@ -559,7 +559,7 @@ function editWorkoutHtml(w, s, layout) {
               <input type="text" inputmode="decimal" autocomplete="off" data-kind="distance"
                 class="edit-distance" data-ei="${ei}" data-si="${si}"
                 value="${st.distance}" aria-label="Distance (${du})"> ${du} ·
-              <input type="text" inputmode="decimal" autocomplete="off" data-kind="time"
+              <input type="text" inputmode="numeric" autocomplete="off" data-kind="time"
                 class="edit-minutes" data-ei="${ei}" data-si="${si}"
                 value="${fmtDuration(st.seconds)}" aria-label="Time (m:ss)">` : `
               ${e.bodyweight ? 'BW+' : ''}<input type="number" inputmode="decimal" class="edit-weight"

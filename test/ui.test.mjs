@@ -47,7 +47,16 @@ assert.equal(ui.parseDuration('12,30'), 750, 'a comma off the German pad is the 
 assert.equal(ui.parseDuration('12.30'), 750, 'and so is a dot');
 assert.equal(ui.parseDuration('12,05'), 725);
 assert.equal(ui.parseDuration('12,5'), 770, 'a lone seconds digit reads as the display would: 12:50');
-assert.equal(ui.parseDuration('12'), 720, 'a bare number is minutes');
+assert.equal(ui.parseDuration('12'), 720, 'one or two bare digits are minutes');
+assert.equal(ui.parseDuration('1230'), 750, 'three or more are microwave-style: 12:30');
+assert.equal(ui.parseDuration('130'), 90);
+assert.equal(ui.parseDuration('13000'), 5400, 'five digits are h:mm:ss');
+assert.equal(ui.parseDuration('1275'), null, 'and seconds past 59 are still refused');
+assert.equal(ui.parseDuration('1234567'), null, 'seven digits are no clock');
+assert.equal(ui.clockDigits('1230'), '12:30');
+assert.equal(ui.clockDigits('030'), '0:30', 'a leading zero is kept, or 0:30 would read as 30 minutes');
+assert.equal(ui.clockDigits('123456'), '12:34:56');
+assert.equal(ui.clockDigits('12,30'), '12:30', 'a pasted comma is dropped with everything else');
 assert.equal(ui.parseDuration('12,'), 720);
 assert.equal(ui.parseDuration('1:02:03'), 3723, 'three parts are h:mm:ss');
 assert.equal(ui.parseDuration(ui.fmtDuration(5400)), 5400, 'round-trips its own display, hours included');
@@ -188,8 +197,8 @@ assert.equal(metres.input.value, '2100', 'a distance stepper reads "2.000" as 20
 
 // the markup the steppers read: kind renders a text field on the decimal pad
 const timeField = ui.stepperField('Time (m:ss)', 'set-time', { step: 60, min: 0, value: 750, kind: 'time' });
-assert.ok(/type="text" inputmode="decimal"[^>]*data-kind="time"[^>]*value="12:30"/.test(timeField),
-  'a time stepper is a text field showing m:ss');
+assert.ok(/type="text" inputmode="numeric"[^>]*data-kind="time"[^>]*value="12:30"/.test(timeField),
+  'a time stepper is a text field on the digit pad, showing m:ss');
 assert.ok(/data-kind="distance" data-metric="1"/.test(
   ui.stepperField('Distance (m)', 'd', { step: 100, min: 0, value: 2000, kind: 'distance', metric: true })));
 
@@ -247,6 +256,18 @@ assert.equal(kindField.value, '', 'a data-kind field arms for overwrite');
 assert.equal(kindField.placeholder, '(12:30)');
 fire('focusout', { target: kindField });
 assert.equal(kindField.value, '12:30');
+
+// the iPhone's pads have no colon: a time field puts it in while typing
+const typed = [];
+const clockField = { tagName: 'INPUT', type: 'text', value: '', dataset: { kind: 'time' } };
+for (const k of '1230') { clockField.value += k; fire('input', { target: clockField }); typed.push(clockField.value); }
+assert.deepEqual(typed, ['1', '12', '1:23', '12:30'], 'digits type like a microwave, the colon appears by itself');
+clockField.value = '12:3'; // backspace
+fire('input', { target: clockField });
+assert.equal(clockField.value, '1:23', 'deleting walks the digits back the same way');
+const plainText = { tagName: 'INPUT', type: 'text', value: '1230', dataset: {} };
+fire('input', { target: plainText });
+assert.equal(plainText.value, '1230', 'fields without data-kind="time" are left alone');
 
 // --- initKeyboardScroll ---
 // No `window` in Node (unlike `document`, stubbed above) — the real

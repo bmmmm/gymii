@@ -61,6 +61,13 @@ export function initSteppers() {
 // steppers; the stash in dataset.prevValue is also initSteppers's fallback
 // for a stepper tap that lands before (or without) the matching blur.
 export function initNumericOverwrite() {
+  // a time field formats itself while it is typed into: "1230" shows 12:30
+  document.addEventListener('input', (e) => {
+    const inp = e.target;
+    if (inp.tagName !== 'INPUT' || inp.dataset?.kind !== 'time') return;
+    const v = clockDigits(inp.value);
+    if (v !== inp.value) inp.value = v;
+  });
   document.addEventListener('focusin', (e) => {
     const inp = e.target;
     if (inp.tagName !== 'INPUT' || (inp.type !== 'number' && !inp.dataset.kind)
@@ -174,14 +181,19 @@ export function twoTapConfirm(btn, armedLabel, restLabel) {
 }
 
 // Cardio time is typed the way the machine's display shows it: m:ss. The
-// number pad has no colon, so a comma or a dot separates just the same —
-// "12,30" off a rower is 12:30, never 12.3 minutes (which is 12:18). A lone
-// seconds digit reads as the display would ("12,5" = 12:50), a bare number
-// is minutes, three parts are h:mm:ss. Anything else — letters, seconds past
-// 59 — is null, so the caller keeps what was there instead of guessing.
+// iPhone's pads have no colon, so time is typed like a microwave: digits
+// only, the last two are seconds — "1230" is 12:30, "130" is 1:30, five or
+// six digits are h:mm:ss — and clockDigits() puts the colon in as you type.
+// One or two digits are whole minutes ("20" = 20:00, a treadmill's "20 min").
+// Outside a live field (which keeps digits only) a comma or dot separates
+// like the colon ("12,30" is 12:30, never 12.3 minutes) and a lone seconds
+// digit after one reads as the display would ("12,5" = 12:50). Anything else — letters, seconds past 59 — is
+// null, so the caller keeps what was there instead of guessing.
 export function parseDuration(str) {
   // "12," is a thumb that stopped early; "12,30," or "1,,2" is not a clock
-  const t = String(str ?? '').replace(/\s/g, '').replace(/^(\d+)[:.,]$/, '$1');
+  let t = String(str ?? '').replace(/\s/g, '').replace(/^(\d+)[:.,]$/, '$1');
+  if (/^\d{7,}$/.test(t)) return null;
+  if (/^\d{3,6}$/.test(t)) t = clockDigits(t);
   if (!/^\d+([:.,]\d+){0,2}$/.test(t)) return null;
   const parts = t.split(/[:.,]/);
   if (parts.length === 2 && parts[1].length === 1) parts[1] += '0';
@@ -189,6 +201,17 @@ export function parseDuration(str) {
   if (nums.length === 1) return nums[0] * 60;
   if (nums.slice(1).some((n) => n > 59)) return null;
   return nums.reduce((acc, n) => acc * 60 + n, 0);
+}
+
+// The live form of a time field: digits in, m:ss (or h:mm:ss) out, the
+// last two digits always the seconds. Everything but digits is dropped, so
+// whatever the pad offers, what the field shows is what gets logged.
+export function clockDigits(str) {
+  const d = String(str ?? '').replace(/\D/g, '').slice(0, 6);
+  if (d.length <= 2) return d;
+  const ss = d.slice(-2);
+  const rest = d.slice(0, -2);
+  return rest.length <= 2 ? `${rest}:${ss}` : `${rest.slice(0, -2)}:${rest.slice(-2)}:${ss}`;
 }
 
 // Distance accepts a comma as the decimal mark (the German number pad has
@@ -205,14 +228,15 @@ export function parseDistance(str, metric) {
 // One labeled stepper row — the logging screen and the plan builder both
 // render several and the markup is identical apart from label/id/step.
 // Pairs with initSteppers()'s delegated +/− handling. `kind` 'time' (value
-// in seconds, step in seconds, shown as m:ss) and 'distance' render a text
-// field on the decimal pad, because type=number refuses a comma or a colon
-// outright in some locales and reports the field as empty.
+// in seconds, step in seconds, shown as m:ss, typed on the digit pad — see
+// clockDigits) and 'distance' (decimal pad) render a text field, because
+// type=number refuses a comma or a colon outright in some locales and
+// reports the field as empty.
 export const stepperField = (label, id, { step, min, value, mode = 'decimal', kind, metric }) => `
   <div class="spread"><span class="label">${label}</span>
     <div class="stepper" data-step="${step}" data-min="${min}">
       <button type="button" class="step-down" aria-label="decrease ${label.toLowerCase()}">−</button>
-      ${kind ? `<input id="${id}" type="text" inputmode="decimal" autocomplete="off" data-kind="${kind}"${
+      ${kind ? `<input id="${id}" type="text" inputmode="${kind === 'time' ? 'numeric' : 'decimal'}" autocomplete="off" data-kind="${kind}"${
     metric ? ' data-metric="1"' : ''} value="${kind === 'time' ? fmtDuration(value) : value}">`
     : `<input id="${id}" type="number" inputmode="${mode}" value="${value}">`}
       <button type="button" class="step-up" aria-label="increase ${label.toLowerCase()}">+</button>
