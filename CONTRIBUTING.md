@@ -50,7 +50,9 @@ out / paste back, by design).
   `pnpm exec playwright install chromium`, then `pnpm run smoke`. They live
   in `smoke/` as `*.spec.mjs` — a new browser test belongs there, never in
   `test/`.
-- **Module map and conventions:** [AGENTS.md](AGENTS.md) — written for
+- **Module map and conventions:** [AGENTS.md](AGENTS.md), with the
+  per-module detail in [docs/architecture.md](docs/architecture.md) and
+  the test detail in [docs/testing.md](docs/testing.md) — written for
   coding agents, equally useful for humans: what each module owns, the
   invariants (chronological workouts, filter-narrows-whole-workouts,
   two-tap confirms), and the traps.

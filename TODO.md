@@ -39,7 +39,7 @@ in finish(), the first user gesture after something irreplaceable exists.
 Shipped 2026-08-14, in five waves: plans that exist before the gym does
 (typed note → unbound items → bind on the floor), the builder's text view,
 proposed workout names, the history name filter, and a complete workout
-editor incl. logging a workout after the fact. See AGENTS.md for how the
+editor incl. logging a workout after the fact. See docs/architecture.md for how the
 pieces fit; README for what they do.
 
 Shipped 2026-08-16: "Load test data" (Settings) fills a deterministic Demo
