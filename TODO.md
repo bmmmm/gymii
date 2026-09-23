@@ -155,7 +155,7 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   Home Screen, wait. *Expect:* open — record whether the tone arrives at
   zero, arrives late, or never. The answer decides whether a notification
   is needed.
-- [ ] **Keyboard: the field stays centred.** Tap into the weight field,
+- [x] **Keyboard: the field stays centred.** Tap into the weight field,
   then the locker field, then a field at the bottom of Settings, in the
   browser AND the Home Screen app. *Expect:* each lands in the middle of
   what the keyboard leaves visible — on the log screen with the steppers
@@ -167,9 +167,7 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   the keyboard height so the last fields have room to rise.
   `smoke/keyboard.spec.mjs` proves the mechanism headlessly by
   stubbing `visualViewport` directly, since Chromium has no real on-screen
-  keyboard to shrink it. Left unchecked: same reasoning as the safe-area
-  entry below — a headless proxy exists now, but the real keyboard's
-  timing and geometry on an actual iPhone are still unconfirmed.
+  keyboard to shrink it. Confirmed on a real iPhone on 2026-09-24.
 - [ ] **Safe area in standalone.** Add to Home Screen, open from there.
   *Expect:* content starts below the status bar / Dynamic Island — the
   `env(safe-area-inset-top)` fix, which in a browser can only be checked

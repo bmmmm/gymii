@@ -108,19 +108,30 @@ export function focusScrollDelta(field, context, band) {
 const KEYBOARD_MIN = 120; // px of visual viewport lost before it counts as a keyboard
 const FOCUSABLE = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
 
+// A pinch-zoom shrinks the visual viewport too, without any keyboard —
+// only an unzoomed viewport's lost height counts.
 const keyboardHeight = () => (typeof window === 'undefined' || !window.visualViewport
+  || window.visualViewport.scale > 1.01
   ? 0 : Math.max(0, window.innerHeight - window.visualViewport.height));
 
 // Centre `el` (and its context) in what the keyboard leaves visible.
+// A FIELD taller than that band (a 10-row textarea on a small phone) is
+// left alone: centring its middle parks the caret behind the keyboard, and
+// undoing iOS's own caret pan would hide it again. keepInView's non-field
+// targets carry no caret and still centre.
 function centreInVisible(el) {
   const scroller = el.closest?.('#view');
   if (!scroller) return;
-  if (window.scrollY) window.scrollTo(0, 0); // undo iOS panning a document that cannot scroll
   const vv = window.visualViewport;
-  const top = Math.max(vv.offsetTop, scroller.getBoundingClientRect().top);
-  const band = { top, bottom: vv.offsetTop + vv.height };
+  const band = () => ({
+    top: Math.max(vv.offsetTop, scroller.getBoundingClientRect().top),
+    bottom: vv.offsetTop + vv.height,
+  });
+  const room = band();
+  if (FOCUSABLE.has(el.tagName) && el.getBoundingClientRect().height > room.bottom - room.top) return;
+  if (window.scrollY) window.scrollTo(0, 0); // undo iOS panning a document that cannot scroll
   const context = el.closest('[data-focus-context], .card');
-  const delta = focusScrollDelta(el.getBoundingClientRect(), context?.getBoundingClientRect(), band);
+  const delta = focusScrollDelta(el.getBoundingClientRect(), context?.getBoundingClientRect(), band());
   if (Math.abs(delta) >= 1) scroller.scrollBy(0, delta);
 }
 
@@ -132,7 +143,9 @@ function centreInVisible(el) {
 // drops back to 0. The hop settle skips a field that merely came BACK:
 // preserveFocus re-focuses the same id after a re-render (a chip tap on
 // iOS does not blur the field), and re-centring then would scroll the chip
-// out from under the thumb. No-op without visualViewport (Node's tests).
+// out from under the thumb. Coming back to the app re-settles too: iOS may
+// deliver no resize for a keyboard that vanished in the background, which
+// would leave the --kb padding behind. No-op without visualViewport.
 export function initFocusCentering() {
   if (typeof window === 'undefined' || !window.visualViewport) return;
   let timer = 0;
@@ -147,6 +160,9 @@ export function initFocusCentering() {
     if (up && FOCUSABLE.has(field?.tagName)) centreInVisible(field);
   };
   window.visualViewport.addEventListener('resize', settle);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') settle();
+  });
   document.addEventListener('focusin', (e) => {
     if (e.target.id && e.target.id === lastId) return; // re-focused after a re-render
     clearTimeout(timer);

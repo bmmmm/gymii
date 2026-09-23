@@ -100,3 +100,93 @@ test('the last field on a long screen still reaches the middle', async ({ page }
   expect(r.top, 'the field itself is in sight').toBeGreaterThanOrEqual(0);
   expect(r.bottom).toBeLessThanOrEqual(KEYBOARD_UP_HEIGHT);
 });
+
+// preserveFocus hands a field back after a re-render (same id, new node),
+// and a chip tap on iOS never blurs it — the user may have scrolled to that
+// chip. Re-centring then would pull the chip from under the thumb, so a
+// field that merely came back must leave the scroll alone.
+test('a field re-focused after a re-render does not re-centre', async ({ page }) => {
+  await seedDemoGym(page);
+  await startWorkoutAt(page, 1);
+  await page.locator('#locker-num').focus();
+  await openKeyboard(page, KEYBOARD_UP_HEIGHT);
+  await expectCentred(page, '#locker-num', 'the locker field');
+
+  const scrolled = await page.evaluate(() => {
+    const view = document.getElementById('view');
+    view.scrollTop += 120; // the user scrolls down toward something else
+    const el = document.getElementById('locker-num');
+    const twin = el.cloneNode(true); // what a re-render leaves behind
+    el.replaceWith(twin);
+    twin.focus();
+    return view.scrollTop;
+  });
+  await page.waitForTimeout(500); // past the 300 ms hop settle
+  expect(await page.evaluate(() => document.getElementById('view').scrollTop),
+    'the user\'s own scroll survives the hand-back').toBe(scrolled);
+});
+
+// Pinch-zoom shrinks visualViewport.height exactly like a keyboard does;
+// only the scale tells them apart. And a keyboard going down must take its
+// --kb padding with it.
+test('a pinch-zoom is not a keyboard, and closing the keyboard drops --kb', async ({ page }) => {
+  await seedDemoGym(page);
+  await startWorkoutAt(page, 1);
+  await page.locator('#set-weight').focus();
+  const kb = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--kb').trim());
+
+  await openKeyboard(page, KEYBOARD_UP_HEIGHT);
+  expect(await kb(), 'the keyboard pads #view').not.toBe('0px');
+
+  const innerHeight = await page.evaluate(() => innerHeight);
+  await openKeyboard(page, innerHeight); // keyboard down
+  expect(await kb(), 'and the padding goes with it').toBe('0px');
+
+  const before = await page.evaluate(() => document.getElementById('view').scrollTop);
+  await page.evaluate((h) => {
+    const vv = window.visualViewport;
+    Object.defineProperty(vv, 'scale', { get: () => 2, configurable: true });
+    Object.defineProperty(vv, 'height', { get: () => h / 2, configurable: true });
+    vv.dispatchEvent(new Event('resize'));
+  }, innerHeight);
+  expect(await kb(), 'a zoomed viewport is no keyboard').toBe('0px');
+  expect(await page.evaluate(() => document.getElementById('view').scrollTop), 'and nothing scrolls')
+    .toBe(before);
+});
+
+// A keyboard that vanished while the app was in the background may never
+// deliver its resize; coming back must still drop the padding.
+test('returning to the app drops a stale --kb', async ({ page }) => {
+  await seedDemoGym(page);
+  await startWorkoutAt(page, 1);
+  await page.locator('#set-weight').focus();
+  await openKeyboard(page, KEYBOARD_UP_HEIGHT);
+  const kb = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--kb').trim());
+  expect(await kb()).not.toBe('0px');
+  await page.evaluate(() => {
+    const vv = window.visualViewport;
+    Object.defineProperty(vv, 'height', { get: () => innerHeight, configurable: true }); // no resize event
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  expect(await kb(), 'the visibility settle noticed the keyboard is gone').toBe('0px');
+});
+
+// A field taller than the visible band keeps whatever iOS did to show its
+// caret: centring its middle would put the caret behind the keyboard.
+test('a field taller than the visible band is left alone', async ({ page }) => {
+  await seedDemoGym(page);
+  await startWorkoutAt(page, 1);
+  const before = await page.evaluate(() => {
+    const ta = document.createElement('textarea');
+    ta.id = 'tall-probe';
+    ta.style.cssText = 'display:block;height:400px;width:100%';
+    document.getElementById('view').append(ta);
+    ta.scrollIntoView({ block: 'end' });
+    ta.focus();
+    return document.getElementById('view').scrollTop;
+  });
+  await openKeyboard(page, KEYBOARD_UP_HEIGHT);
+  await page.waitForTimeout(400); // past the focusin settle as well
+  expect(await page.evaluate(() => document.getElementById('view').scrollTop), 'no centring scroll')
+    .toBe(before);
+});

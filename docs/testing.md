@@ -7,7 +7,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
 
 - Dev server: `python3 serve.py [port]` → http://localhost:8437 (sends
   `Cache-Control: no-store`; plain `http.server` made Chrome serve stale
-  modules — don't go back to it).
+  modules — don't go back to it). It also raises the listen backlog from
+  5 to 64: parallel local Playwright workers overflowed it, macOS refused
+  the overflow, and ~half the specs failed on "Failed to fetch dynamically
+  imported module" — local-only, CI never saw it.
 - Logic tests: `for f in test/*.test.mjs; do node "$f"; done` — CI runs the
   glob, so a new `test/<module>.test.mjs` is picked up without a workflow
   edit. The localStorage stub lives ONCE, in
@@ -65,9 +68,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   every touch target is 44px and every field 16px, the service worker
   registers and precaches every SHELL entry, a focused field lands centred
   above a stubbed `visualViewport` keyboard (the log form with its button,
-  the locker field, a field-to-field hop, the last field on Settings), and
-  the standalone/
-  PWA safe-area padding scales correctly under a CDP-emulated notch inset.
+  the locker field, a field-to-field hop, the last field on Settings; a
+  re-focused field, a pinch-zoom and a too-tall field do NOT scroll, and
+  --kb drops on keyboard close and on return to the app), and the
+  standalone/PWA safe-area padding scales correctly under a CDP-emulated notch inset.
   A NEW browser spec goes in
   `smoke/` as `*.spec.mjs`, NEVER in `test/` — `testMatch` is pinned
   because Playwright's collector imports whatever it matches and would run

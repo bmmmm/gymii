@@ -284,6 +284,8 @@ assert.equal(ui.focusScrollDelta(kbField, null, kbBand), 350, 'and so does no co
 assert.equal(ui.focusScrollDelta({ top: 20, bottom: 60 }, null, kbBand), -130,
   'a field above the middle scrolls back down (negative delta)');
 assert.equal(ui.focusScrollDelta({ top: 150, bottom: 190 }, null, kbBand), 0, 'a centred one stays put');
+assert.equal(ui.focusScrollDelta(kbField, { top: 450, bottom: 790 }, kbBand), 450,
+  'a context exactly as tall as the band still counts as fitting');
 
 // --- twoTapConfirm ---
 

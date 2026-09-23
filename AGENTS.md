@@ -68,8 +68,12 @@ exist because breaking them was once a real bug.
   `save()`) and never imports from train.js/plan.js.
 - `js/train.js` — hub, guided workout, rest timer (the rest belongs to the
   WORKOUT); `js/plan.js` — the plan builder, works without a gym.
-- `js/history.js` — list, editor, back-logging; `js/ui.js` — shared helpers
-  (formatting, steppers, keyboard centring, timer sound).
+- `js/history.js` — list, editor, back-logging; `js/chart.js` — its
+  progress chart; `js/ui.js` — shared helpers (formatting, steppers,
+  keyboard centring, timer sound).
+- `js/settings.js` — the Settings tab (units, gyms, backups, Sync card);
+  `js/qr.js` — hand-written QR encoder for pairing; `js/version.js` —
+  `APP_VERSION`, bumped with every deploy.
 - `js/demo.js` — deterministic demo gym, found by its `demo` flag, never by
   name; `js/ai.js` — copy/paste export, deliberately NO AI API.
 - `sw.js` — network-first PWA. A new static file goes into SHELL and bumps
@@ -134,8 +138,8 @@ both remotes, never merge in the GitHub UI.
 
 CI runs the logic tests, parses every shipped script (`static-checks` — the
 one job that would catch a typo in js/app.js, since nothing else loads the
-files) plus a `sw.js` SHELL cross-check, and deploys Pages
-from main; every asset reference must stay RELATIVE (project subpath).
+files) plus a `sw.js` SHELL cross-check and the `smoke` suite — all four
+gate the deploy — and deploys Pages from main; every asset reference must stay RELATIVE (project subpath).
 DONE = deployed, and a deploy says which build it is: any push to main that
 touches `js/`, `css/`, `index.html` or `sw.js` must bump `APP_VERSION` in
 `js/version.js` to the deploy date in the SAME push, or `static-checks` goes
