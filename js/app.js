@@ -3,7 +3,7 @@ import { renderGym } from './gym.js';
 import { renderHistory } from './history.js';
 import { renderAi } from './ai.js';
 import { renderSettings, setPendingPairCode } from './settings.js';
-import { initSteppers, initNumericOverwrite, initKeyboardScroll } from './ui.js';
+import { initSteppers, initNumericOverwrite, initFocusCentering } from './ui.js';
 import { initAmbientSync, syncHealth, onSyncActivity } from './sync.js';
 import { onWriteError } from './store.js';
 
@@ -67,11 +67,9 @@ function route() {
 
 initSteppers();
 initNumericOverwrite();
-// Keeps the log screen's "Log set" button reachable once the keyboard
-// covers it (TODO.md: "Keyboard over the log button") — scoped to .next-set
-// so the locker-number and machine-settings fields on the same screen
-// don't trigger it too.
-initKeyboardScroll('#log-set', '.next-set');
+// Every focused field lands centred above the keyboard, with its context
+// (on the log screen: steppers AND the log button, via data-focus-context).
+initFocusCentering();
 initAmbientSync(); // M2: pull on open/visible, debounced push after edits
 onSyncActivity(updateSyncBadge);
 onWriteError(showStorageAlert);

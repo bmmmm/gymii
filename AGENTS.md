@@ -70,9 +70,10 @@ present in the publish directory.
   logged set survives a reload, the rest keeps running inline after the
   overlay closes and across a reload, no route scrolls sideways at 320px,
   every touch target is 44px and every field 16px, the service worker
-  registers and precaches every SHELL entry, the log-set button stays
-  reachable once a stubbed `visualViewport` resize covers it (and unrelated
-  fields on the same screen never trigger that scroll), and the standalone/
+  registers and precaches every SHELL entry, a focused field lands centred
+  above a stubbed `visualViewport` keyboard (the log form with its button,
+  the locker field, a field-to-field hop, the last field on Settings), and
+  the standalone/
   PWA safe-area padding scales correctly under a CDP-emulated notch inset.
   A NEW browser spec goes in
   `smoke/` as `*.spec.mjs`, NEVER in `test/` — `testMatch` is pinned
@@ -744,6 +745,16 @@ present in the publish directory.
   back focused with its selection intact, found again by its id. Both
   `renderProps()` (gym.js) and `renderSettings()` are wrapped whole, so
   every field inside them is covered once instead of per call site.
+  THE KEYBOARD: `initFocusCentering()` (ui.js, wired once in app.js)
+  centres every focused field in the VISIBLE band once `visualViewport`
+  settles (a field-to-field hop fires no resize: focusin settles 300 ms
+  later, skipping a field `preserveFocus` merely handed back) — with its context when that fits (`[data-focus-context]`, else
+  the nearest `.card`; the log form carries the attribute so steppers AND
+  the log button land together) — and pads #view by `--kb` while the
+  keyboard is up, because #view is the only scroller and without that room
+  iOS pans the window instead ("the page jumps"). `keepInView` switches to
+  the same centring while the keyboard is up. A new form whose parts belong
+  together gets `data-focus-context`, not a scroll handler of its own.
   Navigation is the
   opposite case: the Train tab renders its screens (hub, start, plans,
   builder, bind, log, overview, onboarding) into one container, so

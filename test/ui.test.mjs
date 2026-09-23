@@ -269,11 +269,21 @@ const plainText = { tagName: 'INPUT', type: 'text', value: '1230', dataset: {} }
 fire('input', { target: plainText });
 assert.equal(plainText.value, '1230', 'fields without data-kind="time" are left alone');
 
-// --- initKeyboardScroll ---
+// --- focus centering ---
 // No `window` in Node (unlike `document`, stubbed above) — the real
 // visualViewport wiring only exists in a browser and is exercised by
-// smoke/keyboard.spec.mjs. Here the contract is just "never throws".
-ui.initKeyboardScroll('#log-set', '.next-set');
+// smoke/keyboard.spec.mjs. Here: the pure maths, and "never throws".
+ui.initFocusCentering();
+const kbBand = { top: 0, bottom: 340 }; // what the keyboard leaves visible
+const kbField = { top: 500, bottom: 540 };
+assert.equal(ui.focusScrollDelta(kbField, { top: 450, bottom: 750 }, kbBand), 430,
+  'a context that fits is centred as a whole — steppers AND log button in sight');
+assert.equal(ui.focusScrollDelta(kbField, { top: 0, bottom: 900 }, kbBand), 350,
+  'a context taller than the band falls back to centring the field itself');
+assert.equal(ui.focusScrollDelta(kbField, null, kbBand), 350, 'and so does no context');
+assert.equal(ui.focusScrollDelta({ top: 20, bottom: 60 }, null, kbBand), -130,
+  'a field above the middle scrolls back down (negative delta)');
+assert.equal(ui.focusScrollDelta({ top: 150, bottom: 190 }, null, kbBand), 0, 'a centred one stays put');
 
 // --- twoTapConfirm ---
 

@@ -89,35 +89,68 @@ export function initNumericOverwrite() {
 
 // The iOS keyboard shrinks the VISUAL viewport only — the layout viewport
 // (innerHeight, and everything scrollIntoView measures against) does not
-// move. A control a few rows below the focused field (the log-set button,
-// below the weight/reps/rest steppers) can end up entirely behind the
-// keyboard even though its position in the LAYOUT viewport never changed —
-// which is exactly why `scrollIntoView` cannot fix this: it aligns against
-// the scrollport's full (unshrunk) height, so a button already inside that
-// height is left wherever it was, still under the keyboard. The fix has to
-// read `visualViewport.height`/`offsetTop` itself and scroll only the
-// overlap away. `focus` fires too early to react to (the keyboard is still
-// animating in); `visualViewport`'s resize event fires once it has
-// actually settled, which is the only moment the visible height can be
-// trusted. `withinSelector` scopes which focused fields count — the log
-// screen also carries the locker-number and machine-settings text fields,
-// and scrolling the button into view while one of THOSE is focused would
-// drag the field the user is typing into off-screen instead. No-op without
-// visualViewport (older browsers, and Node's tests).
-export function initKeyboardScroll(selector, withinSelector) {
-  if (typeof window === 'undefined' || !window.visualViewport) return;
+// move. So `scrollIntoView({block:'center'})` centres against the unshrunk
+// height, which is often BEHIND the keyboard, and #view (the app's only
+// scroller; the document itself never scrolls) has no room to lift its
+// last fields above the keyboard at all — iOS then pans the window
+// instead, and the page "jumps". The fix reads `visualViewport` itself:
+// while the keyboard is up, `--kb` pads #view's bottom by the keyboard's
+// height (room to scroll into), and the focused field is centred in the
+// VISIBLE band — together with its context when that fits: the nearest
+// `[data-focus-context]` (the log form: steppers AND the log button) or
+// `.card`. Pure maths first, so it tests over plain rects.
+export function focusScrollDelta(field, context, band) {
+  const fits = context && context.bottom - context.top <= band.bottom - band.top;
+  const target = fits ? context : field;
+  return (target.top + target.bottom) / 2 - (band.top + band.bottom) / 2;
+}
+
+const KEYBOARD_MIN = 120; // px of visual viewport lost before it counts as a keyboard
+const FOCUSABLE = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+
+const keyboardHeight = () => (typeof window === 'undefined' || !window.visualViewport
+  ? 0 : Math.max(0, window.innerHeight - window.visualViewport.height));
+
+// Centre `el` (and its context) in what the keyboard leaves visible.
+function centreInVisible(el) {
+  const scroller = el.closest?.('#view');
+  if (!scroller) return;
+  if (window.scrollY) window.scrollTo(0, 0); // undo iOS panning a document that cannot scroll
   const vv = window.visualViewport;
-  vv.addEventListener('resize', () => {
-    const active = document.activeElement;
-    if (active?.tagName !== 'INPUT' || !active.closest(withinSelector)) return;
-    const btn = document.querySelector(selector);
-    if (!btn) return;
-    const rect = btn.getBoundingClientRect();
-    const visibleBottom = vv.offsetTop + vv.height;
-    const covered = rect.bottom - visibleBottom;
-    if (covered <= 0) return; // already above the keyboard (or there is no keyboard) — nothing to do
-    const scroller = btn.closest('#view') || document.scrollingElement;
-    scroller?.scrollBy(0, covered);
+  const top = Math.max(vv.offsetTop, scroller.getBoundingClientRect().top);
+  const band = { top, bottom: vv.offsetTop + vv.height };
+  const context = el.closest('[data-focus-context], .card');
+  const delta = focusScrollDelta(el.getBoundingClientRect(), context?.getBoundingClientRect(), band);
+  if (Math.abs(delta) >= 1) scroller.scrollBy(0, delta);
+}
+
+// Wired once from app.js. `focus` fires too early to act on (the keyboard
+// is still animating in); visualViewport's `resize` fires once it has
+// settled. A field-to-field hop with the keyboard already open fires no
+// resize, so focusin also schedules one late settle. Without a keyboard
+// (desktop, and the keyboard going down) nothing scrolls — only `--kb`
+// drops back to 0. The hop settle skips a field that merely came BACK:
+// preserveFocus re-focuses the same id after a re-render (a chip tap on
+// iOS does not blur the field), and re-centring then would scroll the chip
+// out from under the thumb. No-op without visualViewport (Node's tests).
+export function initFocusCentering() {
+  if (typeof window === 'undefined' || !window.visualViewport) return;
+  let timer = 0;
+  let lastId = null;
+  const settle = () => {
+    clearTimeout(timer);
+    const kb = keyboardHeight();
+    const up = kb >= KEYBOARD_MIN;
+    document.documentElement.style.setProperty('--kb', up ? `${Math.round(kb)}px` : '0px');
+    const field = document.activeElement;
+    lastId = up ? field?.id || null : null;
+    if (up && FOCUSABLE.has(field?.tagName)) centreInVisible(field);
+  };
+  window.visualViewport.addEventListener('resize', settle);
+  document.addEventListener('focusin', (e) => {
+    if (e.target.id && e.target.id === lastId) return; // re-focused after a re-render
+    clearTimeout(timer);
+    timer = setTimeout(settle, 300);
   });
 }
 
@@ -260,11 +293,15 @@ export const setStr = (st, settings, bodyweight = false) => (st.distance != null
 // `focus` is for text fields you are likely to fill again (a second plan
 // line, another settings field) — never for number inputs, where it would
 // pop the keyboard and hand the field to initNumericOverwrite empty.
-// Guarded throughout: the logic tests' stub DOM has neither method.
+// With the keyboard up it centres in the VISIBLE band instead (see
+// focusScrollDelta). Guarded throughout: the logic tests' stub DOM has
+// neither method.
 export function keepInView(root, selector, { focus = false } = {}) {
   const el = root.querySelector?.(selector);
   if (!el) return;
-  el.scrollIntoView?.({ block: 'center' });
+  // With the keyboard up, scrollIntoView would centre behind it.
+  if (keyboardHeight() >= KEYBOARD_MIN) centreInVisible(el);
+  else el.scrollIntoView?.({ block: 'center' });
   if (focus) el.focus?.();
 }
 

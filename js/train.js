@@ -1433,7 +1433,7 @@ function renderLog(root, layout, active, reveal = null) {
             <button class="x" data-i="${i}" aria-label="Remove set ${i + 1}">✕</button>
           </div>`).join('') || '<p class="muted">No sets logged yet.</p>'}
       </div>
-      <div class="next-set">
+      <div class="next-set" data-focus-context>
         ${cardio ? `
         ${stepperField(`Distance (${du})`, 'set-distance', { step: s.unit === 'kg' ? 100 : 0.1, min: 0, value: def.distance, kind: 'distance', metric: s.unit === 'kg' })}
         ${stepperField('Time (m:ss)', 'set-time', { step: 60, min: 0, value: def.seconds, kind: 'time' })}`

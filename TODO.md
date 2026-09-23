@@ -155,14 +155,17 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   Home Screen, wait. *Expect:* open — record whether the tone arrives at
   zero, arrives late, or never. The answer decides whether a notification
   is needed.
-- [ ] **Keyboard over the log button.** Tap into the weight field.
-  *Expect:* "✓ Log set …" stays visible, or is reachable without leaving
-  the field. `initKeyboardScroll` (js/ui.js) scrolls it back into view on
-  `visualViewport`'s resize event, reading `visualViewport.height`/
-  `offsetTop` directly rather than `scrollIntoView` (which measures against
-  the unshrunk LAYOUT viewport and does nothing); scoped to `.next-set` so
-  the locker-number and machine-settings fields on the same screen don't
-  trigger it. `smoke/keyboard.spec.mjs` proves the mechanism headlessly by
+- [ ] **Keyboard: the field stays centred.** Tap into the weight field,
+  then the locker field, then a field at the bottom of Settings, in the
+  browser AND the Home Screen app. *Expect:* each lands in the middle of
+  what the keyboard leaves visible — on the log screen with the steppers
+  and "✓ Log set …" in sight — and nothing jumps to the top while typing.
+  `initFocusCentering` (js/ui.js) centres on `visualViewport`'s resize
+  (or a late focusin settle for a field-to-field hop), reading
+  `visualViewport.height`/`offsetTop` directly rather than `scrollIntoView`
+  (which measures against the unshrunk LAYOUT viewport), and pads #view by
+  the keyboard height so the last fields have room to rise.
+  `smoke/keyboard.spec.mjs` proves the mechanism headlessly by
   stubbing `visualViewport` directly, since Chromium has no real on-screen
   keyboard to shrink it. Left unchecked: same reasoning as the safe-area
   entry below — a headless proxy exists now, but the real keyboard's
