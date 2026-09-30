@@ -88,8 +88,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `.claude/settings.local.json` (gitignored, a user decision):
   `sandbox.network.allowLocalBinding: true` lets `serve.py` bind, and
   `sandbox.excludedCommands: ["pnpm run smoke *"]` runs the suite outside
-  the sandbox — the suite call only; an ad-hoc probe script still needs
-  its own per-call bypass. OPERATING RULE: a spec that flakes twice in a month
+  the sandbox — the suite call only, and only as a BARE command line: the
+  pattern is matched against the whole line, so `pnpm run smoke > log;
+  tail log` is not excluded and dies at the mach port again (both measured
+  2026-10-01, no restart needed). An ad-hoc probe script still needs its
+  own per-call bypass. OPERATING RULE: a spec that flakes twice in a month
   is rewritten or deleted — a quarantined smoke test is worse than none.
   Hygiene: `grep -rn` now needs `--exclude-dir=node_modules`.
 - Dependabot watches the one dependency. A bot PR does NOT know
