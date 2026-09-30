@@ -77,9 +77,19 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   because Playwright's collector imports whatever it matches and would run
   the Node suites as a side effect. Sandbox notes: `serve.py` cannot bind a
   port under the sandbox (run it un-sandboxed), and `registry.npmjs.org` /
-  `cdn.playwright.dev` are unreachable — but once the browser is in the
-  HOME cache the suite runs sandboxed, since the app makes no outgoing
-  request without sync. OPERATING RULE: a spec that flakes twice in a month
+  `cdn.playwright.dev` are unreachable (a sandboxed `playwright install`
+  after a Dependabot bump stalls silently; run it un-sandboxed, ~1 min, and
+  note it prunes the previous build). The suite itself needs the sandbox
+  off too, as measured on 2026-10-01 from two independent runs: Chromium's
+  launch dies with `bootstrap_check_in … Permission denied` (a mach-port
+  check-in the Seatbelt profile refuses), before the app is ever loaded —
+  a failure that reads like a broken browser and is neither the browser
+  nor the app. The durable fix is two project-local switches in
+  `.claude/settings.local.json` (gitignored, a user decision):
+  `sandbox.network.allowLocalBinding: true` lets `serve.py` bind, and
+  `sandbox.excludedCommands: ["pnpm run smoke *"]` runs the suite outside
+  the sandbox — the suite call only; an ad-hoc probe script still needs
+  its own per-call bypass. OPERATING RULE: a spec that flakes twice in a month
   is rewritten or deleted — a quarantined smoke test is worse than none.
   Hygiene: `grep -rn` now needs `--exclude-dir=node_modules`.
 - Dependabot watches the one dependency. A bot PR does NOT know
