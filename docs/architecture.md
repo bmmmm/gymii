@@ -62,13 +62,30 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `recentWorkoutNames()` returns the names already in use — together they
   fill the name chips on the overview and in the builder. A name is
   proposed, never asked for. Pick lists:
-  `MUSCLE_GROUPS`, `COMMON_SETTINGS`, `ZONE_LABELS` (its 'Cardio' string
+  `MUSCLE_REGIONS` (`{label, muscles}` per body region — the ONE source:
+  `MUSCLE_GROUPS` is it flattened, and the name suggester's region table is
+  derived from it, so a muscle can never sit in two regions),
+  `COMMON_SETTINGS`, `ZONE_LABELS` (its 'Cardio' string
   is a room label — unrelated to the `machine.cardio` flag),
   `MACHINE_BRANDS`, `MAP_LAYERS` (map stacking as three named layers —
-  `{z, label}`, stored as `shape.z`, absent = 0 = Normal). Machines carry
-  optional `brand`/`model` (absent when empty), `layout.meta` is
-  `{address, postcode, city, country}` — meta lives INSIDE the layout, so
-  template/backup/sync carry it for free. Stored plans
+  `{z, label}`, stored as `shape.z`, absent = 0 = Normal). THE BRAND LIVES
+  ON THE GYM: `layout.meta.brand` (optional); a machine's own `brand` is
+  the exception for the odd rower or rack, and absent on the machine means
+  "the gym's". `machineBrand(layout, machine)` resolves it (train's log
+  header); `ownBrand(layout, machine)` is the machine's brand or '' when it
+  follows the gym — INCLUDING a machine that carries the gym's brand by
+  name (an imported template lists it per machine; the editors and the AI
+  export treat that copy exactly like "none"). `setGymBrand(layout, brand)`
+  sets or clears the gym's and TOUCHES NO MACHINE — folding the copies
+  would sync as two separate parts (meta is one LWW blob, machines merge
+  per id; a lost race would strip every folded machine of its brand) and a
+  mis-tapped chip would erase overrides. `matchBrand(text, extra)` maps
+  typed text onto the spelling already in use (pick list + the gym's
+  brands), case-insensitively, so free text never produces a second chip
+  that toggles the first. `model` stays per machine (absent when empty).
+  `layout.meta` is thus `{address, postcode, city, country, brand?}` — meta
+  lives INSIDE the layout, so template/backup/sync carry it for free (and
+  merge.js needs no new structural field). Stored plans
   live under `gymii.<gid>.plans`: `{id, name, createdAt, days?, skippedOn?,
   items:[{machineId?, name?, num?, exercise|null, target?}]}` with target
   `{sets,reps,weight}` or `{distance,seconds}`; `days` is getDay()-coded
@@ -288,10 +305,47 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   item would pair into a double tap and lock it again mid-arrangement.
   The Layer chips (`layerRow`/`wireLayerRow`, shared by the zone and
   wall/furniture cards) write `item.z` — deleted when Normal, so exports stay
-  clean. Machines and wall-snapped fixtures deliberately have no layer row. The machine card's Brand row is `MACHINE_BRANDS` + free text
-  (single-valued, tap again to clear); its text fields stage every keystroke
+  clean. Machines and wall-snapped fixtures deliberately have no layer row.
+  The machine card's text fields stage every keystroke
   into the item on `input` and only `save()` on `change`, because a chip tap
-  re-renders the card and would otherwise eat a half-typed name. The
+  re-renders the card and would otherwise eat a half-typed name.
+  BRAND: the Layout view's Machines card owns the `MACHINE_BRANDS` chips +
+  free text (`#gym-brands`, writes through store's `setGymBrand`; typed
+  text goes through `matchBrand`; a hint line counts the brands machines
+  carry as their OWN — `ownBrand`, so a copy of the gym's is not listed).
+  The Layout view re-renders itself now (brand chips, list edits), so the
+  Templates card's browser comes back when it was open (`tplOpen`). The
+  machine card shows the resolved brand as ONE LINE (`.brand-line`) with a
+  `.linkish` "Different brand?" inline; `brandOpen` (closure state, reset in
+  `select()`) folds out a search field that filters the chips IN PLACE on
+  `input` (no re-render — that would fight the keyboard) plus a Set button
+  that stays `hidden` until the text matches no chip (case-insensitively —
+  and the global `[hidden]{display:none !important}` rule in style.css
+  exists because `.btn`/`.chip` set `display` and an author rule beats the
+  UA's `[hidden]`, so the button and the filtered chips stayed visible).
+  Typed text lands on an existing spelling (`matchBrand`); picking or typing
+  the gym's own brand deletes the machine's field — absent, never a copy;
+  a machine that already carries the gym's brand by name reads as the gym's
+  (`ownBrand`). MUSCLES: one chip row
+  per `MUSCLE_REGIONS` entry (`.chip-group`), muscles outside the pick list
+  (an imported template's vocabulary) get an "Other" row so they stay
+  toggleable. THE LIST EDITOR (`machineListHtml`/`wireMachineList`, behind
+  the Machines card's "Edit all machines" button, `listOpen` survives map
+  round-trips within one renderGym): every machine as one row — number and
+  label inputs, Type and Brand `<select>`s (the empty brand option IS the
+  gym's brand; the options are every brand in use anywhere in the gym plus
+  the pick list; "Other…" reveals the row's own text field without a
+  re-render, so the select keeps showing it, and the text typed there is
+  staged in `otherText` (id → text) so a re-render from another row renders
+  it back into ITS row, still open), assigned muscles as removable chips
+  plus an add-`<select>` whose `<optgroup>`s are the regions (a region with
+  nothing left to pick is no header). Four delegated listeners on
+  `#machine-list` (input/change/click/keydown) instead of one per control,
+  because a muscle change re-renders the whole list — followed by
+  `keepInView` on that row's muscle select, which the grown chip row above
+  would otherwise push down; the label is staged on `input` like the
+  card's. Same flag/brand invariants as the card (flags deleted, never
+  false), same `save()` — undo covers it. The
   Location card holds `meta.postcode` and an `#gym-osm` search link built by
   `osmUrl()` (exported for the tests) — the card is NOT re-rendered on a
   meta edit (that would fight the keyboard), so `bindMeta` refreshes the

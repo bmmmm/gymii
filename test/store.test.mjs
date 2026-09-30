@@ -749,4 +749,71 @@ assert.ok(twoGyms - store.storedBytes() > 2000, 'and deleting it gives the space
 store.clearAll();
 assert.ok(store.storedBytes() < 200, 'an empty install counts next to nothing');
 
+// --- muscles come grouped by region, and the flat list is DERIVED from it ---
+// One source: a muscle in two regions would render as two chips that toggle
+// the same value, and the workout-name regions would drift from the picker.
+const regionMuscles = store.MUSCLE_REGIONS.flatMap((r) => r.muscles);
+assert.ok(store.MUSCLE_REGIONS.length >= 5, 'enough regions to be worth grouping');
+assert.ok(store.MUSCLE_REGIONS.every((r) => r.label && r.muscles.length > 0),
+  'every region has a label and at least one muscle');
+assert.equal(new Set(regionMuscles).size, regionMuscles.length, 'no muscle sits in two regions');
+assert.deepEqual(store.MUSCLE_GROUPS, regionMuscles, 'the flat pick list is the regions flattened');
+assert.deepEqual(store.suggestWorkoutNames(['lg1'], {
+  machines: [{ id: 'lg1', muscles: ['Quads', 'Glutes'] }],
+}), ['Leg day', 'Legs'], 'the name suggester still reads its regions off the same table');
+
+// --- the brand lives on the gym; a machine only carries its own when it differs ---
+const branded = store.newLayout('Branded');
+branded.machines.push(
+  { id: 'b1', num: 1, label: 'Chest press', x: 2, y: 2, w: 4, h: 3, settingsFields: [], brand: 'Technogym' },
+  { id: 'b2', num: 2, label: 'Leg press', x: 8, y: 2, w: 4, h: 3, settingsFields: [], brand: 'Technogym' },
+  { id: 'b3', num: 3, label: 'Rower', x: 14, y: 2, w: 4, h: 3, settingsFields: [], brand: 'Concept2' },
+  { id: 'b4', num: 4, label: 'Rack', x: 20, y: 2, w: 4, h: 3, settingsFields: [] },
+);
+branded.meta.city = 'Berlin';
+assert.equal(store.machineBrand(branded, branded.machines[3]), '', 'no brand anywhere: empty, not undefined');
+assert.equal(store.machineBrand(branded, branded.machines[2]), 'Concept2', 'a machine\'s own brand');
+assert.equal(store.machineBrand(null, branded.machines[2]), 'Concept2', 'and it needs no layout to say so');
+
+const machineFields = () => JSON.stringify(branded.machines);
+const before = machineFields();
+store.setGymBrand(branded, ' Technogym ');
+assert.equal(branded.meta.brand, 'Technogym', 'the gym brand is stored trimmed');
+assert.equal(branded.meta.city, 'Berlin', 'the rest of meta is untouched');
+// No machine is rewritten — a fold would sync as two separate parts (meta
+// is one LWW blob, machines merge per id) and a lost race would strip every
+// folded machine of its brand; and a mis-tapped chip would erase overrides.
+assert.equal(machineFields(), before, 'setting the gym brand touches no machine');
+assert.equal(store.machineBrand(branded, branded.machines[0]), 'Technogym', 'resolved: a copy of the gym\'s reads the same');
+assert.equal(store.machineBrand(branded, branded.machines[2]), 'Concept2', 'resolved: its own wins');
+assert.equal(store.machineBrand(branded, branded.machines[3]), 'Technogym', 'resolved: unbranded inherits');
+assert.equal(store.ownBrand(branded, branded.machines[0]), '', 'a copy of the gym\'s brand is no OWN brand');
+assert.equal(store.ownBrand(branded, branded.machines[2]), 'Concept2', 'a different one is');
+assert.equal(store.ownBrand(branded, branded.machines[3]), '', 'none is none');
+
+store.setGymBrand(branded, '');
+assert.equal('brand' in branded.meta, false, 'clearing deletes the field — exports stay clean');
+assert.equal(machineFields(), before, 'clearing the gym brand touches no machine either');
+assert.equal(store.ownBrand(branded, branded.machines[0]), 'Technogym', 'without a gym brand the copy IS the machine\'s own again');
+
+// typed text lands on the spelling already in use, case-insensitively —
+// the chips-over-free-text rule holds for what the free text produces
+assert.equal(store.matchBrand('cybex'), 'Cybex', 'pick-list spelling wins');
+assert.equal(store.matchBrand('  technogym '), 'Technogym', 'trimmed first');
+assert.equal(store.matchBrand('PANATTA', ['gym80']), 'Panatta', 'extras do not shadow the list');
+assert.equal(store.matchBrand('MYGYM', ['MyGym', 'Cybex']), 'MyGym', 'a brand the gym already uses is matched too');
+assert.equal(store.matchBrand('Acme Iron'), 'Acme Iron', 'unknown text comes back as typed');
+assert.equal(store.matchBrand('', ['', undefined]), '', 'empty stays empty, and empty extras match nothing');
+
+// the gym brand travels with the template like the address does
+store.saveLayout(branded);
+store.setGymBrand(branded, 'gym80');
+store.saveLayout(branded);
+const brandedTpl = JSON.parse(JSON.stringify(store.exportGymTemplate()));
+assert.equal(brandedTpl.gym.meta.brand, 'gym80', 'the gym brand is in the template');
+store.clearAll();
+store.importData(brandedTpl);
+assert.equal(store.getLayout().meta.brand, 'gym80', 'and survives the round-trip');
+store.clearAll();
+
 console.log('store roundtrip: all assertions passed');

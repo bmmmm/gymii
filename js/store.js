@@ -264,12 +264,21 @@ function addTombstone(kind, id, at = Date.now()) {
 }
 
 // Canonical pick lists — selectable chips beat free text (fewer typos).
-export const MUSCLE_GROUPS = [
-  'Chest', 'Upper back', 'Lower back', 'Lats', 'Shoulders', 'Traps',
-  'Biceps', 'Triceps', 'Forearms', 'Abs', 'Obliques',
-  'Quads', 'Hamstrings', 'Glutes', 'Calves', 'Adductors', 'Abductors',
-  'Full body',
+// Muscles come grouped by body region: the machine card renders one chip
+// row per region (eighteen flat chips were a wall nobody could scan), the
+// list editor's muscle dropdown uses the same groups as optgroups, and
+// suggestWorkoutNames() below reads its region names off the same table —
+// ONE source, so a muscle can never sit in two regions.
+export const MUSCLE_REGIONS = [
+  { label: 'Chest', muscles: ['Chest'] },
+  { label: 'Back', muscles: ['Upper back', 'Lower back', 'Lats', 'Traps'] },
+  { label: 'Shoulders', muscles: ['Shoulders'] },
+  { label: 'Arms', muscles: ['Biceps', 'Triceps', 'Forearms'] },
+  { label: 'Core', muscles: ['Abs', 'Obliques'] },
+  { label: 'Legs', muscles: ['Quads', 'Hamstrings', 'Glutes', 'Calves', 'Adductors', 'Abductors'] },
+  { label: 'Full body', muscles: ['Full body'] },
 ];
+export const MUSCLE_GROUPS = MUSCLE_REGIONS.flatMap((r) => r.muscles);
 
 export const ZONE_LABELS = [
   'Machines', 'Free weights', 'Cardio', 'Functional', 'Stretching',
@@ -286,6 +295,46 @@ export const MACHINE_BRANDS = [
   'Nautilus', 'gym80', 'Panatta', 'Hoist', 'Body-Solid', 'Keiser',
   'Concept2', 'Eleiko', 'Rogue', 'Milon', 'Schnell', 'Woodway', 'StairMaster',
 ];
+
+// A gym mostly has ONE brand of machines, so the brand lives on the gym
+// (`layout.meta.brand` — inside meta, so template/backup/sync carry it the
+// way they carry the address) and a machine's own `brand` is the exception
+// for the odd rower or rack. Absent on the machine = "the gym's". Every
+// consumer that shows or exports a brand resolves it through here.
+export const machineBrand = (layout, machine) => machine?.brand || layout?.meta?.brand || '';
+
+// A machine's OWN brand, or '' when it follows the gym — the editors show a
+// machine that carries the gym's brand by name exactly like one that
+// carries none (an imported template lists it per machine; the two are the
+// same fact). The field itself is left alone: deleting copies on a gym-brand
+// change would sync as two separate parts (meta is one LWW blob, machines
+// merge per id) and a lost race would strip every machine of its brand.
+export const ownBrand = (layout, machine) => {
+  const b = machine?.brand || '';
+  return b && b !== (layout?.meta?.brand || '') ? b : '';
+};
+
+// Sets (or, with '', clears) the gym's brand. Touches no machine — see
+// ownBrand. Mutates in place; the caller saves.
+export function setGymBrand(layout, brand) {
+  const v = (brand || '').trim();
+  layout.meta = { ...(layout.meta || {}) };
+  if (v) layout.meta.brand = v;
+  else delete layout.meta.brand;
+  return layout;
+}
+
+// Typed brand text onto the spelling already in use: the pick list, plus
+// whatever `extra` names the caller knows (the gym's brand, the brands on
+// its machines). Case-insensitive, so "cybex" becomes the Cybex chip and
+// never a second chip that toggles the first — the chips-over-free-text
+// rule holds for what the free text produces, too. Unknown text comes back
+// trimmed, as typed.
+export function matchBrand(text, extra = []) {
+  const v = (text || '').trim();
+  const q = v.toLowerCase();
+  return [...extra, ...MACHINE_BRANDS].find((b) => b && b.toLowerCase() === q) ?? v;
+}
 
 // Stacking order for map shapes, as a pick list rather than a free number:
 // three named layers are what someone arranging a floor plan actually
@@ -805,26 +854,9 @@ export const layoutMuscles = (layout) => [...new Set(layout.machines.flatMap((m)
 // anything enumerable, and one tap beats typing "Push day" for the ninth
 // time. Free text stays available for everything these can't guess.
 
-const MUSCLE_REGION = {
-  Chest: 'Chest',
-  'Upper back': 'Back',
-  'Lower back': 'Back',
-  Lats: 'Back',
-  Traps: 'Back',
-  Shoulders: 'Shoulders',
-  Biceps: 'Arms',
-  Triceps: 'Arms',
-  Forearms: 'Arms',
-  Abs: 'Core',
-  Obliques: 'Core',
-  Quads: 'Legs',
-  Hamstrings: 'Legs',
-  Glutes: 'Legs',
-  Calves: 'Legs',
-  Adductors: 'Legs',
-  Abductors: 'Legs',
-  'Full body': 'Full body',
-};
+// muscle -> region name, derived from MUSCLE_REGIONS (the pick list above)
+const MUSCLE_REGION = Object.fromEntries(
+  MUSCLE_REGIONS.flatMap((r) => r.muscles.map((mu) => [mu, r.label])));
 const PUSH = new Set(['Chest', 'Shoulders', 'Triceps']);
 const PULL = new Set(['Lats', 'Upper back', 'Lower back', 'Traps', 'Biceps']);
 

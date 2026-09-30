@@ -15,8 +15,11 @@ ever sees ciphertext.
   lockers, and machines you can tap. Everything starts locked so nothing gets
   nudged by accident — double-tap an item to unlock it for moving and
   resizing, double-tap again to lock it. Zones and walls sit on three
-  layers, so a small area inside a big one stays visible. Machines carry a brand and model, the gym its full address with a
-  link straight to OpenStreetMap. Undo/redo included, and typing a machine
+  layers, so a small area inside a big one stays visible. The gym carries
+  its brand once (a machine only says so when it differs), its full address
+  with a link straight to OpenStreetMap, and a list editor that fixes every
+  machine's type, brand and muscles in one pass without a tap on the plan
+  per machine. Undo/redo included, and typing a machine
   number lights it up on the plan. One tap away from the Train hub. Optional:
   draw it once your gym is in there and gymii can point you at the next
   machine.

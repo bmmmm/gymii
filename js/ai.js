@@ -4,7 +4,7 @@
 
 import {
   getLayout, getWorkouts, getSettings, saveSettings, importData, distUnit,
-  getActive, getPlans, planFromImport, savePlan,
+  getActive, getPlans, planFromImport, savePlan, ownBrand,
 } from './store.js';
 import { openPlanBuilder } from './train.js';
 import { twoTapConfirm, plural, dateValue } from './ui.js';
@@ -158,10 +158,12 @@ export function buildAiExport() {
     // and pasted-back answers use it (see store.js exportGymTemplate)
     gym: layout ? {
       name: layout.name,
+      // the gym's own brand; a machine lists one only where it differs
+      ...(layout.meta?.brand ? { brand: layout.meta.brand } : {}),
       machines: layout.machines.map((m) => ({
         num: m.num,
         label: m.label,
-        ...(m.brand ? { brand: m.brand } : {}),
+        ...(ownBrand(layout, m) ? { brand: m.brand } : {}),
         ...(m.model ? { model: m.model } : {}),
         ...(m.cardio ? { cardio: true } : {}),
         ...(m.bodyweight ? { bodyweight: true } : {}),

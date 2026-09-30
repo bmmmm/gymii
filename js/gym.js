@@ -1,7 +1,7 @@
 import {
   getLayout, saveLayout, newLayout, uid, importData, defaultOutline, exportGymTemplate,
-  getSettings, saveSettings, usageByMachine, getActive,
-  MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS, MACHINE_BRANDS, MAP_LAYERS,
+  getSettings, saveSettings, usageByMachine, getActive, ownBrand, setGymBrand, matchBrand,
+  MUSCLE_REGIONS, MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS, MACHINE_BRANDS, MAP_LAYERS,
 } from './store.js';
 import { esc, download, twoTapConfirm, keepInView, preserveFocus } from './ui.js';
 import {
@@ -64,6 +64,22 @@ export function renderGym(root) {
   // opening the Gym is always a read-only starting point.
   let unlockedId = null;
   let lastTap = null; // { id, t, x, y } — the last contact that still counts as a tap
+  // The Machines card's list editor: open stays open while you hop between
+  // the map and the card, so a round of "tap machine, fix it, back" never
+  // re-expands it by hand. Dies with the editor like everything else here.
+  let listOpen = false;
+  // The machine card's brand picker is folded away behind "Different
+  // brand?" — a gym has ONE brand of machines nearly everywhere, so the
+  // row of nineteen chips earned its place on the gym, not on every
+  // machine. Reset on every selection change (see select()).
+  let brandOpen = false;
+  // The list editor's "Other…" brand rows: id -> text typed so far. A
+  // muscle tap in ANOTHER row re-renders the whole list; without this the
+  // half-typed brand would be gone and the row folded.
+  const otherText = new Map();
+  // The Templates card's browser is opened on demand; the Layout view now
+  // re-renders itself (brand chips, list edits), so it has to come back.
+  let tplOpen = false;
 
   root.innerHTML = `
     <div class="spread gym-head">
@@ -174,6 +190,7 @@ export function renderGym(root) {
     if (selectedId === id) return;
     selectedId = id;
     unlockedId = null; // one item at a time; picking another locks the old
+    brandOpen = false;
     renderProps();
   }
 
@@ -538,6 +555,171 @@ export function renderGym(root) {
     });
   };
 
+  // --- the list editor: every machine as one row of dropdowns ---
+  // The map is where a machine gets PLACED; this is where sixteen of them
+  // get their type, brand and muscles fixed in one pass without a tap on
+  // the plan per machine. Same fields, same invariants (absent flags,
+  // brand only when it differs from the gym's), same save().
+  const TYPE_OPTIONS = [['', 'Strength'], ['cardio', 'Cardio'], ['bodyweight', 'Bodyweight']];
+  // ids from a template are untrusted text; `CSS` does not exist in the
+  // logic tests' Node, where the selector is never resolved anyway
+  const cssId = (id) => (typeof CSS === 'undefined' ? id : CSS.escape(id));
+  const machineType = (m) => (m.cardio ? 'cardio' : m.bodyweight ? 'bodyweight' : '');
+  const option = (value, label, selected) =>
+    `<option value="${esc(value)}"${selected ? ' selected' : ''}>${esc(label)}</option>`;
+
+  function machineListHtml() {
+    if (!layout.machines.length) return '<p class="muted">No machines yet — tap + Machine above the plan.</p>';
+    const gymBrand = layout.meta?.brand || '';
+    // every brand in use anywhere in this gym, like the machine card —
+    // the eighth Panatta must be a pick, not a typing exercise
+    const brands = [...new Set([...MACHINE_BRANDS, ...layout.machines.map((m) => m.brand)])]
+      .filter((b) => b && b !== gymBrand);
+    const rows = [...layout.machines].sort((a, b) => a.num - b.num).map((m) => {
+      const muscles = m.muscles || [];
+      const own = ownBrand(layout, m);
+      const other = otherText.get(m.id);
+      const groups = MUSCLE_REGIONS
+        .map((r) => ({ label: r.label, muscles: r.muscles.filter((mu) => !muscles.includes(mu)) }))
+        .filter((r) => r.muscles.length); // a region fully assigned is no header
+      return `<div class="mrow" data-id="${esc(m.id)}">
+        <div class="mrow-head">
+          <input class="mrow-num" type="number" inputmode="numeric" min="1" data-field="num"
+            value="${m.num}" aria-label="Number">
+          <input id="ml-label-${esc(m.id)}" class="mrow-label" type="text" data-field="label"
+            value="${esc(m.label)}" aria-label="Label">
+        </div>
+        <div class="mrow-selects">
+          <select data-field="type" aria-label="Type">
+            ${TYPE_OPTIONS.map(([v, l]) => option(v, l, machineType(m) === v)).join('')}
+          </select>
+          <select data-field="brand" aria-label="Brand">
+            ${option('', gymBrand ? `${gymBrand} (gym)` : 'No brand', !own && other === undefined)}
+            ${brands.map((b) => option(b, b, own === b)).join('')}
+            ${option('__other', 'Other…', other !== undefined)}
+          </select>
+        </div>
+        <div class="row mrow-other"${other === undefined ? ' hidden' : ''}>
+          <input id="ml-other-${esc(m.id)}" type="text" enterkeyhint="done" data-field="other"
+            placeholder="Other brand…" aria-label="Other brand" value="${esc(other || '')}">
+          <button type="button" class="btn btn-inline mrow-other-set">Set</button>
+        </div>
+        <div class="mrow-muscles">
+          ${muscles.map((mu) => `<button type="button" class="chip sm sel" data-muscle="${esc(mu)}"
+            aria-label="Remove ${esc(mu)}">${esc(mu)} ✕</button>`).join('')}
+          <select id="ml-muscle-${esc(m.id)}" data-field="muscle" aria-label="Add muscle">
+            ${option('', '+ Muscle', true)}
+            ${groups.map((r) => `<optgroup label="${esc(r.label)}">${
+              r.muscles.map((mu) => option(mu, mu, false)).join('')
+            }</optgroup>`).join('')}
+          </select>
+        </div>
+      </div>`;
+    }).join('');
+    return `<div class="mlist" id="machine-list">${rows}</div>`;
+  }
+
+  // One delegated listener per event on the list, not one per control —
+  // the rows are re-rendered whole whenever a muscle changes.
+  function wireMachineList() {
+    const list = props.querySelector('#machine-list');
+    if (!list) return;
+    const rowMachine = (target) => {
+      const row = target.closest('.mrow');
+      return row ? layout.machines.find((m) => m.id === row.dataset.id) : null;
+    };
+    // typing is staged like the card's text fields: a re-render from
+    // another row must not eat a half-typed label
+    list.addEventListener('input', (e) => {
+      const m = rowMachine(e.target);
+      if (!m) return;
+      if (e.target.dataset.field === 'label') m.label = e.target.value;
+      if (e.target.dataset.field === 'other') otherText.set(m.id, e.target.value);
+    });
+    list.addEventListener('change', (e) => {
+      const m = rowMachine(e.target);
+      if (!m) return;
+      const v = e.target.value;
+      switch (e.target.dataset.field) {
+        case 'num':
+          m.num = Math.max(1, Math.round(parseFloat(v) || 1));
+          e.target.value = m.num;
+          save();
+          redraw();
+          return;
+        case 'label':
+          m.label = v.trim() || `Machine ${m.num}`;
+          e.target.value = m.label;
+          save();
+          redraw();
+          return;
+        case 'type':
+          // the two flags are mutually exclusive; absent = strength, and a
+          // flag is deleted (never set false) to keep exports clean
+          delete m.cardio;
+          delete m.bodyweight;
+          if (v) m[v] = true;
+          save();
+          return;
+        case 'brand': {
+          const other = e.target.closest('.mrow').querySelector('.mrow-other');
+          if (v === '__other') {
+            // reveal the text row of THIS row and hand it the keyboard —
+            // no re-render, the select must keep showing "Other…"
+            otherText.set(m.id, otherText.get(m.id) ?? '');
+            other.hidden = false;
+            other.querySelector('input')?.focus?.();
+            return;
+          }
+          otherText.delete(m.id);
+          other.hidden = true;
+          if (v) m.brand = v;
+          else delete m.brand; // the gym's brand — absent, never a copy
+          save();
+          return;
+        }
+        case 'muscle':
+          if (!v) return;
+          m.muscles = [...(m.muscles || []), v];
+          save();
+          renderProps();
+          // the chip row above the select grew — keep the select under the thumb
+          keepInView(props, `#ml-muscle-${cssId(m.id)}`);
+          return;
+        default:
+      }
+    });
+    const setOther = (target) => {
+      const m = rowMachine(target);
+      const input = target.closest('.mrow-other')?.querySelector('input');
+      const v = input?.value.trim();
+      if (!m || !v) return;
+      const gymBrand = layout.meta?.brand || '';
+      const b = matchBrand(v, [gymBrand, ...layout.machines.map((x) => x.brand)]);
+      if (b === gymBrand) delete m.brand;
+      else m.brand = b;
+      otherText.delete(m.id);
+      save();
+      renderProps();
+    };
+    list.addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip[data-muscle]');
+      if (chip) {
+        const m = rowMachine(chip);
+        if (!m) return;
+        m.muscles = (m.muscles || []).filter((x) => x !== chip.dataset.muscle);
+        save();
+        renderProps();
+        keepInView(props, `#ml-muscle-${cssId(m.id)}`);
+        return;
+      }
+      if (e.target.closest('.mrow-other-set')) setOther(e.target);
+    });
+    list.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.closest('.mrow-other')) setOther(e.target);
+    });
+  }
+
   // Every props re-render replaces the whole card, and a chip tap is a
   // re-render — so the text field you were typing in would lose the caret
   // and the keyboard mid-word. preserveFocus puts both back (the fields
@@ -583,6 +765,25 @@ export function renderGym(root) {
     const item = selectedId ? findItem(layout, selectedId) : null;
 
     if (!item) {
+      const gymBrand = layout.meta?.brand || '';
+      // brands machines carry on their own — a template's per-machine
+      // brands, or deliberate exceptions
+      const own = new Map();
+      layout.machines.forEach((m) => {
+        const b = ownBrand(layout, m);
+        if (b) own.set(b, (own.get(b) || 0) + 1);
+      });
+      const ownList = [...own].sort((a, b) => b[1] - a[1]);
+      const gymBrandOptions = [...new Set([...MACHINE_BRANDS, gymBrand, ...own.keys()])].filter(Boolean);
+      const ownText = ownList.map(([b, c]) => `${esc(b)} ×${c}`).join(', ');
+      const brandHint = !gymBrand && ownList.length
+        ? `${ownList[0][1]} of ${layout.machines.length} machines carry ${esc(ownList[0][0])} — tap
+            it to make it the gym's brand; the others keep their own.`
+        : gymBrand && ownList.length
+          ? `Every machine is ${esc(gymBrand)} unless its own card says otherwise — ${ownText} do.`
+          : gymBrand
+            ? `Every machine is ${esc(gymBrand)} unless its own card says otherwise.`
+            : 'Set once — every machine is that brand unless its own card says otherwise.';
       props.innerHTML = `
         <section class="card">
           <h2>Layout</h2>
@@ -609,6 +810,23 @@ export function renderGym(root) {
           editing. Double-tap an item to unlock it for moving and resizing,
           double-tap again to lock it. Tap the outer wall to reshape the floor
           outline.</p>
+        </section>
+        <section class="card">
+          <h2>Machines</h2>
+          <div class="field-block"><span>Brand — tap to set, tap again to clear</span>
+            <div class="chip-select" id="gym-brands">
+              ${gymBrandOptions.map((b) => `<button type="button"
+                class="chip${gymBrand === b ? ' sel' : ''}" data-value="${esc(b)}">${esc(b)}</button>`).join('')}
+            </div>
+            <div class="row">
+              <input id="gym-brand-custom" type="text" enterkeyhint="done" placeholder="Other brand…">
+              <button type="button" id="gym-brand-set" class="btn btn-inline">Set</button>
+            </div>
+            <p class="muted">${brandHint}</p>
+          </div>
+          <button id="edit-machines" class="btn">${listOpen
+    ? 'Hide the list' : `Edit all machines (${layout.machines.length})`}</button>
+          ${listOpen ? machineListHtml() : ''}
         </section>
         <section class="card">
           <h2>Location</h2>
@@ -649,6 +867,34 @@ export function renderGym(root) {
       bindMeta('#gym-city', 'city');
       bindMeta('#gym-country', 'country');
 
+      // Gym brand: same chips as the machine card used to have, once.
+      const applyGymBrand = (v) => {
+        setGymBrand(layout, v);
+        save();
+        renderProps();
+      };
+      props.querySelector('#gym-brands').addEventListener('click', (e) => {
+        const chip = e.target.closest('.chip');
+        if (!chip) return;
+        applyGymBrand(gymBrand === chip.dataset.value ? '' : chip.dataset.value);
+      });
+      const setGymBrandCustom = () => {
+        const v = props.querySelector('#gym-brand-custom').value.trim();
+        if (!v) return;
+        applyGymBrand(matchBrand(v, [...own.keys()]));
+        // the chip row above grew by one — keep the field where it was
+        keepInView(props, '#gym-brand-custom');
+      };
+      props.querySelector('#gym-brand-set').addEventListener('click', setGymBrandCustom);
+      props.querySelector('#gym-brand-custom').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') setGymBrandCustom();
+      });
+      props.querySelector('#edit-machines').addEventListener('click', () => {
+        listOpen = !listOpen;
+        renderProps();
+      });
+      if (listOpen) wireMachineList();
+
       props.querySelector('#save-template').addEventListener('click', () => {
         const slug = [layout.name, layout.meta?.city].filter(Boolean).join('-')
           .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'gym';
@@ -656,8 +902,10 @@ export function renderGym(root) {
       });
 
       props.querySelector('#load-template').addEventListener('click', () => {
+        tplOpen = true;
         openTemplateBrowser(props.querySelector('#template-browser'));
       });
+      if (tplOpen) openTemplateBrowser(props.querySelector('#template-browser'));
       props.querySelector('#gym-name').addEventListener('change', (e) => {
         layout.name = e.target.value.trim() || 'My gym';
         save();
@@ -682,9 +930,22 @@ export function renderGym(root) {
 
     if (!item.kind) { // machine
       const muscles = item.muscles || [];
-      const muscleOptions = [...MUSCLE_GROUPS, ...muscles.filter((m) => !MUSCLE_GROUPS.includes(m))];
+      // one chip row per body region; muscles typed in elsewhere (an
+      // imported template's own vocabulary) keep a row of their own
+      const custom = muscles.filter((m) => !MUSCLE_GROUPS.includes(m));
+      const muscleGroups = [...MUSCLE_REGIONS, ...(custom.length ? [{ label: 'Other', muscles: custom }] : [])];
       const settingsOptions = [...new Set([...COMMON_SETTINGS, ...item.settingsFields])];
-      const brandOptions = [...new Set([...MACHINE_BRANDS, ...(item.brand ? [item.brand] : [])])];
+      const gymBrand = layout.meta?.brand || '';
+      const own = ownBrand(layout, item); // '' when it follows the gym
+      // the gym's brand is what "no own brand" means, so it is no option here
+      const brandOptions = [...new Set([...MACHINE_BRANDS, ...layout.machines.map((m) => m.brand)])]
+        .filter((b) => b && b !== gymBrand);
+      const brandLine = own
+        ? `<strong>${esc(own)}</strong> — this machine's own${gymBrand
+          ? `; the gym's is ${esc(gymBrand)}` : ''}.`
+        : gymBrand
+          ? `<strong>${esc(gymBrand)}</strong> — the gym's brand.`
+          : 'No brand — set the gym\'s on the Layout card, or this machine\'s own.';
       const chipRow = (options, selected) => options.map((o) =>
         `<button type="button" class="chip${selected.includes(o) ? ' sel' : ''}"
           data-value="${esc(o)}">${esc(o)}</button>`).join('');
@@ -700,15 +961,19 @@ export function renderGym(root) {
             </div>
           </label>
           <label class="field"><span>Label</span><input id="m-label" type="text" value="${esc(item.label)}"></label>
-          <div class="field-block"><span>Brand — tap to set, tap again to clear</span>
+          <div class="field-block"><span>Brand</span>
+            <p class="brand-line">${brandLine}
+              <button type="button" id="m-brand-other" class="linkish">${brandOpen
+    ? 'Keep it' : 'Different brand?'}</button></p>
+            ${brandOpen ? `
+            <input id="m-brand-search" type="text" enterkeyhint="done" placeholder="Search or type a brand…">
             <div class="chip-select" id="m-brands">
               ${brandOptions.map((b) => `<button type="button"
-                class="chip${item.brand === b ? ' sel' : ''}" data-value="${esc(b)}">${esc(b)}</button>`).join('')}
+                class="chip${own === b ? ' sel' : ''}" data-value="${esc(b)}">${esc(b)}</button>`).join('')}
             </div>
-            <div class="row">
-              <input id="m-brand-custom" type="text" enterkeyhint="done" placeholder="Other brand…">
-              <button type="button" id="m-brand-set" class="btn btn-inline">Set</button>
-            </div>
+            <button type="button" id="m-brand-set" class="btn btn-inline" hidden>Set</button>` : ''}
+            ${own ? `<button type="button" id="m-brand-clear" class="btn">${gymBrand
+    ? `Use the gym's brand (${esc(gymBrand)})` : 'Clear the brand'}</button>` : ''}
           </div>
           <label class="field"><span>Model</span><input id="m-model" type="text"
             placeholder="e.g. Selection Pro Chest Press" value="${esc(item.model || '')}"></label>
@@ -724,7 +989,12 @@ export function renderGym(root) {
             <div id="m-color">${colorRow(item.color)}</div>
           </div>
           <div class="field-block"><span>Muscles — tap to toggle</span>
-            <div class="chip-select" id="m-muscles">${chipRow(muscleOptions, muscles)}</div>
+            <div id="m-muscles">
+              ${muscleGroups.map((g) => `<div class="chip-group">
+                <span class="chip-group-label">${esc(g.label)}</span>
+                <div class="chip-select">${chipRow(g.muscles, muscles)}</div>
+              </div>`).join('')}
+            </div>
           </div>
           <div class="field-block"><span>Settings — the machine's adjustable parts</span>
             <div class="chip-select" id="m-fields">${chipRow(settingsOptions, item.settingsFields)}</div>
@@ -780,28 +1050,49 @@ export function renderGym(root) {
       };
       stageText('#m-model', (v) => { item.model = v; }, optionalText('model'));
 
-      props.querySelector('#m-brands').addEventListener('click', (e) => {
-        const chip = e.target.closest('.chip');
-        if (!chip) return;
-        if (item.brand === chip.dataset.value) delete item.brand;
-        else item.brand = chip.dataset.value;
+      // Brand: the gym's unless this machine says otherwise. Typed text
+      // lands on an existing spelling (matchBrand), and picking or typing
+      // the gym's brand is the same as clearing — absent, never a copy.
+      const setBrand = (text) => {
+        const v = matchBrand(text, [gymBrand, ...brandOptions]);
+        if (v && v !== gymBrand) item.brand = v;
+        else delete item.brand;
+        brandOpen = false;
         save();
         renderProps();
-      });
-      const setBrand = () => {
-        const input = props.querySelector('#m-brand-custom');
-        const v = input.value.trim();
-        if (!v) return;
-        item.brand = v;
-        save();
-        renderProps();
-        // the chip row above grew by one — keep the field where it was
-        keepInView(props, '#m-brand-custom');
       };
-      props.querySelector('#m-brand-set').addEventListener('click', setBrand);
-      props.querySelector('#m-brand-custom').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') setBrand();
+      props.querySelector('#m-brand-other').addEventListener('click', () => {
+        brandOpen = !brandOpen;
+        renderProps();
+        if (brandOpen) keepInView(props, '#m-brand-search', { focus: true });
       });
+      props.querySelector('#m-brand-clear')?.addEventListener('click', () => setBrand(''));
+      if (brandOpen) {
+        const search = props.querySelector('#m-brand-search');
+        const setBtn = props.querySelector('#m-brand-set');
+        // filter the chips in place — a re-render per keystroke would fight
+        // the keyboard; the Set button appears once the text matches no chip
+        search.addEventListener('input', () => {
+          const q = search.value.trim().toLowerCase();
+          let exact = false;
+          props.querySelectorAll('#m-brands .chip').forEach((c) => {
+            const hit = c.dataset.value.toLowerCase();
+            c.hidden = !hit.includes(q);
+            if (hit === q) exact = true;
+          });
+          setBtn.hidden = !q || exact;
+          setBtn.textContent = `Set "${search.value.trim()}"`;
+        });
+        search.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && search.value.trim()) setBrand(search.value);
+        });
+        setBtn.addEventListener('click', () => { if (search.value.trim()) setBrand(search.value); });
+        props.querySelector('#m-brands').addEventListener('click', (e) => {
+          const chip = e.target.closest('.chip');
+          if (!chip) return;
+          setBrand(own === chip.dataset.value ? '' : chip.dataset.value);
+        });
+      }
 
       // The two type flags are mutually exclusive; absent = strength
       // machine, and flags are deleted (not set false) to keep exports clean.

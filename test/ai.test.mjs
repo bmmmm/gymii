@@ -31,6 +31,22 @@ store.savePlans([{
 
 const exported = JSON.parse(buildAiExport());
 assert.equal(exported.plans.length, 1, 'saved plans are exported');
+
+// --- the brand travels once, on the gym; a machine names one only where it differs ---
+assert.ok(!('brand' in exported.gym), 'no gym brand: none exported');
+const brandedGym = store.getLayout();
+brandedGym.meta.brand = 'Technogym';
+brandedGym.machines[0].brand = 'Technogym'; // a copy of the gym's — an imported template lists it per machine
+brandedGym.machines[1].brand = 'Woodway';
+store.saveLayout(brandedGym);
+const brandedExport = JSON.parse(buildAiExport());
+assert.equal(brandedExport.gym.brand, 'Technogym', 'the gym brand is exported at gym level');
+assert.equal(brandedExport.gym.machines[0].brand, undefined, 'a copy of the gym\'s is not repeated per machine');
+assert.equal(brandedExport.gym.machines[1].brand, 'Woodway', 'a different brand is');
+delete brandedGym.meta.brand;
+delete brandedGym.machines[0].brand;
+delete brandedGym.machines[1].brand;
+store.saveLayout(brandedGym);
 const [p] = exported.plans;
 assert.equal(p.id, 'p1', 'the id rides along — it is the replace handle');
 assert.deepEqual(p.days, [1, 4]);

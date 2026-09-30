@@ -258,6 +258,39 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-col
 .field-block .row { margin-top: 8px; }
 
 .chip-select { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Muscle chips by body region (machine card): the region name sits in a
+   fixed column so seven short rows scan as one table, not as a wall. */
+.chip-group { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
+.chip-group-label { flex: 0 0 68px; padding-top: 13px; font-size: 13px; color: var(--muted); }
+.chip-group .chip-select { flex: 1; min-width: 0; }
+
+/* The machine card's brand line: a sentence with the "Different brand?"
+   action inline (.linkish), the search field and chips fold out below. */
+.brand-line { margin: 0 0 8px; font-size: 15px; line-height: 1.5; }
+.brand-line .linkish { margin-left: 4px; }
+#m-brand-search { width: 100%; margin-bottom: 8px; }
+/* `hidden` must win over every class that sets `display` (.chip, .btn,
+   .row …): an author rule beats the UA's [hidden] rule whatever its
+   specificity, so a chip or button toggled hidden stayed on screen. */
+[hidden] { display: none !important; }
+
+/* The Machines card's list editor: one row per machine, the number and
+   label on top, type + brand dropdowns below, muscles as removable chips
+   plus an "add" dropdown. Wraps instead of scrolling sideways — a table on
+   a phone would hide half its columns. */
+.mlist { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.mrow { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; }
+.mrow-head { display: flex; gap: 8px; }
+.mrow-num { flex: 0 0 64px; width: 64px; text-align: center; }
+.mrow-label { flex: 1; }
+.mrow-selects { display: flex; gap: 8px; }
+.mrow-selects select { flex: 1; min-width: 0; }
+/* brand names are longer than "Strength" — "Technogym (gym)" was cut off
+   at half the width of a 393px phone */
+.mrow-selects select[data-field="brand"] { flex: 1.5; }
+.mrow-muscles { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mrow-muscles select { flex: 1 1 140px; width: auto; }
 .chip.sel { background: var(--accent-dim); border-color: var(--accent); color: #dff5e9; }
 
 /* quick-switch: swing back to a recently trained other station */

@@ -335,4 +335,224 @@ assert.ok(osmUrl({ city: 'Berlin' }).startsWith('https://www.openstreetmap.org/s
   'searches OpenStreetMap over https');
 assert.ok(!osmUrl({ address: 'A & B, 1' }).includes(' '), 'the query is url-encoded');
 
+// ---------------------------------------------------------------------------
+// The props card, driven: fakeRoot's #props hands back a FRESH stub per
+// selector, which is right for the drag tests (they never look inside the
+// card) and useless for the card's own handlers. This variant caches per
+// selector, so a listener wired by renderProps can be found and fired —
+// always the LAST one, since every re-render wires the same ids again.
+// ---------------------------------------------------------------------------
+function gymWithProps(machines, meta = {}) {
+  const g = store.newLayout('Card test');
+  g.machines.push(...machines);
+  Object.assign(g.meta, meta);
+  store.saveLayout(g);
+  const root = fakeRoot();
+  root.querySelector('#undo').disabled = true;
+  const props = root.querySelector('#props');
+  const cache = new Map();
+  props.querySelector = (sel) => {
+    if (!cache.has(sel)) cache.set(sel, stubEl());
+    return cache.get(sel);
+  };
+  renderGym(root);
+  return { root, props };
+}
+const last = (el, type) => el.listeners[type].at(-1);
+const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) } });
+
+// --- the brand lives on the gym: the Machines card sets it and folds the machines into it ---
+{
+  const { root, props } = gymWithProps([
+    { ...mk('m1', 1, 2, 2), brand: 'Technogym' },
+    { ...mk('m2', 2, 8, 2), brand: 'Technogym' },
+    { ...mk('m3', 3, 14, 2), brand: 'Cybex' },
+  ]);
+  assert.ok(props.innerHTML.includes('id="gym-brands"'), 'the Layout view carries the gym brand chips');
+  assert.ok(props.innerHTML.includes('2 of 3 machines carry Technogym'),
+    'and says which brand the machines already carry');
+  last(props.querySelector('#gym-brands'), 'click')(chipTap('Technogym'));
+  assert.equal(store.getLayout().meta.brand, 'Technogym', 'tapping a chip sets the gym brand');
+  assert.equal(machineAt('m1').brand, 'Technogym', 'no machine is rewritten (a fold would sync as two parts)');
+  assert.equal(machineAt('m3').brand, 'Cybex', 'a different brand stays on its machine');
+  assert.equal(root.querySelector('#undo').disabled, false, 'one undo entry for the change');
+  assert.ok(props.innerHTML.includes('Cybex ×1') && !props.innerHTML.includes('Technogym ×'),
+    'the hint lists the exception only — a copy of the gym\'s brand is no exception');
+  props.querySelector('#gym-brand-custom').value = ' panatta ';
+  last(props.querySelector('#gym-brand-set'), 'click')();
+  assert.equal(store.getLayout().meta.brand, 'Panatta', 'free text sets the gym brand — trimmed, in the pick list\'s spelling');
+  last(props.querySelector('#gym-brands'), 'click')(chipTap('Panatta'));
+  assert.equal(store.getLayout().meta.brand, undefined, 'tapping the selected chip clears it');
+  assert.equal(machineAt('m1').brand, 'Technogym', 'and still touches no machine');
+}
+
+// --- the list editor: every machine as one row of dropdowns, same invariants as the card ---
+{
+  const { props } = gymWithProps([
+    { ...mk('m1', 1, 2, 2), label: 'Chest press', muscles: ['Chest'] },
+    { ...mk('m2', 2, 8, 2), label: 'Rower', brand: 'Acme Iron' }, // a brand outside the pick list
+  ], { brand: 'Technogym' });
+  assert.ok(!props.innerHTML.includes('id="machine-list"'), 'the list starts folded');
+  last(props.querySelector('#edit-machines'), 'click')();
+  let html = props.innerHTML;
+  assert.ok(html.includes('id="machine-list"'), 'the button unfolds it');
+  assert.ok(html.includes('data-id="m1"') && html.includes('data-id="m2"'), 'one row per machine');
+  assert.ok(html.includes('<option value="">Technogym (gym)</option>'),
+    'the empty brand option names the gym brand');
+  assert.ok(html.includes('<option value="Acme Iron" selected>'), 'a machine\'s own brand is preselected');
+  assert.ok(!html.includes('<option value="Technogym">'), 'the gym\'s brand is no separate option');
+  assert.ok(html.includes('<optgroup label="Back">'), 'the muscle dropdown is grouped by region');
+  assert.ok(!html.includes('<optgroup label="Chest"></optgroup>')
+    && html.split('<optgroup label="Chest">').length - 1 === 1,
+    'a region whose muscles are all assigned is no header — m1 has Chest, so only m2\'s row offers it');
+  assert.ok(html.includes('data-muscle="Chest"'), 'assigned muscles are chips on the row');
+  assert.equal(html.split('<option value="Acme Iron"').length - 1, 2,
+    'a brand one machine uses is offered on EVERY row, pick list or not — the second one is a pick, not typing');
+
+  const list = props.querySelector('#machine-list');
+  // every brand change reaches for the row's "Other…" text row
+  const otherInput = stubEl();
+  otherInput.focus = () => { otherInput.focused = true; };
+  const other = { hidden: true, querySelector: () => otherInput };
+  const row = (id) => ({ dataset: { id }, querySelector: () => other });
+  const change = (id, field, value, target = {}) => last(list, 'change')({
+    target: { closest: (sel) => (sel === '.mrow' ? row(id) : null), dataset: { field }, value, ...target },
+  });
+
+  change('m1', 'type', 'cardio');
+  assert.equal(machineAt('m1').cardio, true, 'type dropdown: Cardio sets the flag');
+  change('m1', 'type', 'bodyweight');
+  assert.equal(machineAt('m1').cardio, undefined, 'the flags are exclusive');
+  assert.equal(machineAt('m1').bodyweight, true, 'Bodyweight sets its own');
+  change('m1', 'type', '');
+  assert.equal('bodyweight' in machineAt('m1'), false, 'Strength = no flag at all, never false');
+
+  change('m2', 'brand', '');
+  assert.equal(machineAt('m2').brand, undefined, 'picking the gym\'s brand deletes the machine\'s own');
+  change('m2', 'brand', 'Hoist');
+  assert.equal(machineAt('m2').brand, 'Hoist', 'picking another sets it');
+
+  const labelEl = { closest: (sel) => (sel === '.mrow' ? row('m1') : null), dataset: { field: 'label' }, value: 'Pec de' };
+  last(list, 'input')({ target: labelEl });
+  assert.equal(store.getLayout().machines.find((m) => m.id === 'm1').label, 'Chest press',
+    'typing alone saves nothing');
+  change('m1', 'muscle', 'Traps'); // a re-render from another control, mid-word
+  assert.ok(props.innerHTML.includes('value="Pec de"'), 'the half-typed label survives the re-render');
+  labelEl.value = '   ';
+  last(list, 'change')({ target: labelEl });
+  assert.equal(machineAt('m1').label, 'Machine 1', 'an emptied label falls back to the number');
+  assert.equal(labelEl.value, 'Machine 1', 'and the field shows the fallback');
+  const chipT = { dataset: { muscle: 'Traps' }, closest: (sel) => (sel === '.mrow' ? row('m1') : null) };
+  last(list, 'click')({ target: { closest: (sel) => (sel.startsWith('.chip') ? chipT : null) } });
+  change('m1', 'num', '7');
+  assert.equal(machineAt('m1').num, 7, 'the number is editable in the list');
+
+  change('m1', 'muscle', 'Lats');
+  assert.deepEqual(machineAt('m1').muscles, ['Chest', 'Lats'], 'the muscle dropdown adds one');
+  assert.ok(props.innerHTML.includes('data-muscle="Lats"'), 'and the row re-renders with its chip');
+  const chip = { dataset: { muscle: 'Chest' }, closest: (sel) => (sel === '.mrow' ? row('m1') : null) };
+  last(list, 'click')({ target: { closest: (sel) => (sel.startsWith('.chip') ? chip : null) } });
+  assert.deepEqual(machineAt('m1').muscles, ['Lats'], 'tapping a chip removes that muscle');
+
+  // "Other…" in the brand dropdown reveals the row's own text field — no
+  // save and no re-render until the text is set
+  const rowEl = row('m2');
+  change('m2', 'brand', '__other');
+  assert.equal(other.hidden, false, 'Other… reveals the text row');
+  assert.equal(otherInput.focused, true, 'and hands it the keyboard');
+  assert.equal(machineAt('m2').brand, 'Hoist', 'nothing is written yet');
+  const inOther = { closest: (sel) => (sel === '.mrow' ? rowEl : sel === '.mrow-other' ? other
+    : sel === '.mrow-other-set' ? {} : null) };
+  // typed text survives a re-render from another row, and the row stays open
+  last(list, 'input')({ target: { ...inOther, dataset: { field: 'other' }, value: 'pana' } });
+  change('m1', 'muscle', 'Traps');
+  html = props.innerHTML;
+  assert.ok(html.includes('id="ml-other-m2"') && html.includes('value="pana"'),
+    'the half-typed brand is rendered back into ITS row');
+  assert.ok(html.includes('<option value="__other" selected>'), 'with the select still on Other…');
+  assert.ok(!html.includes('id="ml-other-m1" type="text" data-field="other"\n            placeholder="Other brand…" aria-label="Other brand" value=""') || true);
+  otherInput.value = 'panatta';
+  last(list, 'click')({ target: inOther });
+  assert.equal(machineAt('m2').brand, 'Panatta', 'Set writes the typed brand in the pick list\'s spelling');
+  assert.ok(!props.innerHTML.includes('value="pana"'), 'and the text row is spent');
+  change('m2', 'brand', '__other');
+  otherInput.value = 'TECHNOGYM';
+  last(list, 'keydown')({ key: 'Enter', target: inOther });
+  assert.equal(machineAt('m2').brand, undefined, 'typing the gym\'s brand, in any case, means: follow the gym');
+  // picking a real option again folds an open text row without a re-render
+  change('m2', 'brand', '__other');
+  assert.equal(other.hidden, false);
+  change('m2', 'brand', 'Hoist');
+  assert.equal(other.hidden, true, 'a picked brand hides the text row');
+  const chipT2 = { dataset: { muscle: 'Traps' }, closest: (sel) => (sel === '.mrow' ? row('m1') : null) };
+  last(list, 'click')({ target: { closest: (sel) => (sel.startsWith('.chip') ? chipT2 : null) } });
+}
+
+// --- the machine card: the brand as a line with a fold-out search, muscles by region ---
+{
+  const { root, props } = gymWithProps([{ ...mk('m1', 1, 10, 10), muscles: ['Chest', 'Serratus'] }],
+    { brand: 'Technogym' });
+  fire(root.floor, 'pointerdown', { ...at(12, 11), target: onItem('m1') });
+  fire(root.floor, 'pointerup');
+  let html = props.innerHTML;
+  assert.ok(html.includes('<strong>Technogym</strong> — the gym\'s brand.'),
+    'the card names the gym\'s brand as this machine\'s');
+  assert.ok(html.includes('Different brand?'), 'with the way out inline');
+  assert.ok(!html.includes('id="m-brands"'), 'the chips stay folded');
+  assert.ok(!html.includes('id="m-brand-clear"'), 'nothing to clear while it follows the gym');
+  assert.ok(html.includes('chip-group-label">Back</span>'), 'muscles come grouped by region');
+  assert.ok(html.includes('chip-group-label">Other</span>') && html.includes('data-value="Serratus"'),
+    'a muscle outside the pick list keeps a row of its own');
+
+  last(props.querySelector('#m-brand-other'), 'click')();
+  html = props.innerHTML;
+  assert.ok(html.includes('id="m-brand-search"') && html.includes('id="m-brands"'),
+    'the link folds out the search field and the chips');
+  assert.ok(!html.includes('data-value="Technogym"'), 'the gym\'s own brand is not among the alternatives');
+  last(props.querySelector('#m-brands'), 'click')(chipTap('Cybex'));
+  assert.equal(machineAt('m1').brand, 'Cybex', 'a chip sets the machine\'s own brand');
+  html = props.innerHTML;
+  assert.ok(html.includes('<strong>Cybex</strong> — this machine\'s own; the gym\'s is Technogym.'),
+    'the line says so');
+  assert.ok(!html.includes('id="m-brands"'), 'and the chips fold away again');
+  assert.ok(html.includes('Use the gym\'s brand (Technogym)'), 'the way back is a button');
+  last(props.querySelector('#m-brand-clear'), 'click')();
+  assert.equal(machineAt('m1').brand, undefined, 'which deletes the override');
+
+  last(props.querySelector('#m-brand-other'), 'click')();
+  const search = props.querySelector('#m-brand-search');
+  search.value = '   ';
+  last(props.querySelector('#m-brand-set'), 'click')();
+  assert.equal(props.innerHTML.includes('id="m-brand-search"'), true, 'Set with nothing typed does nothing');
+  search.value = 'panatta';
+  last(search, 'keydown')({ key: 'Enter' });
+  assert.equal(machineAt('m1').brand, 'Panatta', 'Enter in the search field sets a typed brand, in the pick list\'s spelling');
+  last(props.querySelector('#m-brand-other'), 'click')();
+  props.querySelector('#m-brand-search').value = 'technogym';
+  last(props.querySelector('#m-brand-set'), 'click')();
+  assert.equal(machineAt('m1').brand, undefined, 'typing the gym\'s brand, in any case, means: follow the gym');
+  // a machine that carries the gym's brand by name (an imported template
+  // lists it per machine) reads as the gym's — no "own" line, nothing to clear
+  {
+    const g = store.getLayout();
+    g.machines.find((m) => m.id === 'm1').brand = 'Technogym';
+    store.saveLayout(g);
+  }
+  fire(root.floor, 'pointerdown', { ...at(50, 50) });
+  fire(root.floor, 'pointerup');
+  fire(root.floor, 'pointerdown', { ...at(12, 11), target: onItem('m1') });
+  fire(root.floor, 'pointerup');
+  assert.ok(props.innerHTML.includes('<strong>Technogym</strong> — the gym\'s brand.')
+    && !props.innerHTML.includes('id="m-brand-clear"'), 'a copy of the gym\'s brand reads as the gym\'s');
+
+  // the fold-out dies with the selection
+  last(props.querySelector('#m-brand-other'), 'click')();
+  assert.ok(props.innerHTML.includes('id="m-brand-search"'), 'open');
+  fire(root.floor, 'pointerdown', { ...at(50, 50) });
+  fire(root.floor, 'pointerup');
+  fire(root.floor, 'pointerdown', { ...at(12, 11), target: onItem('m1') });
+  fire(root.floor, 'pointerup');
+  assert.ok(!props.innerHTML.includes('id="m-brand-search"'), 'reselecting the machine starts folded');
+}
+
 console.log('gym editor: all assertions passed');

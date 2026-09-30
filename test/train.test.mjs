@@ -128,6 +128,25 @@ store.saveActive({
 renderTrain(root);
 assert.ok(root.innerHTML.includes('Log set'), 'plain machine renders the set logger');
 
+// the header names the machine's brand — resolved through the gym, since a
+// machine without one of its own is the gym's brand
+{
+  const g = store.getLayout();
+  g.meta.brand = 'Technogym';
+  store.saveLayout(g);
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('Technogym'), 'an unbranded machine shows the gym\'s brand');
+  g.machines.find((m) => m.id === 'm1').brand = 'Cybex';
+  store.saveLayout(g);
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('Cybex') && !root.innerHTML.includes('Technogym'),
+    'a machine with its own brand shows that one, not the gym\'s');
+  delete g.meta.brand;
+  delete g.machines.find((m) => m.id === 'm1').brand;
+  store.saveLayout(g);
+  renderTrain(root);
+}
+
 // multi-exercise machine, no exercise picked yet: chip picker, no logger
 store.saveActive({
   v: 2, id: 'w-pick', startedAt: 1755000000000,
