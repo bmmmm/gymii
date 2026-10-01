@@ -4,7 +4,7 @@ import {
   exportGymTemplate, exportBackup, importData, clearAll, storedBytes,
 } from './store.js';
 import {
-  download, esc, twoTapConfirm, keepInView, preserveFocus, fmtDate, fmtTime,
+  download, esc, twoTapConfirm, keepInView, preserveFocus, fmtDate, fmtTime, fmtAgo,
   TIMER_SOUNDS, playTimerSound,
 } from './ui.js';
 import { loadDemoData } from './demo.js';
@@ -132,6 +132,61 @@ const SYNC_ERRORS = {
 
 const syncErrorText = (err, prefix) => SYNC_ERRORS[err?.message] ?? `${prefix}: ${err?.message}`;
 
+// "seen 2 h ago" from the server's lastSeenAt — absent for a token that
+// has not authenticated since the server began tracking.
+const seenText = (d) => {
+  const seen = Date.parse(d.lastSeenAt);
+  return Number.isFinite(seen) ? `seen ${fmtAgo(seen)}` : 'not seen yet';
+};
+
+// --- the backup hint (sync-protocol.md § Kind) ---
+// A `kind:"backup"` device (gymii-cli) is expected to check in on a
+// schedule; one that has gone quiet for more than three days earns ONE
+// instruction on the Sync card — the place you act from. An ordinary
+// device never does: a phone may rest for weeks. Never seen counts from
+// the day it was paired. The stalest backup is the one named.
+const BACKUP_QUIET_MS = 3 * 86400000;
+export function backupHint(list, now = Date.now()) {
+  let worst = null;
+  (Array.isArray(list) ? list : []).forEach((d) => {
+    if (d?.kind !== 'backup') return;
+    const seen = Date.parse(d.lastSeenAt);
+    const since = Number.isFinite(seen) ? seen : Date.parse(d.mintedAt);
+    if (!Number.isFinite(since) || now - since <= BACKUP_QUIET_MS) return;
+    if (!worst || since < worst.since) worst = { d, since, seen: Number.isFinite(seen) };
+  });
+  if (!worst) return '';
+  const where = worst.d.name ? `the backup on ${worst.d.name}` : 'your backup device';
+  return worst.seen
+    ? `Check ${where} — last seen ${fmtAgo(worst.since, now)}.`
+    : `Check ${where} — paired ${fmtAgo(worst.since, now)}, never seen since.`;
+}
+
+// renderSettings re-renders on nearly every tap, so the token list is
+// fetched at most once per BACKUP_CHECK_MS per gym and kept here — the
+// line survives every re-render in between. The slot is claimed BEFORE
+// the request, so two renders inside one round trip fetch once. A failed
+// fetch shows nothing: the card already reports sync errors.
+const BACKUP_CHECK_MS = 10 * 60000;
+const backupCheck = new Map(); // gid → { at, list | null }
+
+const backupHintHtml = (gid) => {
+  const text = backupHint(backupCheck.get(gid)?.list);
+  return text ? `<p class="hint">${esc(text)}</p>` : '';
+};
+
+async function refreshBackupCheck(gid) {
+  const now = Date.now();
+  const cached = backupCheck.get(gid);
+  if (cached && now - cached.at < BACKUP_CHECK_MS) return;
+  backupCheck.set(gid, { at: now, list: cached?.list ?? null });
+  let list = null;
+  try {
+    list = await listDevices(gid);
+  } catch { /* nothing to say — see above */ }
+  backupCheck.set(gid, { at: now, list });
+}
+
 // The code plus the one warning that has to sit next to it, never a screen
 // away: this string is the account. The unencrypted variant warns about the
 // right thing — there is no key, but the code still opens the account.
@@ -232,6 +287,7 @@ function syncCard(gym, shownCode, shownQr) {
     ? `${fmtDate(state.lastSyncAt)} · ${fmtTime(state.lastSyncAt)}` : 'never'}</span></div>
       ${state.lastError ? `<div class="spread"><span class="muted">Last error</span>
         <span class="sync-val">${esc(state.lastError)}</span></div>` : ''}
+      <div id="sync-backup-hint">${backupHintHtml(gym.id)}</div>
       <button id="sync-now" class="btn btn-primary">Sync now</button>
       <p id="sync-msg" class="muted" role="status"></p>
       ${shownCode ? codeBlock(shownCode, state.plain, shownQr)
@@ -627,6 +683,7 @@ function renderSettingsView(root) {
     if (!twoTapConfirm(syncOffBtn,
       'Tap again to turn sync off — your data stays here', 'Turn off sync')) return;
     disableSync(gid); // credentials only; the gym's data is untouched
+    backupCheck.delete(gid); // a later setup may name another account
     renderSettings(root);
   });
 
@@ -649,16 +706,31 @@ function renderSettingsView(root) {
     }
   });
 
+  const paintBackupHint = () => {
+    const el = root.querySelector('#sync-backup-hint');
+    if (el) el.innerHTML = backupHintHtml(gid);
+  };
+  // (the demo gym never has a sync config.) An answer that lands after a
+  // gym switch must not paint this gym's line into the other gym's card.
+  if (getSyncState(gid).configured) {
+    refreshBackupCheck(gid).then(() => {
+      if (getGyms().activeId === gid) paintBackupHint();
+    });
+  }
+
   const devicesEl = root.querySelector('#sync-devices');
   const renderDevices = async () => {
     const body = root.querySelector('#sync-devices-body');
     body.innerHTML = '<p class="muted">Loading…</p>';
     try {
       const list = await listDevices(gid);
+      // the freshest answer there is — the hint follows it (a revoke too)
+      backupCheck.set(gid, { at: Date.now(), list });
+      paintBackupHint();
       body.innerHTML = list.map((d) => `
         <div class="spread">
-          <span>${esc(d.name || '(unnamed)')}${d.self ? ' · this device' : ''}
-            <span class="muted">· ${esc(String(d.mintedAt).slice(0, 10))}</span></span>
+          <span>${esc(d.name || '(unnamed)')}${d.kind === 'backup' ? ' · backup' : ''}${d.self ? ' · this device' : ''}
+            <span class="muted">· ${seenText(d)}</span></span>
           ${d.self ? '' : `<button class="btn btn-inline btn-danger" data-revoke="${esc(d.hash)}">Revoke</button>`}
         </div>`).join('')
         + '<p class="muted">Revoking a device invalidates its token — its next sync is refused. '

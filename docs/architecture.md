@@ -248,7 +248,14 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   over `POST /v1/tokens` (`mintPairingCode`) — a device's own token never
   leaves it, revoking one (`revokeDevice`, Devices list in the Sync card)
   never cuts the others, and the server refuses the last token (409 →
-  `last-token`). `self` in `listDevices` is server-computed. The QR on the
+  `last-token`). `self` in `listDevices` is server-computed, and its
+  `lastSeenAt`/`kind` pass through untouched. A minted pairing code carries
+  `invite: true`; `getSyncCode` (this device's OWN token) never does — a
+  redeemer like gymii-cli revokes an invite token once its own works, so a
+  flag on an own code would cut a live device off (test-pinned). The Sync
+  card's backup hint (settings.js `backupHint`) reads that list at most
+  once per 10 min per gym, cached in module state so re-renders neither
+  refetch nor drop it; only `kind:"backup"` ever triggers it. The QR on the
   pairing code is `js/qr.js` (hand-written encoder, byte mode, EC M, SVG
   string — hard black/white, cameras need the contrast) wrapping
   `<app-url>#pair=<code>`; app.js intercepts `#pair=` BEFORE the route

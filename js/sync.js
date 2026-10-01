@@ -141,15 +141,18 @@ async function decryptEnvelope(envelope, pass) {
 
 // One builder for every code shape — getSyncCode re-shows this device's
 // own credentials, mintPairingCode (M3) wraps a freshly minted token.
+// `invite` marks a token minted FOR the redeemer (sync-protocol.md § Invite
+// codes): a redeemer that mints its own token (gymii-cli) may revoke it.
+// getSyncCode must never set it — its token is this device's live one.
 function buildSyncCode({
-  server, token, gymId, pass, plain,
+  server, token, gymId, pass, plain, invite,
 }) {
   const body = plain
     ? JSON.stringify({
-      server, token, gymId, plain: true,
+      server, token, gymId, plain: true, ...(invite ? { invite: true } : {}),
     })
     : JSON.stringify({
-      server, token, pass, gymId,
+      server, token, pass, gymId, ...(invite ? { invite: true } : {}),
     });
   return CODE_PREFIX + b64url(bytesToB64(enc.encode(body)));
 }
@@ -873,8 +876,10 @@ async function tokenApi(cfg, method, path, body) {
   return res;
 }
 
-// → [{hash, mintedAt, name, self}] — `self` is marked by the server (a
-// plain-mode client has no crypto to hash its own token).
+// → [{hash, mintedAt, name, self, lastSeenAt?, kind?}] — passed through as
+// the server sent it. `self` is marked by the server (a plain-mode client
+// has no crypto to hash its own token); `lastSeenAt` is absent for a token
+// never seen, `kind` absent for an ordinary device (sync-protocol.md).
 export async function listDevices(gid) {
   const cfg = requireConfig(gid);
   const res = await tokenApi(cfg, 'GET', '/v1/tokens');
@@ -896,7 +901,7 @@ export async function mintPairingCode(gid, name) {
   if (cfg.plain) {
     return {
       code: buildSyncCode({
-        server: cfg.server, token: minted.token, gymId, plain: true,
+        server: cfg.server, token: minted.token, gymId, plain: true, invite: true,
       }),
     };
   }
@@ -904,7 +909,7 @@ export async function mintPairingCode(gid, name) {
   if (!key?.pass) throw new Error('no-key');
   return {
     code: buildSyncCode({
-      server: cfg.server, token: minted.token, gymId, pass: key.pass,
+      server: cfg.server, token: minted.token, gymId, pass: key.pass, invite: true,
     }),
   };
 }

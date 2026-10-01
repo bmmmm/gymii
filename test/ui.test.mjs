@@ -385,4 +385,17 @@ assert.equal(ui.fmtDay(Date.UTC(2026, 0, 1, 21, 0)), 'Fri 2 Jan',
     'your own records: no link to nowhere');
 }
 
+// --- "how long ago": rounded down, one unit, a future moment is now ---
+{
+  const now = Date.UTC(2026, 9, 1, 12, 0);
+  const MIN = 60000;
+  assert.equal(ui.fmtAgo(now - 30000, now), 'just now');
+  assert.equal(ui.fmtAgo(now + 5 * MIN, now), 'just now', 'a server clock ahead reads as now');
+  assert.equal(ui.fmtAgo(now - 59 * MIN, now), '59 min ago');
+  assert.equal(ui.fmtAgo(now - 60 * MIN, now), '1 h ago');
+  assert.equal(ui.fmtAgo(now - (24 * 60 - 1) * MIN, now), '23 h ago');
+  assert.equal(ui.fmtAgo(now - 24 * 60 * MIN, now), '1 day ago');
+  assert.equal(ui.fmtAgo(now - 3.9 * 24 * 60 * MIN, now), '3 days ago', 'rounded down, never up');
+}
+
 console.log('ui helpers: all assertions passed');

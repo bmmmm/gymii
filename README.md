@@ -101,6 +101,10 @@ offers sync only as a clearly-labeled unencrypted mode, never silently.
 Until you turn anything on, export a backup before you switch devices or
 browsers.
 
+With sync on, the device list shows when each paired device was last seen.
+A backup device is expected to check in on its own — when one has gone
+quiet for more than three days, the Sync card tells you which one.
+
 Settings shows how much of the browser's storage gymii occupies and whether
 the browser has promised to keep it. Browsers do clear sites nobody has
 opened in a while — on iPhone after seven days, unless the app was added to

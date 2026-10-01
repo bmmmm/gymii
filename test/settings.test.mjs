@@ -415,4 +415,142 @@ assert.ok(storageBody().includes('did not grant it'), 'the refusal is reported')
 assert.ok(storageBody().includes('id="storage-persist"'),
   'and the button stays, because a later attempt can still succeed');
 
+// --- device health: the devices list says when each was seen, and a quiet
+//     BACKUP device earns one line on the card (sync-protocol.md § Kind) ---
+// The clock is ours: every case below moves it past the 10-minute cache.
+// The line lands asynchronously in #sync-backup-hint (handler-written, so
+// asserted on that element — see docs/testing.md), while a later render
+// prints it from the cache into root.innerHTML.
+const realNow = Date.now;
+let clock = realNow() + 3600000; // clear of every slot earlier renders claimed
+Date.now = () => clock;
+const DAY = 86400000;
+const MIN = 60000;
+const iso = (ms) => new Date(ms).toISOString();
+let tokenGets = 0;
+const baseFetch = globalThis.fetch;
+globalThis.fetch = (url, opts = {}) => {
+  if (url.includes('/v1/tokens') && (opts.method ?? 'GET') === 'GET') tokenGets += 1;
+  return baseFetch(url, opts);
+};
+const hintEl = () => root.querySelector('#sync-backup-hint');
+const self = () => ({
+  token: 'tok-h', hash: 'e'.repeat(64), mintedAt: iso(clock - 30 * DAY), name: 'phone', lastSeenAt: iso(clock),
+});
+const backup = (extra) => ({
+  token: 'tok-b', hash: 'f'.repeat(64), name: 'mac-mini', kind: 'backup', mintedAt: iso(clock - 30 * DAY), ...extra,
+});
+// one case: the next cache window, a render, the answer landed
+const hintFor = async (others) => {
+  clock += 11 * MIN;
+  server.tokens = [self(), ...others()];
+  hintEl().innerHTML = 'stale';
+  renderSettings(root);
+  await settled();
+  return hintEl().innerHTML;
+};
+store.setActiveGym(realId);
+store.saveSyncConfig(realId, { server: 'https://sync.example.org', token: 'tok-h' });
+try {
+  assert.equal(await hintFor(() => [backup({ lastSeenAt: iso(clock - 2.9 * DAY) })]), '',
+    'health: a backup seen 2.9 days ago is fine');
+  assert.equal(await hintFor(() => [backup({ lastSeenAt: iso(clock - 3.1 * DAY) })]),
+    '<p class="hint">Check the backup on mac-mini — last seen 3 days ago.</p>',
+    'health: past 3 days the card names the device and when it was last seen');
+  assert.equal(await hintFor(() => [backup({ mintedAt: iso(clock - 5 * DAY) })]),
+    '<p class="hint">Check the backup on mac-mini — paired 5 days ago, never seen since.</p>',
+    'health: never seen counts from the pairing');
+  assert.equal(await hintFor(() => [backup({ mintedAt: iso(clock - 1 * DAY) })]), '',
+    'health: a backup paired yesterday has not missed anything yet');
+  assert.equal(await hintFor(() => [backup({ name: '', lastSeenAt: iso(clock - 4 * DAY) })]),
+    '<p class="hint">Check your backup device — last seen 4 days ago.</p>',
+    'health: an unnamed backup still gets its line');
+  assert.equal(await hintFor(() => [backup({ mintedAt: undefined })]), '',
+    'health: no date at all is no reason to alarm');
+  assert.equal(await hintFor(() => [{
+    token: 'tok-o', hash: '1'.repeat(64), name: 'old tablet', mintedAt: iso(clock - 90 * DAY),
+    lastSeenAt: iso(clock - 60 * DAY),
+  }]), '', 'health: an ordinary device may rest for weeks');
+  assert.equal(await hintFor(() => [
+    backup({ lastSeenAt: iso(clock - 4 * DAY) }),
+    backup({
+      token: 'tok-b2', hash: '2'.repeat(64), name: 'nas', lastSeenAt: iso(clock - 9 * DAY),
+    }),
+  ]), '<p class="hint">Check the backup on nas — last seen 9 days ago.</p>',
+  'health: one line, and it names the stalest backup');
+
+  // the cache: re-renders inside the window neither refetch nor lose the line
+  const gets = tokenGets;
+  renderSettings(root);
+  renderSettings(root);
+  await settled();
+  assert.equal(tokenGets, gets, 'health: re-renders inside 10 minutes do not refetch');
+  assert.ok(root.innerHTML.includes('Check the backup on nas'), 'health: the line survives a re-render');
+  clock += 11 * MIN;
+  renderSettings(root);
+  renderSettings(root); // inside the same round trip
+  await settled();
+  assert.equal(tokenGets, gets + 1, 'health: past the window one render refetches — once');
+
+  // a failed fetch says nothing (the card reports sync errors itself)
+  clock += 11 * MIN;
+  server.mode = 'offline';
+  renderSettings(root);
+  await settled();
+  server.mode = null;
+  assert.equal(hintEl().innerHTML, '', 'health: an unreachable server shows no line');
+
+  // the devices list: kind and last seen after the name
+  server.tokens = [self(), backup({ lastSeenAt: iso(clock - 3.1 * DAY) }), {
+    token: 'tok-n', hash: '3'.repeat(64), name: 'tablet', mintedAt: iso(clock - DAY),
+  }];
+  const devEl = root.querySelector('#sync-devices');
+  devEl.open = true;
+  await devEl.listeners.toggle();
+  const devHtml = root.querySelector('#sync-devices-body').innerHTML;
+  assert.match(devHtml, /phone · this device\s*<span class="muted">· seen just now</, 'health: self, seen now');
+  assert.match(devHtml, /mac-mini · backup\s*<span class="muted">· seen 3 days ago</, 'health: the backup is labelled');
+  assert.match(devHtml, /tablet\s*<span class="muted">· not seen yet</, 'health: a token never seen says so');
+  assert.equal(hintEl().innerHTML,
+    '<p class="hint">Check the backup on mac-mini — last seen 3 days ago.</p>',
+    'health: opening the list refreshes the line from the same answer');
+  server.tokens = [self()]; // the backup got revoked
+  await devEl.listeners.toggle();
+  assert.equal(hintEl().innerHTML, '', 'health: a revoked backup takes its line along');
+
+  // an answer that lands after a gym switch stays out of the other card
+  clock += 11 * MIN;
+  server.tokens = [self(), backup({ lastSeenAt: iso(clock - 5 * DAY) })];
+  hintEl().innerHTML = 'untouched';
+  renderSettings(root);
+  const otherId = store.createGym('Other gym'); // activates it
+  await settled();
+  assert.equal(hintEl().innerHTML, 'untouched', 'health: a late answer never paints another gym');
+  store.setActiveGym(realId);
+  store.deleteGym(otherId);
+
+  // an unconfigured card asks nothing; turning sync off forgets the answer
+  const getsOff = tokenGets;
+  store.saveSyncConfig(realId, null);
+  renderSettings(root);
+  await settled();
+  assert.equal(tokenGets, getsOff, 'health: no sync, no request');
+  store.saveSyncConfig(realId, { server: 'https://sync.example.org', token: 'tok-h' });
+  renderSettings(root);
+  await settled();
+  const offBtn2 = root.querySelector('#sync-off');
+  offBtn2.textContent = '';
+  offBtn2.classList.remove('armed');
+  offBtn2.listeners.click();
+  offBtn2.listeners.click();
+  store.saveSyncConfig(realId, { server: 'https://sync.example.org', token: 'tok-h' });
+  const getsOn = tokenGets;
+  renderSettings(root);
+  await settled();
+  assert.equal(tokenGets, getsOn + 1, 'health: a fresh setup asks again, inside the window too');
+} finally {
+  Date.now = realNow;
+  globalThis.fetch = baseFetch;
+}
+
 console.log('settings sync card: all assertions passed');

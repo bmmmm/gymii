@@ -204,6 +204,17 @@ export const esc = (s) =>
 // "3 sets", "1 workout" — count plus s-pluralized noun, in one spelling.
 export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+// "5 min ago", "2 h ago", "4 days ago" — how long since a moment, rounded
+// DOWN (a day is only "1 day" once it has fully passed). A future moment —
+// a server clock ahead of this one — reads as "just now".
+export const fmtAgo = (ts, now = Date.now()) => {
+  const min = Math.floor((now - ts) / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min} min ago`;
+  if (min < 1440) return `${Math.floor(min / 60)} h ago`;
+  return `${plural(Math.floor(min / 1440), 'day')} ago`;
+};
+
 // How long a workout took, in whole minutes and never zero — three
 // places said this in three slightly different ways.
 export const minsBetween = (from, to) => Math.max(1, Math.round((to - from) / 60000));

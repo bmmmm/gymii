@@ -816,4 +816,70 @@ sync.disableSync(gid);
 await assert.rejects(() => sync.updateSyncServer(gid, 'sync.example.org'), /not-configured/,
   '16: nothing to move once sync is off');
 
+// --- 17. invite codes and device health (sync-protocol.md § Invite codes, § Kind) ---
+// A code minted for ANOTHER device says so (`invite: true`) — a redeemer
+// that mints its own token (gymii-cli) may revoke it. A device's own code
+// never does: its token is that device's live credential.
+const codeBody = (c) => JSON.parse(Buffer.from(c.slice('gymii-sync:v1:'.length), 'base64url').toString());
+devices.S = new Map();
+useDevice('S');
+seedRegistry();
+srv = fakeServer({
+  tokens: [{
+    token: 'tok-17',
+    hash: 'c'.repeat(64),
+    mintedAt: '2026-09-01T00:00:00Z',
+    name: 'mac-mini',
+    lastSeenAt: '2026-09-30T10:00:00Z',
+    kind: 'backup',
+  }],
+});
+assert.equal((await sync.enableSync(gid, { server: 'http://sync.local', token: 'tok-17' })).sync.status,
+  'synced', '17: setup');
+assert.equal('invite' in codeBody(sync.getSyncCode(gid)), false, "17: a device's own code carries no invite");
+const invite17 = codeBody((await sync.mintPairingCode(gid, 'phone')).code);
+assert.equal(invite17.invite, true, '17: a minted pairing code is an invite');
+assert.ok(invite17.pass, '17: and still the E2E code it was');
+
+// lastSeenAt and kind reach the caller untouched; absent stays absent
+const list17 = await sync.listDevices(gid);
+const mac17 = list17.find((d) => d.hash === 'c'.repeat(64));
+assert.equal(mac17.lastSeenAt, '2026-09-30T10:00:00Z', '17: lastSeenAt passes through');
+assert.equal(mac17.kind, 'backup', '17: kind passes through');
+const phone17 = list17.find((d) => d.name === 'phone');
+assert.equal('lastSeenAt' in phone17 || 'kind' in phone17, false, '17: nothing invented for a fresh token');
+
+// the browser adopts the code's token, so it parses past the flag — and
+// once paired, the token is ITS own: its re-shown code is no invite
+devices.T = new Map();
+useDevice('T');
+seedRegistry();
+const pairedT = await sync.pairWithCode(gid, `gymii-sync:v1:${Buffer.from(JSON.stringify(invite17)).toString('base64url')}`);
+assert.equal(pairedT.sync.status, 'synced', '17: an invite code pairs like any code');
+assert.equal('invite' in store.getSyncConfig(gid), false, '17: the flag is not stored');
+assert.equal('invite' in codeBody(sync.getSyncCode(gid)), false, '17: the redeemed token re-shows as an own code');
+
+// the plain shape carries the flag the same way
+insecureContext();
+try {
+  devices.U = new Map();
+  useDevice('U');
+  seedRegistry();
+  srv = fakeServer({
+    tokens: [{
+      token: 'tok-17p', hash: 'd'.repeat(64), mintedAt: '2026-09-01T00:00:00Z', name: 'box',
+    }],
+  });
+  await sync.enableSync(gid, { server: 'http://box:8639', token: 'tok-17p', plain: true });
+  const ownPlain = codeBody(sync.getSyncCode(gid));
+  assert.equal(ownPlain.plain, true, '17: plain own code');
+  assert.equal('invite' in ownPlain, false, '17: plain own code carries no invite');
+  const invitePlain = codeBody((await sync.mintPairingCode(gid, 'tablet')).code);
+  assert.equal(invitePlain.invite, true, '17: a plain pairing code is an invite');
+  assert.equal(invitePlain.plain, true, '17: and stays plain');
+  assert.equal(invitePlain.pass, undefined, '17: with no passphrase');
+} finally {
+  secureContext();
+}
+
 console.log('sync client: all assertions passed');
