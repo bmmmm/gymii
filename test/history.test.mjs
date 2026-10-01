@@ -4,10 +4,11 @@
 // the WHOLE view, not just the list), the full editor (add/remove sets and
 // machines, edit the date) and logging a workout after the fact.
 // Run with: node test/history.test.mjs
-import './helpers/localstorage.mjs'; // FIRST: installs the stub
+import { mem } from './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
+const { fmtDay: fmtDayOf } = await import(new URL('../js/ui.js', import.meta.url).href);
 const { renderHistory } = await import(new URL('../js/history.js', import.meta.url).href);
 
 // --- fixture: three named workouts across two routines ---
@@ -131,10 +132,11 @@ assert.ok(/class="chip sel"\s+data-key="m1 "/.test(root.innerHTML),
 // Two screens. The overview analyses; the Workouts screen holds what you
 // did, day by day and workout by workout, and the form that adds one.
 const order = (heads) => heads.map((h) => root.innerHTML.search(new RegExp(`<h2[^>]*>${h}`)));
-const overviewOrder = order(['This week', 'Progress', 'Muscles']);
+// "Worth a look" renders only when a rule fires, so it is pinned below
+const overviewOrder = order(['This week', 'Progress', 'Walking paths', 'Muscles']);
 assert.ok(overviewOrder.every((i) => i > 0), 'every overview card renders');
 assert.deepEqual(overviewOrder.slice().sort((a, b) => a - b), overviewOrder,
-  'the overview: this week, progress, then muscles');
+  'the overview: this week, progress, walking paths, then muscles');
 assert.ok(!root.innerHTML.includes('id="workout-list"'), 'the full list is not on the overview');
 assert.ok(root.innerHTML.includes('All workouts (3) ›'), 'the way in counts what it leads to');
 openWorkouts();
@@ -615,5 +617,76 @@ root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { musc
 store.saveWorkouts(store.getWorkouts().slice(-2));
 render();
 assert.ok(!root.innerHTML.includes('id="insight-card"'), 'no insights, no card');
+
+// --- Walking paths: the route of a live-logged workout ---
+store.saveLayout({
+  ...store.getLayout(),
+  machines: [
+    { id: 'm1', num: 14, label: 'Leg press', x: 2, y: 2, w: 4, h: 3, settingsFields: [], muscles: ['Quads'] },
+    { id: 'm2', num: 3, label: 'Lat pulldown', x: 20, y: 2, w: 4, h: 3, settingsFields: [], muscles: ['Lats'] },
+    { id: 'm3', num: 7, label: 'Chest press', x: 20, y: 20, w: 4, h: 3, settingsFields: [], muscles: ['Chest'] },
+  ],
+});
+const pathMap = () => root.querySelector('#path-map').innerHTML;
+const pathChips = () => root.querySelector('#path-chips').innerHTML;
+const pathStats = () => root.querySelector('#path-stats').innerHTML;
+const t0 = dayAt(3, 17);
+const min = 60000;
+store.saveWorkouts([{ id: 'bare', startedAt: dayAt(4, 17), finishedAt: dayAt(4, 18),
+  entries: [entry('m1', 14, 'Leg press', sets(2)), entry('m2', 3, 'Lat pulldown', sets(2))] }]);
+enter();
+assert.ok(/<h2>Walking paths<\/h2>\s*<p class="muted">Shows the route you walked/.test(root.innerHTML),
+  'without a single `at` the card explains what it needs');
+assert.ok(!root.innerHTML.includes('id="path-map"'), 'and draws no map');
+
+// sets with `at`: Leg press → Lat pulldown → Chest press
+const stamped = {
+  id: 'ps1', startedAt: t0, finishedAt: t0 + 30 * min,
+  entries: [
+    entry('m1', 14, 'Leg press', [{ reps: 10, weight: 80, at: t0 + 5 * min }]),
+    entry('m2', 3, 'Lat pulldown', [{ reps: 10, weight: 40, at: t0 + 14 * min }]),
+    entry('m3', 7, 'Chest press', [{ reps: 10, weight: 50, at: t0 + 20 * min }]),
+  ],
+};
+store.saveWorkouts([...store.getWorkouts(), stamped]);
+render();
+const ps1Day = fmtDayOf(t0);
+assert.ok(new RegExp(`class="chip sel"\\s+data-wid="ps1" aria-pressed="true">${ps1Day}<`).test(pathChips()),
+  'a stamped workout gets a date chip, selected');
+assert.ok(!pathChips().includes('data-wid="all"'), 'one route: no "All" chip');
+assert.ok(/class="path-leg" data-from="m1" data-to="m2"/.test(pathMap())
+  && /class="path-leg" data-from="m2" data-to="m3"/.test(pathMap()), 'the map draws its legs');
+assert.ok(pathStats().includes('3 machines · 2 switches · 0 back-tracks'), 'the route in numbers');
+assert.ok(pathStats().includes('#14 9 min → #3 6 min → #7 10 min'),
+  'and where the time went: stop to stop, the last one to the finish');
+
+// a visits-based route (the log screen's own order), newer: it is the default
+const t1 = dayAt(1, 17);
+store.saveWorkouts([...store.getWorkouts(), {
+  id: 'ps2', startedAt: t1, finishedAt: t1 + 40 * min,
+  entries: [entry('m3', 7, 'Chest press', sets(2)), entry('m1', 14, 'Leg press', sets(2))],
+  visits: [{ machineId: 'm3', in: t1, out: t1 + 15 * min }, { machineId: 'm1', in: t1 + 16 * min, out: t1 + 40 * min }],
+}]);
+render();
+assert.ok(/class="chip sel"\s+data-wid="ps2"/.test(pathChips()), 'the latest route is on show');
+assert.ok(/class="path-leg" data-from="m3" data-to="m1"/.test(pathMap()), 'drawn from its visits');
+assert.ok(pathChips().includes('All · 2 workouts'), 'two routes add the "All" chip');
+const pathChipsEl = () => root.querySelector('#path-chips');
+pathChipsEl().listeners.click(clickOn('.chip', { wid: 'all' }));
+assert.ok(/class="chip sel" data-wid="all"/.test(pathChips()), '"All" is picked');
+assert.ok(['m1" data-to="m2', 'm2" data-to="m3', 'm3" data-to="m1'].every((leg) => pathMap().includes(`data-from="${leg}"`)),
+  'and every way walked is drawn at once');
+render();
+assert.ok(/class="chip sel" data-wid="all"/.test(pathChips()), 'the picked route survives a re-render');
+enter();
+assert.ok(/class="chip sel"\s+data-wid="ps2"/.test(pathChips()), 'a tab tap goes back to the latest');
+
+// a gym without a layout has no floor to draw on
+const layoutKey = [...mem.keys()].find((k) => /^gymii\.[^.]+\.layout$/.test(k));
+const savedLayout = mem.get(layoutKey);
+localStorage.removeItem(layoutKey);
+render();
+assert.ok(!/<h2>Walking paths/.test(root.innerHTML), 'no layout, no path card');
+mem.set(layoutKey, savedLayout);
 
 console.log('history: all assertions passed');

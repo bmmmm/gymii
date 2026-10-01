@@ -9,7 +9,10 @@ import {
   parseDuration, parseDistance,
 } from './ui.js';
 import { lineChart, barChart } from './chart.js';
-import { machineSeries, weeklyBuckets, insights, SOURCES } from './stats.js';
+import {
+  machineSeries, weeklyBuckets, insights, SOURCES, workoutPath, transitionCounts,
+} from './stats.js';
+import { drawLayout } from './map.js';
 import { startWorkoutFrom } from './train.js';
 
 // Active workout-name filter ('' = all). Module state, so it survives the
@@ -42,10 +45,13 @@ let focusWorkoutId = null;
 // This-week card: the picked bar's week as its Monday in ms (null = this
 // week). "Where in time", so an entry resets it and a save keeps it.
 let pickedWeek = null;
+// Walking-paths card: the workout whose route is drawn (null = the latest,
+// 'all' = every route at once, weighted). "Where in time", like pickedWeek.
+let pathWorkoutId = null;
 
 // `entry` = arriving from the tab bar (app.js). It is the ONE thing that
 // resets "where in time" — the screen, the heatmap month, the chart's
-// point, the picked week (and the chip list's expansion); the filters, the
+// point, the picked week and route (and the chip list's expansion); the filters, the
 // picked machine, the range and the week metric survive it. Every other re-render (save, delete, filter)
 // calls renderHistory(root) without it, so nothing the user set moves.
 export function renderHistory(root, { entry = false } = {}) {
@@ -54,6 +60,7 @@ export function renderHistory(root, { entry = false } = {}) {
     hmMonth = null;
     pickedT = null;
     pickedWeek = null;
+    pathWorkoutId = null;
     focusWorkoutId = null;
     machinesExpanded = false;
   }
@@ -143,7 +150,7 @@ const entryMatches = (e, sel) =>
 
 // The overview: a sequence of cards, rendered in this order. Each is
 // { html(ctx) -> markup, wire(root, ctx) }; a new card is one entry here.
-const overviewCards = () => [weekCard, insightCard, progressCard, muscleCard];
+const overviewCards = () => [weekCard, insightCard, progressCard, pathCard, muscleCard];
 
 function renderOverview(root, ctx) {
   const cards = overviewCards();
@@ -562,6 +569,115 @@ const progressCard = {
     draw();
   },
 };
+
+// --- Walking paths: the route a live-logged workout took through the gym ---
+// Only workouts with a route (stats.js workoutPath: visits, else stamped
+// sets; two or more machines still in the layout), from the filtered list.
+// Chips: the last PATH_CHIPS of them, newest first, plus "All · N workouts"
+// — every route at once, a way drawn thicker the more workouts walked it.
+// The map is read-only (drawLayout measures nothing outside the editor).
+const PATH_CHIPS = 5;
+const PATH_EMPTY = 'Shows the route you walked through the gym, machine by machine. '
+  + 'It needs workouts logged live — sets typed in afterwards carry no time, '
+  + 'so there is no route to draw yet.';
+// [{w, p}] oldest first; computed once per render (html and wire share it)
+const pathsOf = (ctx) => (ctx.paths ??= ctx.layout
+  ? ctx.workouts.map((w) => ({ w, p: workoutPath(w, ctx.layout) })).filter((x) => x.p) : []);
+const routeLen = (p) => p.legs.reduce((n, l) => n + l.len, 0);
+const median = (xs) => {
+  const a = [...xs].sort((x, y) => x - y);
+  const m = a.length >> 1;
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+};
+const switches = (n) => `${n} ${n === 1 ? 'switch' : 'switches'}`;
+
+const pathCard = {
+  html: (ctx) => (ctx.layout ? `
+    <section class="card" id="path-card">
+      <h2>Walking paths</h2>
+      ${pathsOf(ctx).length ? `
+      <div class="chip-select scroll" id="path-chips"></div>
+      <div class="map-wrap"><svg id="path-map" role="img"></svg></div>
+      <div id="path-stats"></div>` : `<p class="muted">${PATH_EMPTY}</p>`}
+    </section>` : ''),
+  wire(root, ctx) {
+    const paths = pathsOf(ctx);
+    if (!paths.length) return;
+    const { layout } = ctx;
+    const chipsEl = root.querySelector('#path-chips');
+    const svg = root.querySelector('#path-map');
+    const statsEl = root.querySelector('#path-stats');
+    const shown = paths.slice(-PATH_CHIPS).reverse();
+    // two workouts on one day: the chip names its time as well
+    const days = shown.map(({ w }) => fmtDay(w.startedAt));
+    const label = (i) => (days.indexOf(days[i]) !== days.lastIndexOf(days[i])
+      ? `${days[i]} ${fmtTime(shown[i].w.startedAt)}` : days[i]);
+    const num = (id) => layout.machines.find((m) => m.id === id)?.num;
+    const lens = paths.map(({ p }) => routeLen(p));
+
+    // One route: its counts, how it compares, and where the time went —
+    // a stop lasts from its first `at` to the next stop's (the last one to
+    // the finish).
+    const oneRoute = ({ w, p }) => {
+      const parts = [plural(new Set(p.stops.map((st) => st.machineId)).size, 'machine'),
+        switches(p.switches), plural(p.backtracks, 'back-track')];
+      const mid = median(lens);
+      if (paths.length >= 3 && mid > 0) {
+        const pct = Math.round((routeLen(p) / mid - 1) * 100);
+        parts.push(pct ? `route ${Math.abs(pct)} % ${pct < 0 ? 'shorter' : 'longer'} than your median`
+          : 'route as long as your median');
+      }
+      const chain = p.stops.map((st, i) => {
+        const end = i + 1 < p.stops.length ? p.stops[i + 1].at : w.finishedAt;
+        return `#${num(st.machineId)}${Number.isFinite(end) && end > st.at ? ` ${minsBetween(st.at, end)} min` : ''}`;
+      }).join(' → ');
+      return { stats: `<p class="muted">${parts.join(' · ')}</p><p class="path-chain">${chain}</p>`, chain };
+    };
+
+    const drawPath = () => {
+      const all = pathWorkoutId === 'all' && paths.length >= 2;
+      const i = all ? -1 : Math.max(0, shown.findIndex(({ w }) => w.id === pathWorkoutId));
+      const key = all ? 'all' : shown[i].w.id;
+      chipsEl.innerHTML = shown.map(({ w }, k) => `<button type="button" class="chip${w.id === key ? ' sel' : ''}"
+        data-wid="${esc(w.id)}" aria-pressed="${w.id === key}">${label(k)}</button>`).join('')
+        + (paths.length >= 2 ? `<button type="button" class="chip${all ? ' sel' : ''}" data-wid="all"
+        aria-pressed="${all}">All · ${paths.length} workouts</button>` : '');
+      revealSelected(chipsEl);
+      if (all) {
+        const counts = transitionCounts(paths.map(({ w }) => w), layout);
+        drawLayout(svg, layout, { pathWeights: counts });
+        svg.setAttribute('aria-label', `Walking paths of ${paths.length} workouts`);
+        const top = [...counts.values()].reduce((a, b) => (b.n > a.n ? b : a), { n: 0 });
+        statsEl.innerHTML = `<p class="muted">The more workouts walked a way, the thicker its line.${top.n >= 2
+          ? ` Most walked: #${num(top.from)} → #${num(top.to)}, in ${top.n} workouts.` : ''}</p>`;
+      } else {
+        const route = oneRoute(shown[i]);
+        drawLayout(svg, layout, { path: shown[i].p });
+        svg.setAttribute('aria-label', `Walking path of ${label(i)}: ${route.chain}`);
+        statsEl.innerHTML = route.stats;
+      }
+    };
+
+    chipsEl.addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      pathWorkoutId = chip.dataset.wid;
+      drawPath();
+    });
+    drawPath();
+  },
+};
+
+// A sideways-scrolling chip row keeps its selected chip in view — along the
+// row ONLY: scrollIntoView would also scroll the page to a row that sits
+// below the fold. Guarded: the logic tests' stub DOM measures nothing.
+function revealSelected(row) {
+  const r = row.querySelector?.('.chip.sel')?.getBoundingClientRect?.();
+  const box = row.getBoundingClientRect?.();
+  if (!r || !box) return;
+  if (r.left < box.left) row.scrollLeft += r.left - box.left;
+  else if (r.right > box.right) row.scrollLeft += r.right - box.right;
+}
 
 // --- training-days heatmap: month × machine ---
 const heatmapCardHtml = ({ options }) => `
