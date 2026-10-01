@@ -24,7 +24,8 @@ const entry = (id, num, label, sets) => ({ machineId: id, num, label, settings: 
 store.saveWorkouts([
   {
     id: 'w1', startedAt: Date.UTC(2026, 7, 1, 10), finishedAt: Date.UTC(2026, 7, 1, 11), name: 'Leg day',
-    entries: [entry('m1', 14, 'Leg press', [{ reps: 10, weight: 80 }])],
+    entries: [entry('m1', 14, 'Leg press', [{ reps: 10, weight: 80, at: Date.UTC(2026, 7, 1, 10, 5), rir: 2 }])],
+    visits: [{ in: Date.UTC(2026, 7, 1, 10), out: Date.UTC(2026, 7, 1, 10, 20) }],
   },
   {
     id: 'w2', startedAt: Date.UTC(2026, 7, 3, 10), finishedAt: Date.UTC(2026, 7, 3, 11), name: 'Pull day',
@@ -140,11 +141,18 @@ list().listeners.click(clickOn('.edit-save'));
 
 const saved = store.getWorkouts().find((w) => w.id === 'w1');
 assert.equal(saved.entries.length, 2, 'the added machine survives the save');
-assert.deepEqual(saved.entries[0].sets, [
-  { reps: 10, weight: 80 }, { reps: 10, weight: 80 }, { reps: 10, weight: 80 },
+assert.deepEqual(saved.entries[0].sets.slice(1), [
+  { reps: 10, weight: 80 }, { reps: 10, weight: 80 },
 ], 'a added set copies the previous one');
-assert.ok(saved.entries[0].sets.every((st) => !('at' in st)),
+assert.ok(saved.entries[0].sets.slice(1).every((st) => !('at' in st)),
   'sets added by editing never claim a live timestamp');
+assert.ok(saved.entries[0].sets.slice(1).every((st) => !('rir' in st)),
+  'nor a rating: a copied set was never rated');
+assert.equal(saved.entries[0].sets[0].rir, 2, 'the original set keeps its rating');
+assert.equal(saved.entries[0].sets[0].at - saved.startedAt, 5 * 60000,
+  'a date edit moves set.at with the workout (offset unchanged)');
+assert.equal(saved.visits[0].out - saved.startedAt, 20 * 60000,
+  'and the visits');
 assert.deepEqual(saved.entries[1], {
   machineId: 'm3', num: 7, label: 'Chest press', settings: {}, sets: [{ reps: 10, weight: 0 }],
 }, 'the added machine is snapshotted like the log screen does it');

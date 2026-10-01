@@ -9,7 +9,7 @@ import {
 import { openPlanBuilder } from './train.js';
 import { twoTapConfirm, plural, dateValue } from './ui.js';
 
-const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; an "exercise" field names one movement at a multi-exercise machine like a free-weight area; a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis).
+const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; an "exercise" field names one movement at a multi-exercise machine like a free-weight area; a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis, and null there means the set has no timestamp; a fourth element, when present, is RIR, reps in reserve, 0–3, 3 = three or more; absent = not rated).
 
 Analyze my progress: trends per machine, plateaus, and muscle-group imbalances. Then suggest concrete targets for my next workout — weight × reps per machine — and one or two practical tips.
 
@@ -153,7 +153,8 @@ export function buildAiExport() {
     note: `sets are [weight, reps]; entries with cardio:true use [distance, seconds], distance in ${
       distUnit(settings)}; bodyweight:true entries log ADDED weight (0 = bodyweight only); ` +
       'a third element, when present, is seconds since the workout started (sets logged before ' +
-      'timing was added lack it)',
+      'timing was added lack it; null = no timestamp); a fourth element, when present, is RIR ' +
+      '(reps in reserve, 0-3, 3 = three or more; absent = not rated)',
     // `gym` is the frozen wire name for the layout — the prompt teaches it
     // and pasted-back answers use it (see store.js exportGymTemplate)
     gym: layout ? {
@@ -203,8 +204,10 @@ export function buildAiExport() {
           ? { settings: e.settings } : {}),
         sets: e.sets.map((st) => {
           const base = e.cardio ? [st.distance, st.seconds] : [st.weight, st.reps];
-          if (st.at == null) return base;
-          return [...base, Math.round((st.at - w.startedAt) / 1000)];
+          const rir = !e.cardio && st.rir != null ? st.rir : null;
+          if (st.at == null && rir == null) return base;
+          const sec = st.at == null ? null : Math.round((st.at - w.startedAt) / 1000);
+          return rir == null ? [...base, sec] : [...base, sec, rir];
         }),
       })),
     })),

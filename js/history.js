@@ -1,7 +1,7 @@
 import {
   getLayout, getWorkouts, saveWorkouts, getSettings, getActive, deleteWorkout,
   updateWorkout, distUnit, workoutFromText, newEntry, nameChipsFor,
-  layoutMuscles, usageByMuscle, workoutsWithMuscle,
+  layoutMuscles, usageByMuscle, workoutsWithMuscle, shiftWorkout,
 } from './store.js';
 import {
   esc, fmtDate, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
@@ -234,13 +234,13 @@ export function renderHistory(root) {
     }
 
     // A forgotten set is the common repair, so it copies the previous one
-    // — `at` is dropped: this set was not logged live and nothing may
-    // claim otherwise (the quick-switch chips rank on that stamp).
+    // — `at` and `rir` are dropped: this set was neither logged live nor
+    // rated, and nothing may claim otherwise (the quick-switch chips rank on that stamp).
     const setAdd = e.target.closest('.set-add');
     if (setAdd && editDraft) {
       const entry = editDraft.entries[+setAdd.dataset.ei];
       const last = entry.sets[entry.sets.length - 1];
-      const { at, ...copy } = last ?? {};
+      const { at, rir, ...copy } = last ?? {};
       entry.sets.push(last ? copy
         : entry.cardio ? { distance: 0, seconds: 0 } : { reps: 10, weight: 0 });
       renderList();
@@ -325,9 +325,7 @@ export function renderHistory(root) {
       const [hh, mm] = (card.querySelector('.edit-time').value || '00:00').split(':').map(Number);
       if (!y || !mo || !d) return;
       const next = new Date(y, mo - 1, d, hh || 0, mm || 0).getTime();
-      const delta = next - editDraft.startedAt;
-      editDraft.startedAt = next;
-      if (editDraft.finishedAt) editDraft.finishedAt += delta;
+      shiftWorkout(editDraft, next - editDraft.startedAt);
     }
   });
 

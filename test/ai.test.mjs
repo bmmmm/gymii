@@ -77,6 +77,29 @@ assert.equal(exportedWorkouts[0].date, expectedLocalDate,
   'export date is the local calendar day, not the UTC-shifted one');
 store.saveWorkouts([]);
 
+// --- set tuples: [w, r], [w, r, sec], [w, r, sec, rir], [w, r, null, rir] ---
+
+const t0 = 1_800_000_000_000;
+store.saveWorkouts([{
+  id: 'tw', startedAt: t0, finishedAt: t0 + 3600000,
+  entries: [
+    { machineId: 'm1', num: 1, label: 'Chest press', settings: {}, sets: [
+      { reps: 10, weight: 40 },
+      { reps: 10, weight: 40, at: t0 + 90000 },
+      { reps: 10, weight: 40, at: t0 + 90000, rir: 2 },
+      { reps: 10, weight: 40, rir: 0 },
+    ] },
+    { machineId: 'tm', num: 9, label: 'Treadmill', cardio: true, settings: {}, sets: [
+      { distance: 3000, seconds: 900, at: t0 + 120000, rir: 1 },
+    ] },
+  ],
+}]);
+const tupleSets = JSON.parse(buildAiExport()).workouts[0].entries.map((e) => e.sets);
+assert.deepEqual(tupleSets[0], [[40, 10], [40, 10, 90], [40, 10, 90, 2], [40, 10, null, 0]],
+  'tuples grow only as far as the data goes; rir 0 is kept; rir without at gets a null');
+assert.deepEqual(tupleSets[1], [[3000, 900, 120]], 'cardio sets never carry rir');
+store.saveWorkouts([]);
+
 store.savePlans([{
   id: 'p1', name: 'Push day', createdAt: 123, days: [1, 4],
   items: [{ machineId: 'm1', exercise: null, target: { sets: 3, reps: 10, weight: 50 } }],
