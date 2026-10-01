@@ -65,7 +65,15 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `setTimeout`, so 2.5 s are proven in microseconds). Modules import
   fine in Node as long as none touches the DOM at top level; the stub DOM
   hands back EVERY selector, rendered or not, so a test must drive view
-  switches explicitly rather than assume a branch was skipped.
+  switches explicitly rather than assume a branch was skipped. Two traps
+  that each cost a round of debugging (2026-10-01): a block appended to
+  `train`/`plan`/`history` inherits the STATE of every block above it —
+  earlier blocks replace the gym, so `m1` may be gone and the log screen
+  renders "machine no longer exists"; seed the block's own layout
+  (`store.newLayout` + `saveLayout`, restore the old one at the end). And
+  markup a handler writes into one element (`noteEl.innerHTML = …`) never
+  reaches `root.innerHTML` in that stub — assert on
+  `root.querySelector('#id').innerHTML`, or the pin passes vacuously.
 - Browser smoke tests: `pnpm install` once, then `pnpm exec playwright
   install chromium` once (~170 MB, deliberately NOT an install script —
   Playwright is kept off `onlyBuiltDependencies`), then `pnpm run smoke`.
