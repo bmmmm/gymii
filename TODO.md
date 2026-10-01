@@ -1,5 +1,56 @@
 # TODO
 
+Shipped 2026-10-01 (`2026-10-01b` + `2026-10-01c`): the History redesign —
+an overview (This week tiles + twelve weekly bars, Worth a look insights
+with a why and a source, a draggable Progress chart with machine and range
+chips, the Walking paths card on the floor map, Muscles) and a Workouts
+drill-down screen; `js/stats.js` holds the rules (docs/insights.md); a
+workout now records machine visits (`visits`, with `busy` marks from the
+"Busy?" button) and per-set reps-in-reserve chips (`rir`) after a set; the
+date editor shifts set and visit timestamps; the demo gym carries stamps,
+visits and ratings for its last four weeks.
+
+### History — open (review findings, built on request)
+
+- The overview's week list carries the full editor: a bar or tile tap
+  rebuilds it and drops an open edit draft silently. Either lock the week
+  list while a draft is open or render it read-only (edit on the Workouts
+  screen).
+- An insight tap selects the machine's most recently trained EXERCISE, which
+  can differ from the exercise the insight names (multi-exercise machines).
+  Insights would need to carry the exercise key.
+- Tiles and chip rows re-render via innerHTML on their own click, so
+  keyboard focus drops to `body` (touch is unaffected). Re-focus by id after
+  the redraw, as `preserveFocus` does for fields.
+- Tile vs selected-bar number formats differ ("2:29 h" / "3,873 kg" vs
+  "149 min" / "3873 kg") — one formatter for both.
+- `<h1>Workouts</h1>` sits directly above the list card's `<h2>Workouts</h2>`
+  on the Workouts screen (both test-pinned; decide which one goes).
+- The path card's empty text blames back-logged sets even when only a name
+  filter removed every stamped workout.
+- Pre-existing, now reachable from the overview: the editor's "remove
+  machine" ✕ (`.entry-del`) measures 26×21 — no spec opens an editor, so
+  `measure()` never sees it; a muscle-row tap re-renders without
+  `keepInView` and, with Muscles last on the page, the clamp moves a second
+  tap onto another row; after "Log it" the `#past-msg` notice ends up
+  off-screen.
+- `closeVisits` drops a visit under 15 s even when sets were logged during
+  it (a burst-logger loses that machine from the route; stamped sets cannot
+  fill in because visits win whenever any exist). A workout started before
+  the visits deploy and finished after it has a partial route, one-off.
+- `lineChart` picks on `pointerdown`, before the browser decides whether a
+  `pan-y` touch is a scroll: a vertical scroll that starts on the chart
+  moves the selection. Needs a device measurement before changing it.
+- `saveSettings` from a range chip or metric tile stamps `settings.updatedAt`
+  (device-local keys ride the shared stamp — the existing mapColors/timerDim
+  pattern, now on the most-browsed screen); a stale device can win the user
+  settings merge. Per-key stamps would fix the class.
+- Plan "Offen": `layout.meta.scale` → metres in the path card; wall-aware
+  routing; `settings.bodyKg` → kcal; primary/secondary muscle weighting;
+  a real next-machine recommender on top of rules 6–8; `visits` in the AI
+  export; `train.js` re-inlines the newest-stamped-set pick that
+  `rateLastSet` owns (`newestStamped`) — a store helper would keep them one.
+
 Shipped 2026-09-02, in four waves: a mobile sweep (no field under 16px, so
 iOS stops zooming on focus; 44px targets everywhere with two commented
 exceptions; safe-area padding, scrollable overlays, one tap-highlight rule

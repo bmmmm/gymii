@@ -105,7 +105,13 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   2026-10-01, no restart needed). An ad-hoc probe script still needs its
   own per-call bypass. OPERATING RULE: a spec that flakes twice in a month
   is rewritten or deleted — a quarantined smoke test is worse than none.
-  Hygiene: `grep -rn` now needs `--exclude-dir=node_modules`.
+  Hygiene: `grep -rn` now needs `--exclude-dir=node_modules`. In a git
+  WORKTREE never run `pnpm run smoke` against a symlinked `node_modules`:
+  pnpm's pre-run dependency check decides the install is foreign and tries
+  to purge the modules directory THROUGH the symlink — the main checkout's
+  install was saved only by the missing TTY (2026-10-01,
+  `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`). Call the script's own
+  command instead: `node_modules/.bin/playwright test -c <worktree>/playwright.config.mjs`.
 - Dependabot watches the one dependency. A bot PR does NOT know
   `minimumReleaseAge` and `--frozen-lockfile` does not re-check it, so the
   existing repo rule (adopt locally, never merge in the UI) carries real
