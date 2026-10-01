@@ -8,8 +8,8 @@ import {
   dateValue, timeValue, machineChain, keepInView, minsBetween, fmtDuration,
   parseDuration, parseDistance,
 } from './ui.js';
-import { lineChart } from './chart.js';
-import { machineSeries } from './stats.js';
+import { lineChart, barChart } from './chart.js';
+import { machineSeries, weeklyBuckets } from './stats.js';
 import { startWorkoutFrom } from './train.js';
 
 // Active workout-name filter ('' = all). Module state, so it survives the
@@ -39,17 +39,21 @@ let machinesExpanded = false;
 // The workout "Open workout ›" asked for: the Workouts screen opens it and
 // scrolls it into view, once.
 let focusWorkoutId = null;
+// This-week card: the picked bar's week as its Monday in ms (null = this
+// week). "Where in time", so an entry resets it and a save keeps it.
+let pickedWeek = null;
 
 // `entry` = arriving from the tab bar (app.js). It is the ONE thing that
 // resets "where in time" — the screen, the heatmap month, the chart's
-// point (and the chip list's expansion); the filters, the picked machine
-// and the range survive it. Every other re-render (save, delete, filter)
+// point, the picked week (and the chip list's expansion); the filters, the
+// picked machine, the range and the week metric survive it. Every other re-render (save, delete, filter)
 // calls renderHistory(root) without it, so nothing the user set moves.
 export function renderHistory(root, { entry = false } = {}) {
   if (entry) {
     screen = 'overview';
     hmMonth = null;
     pickedT = null;
+    pickedWeek = null;
     focusWorkoutId = null;
     machinesExpanded = false;
   }
@@ -139,7 +143,7 @@ const entryMatches = (e, sel) =>
 
 // The overview: a sequence of cards, rendered in this order. Each is
 // { html(ctx) -> markup, wire(root, ctx) }; a new card is one entry here.
-const overviewCards = () => [progressCard, muscleCard, workoutsLink];
+const overviewCards = () => [weekCard, progressCard, muscleCard];
 
 function renderOverview(root, ctx) {
   const cards = overviewCards();
@@ -240,15 +244,106 @@ const muscleCard = {
   },
 };
 
-// The way into the Workouts screen, last on the overview.
-const workoutsLink = {
-  html: ({ workouts }) => `
-    <button type="button" id="open-workouts" class="btn">All workouts (${workouts.length}) ›</button>`,
-  wire(root) {
+// --- This week: four totals, twelve weeks of bars, that week's workouts ---
+// The tiles pick what the bars count (`settings.historyMetric`, device-local
+// like the range — merge.js does not sync it); a bar picks the week that the
+// title, the tiles and the list describe. Follows the filters like every
+// other card, and ends in the way into the Workouts screen.
+const WEEKS = 12;
+const METRICS = [['workouts', 'Workouts'], ['sets', 'Sets'], ['volume', 'Volume'], ['minutes', 'Time']];
+const metricOf = (s) => (METRICS.some(([k]) => k === s.historyMetric) ? s.historyMetric : 'sets');
+const metricValue = (b, metric) => (metric === 'volume' || metric === 'minutes'
+  ? Math.round(b[metric]) : b[metric]); // stats.js hands back raw floats
+const fmtMinutes = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} h`);
+const fmtMetric = (v, metric, unit) => (metric === 'volume' ? `${v.toLocaleString('en-GB')} ${unit}`
+  : metric === 'minutes' ? fmtMinutes(v) : String(v));
+// "8 Sep": a week's Monday — "Week of" already says which weekday it is
+const dayMonth = (t) => fmtDay(t).replace(/^\S+ /, '');
+
+// One week more than the bars show, so the oldest bar has a week before it
+// to compare with too. Computed once per render (html and wire share it).
+function weekData(ctx) {
+  if (!ctx.weeks) {
+    const all = weeklyBuckets(ctx.workouts, { weeks: WEEKS + 1, layout: ctx.layout });
+    ctx.weeks = { all, bars: all.slice(1) };
+  }
+  const { all, bars } = ctx.weeks;
+  const found = bars.findIndex((b) => b.weekStart.getTime() === pickedWeek);
+  const i = found < 0 ? bars.length - 1 : found; // a week that aged out: back to now
+  return { bar: bars[i], before: all[i], bars, isNow: i === bars.length - 1 };
+}
+const weekTitle = ({ bar, isNow }) => (isNow ? 'This week' : `Week of ${dayMonth(bar.weekStart)}`);
+
+const statTileHtml = ([key, title], { bar, before }, metric, unit) => `
+      <button type="button" class="tile stat${key === metric ? ' sel' : ''}" data-metric="${key}"
+        aria-pressed="${key === metric}">
+        <span class="tile-title">${title}</span>
+        <span class="tile-value">${esc(fmtMetric(metricValue(bar, key), key, unit))}</span>
+        <span class="tile-sub">vs ${esc(fmtMetric(metricValue(before, key), key, unit))} the week before</span>
+      </button>`;
+
+const weekCard = {
+  html: (ctx) => `
+    <section class="card" id="week-card">
+      <h2 id="week-title">${weekTitle(weekData(ctx))}</h2>
+      <div class="tile-grid" id="week-tiles"></div>
+      <div class="chart-wrap" id="week-chart"></div>
+      <div id="week-workouts"></div>
+      <button type="button" id="open-workouts" class="btn">All workouts (${ctx.workouts.length}) ›</button>
+    </section>`,
+  wire(root, ctx) {
+    const { workouts, s, unit, layout } = ctx;
+    const titleEl = root.querySelector('#week-title');
+    const tilesEl = root.querySelector('#week-tiles');
+    const chartEl = root.querySelector('#week-chart');
+    const holder = root.querySelector('#week-workouts');
+
+    // Title, tiles and list for the picked week — never the chart: this
+    // also runs from the chart's onSelect, mid-gesture.
+    const drawWeekBody = () => {
+      const week = weekData(ctx);
+      const metric = metricOf(getSettings());
+      titleEl.textContent = weekTitle(week);
+      tilesEl.innerHTML = METRICS.map((m) => statTileHtml(m, week, metric, unit)).join('');
+      const from = week.bar.weekStart.getTime();
+      const to = new Date(week.bar.weekStart);
+      to.setDate(to.getDate() + 7); // calendar step, as stats.js buckets them (DST)
+      const items = workouts.filter((w) => w.startedAt >= from && w.startedAt < to.getTime());
+      // a fresh #week-list per draw: wireWorkoutList adds its listeners to
+      // the node, and a reused one would collect a set per picked week
+      holder.innerHTML = items.length ? '<div id="week-list"></div>'
+        : `<p class="muted" id="week-list">Nothing logged ${week.isNow ? 'this' : 'that'} week.</p>`;
+      if (items.length) wireWorkoutList(root, root.querySelector('#week-list'), items, s, layout);
+    };
+    const drawWeek = () => {
+      const metric = metricOf(getSettings());
+      const title = METRICS.find(([k]) => k === metric)[1];
+      const { bars } = weekData(ctx);
+      barChart(chartEl, bars.map((b) => ({
+        key: String(b.weekStart.getTime()), label: dayMonth(b.weekStart), v: metricValue(b, metric),
+      })), {
+        unit: metric === 'volume' ? unit : metric === 'minutes' ? 'min' : '',
+        label: `${title} per week, last ${WEEKS} weeks`,
+        selectedKey: pickedWeek == null ? null : String(pickedWeek),
+        onSelect: (bar) => {
+          pickedWeek = Number(bar.key);
+          drawWeekBody();
+        },
+      });
+      drawWeekBody();
+    };
+
+    tilesEl.addEventListener('click', (e) => {
+      const tile = e.target.closest('.tile');
+      if (!tile) return;
+      saveSettings({ ...getSettings(), historyMetric: tile.dataset.metric });
+      drawWeek();
+    });
     root.querySelector('#open-workouts').addEventListener('click', () => {
       screen = 'workouts';
       renderHistory(root);
     });
+    drawWeek();
   },
 };
 

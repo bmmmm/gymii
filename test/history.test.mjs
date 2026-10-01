@@ -131,10 +131,10 @@ assert.ok(/class="chip sel"\s+data-key="m1 "/.test(root.innerHTML),
 // Two screens. The overview analyses; the Workouts screen holds what you
 // did, day by day and workout by workout, and the form that adds one.
 const order = (heads) => heads.map((h) => root.innerHTML.search(new RegExp(`<h2[^>]*>${h}`)));
-const overviewOrder = order(['Progress', 'Muscles']);
+const overviewOrder = order(['This week', 'Progress', 'Muscles']);
 assert.ok(overviewOrder.every((i) => i > 0), 'every overview card renders');
 assert.deepEqual(overviewOrder.slice().sort((a, b) => a - b), overviewOrder,
-  'the overview: progress, then muscles');
+  'the overview: this week, progress, then muscles');
 assert.ok(!root.innerHTML.includes('id="workout-list"'), 'the full list is not on the overview');
 assert.ok(root.innerHTML.includes('All workouts (3) ›'), 'the way in counts what it leads to');
 openWorkouts();
@@ -495,5 +495,75 @@ enter();
 assert.deepEqual(chips().slice(-1), ['#20 Machine 0'],
   'collapsed again, the picked machine stays visible behind the eight');
 assert.ok(root.innerHTML.includes('+1 more'), 'and the count says what is still hidden');
+
+// --- This week: four tiles, twelve weekly bars, the picked week's list ---
+// Relative to today, or the fixtures would age out of the twelve weeks.
+const monday = store.startOfDay(Date.now());
+monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+const weekAt = (weeksBack, hour) => {
+  const d = new Date(monday);
+  d.setDate(d.getDate() - 7 * weeksBack);
+  d.setHours(hour);
+  return d.getTime();
+};
+const sets = (n) => Array.from({ length: n }, () => ({ reps: 10, weight: 50 }));
+store.saveWorkouts([
+  { id: 'wk4', startedAt: weekAt(3, 8), finishedAt: weekAt(3, 9), entries: [entry('m1', 14, 'Leg press', sets(4))] },
+  { id: 'wk3', startedAt: weekAt(1, 8), finishedAt: weekAt(1, 8) + 45 * 60000, entries: [entry('m1', 14, 'Leg press', sets(1))] },
+  { id: 'wk1', startedAt: weekAt(0, 8), finishedAt: weekAt(0, 9), entries: [entry('m1', 14, 'Leg press', sets(2))] },
+  { id: 'wk2', startedAt: weekAt(0, 18), finishedAt: weekAt(0, 19), entries: [entry('m3', 7, 'Chest press', sets(3))] },
+]);
+enter();
+const weekTitle = () => root.querySelector('#week-title').textContent;
+const weekList = () => root.querySelector('#week-list').innerHTML;
+const weekTiles = () => root.querySelector('#week-tiles').innerHTML;
+const weekChart = () => root.querySelector('#week-chart');
+const listed = () => [...weekList().matchAll(/class="btn repeat-w" data-wid="([^"]+)"/g)].map((m) => m[1]);
+// the value a tile shows, read off the tile with that metric
+const tile = (metric) => weekTiles().match(new RegExp(
+  `data-metric="${metric}"[\\s\\S]*?tile-value">([^<]*)<[\\s\\S]*?tile-sub">([^<]*)<`))?.slice(1);
+assert.ok(/<h2 id="week-title">This week</.test(root.innerHTML), 'the card opens on this week');
+assert.equal(weekTitle(), 'This week');
+assert.deepEqual(listed(), ['wk2', 'wk1'], 'with this week\'s workouts, newest first');
+assert.deepEqual(tile('workouts'), ['2', 'vs 1 the week before'], 'the Workouts tile compares with the week before');
+assert.deepEqual(tile('sets'), ['5', 'vs 1 the week before']);
+assert.ok(/class="tile stat sel" data-metric="sets"/.test(weekTiles()), 'sets is the default metric');
+assert.equal((weekChart().innerHTML.match(/<rect class="c-bar/g) ?? []).length, 12, 'twelve weekly bars');
+assert.ok(/aria-label="Sets per week, last 12 weeks"/.test(weekChart().innerHTML), 'the bars count sets');
+assert.ok(root.innerHTML.includes('id="open-workouts"'), 'the card ends in the way to every workout');
+
+// a bar tap picks that week: title, tiles and list follow, the view does not re-render
+root.innerHTML += '<!--before the bar-->';
+weekChart().getBoundingClientRect = () => ({ left: 0, width: 520 });
+const barX = (i) => 42 + (i + 0.5) * ((520 - 42 - 18) / 12); // chart.js's column geometry
+weekChart().onpointerdown({ clientX: barX(10), pointerId: 1 });
+assert.ok(weekTitle().startsWith('Week of '), 'a bar tap names its week');
+assert.deepEqual(listed(), ['wk3'], 'and narrows the list to it');
+assert.deepEqual(tile('workouts'), ['1', 'vs 0 the week before'], 'the tiles describe that week');
+assert.ok(root.innerHTML.includes('<!--before the bar-->'), 'a bar tap never re-renders the view');
+weekChart().onpointerdown({ clientX: barX(9), pointerId: 1 });
+assert.ok(/Nothing logged that week\./.test(root.querySelector('#week-workouts').innerHTML),
+  'an empty week says so');
+weekChart().onpointerdown({ clientX: barX(10), pointerId: 1 });
+
+// a save from the week's own list re-renders without `entry`: the week stays
+root.querySelector('#week-list').listeners.click(clickOn('.edit-w', { wid: 'wk3' }));
+root.querySelector('#week-list').listeners.click(clickOn('.edit-save'));
+assert.ok(onOverview() && weekTitle().startsWith('Week of '), 'a save keeps the picked week');
+assert.deepEqual(listed(), ['wk3']);
+enter();
+assert.equal(weekTitle(), 'This week', 'a tab tap goes back to this week');
+assert.deepEqual(listed(), ['wk2', 'wk1']);
+
+// a tile tap is the bars' metric: saved on the device, kept across renders
+root.querySelector('#week-tiles').listeners.click(clickOn('.tile', { metric: 'volume' }));
+assert.equal(store.getSettings().historyMetric, 'volume', 'a tile tap saves the metric');
+assert.ok(/aria-label="Volume per week, last 12 weeks"/.test(weekChart().innerHTML), 'and redraws the bars');
+assert.ok(/class="tile stat sel" data-metric="volume"/.test(weekTiles()), 'its tile shows it is on');
+enter();
+assert.ok(/aria-label="Volume per week/.test(weekChart().innerHTML), 'the metric survives a tab tap');
+assert.deepEqual(tile('volume'), ['2,500 kg', 'vs 500 kg the week before']);
+root.querySelector('#week-tiles').listeners.click(clickOn('.tile', { metric: 'minutes' }));
+assert.deepEqual(tile('minutes'), ['2:00 h', 'vs 45 min the week before'], 'time reads in hours from 60 min');
 
 console.log('history: all assertions passed');
