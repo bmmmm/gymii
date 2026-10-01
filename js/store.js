@@ -732,6 +732,75 @@ export function clearActive() {
   localStorage.removeItem(scopedKey(activeGymId(), 'active'));
 }
 
+// THE one way to change which machine's log screen is current. Visits are
+// per MACHINE: a new exercise on the same machine moves no visit. A visit is
+// `{machineId, in, out, busy?}` — `in` when its log screen became current,
+// `out` when it stopped (next switch, overview, machine deleted, finish).
+// `busy` names the plan's next machine that was skipped for this one.
+// NEVER give a visit an `id`: sync's canon() sorts arrays whose items all
+// carry one before it compares, so a changed ORDER — the walking route —
+// would look like no change at all. Mutates `active`.
+export function switchMachine(active, machineId, exercise = null, { busy = null, now = Date.now() } = {}) {
+  const next = machineId ?? null;
+  if ((active.currentMachineId ?? null) !== next) {
+    const visits = active.visits ?? [];
+    const open = visits[visits.length - 1];
+    if (open && open.out == null) open.out = now;
+    if (next) active.visits = [...visits, { machineId: next, in: now, ...(busy ? { busy } : {}) }];
+  }
+  active.currentMachineId = next;
+  active.currentExercise = exercise; // the default already maps undefined to null
+  return active;
+}
+
+// A visit shorter than this was a tap through, not a stop — unless it
+// carries `busy`, which is a signal of its own however short the stay.
+const MIN_VISIT_MS = 15000;
+
+// The visits a finished workout keeps: the open one closed at `now`, tap
+// throughs dropped; undefined when nothing is left (absent, never empty).
+// Pure — returns new objects, never touches the input.
+export function closeVisits(visits, now) {
+  if (!Array.isArray(visits)) return undefined;
+  const kept = visits
+    .map((v) => (v.out == null ? { ...v, out: now } : v))
+    .filter((v) => v.busy || v.out - v.in >= MIN_VISIT_MS);
+  return kept.length ? kept : undefined;
+}
+
+// Rates the newest stamped strength/bodyweight set with reps in reserve
+// (0..3, 3 = "3 or more"); the same value again clears it. Cardio sets and
+// sets without `at` are never rated. Returns the set, or null.
+export function rateLastSet(active, rir) {
+  if (![0, 1, 2, 3].includes(rir)) return null;
+  let newest = null;
+  // the entry's flag is the type (train re-flags an entry only while it is
+  // empty, so its sets never mix), as in ai.js and history.js
+  active.entries.forEach((e) => !e.cardio && e.sets.forEach((s) => {
+    if (Number.isFinite(s.at) && (!newest || s.at >= newest.at)) newest = s;
+  }));
+  if (!newest) return null;
+  if (newest.rir === rir) delete newest.rir;
+  else newest.rir = rir;
+  return newest;
+}
+
+// Moves a workout in time by `delta` ms — every timestamp it carries, so the
+// gaps between them (rest, time per machine) survive a date edit. The sync
+// stamp `updatedAt` is not a moment of the workout and stays. Mutates `w`.
+export function shiftWorkout(w, delta) {
+  w.startedAt += delta;
+  if (Number.isFinite(w.finishedAt)) w.finishedAt += delta;
+  w.entries.forEach((e) => e.sets.forEach((s) => {
+    if (Number.isFinite(s.at)) s.at += delta;
+  }));
+  w.visits?.forEach((v) => {
+    if (Number.isFinite(v.in)) v.in += delta;
+    if (Number.isFinite(v.out)) v.out += delta;
+  });
+  return w;
+}
+
 // Moves the active workout into history; entries without sets are dropped.
 export function finishWorkout(active) {
   const entries = active.entries.filter((e) => e.sets.length);
@@ -739,12 +808,15 @@ export function finishWorkout(active) {
     clearActive();
     return null;
   }
+  const now = Date.now();
+  const visits = closeVisits(active.visits, now);
   const workout = {
     id: active.id,
     startedAt: active.startedAt,
-    finishedAt: Date.now(),
-    updatedAt: Date.now(),
+    finishedAt: now,
+    updatedAt: now,
     entries,
+    ...(visits ? { visits } : {}),
     ...(active.locker ? { locker: active.locker } : {}),
     ...(active.name ? { name: active.name } : {}),
     // which plan this came from — lets weekday tracking ask "was this plan
