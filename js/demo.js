@@ -3,14 +3,14 @@
 // (cardio, bodyweight, multi-exercise, targets, weekday states, lockers,
 // settings snapshots) is testable without building it by hand first.
 //
-// Everything is deterministic: fixed ids, a seeded PRNG and an injectable
+// Everything is deterministic: fixed ids, seeded PRNGs and an injectable
 // `now` — the same inputs always produce byte-identical data, which is
 // what makes a reload replace the Demo gym instead of duplicating it.
 
 import {
   getSettings, getGyms, createGym, setActiveGym, clearActive,
   saveLayout, saveWorkouts, savePlans, startOfDay, convertWeight, convertDistance,
-  newEntry,
+  newEntry, closeVisits,
 } from './store.js';
 
 const DEMO_GYM_NAME = 'Demo';
@@ -142,8 +142,8 @@ function strengthKg(id, weekIdx) {
 }
 
 // The entry snapshot is store's newEntry (same shape the log screen writes);
-// only the settings come from this dataset's own snapshots. `sets` never
-// carries `at` — these sets were not logged live.
+// only the settings come from this dataset's own snapshots. The sets carry
+// no `at` here — stampWorkout adds the live-log data to recent weeks only.
 function entryFor(layout, id, exercise, sets) {
   const entry = newEntry(machineById(layout, id), exercise, sets);
   entry.settings = { ...(SNAP_SETTINGS[id] ?? {}) };
@@ -205,7 +205,94 @@ const DAYS = [
   { key: 'pull', name: 'Pull day', offset: 0, planId: 'demo-plan-pull', build: pullEntries },
 ];
 
-function buildWorkouts(layout, rng, now) {
+// --- live-log data, the last four weeks only ---
+// What Train records on top of the sets: `at` (the END of each set), one
+// visit per machine stop and a reps-in-reserve rating per strength or
+// bodyweight set. Older weeks stay bare on purpose — real histories start
+// that way, and every "no `at`" guard in History keeps data to run on.
+// All timing draws come from a SECOND PRNG, so adding them moved no value
+// the first one draws (test-pinned).
+const STAMPED_WEEKS = 4; // back 0..3
+
+const SEC = 1000;
+const MIN = 60 * SEC;
+// a duration in ms, uniform in [lo, hi] seconds
+const secs = (trng, lo, hi) => Math.round((lo + trng() * (hi - lo)) * SEC);
+
+// Reps in reserve from the reps done at the week's working weight: more
+// reps, closer to failure. Never 2+ at 10 or more reps — every strength
+// machine the demo trains targets 10 or 12 reps (12 without a plan; the
+// rule skips bodyweight), and "reps >= target with rir >= 2" is stats.js's
+// progress rule, which only the lat pulldown fixture below may trip.
+const rirFor = (reps) => Math.min(3, Math.max(1, 11 - reps));
+
+// The machine stops of a workout in walking order, one per machine block
+// (entry order). Pull days carry two detours, each a History insight:
+// - the seated row's LAST set waits until after the curls, every week — a
+//   recurring walk back (stats.js rule 6, route);
+// - weeks 1-3 the pull-up bar was taken after the rows, so the user took
+//   Train's nearby alternative from the row (the dumbbell rack, closest
+//   open plan machine) and returned once the bar was free: three busy
+//   marks on one weekday at the same evening hours (rule 7). A busy stop
+//   logs no set — the curls follow the pull-ups as planned.
+// Pull, not Push: Pull is never dropped from the history, so all three
+// weeks exist for every seed.
+function stopsFor(workout, day, back) {
+  const stops = workout.entries.map((e) => ({ machineId: e.machineId, cardio: !!e.cardio, sets: [...e.sets] }));
+  if (day.key !== 'pull') return stops;
+  const at = (id) => stops.findIndex((s) => s.machineId === id);
+  const row = stops[at('seated-row')];
+  stops.splice(at('demo-dumbbells') + 1, 0, { machineId: 'seated-row', cardio: false, sets: [row.sets.pop()] });
+  if (back >= 1) stops.splice(at('demo-pullup'), 0, { machineId: 'demo-dumbbells', busy: 'demo-pullup', sets: [] });
+  return stops;
+}
+
+// Writes `at`, `rir` and `visits` onto a finished workout. Natural pace:
+// the first set starts at +4 min, a set takes 40 s (cardio: its own
+// seconds), the machine's rest -15...+30 s between sets, 60-120 s walking
+// between machines. A schedule that would end after finishedAt - 1 min is
+// scaled linearly into [startedAt + 2 min, finishedAt - 1 min]; the clamped
+// one-minute "today" workout of a load right after midnight gets its whole
+// span instead. Visits go through store's closeVisits, the filter
+// finishWorkout applies, so they have exactly the saved shape.
+function stampWorkout(w, stops, layout, trng) {
+  const done = []; // [set, ms from startedAt]
+  const visits = [];
+  let t = null;
+  stops.forEach((s) => {
+    const settle = s.busy ? 0 : secs(trng, 10, 30);
+    t = t == null ? 4 * MIN - settle : t + secs(trng, 60, 120);
+    const visitIn = t;
+    if (s.busy) {
+      t += secs(trng, 20, 60);
+    } else {
+      const rest = machineById(layout, s.machineId).restSeconds ?? 90;
+      t += settle;
+      s.sets.forEach((st, k) => {
+        if (k) t += secs(trng, rest - 15, rest + 30);
+        t += s.cardio ? st.seconds * SEC : 40 * SEC;
+        done.push([st, t]);
+        if (!s.cardio) st.rir = rirFor(st.reps);
+      });
+      t += secs(trng, 5, 20);
+    }
+    visits.push({ machineId: s.machineId, in: visitIn, ...(s.busy ? { busy: s.busy } : {}), out: t });
+  });
+  const first = visits[0].in;
+  let lo = w.startedAt + 2 * MIN;
+  let hi = w.finishedAt - MIN;
+  if (hi <= lo) {
+    lo = w.startedAt;
+    hi = w.finishedAt;
+  }
+  const scale = w.startedAt + t > hi ? (hi - lo) / (t - first) : null;
+  const abs = (x) => (scale == null ? w.startedAt + x : Math.round(lo + (x - first) * scale));
+  done.forEach(([st, x]) => { st.at = abs(x); });
+  const kept = closeVisits(visits.map((v) => ({ ...v, in: abs(v.in), out: abs(v.out) })), w.finishedAt);
+  if (kept) w.visits = kept;
+}
+
+function buildWorkouts(layout, rng, now, trng) {
   // two workouts vanish from the mid weeks for heatmap texture — never
   // from week 0 or 1, which the missed/done plan states depend on
   const drops = new Set([
@@ -233,7 +320,7 @@ function buildWorkouts(layout, rng, now) {
         startedAt = Math.max(midnight, now - 55 * 60000);
         finishedAt = Math.max(startedAt + 60000, Math.min(now, startedAt + 55 * 60000));
       }
-      workouts.push({
+      const workout = {
         id: `demo-${day.key}-w${back}`,
         startedAt, finishedAt, entries,
         name: day.name,
@@ -241,7 +328,17 @@ function buildWorkouts(layout, rng, now) {
         // the name-fallback in planTrainedSince gets exercised too
         ...(day.planId && back <= 3 ? { planId: day.planId } : {}),
         ...(rng() < 0.33 ? { locker: String(101 + Math.floor(rng() * 98)) } : {}),
-      });
+      };
+      if (back < STAMPED_WEEKS) stampWorkout(workout, stopsFor(workout, day, back), layout, trng);
+      // stats.js rule 1 (progress): the last two pull days end the lat
+      // pulldown on 12 reps with 2 in reserve at 57.5 kg, the plan's target
+      // weight — the target beaten by two reps twice, time to add load. The
+      // one deliberate change to a drawn value (the default seed drew 10).
+      if (day.key === 'pull' && back <= 1) {
+        const lat = entries.find((e) => e.machineId === 'lat-pulldown').sets;
+        Object.assign(lat[lat.length - 1], { reps: 12, rir: 2 });
+      }
+      workouts.push(workout);
     }
   }
   return workouts;
@@ -305,7 +402,9 @@ function convertToLbs({ workouts, plans }) {
 export function buildDemoData({ now = Date.now(), settings = getSettings(), seed = 0x5eed17 } = {}) {
   const rng = mulberry32(seed);
   const layout = buildLayout();
-  const workouts = buildWorkouts(layout, rng, now);
+  // timing has its own stream: `rng` draws exactly what it drew before
+  // the live-log stamps existed
+  const workouts = buildWorkouts(layout, rng, now, mulberry32(seed ^ 0x9e3779b9));
   const plans = buildPlans(now);
   if (settings.unit === 'lbs') convertToLbs({ workouts, plans });
   return { layout, workouts, plans };
