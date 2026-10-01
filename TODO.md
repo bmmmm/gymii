@@ -38,9 +38,6 @@ visits and ratings for its last four weeks.
   it (a burst-logger loses that machine from the route; stamped sets cannot
   fill in because visits win whenever any exist). A workout started before
   the visits deploy and finished after it has a partial route, one-off.
-- `lineChart` picks on `pointerdown`, before the browser decides whether a
-  `pan-y` touch is a scroll: a vertical scroll that starts on the chart
-  moves the selection. Needs a device measurement before changing it.
 - `saveSettings` from a range chip or metric tile stamps `settings.updatedAt`
   (device-local keys ride the shared stamp — the existing mapColors/timerDim
   pattern, now on the most-browsed screen); a stale device can win the user

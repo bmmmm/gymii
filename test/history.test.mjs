@@ -203,6 +203,7 @@ assert.ok(chartEl().innerHTML.includes('c-line alt'), 'strength draws the dashed
 root.innerHTML += '<!--before the pick-->';
 chartEl().getBoundingClientRect = () => ({ left: 0, width: 520 });
 chartEl().onpointerdown({ clientX: 0, pointerId: 1 });
+chartEl().onpointerup({ clientX: 0 });
 assert.ok(pickEl().innerHTML.includes('80×10') && !pickEl().innerHTML.includes('85×10'),
   'a tap on the chart shows the first workout\'s sets');
 assert.ok(pickEl().innerHTML.includes('data-wid="w1"'), '"Open workout" carries that workout');
@@ -221,6 +222,7 @@ assert.equal(selKey(root.innerHTML), 'm2 ', 'but keeps the picked machine');
 tapMachine('m1 ');
 chartEl().getBoundingClientRect = () => ({ left: 0, width: 520 });
 chartEl().onpointerdown({ clientX: 0, pointerId: 1 });
+chartEl().onpointerup({ clientX: 0 });
 pickEl().listeners.click(clickOn('.pick-open', { wid: 'w1' }));
 assert.ok(onWorkouts(), '"Open workout ›" opens the Workouts screen');
 const openCard = root.querySelector('#workout-list').innerHTML.split('<details')
@@ -546,14 +548,17 @@ root.innerHTML += '<!--before the bar-->';
 weekChart().getBoundingClientRect = () => ({ left: 0, width: 520 });
 const barX = (i) => 42 + (i + 0.5) * ((520 - 42 - 18) / 12); // chart.js's column geometry
 weekChart().onpointerdown({ clientX: barX(10), pointerId: 1 });
+weekChart().onpointerup({ clientX: barX(10) });
 assert.ok(weekTitle().startsWith('Week of '), 'a bar tap names its week');
 assert.deepEqual(listed(), ['wk3'], 'and narrows the list to it');
 assert.deepEqual(tile('workouts'), ['1', 'vs 0 the week before'], 'the tiles describe that week');
 assert.ok(root.innerHTML.includes('<!--before the bar-->'), 'a bar tap never re-renders the view');
 weekChart().onpointerdown({ clientX: barX(9), pointerId: 1 });
+weekChart().onpointerup({ clientX: barX(9) });
 assert.ok(/Nothing logged that week\./.test(root.querySelector('#week-workouts').innerHTML),
   'an empty week says so');
 weekChart().onpointerdown({ clientX: barX(10), pointerId: 1 });
+weekChart().onpointerup({ clientX: barX(10) });
 
 // a save from the week's own list re-renders without `entry`: the week stays
 root.querySelector('#week-list').listeners.click(clickOn('.edit-w', { wid: 'wk3' }));

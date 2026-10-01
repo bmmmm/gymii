@@ -24,8 +24,15 @@ const fmtVal = (v, unit) => `${Math.round(v * 100) / 100}${unit ? ` ${unit}` : '
 // container: a redraw replaces them, where addEventListener would stack one
 // more set per redraw. The container (.chart-wrap) is measured, never the
 // svg — the svg is replaced on every selection change.
+// Nothing is picked on pointerdown: a touch that starts on the chart may be
+// a page scroll (touch-action: pan-y lets the browser take it over and send
+// pointercancel), and picking at once selected the week bar under the
+// finger — the tiles then showed that week's zeros mid-scroll (2026-10-01).
+// A tap picks on pointerup; a drag picks once the finger moved more across
+// than down, and follows from there.
+const DRAG_PX = 8; // tap slop in CSS px, either axis
 function interactive(container, { count, sel, indexAt, draw, report }) {
-  let dragging = false;
+  let press = null; // {x, y, drag, scroll} while a pointer is down
   const select = (i) => {
     if (i === sel || i < 0 || i >= count) return;
     sel = i;
@@ -40,12 +47,24 @@ function interactive(container, { count, sel, indexAt, draw, report }) {
   container.tabIndex = 0;
   container.onpointerdown = (e) => {
     container.setPointerCapture?.(e.pointerId);
-    dragging = true;
+    press = { x: e.clientX, y: e.clientY ?? 0, drag: false, scroll: false };
+  };
+  container.onpointermove = (e) => {
+    if (!press) return;
+    if (!press.drag) {
+      const dx = Math.abs(e.clientX - press.x);
+      const dy = Math.abs((e.clientY ?? 0) - press.y);
+      if (dx >= DRAG_PX && dx >= dy) press.drag = true;
+      else if (dy >= DRAG_PX) press.scroll = true; // a mouse can scroll too
+      if (!press.drag) return;
+    }
     pick(e.clientX);
   };
-  container.onpointermove = (e) => { if (dragging) pick(e.clientX); };
-  container.onpointerup = () => { dragging = false; };
-  container.onpointercancel = () => { dragging = false; };
+  container.onpointerup = (e) => {
+    if (press && !press.drag && !press.scroll) pick(e.clientX);
+    press = null;
+  };
+  container.onpointercancel = () => { press = null; };
   container.onkeydown = (e) => {
     const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
     if (!step) return;

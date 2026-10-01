@@ -970,16 +970,35 @@ details.workout summary::-webkit-details-marker { display: none; }
    (#212932): 4.6:1 — re-check against THAT, not the card surface */
 .bar-fill { display: block; height: 100%; background: #35a273; border-radius: 3px; }
 
-/* "Worth a look": the row is the tap target (shared row reset above); its
+/* "Worth a look" is an info box, not a card of its own: no surface, a
+   dashed border, an i-in-a-circle, muted text — it reads as a note beside
+   the numbers, not as the numbers (user, 2026-10-01: "aktuell sehr
+   präsent"). The row stays the tap target (shared row reset above); its
    source link sits outside it — a link inside a button is no link — as a
    real 44px box at 16px, like every focusable text */
-.insight + .insight { border-top: 1px solid var(--border); }
-.insight-row { display: block; width: 100%; margin: 0; padding: 10px 4px 2px; }
-.insight-text { display: block; }
-button.insight-row .insight-text::after { content: ' ›'; color: var(--muted); }
-.insight-row .why { display: block; margin-top: 2px; color: var(--muted); font-size: 13px; }
-.insight-src { margin: 0 4px 8px; color: var(--muted); font-size: 13px; }
-.insight-src a { display: inline-flex; align-items: center; min-height: 44px; font-size: 16px; }
+.info-box { background: transparent; border-style: dashed; padding: 8px 12px 4px; }
+.info-box h2 { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+/* the i-in-a-circle is decoration, so it lives in CSS: the heading text
+   stays plain for screen readers and for the card-order pin in the tests */
+.info-box h2::before {
+  content: 'i';
+  display: inline-flex; justify-content: center; align-items: center;
+  width: 15px; height: 15px; border: 1px solid var(--muted); border-radius: 50%;
+  font-family: Georgia, serif; font-style: italic; font-weight: 700; font-size: 11px;
+  line-height: 1; text-transform: none; letter-spacing: 0;
+}
+.insight + .insight { border-top: 1px dashed var(--border); }
+.insight-row { display: block; width: 100%; margin: 0; padding: 6px 2px 0; }
+/* beats the shared row reset's `button.insight-row { color: var(--text) }` */
+.info-box button.insight-row, .info-box p.insight-row { color: var(--muted); }
+.insight-text { display: block; font-size: 16px; }
+button.insight-row .insight-text::after { content: ' ›'; }
+.insight-row .why { display: block; margin-top: 1px; font-size: 12px; }
+.insight-src { margin: 0 2px 2px; color: var(--muted); font-size: 12px; }
+.insight-src a {
+  display: inline-flex; align-items: center; min-height: 44px; font-size: 16px;
+  color: var(--muted); text-decoration: underline dotted;
+}
 
 /* Walking paths: the counts, then where the time went */
 #path-stats p { margin: 4px 0; }

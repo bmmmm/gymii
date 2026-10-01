@@ -399,7 +399,7 @@ const insightCard = {
   html({ all, layout, s }) {
     const list = insights(all, layout, s, { plans: getPlans() });
     return list.length ? `
-    <section class="card" id="insight-card">
+    <section class="card info-box" id="insight-card">
       <h2>Worth a look</h2>
       ${list.map((it) => insightHtml(it, all)).join('')}
     </section>` : '';

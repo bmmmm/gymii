@@ -123,6 +123,7 @@ c = box();
 const picked = [];
 lineChart(c, pts, { xDomain: [day(2026, 8, 13), day(2026, 9, 3)], onSelect: (p, i) => picked.push([p.workoutId, i]) });
 c.onpointerdown({ clientX: 1, pointerId: 1 });
+c.onpointerup({ clientX: 1 });
 assert.deepEqual(picked, [['b', 1]], 'onSelect indexes the caller\'s array, not the points left after the domain cut');
 
 // --- interaction: tap, scrub, keyboard ---
@@ -137,23 +138,36 @@ assert.deepEqual(c.added, [], 'addEventListener is never used — it would stack
 assert.equal(calls.length, 0, 'the draw itself reports nothing');
 c.onpointerdown({ clientX: 519, pointerId: 7 });
 assert.equal(captured, 7, 'pointerdown captures the pointer');
-assert.equal(calls.length, 1, 'a tap on a new point reports once');
-assert.equal(calls[0][0].workoutId, 'd', 'down@519 selects the last point, extra fields intact');
+assert.equal(calls.length, 0, 'pointerdown alone picks nothing — it may be the start of a page scroll');
+c.onpointerup({ clientX: 519 });
+assert.equal(calls.length, 1, 'a tap (down, up) on a new point reports once');
+assert.equal(calls[0][0].workoutId, 'd', 'tap@519 selects the last point, extra fields intact');
 assert.equal(calls[0][1], 3, 'onSelect gets the index into the caller\'s array');
 assert.equal(selCx(c.innerHTML), 502, 'the redraw moves the selection');
-c.onpointermove({ clientX: 500 });
+c.onpointerdown({ clientX: 519, pointerId: 7 });
+c.onpointermove({ clientX: 500, clientY: 0 });
 assert.equal(calls.length, 1, 'scrubbing within the same point reports nothing');
-c.onpointermove({ clientX: 1 });
+c.onpointermove({ clientX: 1, clientY: 0 });
 assert.equal(calls.length, 2, 'scrubbing to another point reports once');
 assert.equal(calls[1][0].workoutId, 'a', 'move@1 while dragging selects the first point');
-c.onpointerup({});
+c.onpointerup({ clientX: 1 });
 assert.equal(selCx(c.innerHTML), 42, 'the selection stays after the finger lifts');
-c.onpointermove({ clientX: 519 });
+c.onpointermove({ clientX: 519, clientY: 0 });
 assert.equal(calls.length, 2, 'moving without a pressed pointer selects nothing');
 c.onpointerdown({ clientX: 519, pointerId: 8 });
 c.onpointercancel({});
-c.onpointermove({ clientX: 1 });
-assert.equal(calls.length, 3, 'pointercancel ends the drag too');
+c.onpointermove({ clientX: 1, clientY: 0 });
+c.onpointerup({ clientX: 1 });
+assert.equal(calls.length, 2, 'a cancelled press (the browser took it as a scroll) picks nothing');
+c.onpointerdown({ clientX: 519, pointerId: 9 });
+c.onpointermove({ clientX: 515, clientY: 40 });
+c.onpointermove({ clientX: 505, clientY: 60 });
+c.onpointerup({ clientX: 505 });
+assert.equal(calls.length, 2, 'a mostly vertical move is a scroll, not a pick — even without a cancel');
+c.onpointerdown({ clientX: 519, pointerId: 10 });
+c.onpointermove({ clientX: 522, clientY: 3 });
+c.onpointerup({ clientX: 522 });
+assert.equal(calls.length, 3, 'a tap with a few px of wobble still picks');
 
 const prevented = [];
 const key = (k) => ({ key: k, preventDefault: () => prevented.push(k) });
@@ -175,6 +189,7 @@ c = box();
 lineChart(c, pts, { onSelect: () => old.push(1) });
 lineChart(c, pts, { onSelect: () => fresh.push(1) });
 c.onpointerdown({ clientX: 1, pointerId: 1 });
+c.onpointerup({ clientX: 1 });
 assert.deepEqual([old.length, fresh.length], [0, 1], 'a redraw replaces the previous handlers');
 
 // without a measurable container a tap is ignored, never a throw
@@ -182,7 +197,7 @@ for (const over of [{ getBoundingClientRect: undefined }, { getBoundingClientRec
   const quiet = [];
   c = box(over);
   lineChart(c, pts, { onSelect: () => quiet.push(1) });
-  assert.doesNotThrow(() => c.onpointerdown({ clientX: 1, pointerId: 1 }), 'no rect, no throw');
+  assert.doesNotThrow(() => { c.onpointerdown({ clientX: 1, pointerId: 1 }); c.onpointerup({ clientX: 1 }); }, 'no rect, no throw');
   assert.equal(quiet.length, 0, 'no rect, no selection');
 }
 
@@ -204,10 +219,10 @@ assert.deepEqual(xl, ['3 Sep', '6 Sep', '9 Sep', 'now', '14 sets'], 'x labels ev
 assert.equal(c.tabIndex, 0, 'the bar chart is reachable by keyboard');
 
 c.onpointerdown({ clientX: 190, pointerId: 1 }); // column 3 spans 157–195 (38.3 units each from 42)
+c.onpointerup({ clientX: 190 });
 assert.equal(barCalls.length, 1, 'a column tap reports once');
 assert.equal(barCalls[0][0].key, 'w3', 'the tap picks the column by its x band');
 assert.ok(c.innerHTML.includes('class="c-bar sel" data-key="w3"'), 'the tapped bar is selected');
-c.onpointerup({});
 c.onkeydown(key('ArrowLeft'));
 assert.equal(barCalls[1][1], 2, 'ArrowLeft steps one bar back');
 
