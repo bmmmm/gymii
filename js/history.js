@@ -1,5 +1,5 @@
 import {
-  getLayout, getWorkouts, saveWorkouts, getSettings, getActive, deleteWorkout,
+  getLayout, getWorkouts, saveWorkouts, getSettings, saveSettings, getActive, deleteWorkout,
   updateWorkout, distUnit, workoutFromText, newEntry, nameChipsFor,
   layoutMuscles, usageByMuscle, workoutsWithMuscle, shiftWorkout,
 } from './store.js';
@@ -9,6 +9,7 @@ import {
   parseDuration, parseDistance,
 } from './ui.js';
 import { lineChart } from './chart.js';
+import { machineSeries } from './stats.js';
 import { startWorkoutFrom } from './train.js';
 
 // Active workout-name filter ('' = all). Module state, so it survives the
@@ -27,15 +28,30 @@ let lastScreen = null;
 // The heatmap's month as a Date on the 1st (null = this month). Module
 // state, so the full re-render after a save no longer snaps it back.
 let hmMonth = null;
+// Progress card: the picked machine as its 'machineId exercise' key (null =
+// the most recently trained) and the picked point's time (null = the
+// newest; cleared when the machine changes). Module state, like the
+// filters, so a save does not throw the chart back to another machine.
+let pickedMachine = null;
+let pickedT = null;
+// "+N more" on the machine chips was opened.
+let machinesExpanded = false;
+// The workout "Open workout ›" asked for: the Workouts screen opens it and
+// scrolls it into view, once.
+let focusWorkoutId = null;
 
 // `entry` = arriving from the tab bar (app.js). It is the ONE thing that
-// resets "where in time" — the screen and the heatmap month; the filters
-// survive it. Every other re-render (save, delete, filter) calls
-// renderHistory(root) without it, so nothing the user set moves.
+// resets "where in time" — the screen, the heatmap month, the chart's
+// point (and the chip list's expansion); the filters, the picked machine
+// and the range survive it. Every other re-render (save, delete, filter)
+// calls renderHistory(root) without it, so nothing the user set moves.
 export function renderHistory(root, { entry = false } = {}) {
   if (entry) {
     screen = 'overview';
     hmMonth = null;
+    pickedT = null;
+    focusWorkoutId = null;
+    machinesExpanded = false;
   }
   // train.js's rule: a changed screen is NAVIGATION and starts at the top;
   // reset BEFORE the render, while the old (tall) content can still
@@ -91,17 +107,23 @@ function historyContext() {
   // splits on the FIRST space only (exercise names may contain more).
   const machines = new Map();
   workouts.forEach((w) => w.entries.forEach((e) => {
-    machines.set(`${e.machineId} ${e.exercise ?? ''}`,
-      { machineId: e.machineId, exercise: e.exercise ?? null, num: e.num, label: e.label });
+    const key = `${e.machineId} ${e.exercise ?? ''}`;
+    machines.set(key, {
+      machineId: e.machineId, exercise: e.exercise ?? null, num: e.num, label: e.label,
+      last: Math.max(machines.get(key)?.last ?? -Infinity, w.startedAt),
+    });
   }));
   layout?.machines.forEach((m) => {
     machines.forEach((val, key) => {
       if (val.machineId === m.id) machines.set(key, { ...val, num: m.num, label: m.label });
     });
   });
-  const options = [...machines.entries()].sort((a, b) =>
-    a[1].num - b[1].num || (a[1].exercise ?? '').localeCompare(b[1].exercise ?? ''));
-  return { all, named, byName, workouts, s, unit: s.unit, layout, allMuscles, options };
+  const byNum = (a, b) =>
+    a[1].num - b[1].num || (a[1].exercise ?? '').localeCompare(b[1].exercise ?? '');
+  const options = [...machines.entries()].sort(byNum); // the heatmap's <select>
+  // the Progress chips: most recently trained first
+  const recent = [...machines.entries()].sort((a, b) => b[1].last - a[1].last || byNum(a, b));
+  return { all, named, byName, workouts, s, unit: s.unit, layout, allMuscles, options, recent };
 }
 
 const optionHtml = ([key, m]) => `<option value="${esc(key)}">#${m.num} ${esc(m.label)}${
@@ -230,56 +252,157 @@ const workoutsLink = {
   },
 };
 
+// --- Progress: one machine's top set over time ---
+// Machine chips (most recently trained first) pick the machine, range
+// chips the window (`settings.historyRange`, device-local — merge.js does
+// not sync it), the chart's selection the workout shown under it.
+const CHIP_LIMIT = 8;
+const RANGES = [['4w', '4 wk'], ['12w', '12 wk'], ['1y', '1 yr'], ['all', 'All']];
+const rangeOf = (s) => (RANGES.some(([k]) => k === s.historyRange) ? s.historyRange : '12w');
+
+// The x window: the range back from now, never earlier than the machine's
+// first point. A future-dated back-log stretches it rather than vanishing.
+function domainFor(range, points, now = Date.now()) {
+  const first = points[0].t;
+  const end = Math.max(now, points[points.length - 1].t);
+  if (range === 'all') return [first, end];
+  const from = new Date(now); // calendar steps, not ms multiples (DST)
+  if (range === '1y') from.setFullYear(from.getFullYear() - 1);
+  else from.setDate(from.getDate() - (range === '4w' ? 28 : 84));
+  return [Math.max(from.getTime(), first), end];
+}
+
+// The machine on show: the picked one while the filters still show it,
+// else the most recently trained.
+const shownKey = (recent) =>
+  (recent.some(([k]) => k === pickedMachine) ? pickedMachine : recent[0]?.[0] ?? null);
+const machineName = (m) => `#${m.num} ${m.label}${m.exercise ? ` · ${m.exercise}` : ''}`;
+
+// The first CHIP_LIMIT by last use, plus the shown one wherever it ranks.
+function machineChipsHtml(recent) {
+  const key = shownKey(recent);
+  const visible = machinesExpanded ? recent
+    : recent.filter(([k], i) => i < CHIP_LIMIT || k === key);
+  const more = recent.length - visible.length;
+  return visible.map(([k, m]) => `<button type="button" class="chip${k === key ? ' sel' : ''}"
+      data-key="${esc(k)}" aria-pressed="${k === key}">${esc(machineName(m))}</button>`).join('')
+    + (more ? `<button type="button" class="chip" data-more="1">+${more} more</button>` : '');
+}
+
+const rangeChipsHtml = (range) => RANGES.map(([k, label]) => `<button type="button"
+      class="chip sm${k === range ? ' sel' : ''}" data-range="${k}" aria-pressed="${k === range}">${label}</button>`)
+  .join('');
+
 const progressCard = {
-  html: ({ options }) => `
-    <section class="card">
+  html: ({ recent, s }) => `
+    <section class="card" id="progress-card">
       <h2 id="chart-title">Progress</h2>
-      <select id="chart-machine" aria-label="Machine">
-        ${options.length ? options.map(optionHtml).join('')
-    // '' decodes to null and the chart says "No data yet." — the picker
-    // states why it is empty instead of rendering optionless (#hm-machine
-    // never goes empty thanks to its fixed "All machines" option)
-    : '<option value="">No machines match this filter</option>'}
-      </select>
+      ${recent.length ? `
+      <div class="chip-select" id="machine-chips">${machineChipsHtml(recent)}</div>
+      <div class="map-mode" id="range-chips">${rangeChipsHtml(rangeOf(s))}</div>
       <div class="chart-wrap" id="chart"></div>
+      <div class="c-pick" id="chart-pick" role="status"></div>`
+    // a filter combination can leave no machine at all — say so
+    : '<p class="muted">No machines match this filter.</p>'}
     </section>`,
-  wire(root, { workouts, s, unit }) {
-    const select = root.querySelector('#chart-machine');
+  wire(root, { workouts, recent, s, unit }) {
+    if (!recent.length) return;
+    const chipsEl = root.querySelector('#machine-chips');
+    const rangeEl = root.querySelector('#range-chips');
     const chartEl = root.querySelector('#chart');
+    const pickEl = root.querySelector('#chart-pick');
     const chartTitle = root.querySelector('#chart-title');
+
+    // Redraws THIS card's parts only: the chart handlers close over
+    // chartEl, so re-rendering an ancestor would leave them on a dead node.
     const draw = () => {
-      const sel = decodeKey(select.value);
-      if (!sel) {
-        chartEl.innerHTML = '<p class="muted">No data yet.</p>';
+      chipsEl.innerHTML = machineChipsHtml(recent);
+      const range = rangeOf(getSettings());
+      rangeEl.innerHTML = rangeChipsHtml(range);
+      const key = shownKey(recent);
+      const m = new Map(recent).get(key);
+      const sel = decodeKey(key);
+      const series = machineSeries(workouts, sel.machineId, sel.exercise);
+      if (!series.length) { // an entry without sets: nothing to plot
+        chartTitle.textContent = 'Progress';
+        lineChart(chartEl, []);
+        pickEl.innerHTML = '';
         return;
       }
-      const relevant = workouts
-        .map((w) => ({ w, e: w.entries.find((e) => entryMatches(e, sel) && e.sets.length) }))
-        .filter((x) => x.e);
-      // A machine's type can be toggled over time; plot the metric of its
-      // most recent entry and skip entries of any other shape.
-      const latest = relevant[relevant.length - 1]?.e;
-      const cardio = !!latest?.cardio;
-      const bodyweight = !!latest?.bodyweight;
-      const series = relevant.filter(({ e }) => !!e.cardio === cardio && !!e.bodyweight === bodyweight);
-      // Bodyweight progress lives in reps until extra weight shows up.
-      const bwLoaded = bodyweight && series.some(({ e }) => e.sets.some((st) => st.weight > 0));
-      const points = series.map(({ w, e }) => ({
-        t: w.startedAt,
-        v: cardio ? Math.max(...e.sets.map((st) => st.distance || 0))
-          : bodyweight && !bwLoaded ? Math.max(...e.sets.map((st) => st.reps || 0))
-            : Math.max(...e.sets.map((st) => st.weight || 0)),
-      }));
-      const metric = cardio ? `top distance (${distUnit(s)})`
-        : bodyweight ? (bwLoaded ? `top added weight (${unit})` : 'top reps')
+      // The shape of the newest entry decides the metric (machineSeries
+      // already dropped entries of any other shape); bodyweight progress
+      // lives in reps until extra weight shows up.
+      const kind = series[series.length - 1].kind;
+      const reps = kind === 'bodyweight' && !series.some((p) => p.top.weight > 0);
+      const valueOf = (p) => (kind === 'cardio' ? p.top.distance : reps ? p.top.reps : p.top.weight);
+      const points = series.map((p) => ({ t: p.t, v: valueOf(p), workoutId: p.workoutId, e1rm: p.e1rm }));
+      const metric = kind === 'cardio' ? `top distance (${distUnit(s)})`
+        : kind === 'bodyweight' ? (reps ? 'top reps' : `top added weight (${unit})`)
           : `top set weight (${unit})`;
+      const xDomain = domainFor(range, points);
+      // The point shown under the chart is the one the chart selects —
+      // picked here and handed in as selectedT, so the two never disagree.
+      const inRange = points.filter((p) => p.t >= xDomain[0] && p.t <= xDomain[1]);
+      const shown = !inRange.length ? null : pickedT == null ? inRange[inRange.length - 1]
+        : inRange.reduce((b, p) => (Math.abs(p.t - pickedT) < Math.abs(b.t - pickedT) ? p : b));
+
+      // Rewrites #chart-pick and nothing else — onSelect runs mid-gesture.
+      const fillPick = (p) => {
+        const w = p && workouts.find((x) => x.id === p.workoutId);
+        const e = w?.entries.find((x) => entryMatches(x, sel) && x.sets.length);
+        pickEl.innerHTML = e ? `
+          <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>${p.e1rm != null
+            ? `<span class="muted">e1RM ${p.e1rm} ${esc(unit)}</span>` : ''}</div>
+          <div class="muted">${e.sets.map((st) => setStr(st, s, !!e.bodyweight)).join(', ')}</div>
+          <button type="button" class="btn btn-inline pick-open" data-wid="${esc(w.id)}">Open workout ›</button>`
+          : '';
+      };
+
       chartTitle.textContent = `Progress — ${metric}`;
       lineChart(chartEl, points, {
-        unit: cardio ? distUnit(s) : bodyweight && !bwLoaded ? 'reps' : unit,
-        label: `Progress: ${metric} over time`,
+        unit: kind === 'cardio' ? distUnit(s) : reps ? 'reps' : unit,
+        label: `Progress: ${machineName(m)} — ${metric} over time`,
+        name: kind === 'cardio' ? 'Top distance' : reps ? 'Top reps' : 'Top set',
+        // e1RM only where it is valid: loaded strength sets of 1–10 reps
+        second: kind === 'strength' ? {
+          points: series.filter((p) => p.e1rm != null).map((p) => ({ t: p.t, v: p.e1rm })),
+          label: 'Estimated 1RM',
+        } : null,
+        selectedT: shown?.t ?? null,
+        xDomain,
+        onSelect: (p) => {
+          pickedT = p.t;
+          fillPick(p);
+        },
       });
+      fillPick(shown);
     };
-    select.addEventListener('change', draw);
+
+    chipsEl.addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      if (chip.dataset.more) {
+        machinesExpanded = true;
+      } else if (chip.dataset.key !== shownKey(recent)) {
+        pickedMachine = chip.dataset.key;
+        pickedT = null; // a point of another machine means nothing here
+      }
+      draw();
+    });
+    rangeEl.addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      saveSettings({ ...getSettings(), historyRange: chip.dataset.range });
+      draw();
+    });
+    // "Open workout ›" — the same workout, with its sets and its editor
+    pickEl.addEventListener('click', (e) => {
+      const open = e.target.closest('.pick-open');
+      if (!open) return;
+      focusWorkoutId = open.dataset.wid;
+      screen = 'workouts';
+      renderHistory(root);
+    });
     draw();
   },
 };
@@ -399,13 +522,18 @@ function wireWorkoutList(root, list, items, s, layout) {
   let editDraft = openEditId
     ? JSON.parse(JSON.stringify(items.find((w) => w.id === openEditId) ?? null)) : null;
   openEditId = null;
-  const renderList = () => {
+  const focusId = focusWorkoutId; // "Open workout ›": opened on THIS render only
+  focusWorkoutId = null;
+  const renderList = (openId = null) => {
     // reachable only by combining the name and muscle filters
     list.innerHTML = items.length ? items.slice().reverse()
-      .map((w) => (editDraft?.id === w.id ? editWorkoutHtml(editDraft, s, layout) : workoutHtml(w, s)))
+      .map((w) => (editDraft?.id === w.id ? editWorkoutHtml(editDraft, s, layout)
+        : workoutHtml(w, s, w.id === openId)))
       .join('') : '<p class="muted">No workouts match this filter.</p>';
   };
-  renderList();
+  renderList(focusId);
+  // its summary, not its middle: an open workout can be taller than the screen
+  if (focusId) keepInView(list, 'details.workout[open] summary');
 
   list.addEventListener('click', (e) => {
     const repeat = e.target.closest('.repeat-w');
@@ -545,10 +673,10 @@ const minsOf = (w) => // finishedAt can be absent in imported data
 
 const entryTitle = (e) => `#${e.num} ${esc(e.label)}${e.exercise ? ` · ${esc(e.exercise)}` : ''}`;
 
-function workoutHtml(w, s) {
+function workoutHtml(w, s, open = false) {
   const sets = setCount(w);
   const chain = machineChain(w);
-  return `<details class="workout">
+  return `<details class="workout"${open ? ' open' : ''}>
     <summary>
       <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>
         <span class="muted">${fmtTime(w.startedAt)} · ${minsOf(w)} min</span></div>

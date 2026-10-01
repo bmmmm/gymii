@@ -1,6 +1,7 @@
 // Logic-level test for history.js: the two screens (overview, Workouts)
-// and what survives a re-render, the workout-name filter (it narrows the
-// WHOLE view, not just the list), the full editor (add/remove sets and
+// and what survives a re-render, the interactive Progress card (machine
+// and range chips, the picked point), the workout-name filter (it narrows
+// the WHOLE view, not just the list), the full editor (add/remove sets and
 // machines, edit the date) and logging a workout after the fact.
 // Run with: node test/history.test.mjs
 import './helpers/localstorage.mjs'; // FIRST: installs the stub
@@ -20,6 +21,9 @@ const layout = store.newLayout('History test layout');
   id, num, label, x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles,
 }));
 store.saveLayout(layout);
+// the fixtures sit at fixed dates; the default 12-week range would let
+// them age out of the chart as the calendar moves on
+store.saveSettings({ ...store.getSettings(), historyRange: 'all' });
 
 const entry = (id, num, label, sets) => ({ machineId: id, num, label, settings: {}, sets });
 store.saveWorkouts([
@@ -45,10 +49,14 @@ const stubEl = (over = {}) => ({
   value: '',
   textContent: '',
   disabled: false,
+  tabIndex: -1,
   dataset: {},
   style: {},
   listeners: {},
   addEventListener(type, fn) { this.listeners[type] = fn; },
+  setAttribute() {},
+  removeAttribute() {},
+  setPointerCapture() {},
   querySelector: () => stubEl(),
   querySelectorAll: () => [],
   classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
@@ -110,13 +118,15 @@ assert.ok(onOverview(), 'History opens on its overview');
 assert.ok(root.innerHTML.includes('id="name-filter"'), 'name chips render');
 assert.ok(root.innerHTML.includes('Leg day') && root.innerHTML.includes('· 2'),
   'each name carries how often it was trained');
-// match the <option> markup, not the bare label — the past-workout
-// placeholder mentions these machines too
-const options = () => [...root.innerHTML.matchAll(/<option value="[^"]*">([^<]+)</g)]
+// the Progress card's machine chips, in render order — match the chip
+// markup, not the bare label: the past-workout placeholder mentions these
+// machines too
+const chips = (html = root.innerHTML) => [...html.matchAll(/data-key="[^"]*"[^>]*>([^<]+)</g)]
   .map((m) => m[1].trim());
-assert.deepEqual([...new Set(options())].sort(),
-  ['#14 Leg press', '#3 Lat pulldown'],
-  'unfiltered, every trained machine is selectable');
+assert.deepEqual(chips(), ['#14 Leg press', '#3 Lat pulldown'],
+  'unfiltered, every trained machine is a chip — the most recently trained first');
+assert.ok(/class="chip sel"\s+data-key="m1 "/.test(root.innerHTML),
+  'with nothing picked, the most recent machine is on show');
 
 // Two screens. The overview analyses; the Workouts screen holds what you
 // did, day by day and workout by workout, and the form that adds one.
@@ -146,7 +156,7 @@ backToOverview();
 
 root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: 'Leg day' }));
 assert.ok(onOverview(), 'a filter tap stays on the screen it was made on');
-assert.ok(!options().includes('#3 Lat pulldown'),
+assert.ok(!chips().includes('#3 Lat pulldown'),
   'machine lists follow the filter, not just the workout list');
 assert.ok(root.innerHTML.includes('All workouts (2) ›'), 'and so does the count');
 openWorkouts();
@@ -159,12 +169,83 @@ render();
 assert.ok(onWorkouts(), 'a re-render keeps the screen');
 assert.ok(root.innerHTML.includes('<h2>Workouts</h2>'), 'a filter with nothing left resets');
 backToOverview();
-assert.ok(options().includes('#3 Lat pulldown'), 'and the full view comes back');
+assert.ok(chips().includes('#3 Lat pulldown'), 'and the full view comes back');
 
 // a tab tap is the one thing that returns to the overview
 openWorkouts();
 enter();
 assert.ok(onOverview(), 'renderHistory(root, { entry: true }) lands on the overview');
+
+// --- Progress: machine chips, the picked point, the range ---
+
+const chartEl = () => root.querySelector('#chart');
+const pickEl = () => root.querySelector('#chart-pick');
+const machineChips = () => root.querySelector('#machine-chips');
+const tapMachine = (key) => machineChips().listeners.click(clickOn('.chip', { key }));
+const selKey = (html) => html.match(/class="chip sel"\s+data-key="([^"]*)"/)?.[1];
+
+tapMachine('m2 ');
+assert.equal(selKey(machineChips().innerHTML), 'm2 ', 'a chip tap selects that machine');
+assert.ok(/aria-label="Progress: #3 Lat pulldown — top set weight \(kg\) over time"/.test(chartEl().innerHTML),
+  'and the chart redraws for it, named in its label');
+assert.ok(pickEl().innerHTML.includes('45×12'), 'the newest workout shows under the chart');
+
+// Leg press has two workouts: the newest (85) is shown first; a tap at the
+// chart's left edge picks the oldest (80). The pick rewrites #chart-pick and
+// NOTHING else — re-rendering an ancestor mid-gesture would strand the
+// chart's handlers on a dead node.
+tapMachine('m1 ');
+assert.ok(pickEl().innerHTML.includes('85×10') && pickEl().innerHTML.includes('e1RM'),
+  'the newest point is shown, with its e1RM');
+assert.ok(chartEl().innerHTML.includes('c-line alt'), 'strength draws the dashed e1RM series');
+root.innerHTML += '<!--before the pick-->';
+chartEl().getBoundingClientRect = () => ({ left: 0, width: 520 });
+chartEl().onpointerdown({ clientX: 0, pointerId: 1 });
+assert.ok(pickEl().innerHTML.includes('80×10') && !pickEl().innerHTML.includes('85×10'),
+  'a tap on the chart shows the first workout\'s sets');
+assert.ok(pickEl().innerHTML.includes('data-wid="w1"'), '"Open workout" carries that workout');
+assert.ok(root.innerHTML.includes('<!--before the pick-->'), 'a pick never re-renders the view');
+
+// the picked point survives a re-render; a tab tap forgets it (not the machine)
+render();
+assert.ok(pickEl().innerHTML.includes('80×10'), 'the picked point survives a re-render');
+enter();
+assert.ok(pickEl().innerHTML.includes('85×10'), 'a tab tap goes back to the newest point');
+tapMachine('m2 '); // not the most recent one, or the default would pass this
+enter();
+assert.equal(selKey(root.innerHTML), 'm2 ', 'but keeps the picked machine');
+
+// "Open workout ›" lands on the Workouts screen with that workout open
+tapMachine('m1 ');
+chartEl().getBoundingClientRect = () => ({ left: 0, width: 520 });
+chartEl().onpointerdown({ clientX: 0, pointerId: 1 });
+pickEl().listeners.click(clickOn('.pick-open', { wid: 'w1' }));
+assert.ok(onWorkouts(), '"Open workout ›" opens the Workouts screen');
+const openCard = root.querySelector('#workout-list').innerHTML.split('<details')
+  .find((c) => c.startsWith(' class="workout" open'));
+assert.ok(openCard?.includes('data-wid="w1"'), 'with that workout unfolded');
+render();
+assert.ok(!root.querySelector('#workout-list').innerHTML.includes('class="workout" open'),
+  'once — the next re-render does not unfold it again');
+backToOverview();
+
+// the range is a device setting and survives a re-render
+root.querySelector('#range-chips').listeners.click(clickOn('.chip', { range: '4w' }));
+assert.equal(store.getSettings().historyRange, '4w', 'a range chip is saved');
+assert.ok(chartEl().innerHTML.includes('No data in this range.'),
+  'and narrows the chart (the fixtures are older than four weeks)');
+assert.equal(pickEl().innerHTML, '', 'an empty range shows no stale pick');
+render();
+assert.ok(/class="chip sm sel" data-range="4w"/.test(root.innerHTML), 'the range survives a re-render');
+root.querySelector('#range-chips').listeners.click(clickOn('.chip', { range: 'all' }));
+
+// the picked machine survives the save that re-renders everything
+tapMachine('m2 ');
+openWorkouts();
+root.querySelector('#workout-list').listeners.click(clickOn('.edit-w', { wid: 'w2' }));
+root.querySelector('#workout-list').listeners.click(clickOn('.edit-save'));
+backToOverview();
+assert.equal(selKey(root.innerHTML), 'm2 ', 'a save keeps the picked machine');
 
 // --- the editor: add a set, add a machine, move the date ---
 
@@ -291,7 +372,7 @@ assert.ok(root.innerHTML.includes('bar-fill'), 'rows carry usage bars');
 const pressed = (mu) => new RegExp(`data-muscle="${mu}" aria-pressed="true"`).test(root.innerHTML);
 root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Lats' }));
 assert.ok(onOverview() && pressed('Lats'), 'the row shows its filter is on');
-assert.ok(!options().includes('#14 Leg press'),
+assert.ok(!chips().includes('#14 Leg press'),
   'machine selects follow the muscle filter too');
 assert.ok(root.innerHTML.includes('All muscles'), 'an explicit way out renders');
 openWorkouts();
@@ -301,13 +382,14 @@ backToOverview();
 // the same row again clears it
 root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Lats' }));
 assert.ok(!pressed('Lats') && !root.innerHTML.includes('All muscles'), 're-tap clears the filter');
-assert.ok(options().includes('#14 Leg press'), 'and the full view comes back');
+assert.ok(chips().includes('#14 Leg press'), 'and the full view comes back');
 
 // a muscle with zero sets still filters (the "neglected groups" feature) —
 // the Progress picker states its emptiness instead of rendering optionless
 root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Chest' }));
 assert.ok(root.innerHTML.includes('No machines match this filter'),
   'the chart picker explains an empty machine list');
+assert.deepEqual(chips(), [], 'and renders no chip');
 // the reset row carries a pressed state like every other row in the group
 assert.ok(/data-muscle=""\s+aria-pressed="false"/.test(root.innerHTML),
   'the All-muscles reset row announces its unpressed state');
@@ -395,5 +477,23 @@ assert.equal(cardioChange('edit-minutes', 'xx'), '12:30', 'refused input keeps t
 list().listeners.click(clickOn('.edit-save'));
 assert.deepEqual(store.getWorkouts().find((w) => w.id === 'wrow').entries[0].sets[0],
   { distance: 2000, seconds: 750 });
+
+// --- machine chips: the first eight, "+N more", the shown one always ---
+// ten machines, trained one per day: x0 oldest … x9 newest
+store.saveWorkouts(Array.from({ length: 10 }, (_, i) => ({
+  id: `wx${i}`, startedAt: Date.UTC(2026, 6, 1 + i, 10), finishedAt: Date.UTC(2026, 6, 1 + i, 11),
+  entries: [entry(`x${i}`, 20 + i, `Machine ${i}`, [{ reps: 10, weight: 20 + i }])],
+})));
+enter();
+assert.deepEqual(chips(), [9, 8, 7, 6, 5, 4, 3, 2].map((i) => `#${20 + i} Machine ${i}`),
+  'eight chips, most recent first');
+assert.ok(root.innerHTML.includes('+2 more'), 'the rest sit behind "+N more"');
+machineChips().listeners.click(clickOn('.chip', { more: '1' }));
+assert.equal(chips(machineChips().innerHTML).length, 10, '"+N more" shows them all');
+tapMachine('x0 ');
+enter();
+assert.deepEqual(chips().slice(-1), ['#20 Machine 0'],
+  'collapsed again, the picked machine stays visible behind the eight');
+assert.ok(root.innerHTML.includes('+1 more'), 'and the count says what is still hidden');
 
 console.log('history: all assertions passed');
