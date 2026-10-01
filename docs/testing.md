@@ -44,7 +44,13 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   import, binding, targets), `history` (name filter, muscle card + filter,
   full editor, back-logging), `map` (the shared renderer: px-sized touch
   targets, viewBox clamping, wall/door geometry, the usage ramp, collision
-  and placement, and ids escaped into attributes), `ui` (the shared
+  and placement, the walking-path overlay, and ids escaped into attributes), `chart` (tick math, the time axis, both
+  charts' markup and the tap/scrub/keyboard selection over a stub container
+  — chart.js imports nothing, so NO localStorage stub), `stats` (the pure
+  History analytics: weekly buckets, series, route, every insight rule at
+  its threshold and one step short; it imports the localStorage stub FIRST
+  only because its DST pin compares its `startOfDay` copy with store.js's),
+  `ui` (the shared
   helpers, incl. the four DOM-facing ones over hand-made stubs — the file
   runs under Pacific/Auckland, where local-vs-UTC actually differs),
   `gym` (editor wiring and drag integration),
@@ -61,7 +67,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
 - Browser smoke tests: `pnpm install` once, then `pnpm exec playwright
   install chromium` once (~170 MB, deliberately NOT an install script —
   Playwright is kept off `onlyBuiltDependencies`), then `pnpm run smoke`.
-  Eight scenarios in `smoke/*.spec.mjs`: the app boots at all (js/app.js is
+  Nine scenarios in `smoke/*.spec.mjs`: the app boots at all (js/app.js is
   loaded by no Node test and `static-checks` does not resolve imports), a
   logged set survives a reload, the rest keeps running inline after the
   overlay closes and across a reload, no route scrolls sideways at 320px,
@@ -71,7 +77,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   the locker field, a field-to-field hop, the last field on Settings; a
   re-focused field, a pinch-zoom and a too-tall field do NOT scroll, and
   --kb drops on keyboard close and on return to the app), and the
-  standalone/PWA safe-area padding scales correctly under a CDP-emulated notch inset.
+  standalone/PWA safe-area padding scales correctly under a CDP-emulated notch inset,
+  and the History tab (`history.spec.mjs`, demo gym): a machine chip names
+  the chart, a bar tap opens that week, the Workouts screen passes the same
+  44px / 16px / no-overflow measures, and the path card draws a route.
   A NEW browser spec goes in
   `smoke/` as `*.spec.mjs`, NEVER in `test/` — `testMatch` is pinned
   because Playwright's collector imports whatever it matches and would run
