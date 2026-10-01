@@ -30,9 +30,19 @@ activeBefore.name = 'Push day';
 // on that shape, not on a filter.
 activeBefore.restOverrides = { m1: 75 };
 activeBefore.restUntil = Date.now() + 60000;
+// visits DO reach history: the open one closes at finish, a tap-through
+// (3 s on m2) is not a stop and is dropped
+const visitT = Date.now();
+activeBefore.visits = [
+  { machineId: 'm2', in: visitT - 63000, out: visitT - 60000 },
+  { machineId: 'm1', in: visitT - 60000 },
+];
 const saved = store.finishWorkout(activeBefore);
 assert.ok(!('restOverrides' in saved), 'per-workout rest overrides die with the workout');
 assert.ok(!('restUntil' in saved), 'and so does a rest that was still running');
+assert.deepEqual(saved.visits, [{ machineId: 'm1', in: visitT - 60000, out: saved.finishedAt }],
+  'the open visit closes at finishedAt, the 3 s tap-through is gone');
+assert.deepEqual(store.getWorkouts()[0].visits, saved.visits, 'and the visits are what history stored');
 assert.equal(saved.entries.length, 1, 'set-less entries dropped');
 assert.equal(saved.locker, '23', 'locker number carried into history');
 assert.equal(saved.name, 'Push day', 'workout name carried into history');
@@ -815,5 +825,79 @@ store.clearAll();
 store.importData(brandedTpl);
 assert.equal(store.getLayout().meta.brand, 'gym80', 'and survives the round-trip');
 store.clearAll();
+
+// --- visits, RIR and date shifts: pure helpers on the workout record ---
+const run = { currentMachineId: null, currentExercise: null, entries: [] };
+store.switchMachine(run, null);
+assert.ok(!('visits' in run), 'no machine, no visits field (absent, never empty)');
+store.switchMachine(run, 'm1', undefined, { now: 1000 });
+assert.deepEqual(run.visits, [{ machineId: 'm1', in: 1000 }], 'the first machine opens a visit');
+assert.strictEqual(run.currentExercise, null, 'a missing exercise is normalised to null');
+store.switchMachine(run, 'm1', 'Incline', { now: 5000 });
+assert.deepEqual(run.visits, [{ machineId: 'm1', in: 1000 }],
+  'same machine, other exercise: no new visit, the open one stays open');
+assert.equal(run.currentExercise, 'Incline', 'but the exercise is current');
+store.switchMachine(run, 'm2', null, { busy: 'm3', now: 30000 });
+assert.deepEqual(run.visits, [
+  { machineId: 'm1', in: 1000, out: 30000 },
+  { machineId: 'm2', in: 30000, busy: 'm3' },
+], 'a switch closes the open visit and opens the next, busy carried');
+store.switchMachine(run, undefined, undefined, { now: 50000 });
+assert.equal(run.visits[1].out, 50000, 'the overview closes the visit');
+assert.equal(run.visits.length, 2, 'and opens none');
+assert.strictEqual(run.currentMachineId, null, 'machine id normalised to null');
+assert.ok(run.visits.every((v) => !('id' in v)), 'visits never carry an id');
+
+const openVisit = { machineId: 'm2', in: 18000 };
+assert.strictEqual(store.closeVisits(undefined, 1), undefined, 'no visits stay absent');
+assert.strictEqual(store.closeVisits([{ machineId: 'm1', in: 0, out: 3000 }], 9000), undefined,
+  'only tap-throughs: absent, never empty');
+assert.deepEqual(store.closeVisits([
+  { machineId: 'm2', in: 0, out: 3000, busy: 'm3' },
+  { machineId: 'm1', in: 3000, out: 18000 },
+  openVisit,
+], 40000), [
+  { machineId: 'm2', in: 0, out: 3000, busy: 'm3' },
+  { machineId: 'm1', in: 3000, out: 18000 },
+  { machineId: 'm2', in: 18000, out: 40000 },
+], 'a short busy visit is kept, exactly 15 s is a stop, the open one closes at now');
+assert.ok(!('out' in openVisit), 'closeVisits leaves its input untouched');
+
+const rated = { entries: [
+  { machineId: 'm1', sets: [{ reps: 10, weight: 40, at: 100 }, { reps: 8, weight: 45, at: 300 }] },
+  { machineId: 'm2', sets: [{ reps: 12, weight: 30, at: 200 }, { reps: 12, weight: 30 }] },
+  { machineId: 'c1', cardio: true, sets: [{ distance: 2000, seconds: 600, at: 400 }] },
+] };
+const ratedSet = store.rateLastSet(rated, 2);
+assert.strictEqual(ratedSet, rated.entries[0].sets[1],
+  'the newest stamped set across entries — cardio and unstamped sets skipped');
+assert.equal(ratedSet.rir, 2);
+store.rateLastSet(rated, 1);
+assert.equal(ratedSet.rir, 1, 'another value replaces the rating');
+store.rateLastSet(rated, 1);
+assert.ok(!('rir' in ratedSet), 'the same value again clears it');
+assert.ok(rated.entries.every((e) => e.sets.every((st) => !('rir' in st))), 'no other set was touched');
+assert.strictEqual(store.rateLastSet(rated, 4), null, 'a value outside 0..3 writes nothing');
+assert.strictEqual(store.rateLastSet({ entries: [
+  { machineId: 'c1', cardio: true, sets: [{ distance: 1000, seconds: 300, at: 5 }] },
+  { machineId: 'm1', sets: [{ reps: 10, weight: 40 }] },
+] }, 2), null, 'nothing rateable: null');
+
+const DAY = 86400000;
+const moved = {
+  id: 'wm', startedAt: 1000, finishedAt: 9000, updatedAt: 7,
+  entries: [{ machineId: 'm1', sets: [{ reps: 10, weight: 40, at: 2000 }, { reps: 10, weight: 40 }] }],
+  visits: [{ machineId: 'm1', in: 1000, out: 8000 }],
+};
+store.shiftWorkout(moved, DAY);
+assert.deepEqual(moved, {
+  id: 'wm', startedAt: 1000 + DAY, finishedAt: 9000 + DAY, updatedAt: 7,
+  entries: [{ machineId: 'm1', sets: [{ reps: 10, weight: 40, at: 2000 + DAY }, { reps: 10, weight: 40 }] }],
+  visits: [{ machineId: 'm1', in: 1000 + DAY, out: 8000 + DAY }],
+}, 'every moment moves by delta; an unstamped set and the sync stamp stay');
+const movedBare = { id: 'wn', startedAt: 0, entries: [] };
+store.shiftWorkout(movedBare, -5);
+assert.deepEqual(movedBare, { id: 'wn', startedAt: -5, entries: [] },
+  'a workout without finishedAt or visits gains neither');
 
 console.log('store roundtrip: all assertions passed');
