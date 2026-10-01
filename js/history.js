@@ -378,13 +378,15 @@ function insightHtml(it, all) {
   const target = key ? ` data-machine="${esc(key)}"` : it.muscle ? ` data-muscle="${esc(it.muscle)}"` : '';
   const body = `<span class="insight-text">${esc(it.text)}</span><span class="why">${esc(it.why)}</span>`;
   const src = SOURCES[it.source];
-  // the link sits OUTSIDE the row: a link inside a button is not clickable on its own
+  // The link sits OUTSIDE the row: a link inside a button is not clickable
+  // on its own. A study's name reads as its source; plain text says so.
   return `
       <div class="insight">
         ${target ? `<button type="button" class="insight-row"${target}>${body}</button>`
     : `<p class="insight-row">${body}</p>`}
-        ${src ? `<p class="insight-src">Source: ${src.url
-    ? `<a href="${esc(src.url)}" target="_blank" rel="noopener">${esc(src.label)}</a>` : esc(src.label)}</p>` : ''}
+        ${src ? `<p class="insight-src">${src.url
+    ? `<a href="${esc(src.url)}" target="_blank" rel="noopener">${esc(src.label)} ↗</a>`
+    : `Source: ${esc(src.label)}`}</p>` : ''}
       </div>`;
 }
 
@@ -461,7 +463,7 @@ const progressCard = {
     <section class="card" id="progress-card">
       <h2 id="chart-title">Progress</h2>
       ${recent.length ? `
-      <div class="chip-select" id="machine-chips">${machineChipsHtml(recent)}</div>
+      <div class="chip-select scroll" id="machine-chips">${machineChipsHtml(recent)}</div>
       <div class="map-mode" id="range-chips">${rangeChipsHtml(rangeOf(s))}</div>
       <div class="chart-wrap" id="chart"></div>
       <div class="c-pick" id="chart-pick" role="status"></div>`
@@ -478,8 +480,9 @@ const progressCard = {
 
     // Redraws THIS card's parts only: the chart handlers close over
     // chartEl, so re-rendering an ancestor would leave them on a dead node.
-    const draw = () => {
+    const drawProgress = () => {
       chipsEl.innerHTML = machineChipsHtml(recent);
+      revealSelected(chipsEl);
       const range = rangeOf(getSettings());
       rangeEl.innerHTML = rangeChipsHtml(range);
       const key = shownKey(recent);
@@ -550,13 +553,13 @@ const progressCard = {
         pickedMachine = chip.dataset.key;
         pickedT = null; // a point of another machine means nothing here
       }
-      draw();
+      drawProgress();
     });
     rangeEl.addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
       if (!chip) return;
       saveSettings({ ...getSettings(), historyRange: chip.dataset.range });
-      draw();
+      drawProgress();
     });
     // "Open workout ›" — the same workout, with its sets and its editor
     pickEl.addEventListener('click', (e) => {
@@ -566,7 +569,7 @@ const progressCard = {
       screen = 'workouts';
       renderHistory(root);
     });
-    draw();
+    drawProgress();
   },
 };
 
