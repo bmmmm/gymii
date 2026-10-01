@@ -6,7 +6,7 @@ export default defineConfig({
   testDir: './smoke',
   // Pinned, not defaulted. Playwright's collector IMPORTS everything it
   // matches, and the default pattern would match test/*.test.mjs — running
-  // all 15 Node suites as a side effect of collection.
+  // all 18 Node suites as a side effect of collection.
   testMatch: '**/*.spec.mjs',
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

@@ -56,14 +56,20 @@ ever sees ciphertext.
   second, any touch brings it back, and the last seconds are bright again.
   Four tones to pick from, each one audible before you commit — and they play
   like music, so an iPhone's silent switch doesn't swallow them.
-- 📈 **History** — your workouts lead the screen, one tap repeats any of
-  them; a muscle card, a training heatmap and a progress chart follow. Name a
-  workout (gymii suggests one from the muscles you trained) and one tap
-  filters everything down to it. The muscle card shows how many sets each
-  group got — tap a row and the whole view narrows to that muscle, neglected
-  groups collect at the bottom. Past workouts are fully editable — add or
-  remove sets and machines, fix the date — and one you trained without your
-  phone can be typed in after the fact.
+- 📈 **History** — opens on a weekly dashboard: this week's workouts, sets,
+  volume and time against last week, twelve weeks of bars to tap, then a few
+  observations worth a look — each with a one-line reason and its source
+  (a plateau, a weight to raise, a muscle that dropped out, a machine that
+  is busy at your hour). A progress chart per machine you can drag along,
+  the route you walked through the gym drawn on your floor map, and a muscle
+  card that shows how many sets each group got — tap a row and the view
+  narrows to that muscle. A second screen holds every workout (one tap
+  repeats it), the training heatmap and the editor: add or remove sets and
+  machines, fix the date, or type in a workout you did without your phone.
+  After each set, one tap rates it by reps left in the tank (0, 1, 2, 3+) —
+  gymii also remembers the order you visited the machines in. Name a workout
+  (gymii suggests one from the muscles you trained) and one tap filters
+  everything down to it.
 - 🏨 **Gyms & units** — home gym, hotel gym, whatever. kg or lbs, switched
   in one go.
 - 📦 **Templates** — export your gym as JSON, import someone else's. Want to

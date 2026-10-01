@@ -68,8 +68,11 @@ exist because breaking them was once a real bug.
   `save()`) and never imports from train.js/plan.js.
 - `js/train.js` — hub, guided workout, rest timer (the rest belongs to the
   WORKOUT); `js/plan.js` — the plan builder, works without a gym.
-- `js/history.js` — list, editor, back-logging; `js/chart.js` — its
-  progress chart; `js/ui.js` — shared helpers (formatting, steppers,
+- `js/history.js` — overview (week, insights, progress, paths, muscles) +
+  Workouts screen (list, editor, back-logging); `js/chart.js` — its charts;
+  `js/stats.js` — pure History analytics, no imports (like merge.js); rules,
+  thresholds and sources live in docs/insights.md — change both together;
+  `js/ui.js` — shared helpers (formatting, steppers,
   keyboard centring, timer sound).
 - `js/settings.js` — the Settings tab (units, gyms, backups, Sync card);
   `js/qr.js` — hand-written QR encoder for pairing; `js/version.js` —

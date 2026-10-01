@@ -27,6 +27,24 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   reuses `{reps, weight}` with weight = ADDED weight. Live-logged sets also
   carry `at` (epoch ms, stamped at log time) — older sets lack it, and so
   must sets added by editing or back-logging; every consumer must guard.
+  Strength and bodyweight sets may also carry `rir` (0..3, 3 = "3 or more";
+  absent = not rated, never `null`), written only by `rateLastSet()`.
+  Workouts may carry `visits: [{machineId, in, out, busy?}]` — the walking
+  route: `in` is the moment that machine's log screen became current, `out`
+  when it stopped being current, `busy` the plan's next machine that was
+  skipped for this one. Visits are per MACHINE (a new exercise on the same
+  machine moves none), absent rather than empty, and NEVER carry an `id`:
+  sync's `canon()` sorts arrays whose items all have one before comparing,
+  so a changed ORDER — the route itself — would look like no change.
+  `switchMachine(active, machineId, exercise, {busy, now})` is THE one way
+  to change the current machine (it closes the open visit and opens the
+  next); `closeVisits(visits, now)` runs in `finishWorkout()`, closes the
+  open one at the finish and drops tap-throughs under 15 s unless they carry
+  `busy`; `rateLastSet(active, rir)` rates the newest `at`-stamped non-cardio
+  set (the same value again clears it); `shiftWorkout(w, delta)` moves every
+  timestamp a workout holds — `startedAt`, `finishedAt`, each set's `at`,
+  each visit's `in`/`out` — so the gaps between them survive a date edit
+  (`updatedAt` is a sync stamp, not a moment, and stays).
   `saveWorkouts()` sorts by `startedAt`: chronological order is an
   INVARIANT (repeat-last reads the tail, `lastEntryFor` walks it
   backwards, history renders it reversed), and back-logging a workout or
@@ -275,7 +293,17 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   an item — both now need a deliberate double tap first, and a second one
   takes it back (gym.js owns the gesture). Also exports `findMachineByNum`, the collision helpers
   (`overlapsSolid`/`fits`/`freeSpot`), `snapDoorToWall`, `FIXTURES`,
-  `WALL_SNAPPED`, `ITEM_COLORS`. Its only import is `esc` from ui.js —
+  `WALL_SNAPPED`, `ITEM_COLORS`. Its `path` and `pathWeights` opts draw the
+  walking-path overlay (view-only: the editor ignores them) — one line plus
+  arrowhead polygon per leg from stats.js's `workoutPath`, or, with
+  `pathWeights` (a `transitionCounts` map), one leg per transition whose
+  width follows its count. Legs are clipped at the machine boxes and
+  shifted to the right of travel so A→B and B→A run side by side. The
+  colour `#c08327` and every presentation attribute are inline, so the
+  overlay renders without the stylesheet; there is deliberately NO
+  `<marker>` (`url(#id)` collides when two maps share a page) — the
+  arrowhead is a plain polygon. In path mode machines drop custom colours,
+  as in usage mode, and those off the path dim. Its only import is `esc` from ui.js —
   keep it free of store/gym imports so the cycle cannot reappear. Every id
   interpolated into an attribute goes through `esc()`: ids arrive from
   community template FILES off the network and `isValidLayout()` only
@@ -500,7 +528,26 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `nearbyAlternative()` renders a "Busy? #N … is nearby" button under the
   next-row: the physically closest OTHER open machine (machine centers,
   current + plan-next excluded) as the busy-machine escape hatch —
-  display-only, the skipped slot resurfaces via the wrap-around.
+  its tap switches to that machine and records the skipped next slot as
+  `busy` on the new visit (store's `switchMachine`'s `busy` option), the
+  skipped slot itself resurfaces via the wrap-around. That mark is the only
+  stored trace of the button: no other state, and no `busy` on a plain Next.
+  WALKING ROUTE: every change of the current machine goes through store's
+  `switchMachine` — nine call sites: workout start (first machine), the
+  plan-slot tap, the machine picker, binding an unbound slot, a machine
+  deleted mid-workout (→ null), the quick-switch chips, Busy?, Next, and the
+  back-to-overview tap (→ null). A bare `active.currentMachineId = …` would
+  leave the visit list behind, so none exists.
+  REPS IN RESERVE: after a set the rest overlay shows "Reps left?" chips
+  (`#rir-opts`, 0 · 1 · 2 · 3+) when the newest stamped set is not cardio;
+  a tap calls `rateLastSet` on the STORE's copy, saves, and re-renders the
+  log screen. The re-render is required, not cosmetic: the log screen holds
+  its own `active` object and saves it on the next Log set, so a rating
+  left only in the store would be overwritten. The screen key is unchanged
+  (no scroll reset) and the overlay lives on `body`, so it survives.
+  With rest 0 there is no overlay: the same chips (`#rir-log`) sit above
+  Log set while the newest set was logged on that very screen, and rate
+  through the screen's own `active` — no re-render, the chip just toggles.
   The overview's "Muscles today" chips (muscles of machines with sets
   this workout, read live from the layout) double as navigation: a tap
   calls the picker's `setMuscle()` to filter machines for that muscle. Set-arithmetic must guard
@@ -527,16 +574,36 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `fromText()`, so the text is authoritative while it is on screen. Nothing
   persists until Save — which is what lets an imported AI draft, or a
   routine seeded from history, be reviewed and trimmed before it sticks.
-- `js/history.js` — in render order: the workout list with repeat, the
-  Muscles card, the month heatmap (per-machine filter), the progress chart
-  (`js/chart.js`) and `Log a past workout`. What you did comes first, the
-  cards that analyse or extend it follow — which deliberately puts the
-  Muscles card UNDER the "Workouts — Lats" heading it filters. Past workouts
-  are fully editable: per-set
-  values, `+ Set` (copies the previous one, minus its `at` — it was not
-  logged live), `+ Machine` (snapshots num/label/type flags like the log
-  screen), remove set or whole machine, date + time (finishedAt moves
-  with the start, keeping the duration) and name chips. `Log a past
+- `js/history.js` — two screens in one module, switched by module state like
+  train.js (no hash sub-routes; `#history` stays one route). The OVERVIEW is
+  what a glance needs: This week (tiles, a bar chart of the last 12 weeks,
+  that week's workouts) → Worth a look (`insights()` from stats.js, each
+  row with its why and source) → Progress (machine chips, range chips,
+  `lineChart`) → Walking paths (the route of one workout, or all of them
+  weighted, on the floor map) → Muscles. The WORKOUTS screen, one tap
+  from the week card, holds the month heatmap (per-machine filter), the full
+  workout list with repeat and the editor, and `Log a past workout`; its
+  back row returns to the overview. A screen CHANGE resets the scroll to the
+  top, an in-place update never does (the same rule as train.js's
+  `screenKey`). `renderHistory(root, {entry})`: app.js passes `entry: true`
+  when the tab is opened, which resets "where in time" (screen, picked
+  week, path workout, heatmap month, picked point); every other call —
+  save, delete, filter change — omits it, so nothing the user was looking at
+  moves. Module state, all of it surviving those re-renders: `screen`,
+  `nameFilter`, `muscleFilter`, `pickedMachine` (a `machineId exercise`
+  key), `pickedT`, `pickedWeek`, `pathWorkoutId` (null = the latest,
+  `'all'` = weighted), `hmMonth`, `focusWorkoutId`, `openEditId`. The range
+  and metric chips persist as `settings.historyRange` ('4w'|'12w'|'1y'|'all',
+  default 12w) and `settings.historyMetric` ('workouts'|'sets'|'volume'|
+  'minutes', default sets); both are device-local — deliberately NOT in
+  merge.js's `USER_SETTINGS` — and read with `?? default`, store.js knows
+  nothing of them. Past workouts are fully editable: per-set
+  values, `+ Set` (copies the previous one, minus its `at` and `rir` — it
+  was neither logged live nor rated), `+ Machine` (snapshots num/label/type
+  flags like the log screen), remove set or whole machine, date + time and
+  name chips. The date goes through store's `shiftWorkout`, so the start,
+  the finish, every set's `at` and every visit move together and the gaps
+  between them (rest, time per machine) survive the edit. `Log a past
   workout` reads the same note grammar via `workoutFromText()` — a past
   workout IS a plan that already happened, so `3x10 80` becomes three
   real sets — and reopens the result in edit mode (`openEditId`). It
@@ -566,7 +633,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   "#1 → #3" chain used by the start screen and the workout list alike.
   Workout-name chips at the top
   filter EVERYTHING: `workouts` is narrowed once, right after `getWorkouts()`,
-  so heatmap, chart, machine lists and the list all follow. The filter is
+  so week, heatmap, chart, path and the list all follow. The filter is
   module state (`nameFilter`) because a save or delete re-renders the whole
   view, and it self-clears when its last workout is renamed or deleted.
   The Muscles card (store's `usageByMuscle`/`workoutsWithMuscle`) shows
@@ -578,6 +645,35 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   filter narrows WHOLE workouts, never entries, so the editor's Save can't
   drop non-matching machines; the card itself is computed over the
   name-only list so every muscle stays reachable while one is selected.
+- `js/stats.js` — pure History analytics: weekly buckets, per-machine series
+  with estimated 1RM, muscle sets per week, the walked route, transition
+  counts, rest gaps and the insight rules. NO imports, like merge.js —
+  workouts, layout, settings and `now` come in as arguments, so it tests
+  without a clock or a browser. Every string it returns is RAW; the UI
+  escapes. It reads time only as DIFFERENCES between stamps of the same kind
+  (`at` to `at`, visit `in` to `out`), never `at − startedAt`: a workout
+  whose date was edited before `shiftWorkout` existed moved `startedAt`
+  alone, so that gap is garbage for it while `at`-to-`at` stays true. It
+  keeps a COPY of store's `startOfDay` (store.js holds the definition;
+  importing it would end the no-imports rule) and test/stats.test.mjs pins
+  the two equal across a DST day. Weeks start on Monday and are stepped with
+  `setDate()`, never 7 × 86400000. The rules, their thresholds and their
+  sources live in docs/insights.md — change both together.
+- `js/chart.js` — the History charts, `lineChart` (time on x, an optional
+  dashed second series) and `barChart`; it imports nothing and escapes
+  every caller string (labels, units, keys) itself. One point or column is
+  selected at a time: tap, drag to scrub, or ArrowLeft/Right, and the
+  selection STAYS when the finger lifts — there is no tooltip, since one
+  vanishes with the finger; the value is drawn in the chart and `onSelect`
+  hands the point back. The handlers are assigned as PROPERTIES of the
+  container (`onpointerdown` …), because a redraw replaces them where
+  `addEventListener` would stack one more set per redraw. The CONTAINER
+  (`.chart-wrap`) is measured, never the svg — the svg is replaced on every
+  selection change. An empty chart clears the handlers so a stale one cannot
+  redraw the old chart over the empty text. A caller must never re-render the
+  chart's ancestors from `onSelect`: the captured container would die.
+  `niceTicks` and `timeTicks(x0, x1, span)` (Mondays up to six weeks, month
+  starts beyond) are exported.
 - `js/demo.js` — "Load test data" (Settings card): fills a separate "Demo"
   gym with a 16-machine gym (the example template plus cardio,
   bodyweight and a multi-exercise machine), ~8 weeks of Push/Pull/Legs
@@ -592,11 +688,17 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   in kg/metres and converted in one pass through store's
   `convertWeight`/`convertDistance` when the display unit is lbs (plan
   targets included). Day maths goes through store's `startOfDay` +
-  `setDate()`, never fixed 86400000-ms steps (DST). Generated sets never
-  carry `at` (they were not logged live).
+  `setDate()`, never fixed 86400000-ms steps (DST). The last four weeks
+  are stamped like a live-logged workout — `at` on every set, `visits`
+  (one carries `busy`) and `rir` on strength sets — so the insight rules
+  and the walking paths have something to show; older weeks stay bare (no
+  `at`, no visits), which keeps the "older sets lack `at`" paths exercised.
 - `js/ai.js` — copy prompt+data / paste-import. Deliberately NO AI API.
-  Export set tuples gain a third element (seconds offset from the
-  workout's startedAt) when the set has `at`; old sets stay 2-tuples.
+  Export set tuples are `[w, r]`, gain a third element (seconds offset from
+  the workout's startedAt) when the set has `at`, and a fourth, `rir`, when a
+  strength or bodyweight set was rated: `[w, r, sec|null, rir]` — `null`
+  holds the third slot for a rated set without `at`; cardio never carries
+  `rir`. The prompt and the export `note` teach both.
   Saved plans ride along in the export (same wire shape the prompt
   teaches for answers, plus their `id`) — measured at ~5% of a demo-sized
   export, omitted entirely when no plans exist. Pasting a `workout-plan`
