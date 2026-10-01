@@ -6,7 +6,10 @@ its own repo). The server is a **dumb store for opaque encrypted blobs** —
 it never sees plaintext, never understands gymii's data model, and never
 decides a conflict beyond "your revision is stale."
 
-Status: implemented on both sides (M1). This document stays the source of
+Status: implemented by three clients of one contract — the browser
+(`js/sync.js`), the reference server (`gymii-sync`), and `gymii-cli`, a
+headless standing device that mirrors the opaque blobs as a backup and
+never decrypts on its automatic path. This document stays the source of
 truth — change it first, then the implementations. The "pinned by the
 reference server" block below records answers the first draft left open;
 they were decided during implementation and are now part of the contract.
@@ -30,8 +33,8 @@ they were decided during implementation and are now part of the contract.
 | `GET` | `/v1/gyms/{id}` | returns the outer envelope; `ETag: "<revision>"`; 404 if never pushed; honors `If-None-Match` → 304 |
 | `PUT` | `/v1/gyms/{id}` | requires `If-Match: "<revision>"` (`"0"` for first push); atomically bumps revision; **409** on stale revision |
 | `DELETE` | `/v1/gyms/{id}` | mirrors a local gym deletion |
-| `GET` | `/v1/tokens` | the account's tokens as `[{hash, mintedAt, name, self}]` — `self` marks the requesting token (M3 device list) |
-| `POST` | `/v1/tokens` | mint a fresh token; body `{name?}` (≤64 chars); `201` with the token value, which appears exactly once |
+| `GET` | `/v1/tokens` | the account's tokens as `[{hash, mintedAt, name, self, lastSeenAt?, kind?}]` — `self` marks the requesting token (M3 device list) |
+| `POST` | `/v1/tokens` | mint a fresh token; body `{name?, kind?}` (name ≤64 chars); `201` with the token value, which appears exactly once |
 | `DELETE` | `/v1/tokens/{hash}` | revoke by full hash; `409` on the account's LAST token — the lockout guard, the server CLI can always mint |
 
 - Auth: `Authorization: Bearer <device-token>` — one token per device, all
@@ -41,6 +44,18 @@ they were decided during implementation and are now part of the contract.
   device's own token never leaves it, and revoking one device never cuts
   off the others. (M1 shared the single CLI-minted token; existing setups
   keep working and simply hold one shared token until re-paired.)
+- **Last seen** (`lastSeenAt`, RFC 3339 UTC): the last time a request
+  authenticated with that token, recorded at most once an hour — a device
+  list answer ("which of these is the phone?", "is the backup still
+  running?"), not an audit log. It is OMITTED for a token never seen since
+  the server began tracking. The server learns nothing new by it: every
+  request already reaches it with that token.
+- **Kind** (`kind`): an optional closed vocabulary set at mint time, today
+  only `"backup"` — a standing device that is expected to check in on a
+  schedule (`gymii-cli`). Any other value answers `400`; absent means an
+  ordinary device. A client may warn when a backup device has not been
+  seen for longer than its own alarm threshold (3 days); it never warns
+  about an ordinary device, which may rest for weeks.
 - CORS: allowed origin from server config (`SYNC_ALLOWED_ORIGIN`), plus
   `Access-Control-Expose-Headers: ETag`, `Allow-Headers: Authorization,
   If-Match, If-None-Match, Content-Type` (`If-None-Match` is required —
@@ -148,7 +163,17 @@ settings, plus the sync-relevant sidecars:
   paired device keeps its LOCAL gym id and maps onto the blob via
   `remoteId` in its sync config — ids never travel between devices, only
   the blob address does. No recovery: losing every device and the code
-  means the account is gone — stated plainly in the pairing UI.
+  means the account is gone — stated plainly in the pairing UI. (A paired
+  `gymii-cli` is a device too: with the gym's passphrase typed on its
+  terminal, `gymii-cli invite` pairs a new phone from its mirror.)
+- **Invite codes**: a code minted for ANOTHER device ("Pair another
+  device") carries `invite: true` — its token was created for whoever
+  redeems the code. A device's own code ("Show sync code") never does: its
+  token is that device's live credential. A redeemer that mints a token of
+  its own (`gymii-cli pair`) revokes an invite token once its own works,
+  so no orphaned credential stays behind; it never revokes the token of a
+  code without the flag. A redeemer that adopts the code's token (the
+  browser) ignores the flag. Parsers ignore fields they do not know.
 
 ## Sync flow (client)
 

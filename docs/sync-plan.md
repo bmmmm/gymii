@@ -128,6 +128,18 @@ option, never a requirement.
    v1 UI.
 7. No account recovery: the sync code is the only key — losing every
    device and the code loses the account. Say it plainly in the UI.
+   Carve-out (2026-10-01): a paired `gymii-cli` backup device is a device
+   too — with the passphrase typed on its terminal, `gymii-cli invite`
+   mints a code for a new phone, and `gymii-cli restore` pushes a mirrored
+   blob back to a rebuilt server. Without one, the rule above stands.
+16. Device health over the existing token list (2026-10-01): the server
+    records `lastSeenAt` per token (hourly granularity, token file mtime —
+    no new storage) and an optional `kind` (`"backup"`), so the device
+    list can tell which entry is the phone and the app can say when the
+    backup stopped checking in. Invite codes carry `invite: true`, so a
+    redeemer that mints its own token retires the invite token instead of
+    leaving a live orphan (found on the real account: `gymii-cli pair`
+    had left one behind since 2026-09-17).
 8. Tombstone pruning: time-based TTL (~180 days) — "every device has seen
    it" is unprovable without a device registry.
 9. The Go server lives in its own repo (`gymii-sync`); this repo stays
