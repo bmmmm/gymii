@@ -4,7 +4,7 @@ import {
   layoutMuscles, usageByMuscle, workoutsWithMuscle, shiftWorkout,
 } from './store.js';
 import {
-  esc, fmtDate, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
+  esc, fmtDate, fmtDay, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
   dateValue, timeValue, machineChain, keepInView, minsBetween, fmtDuration,
   parseDuration, parseDistance,
 } from './ui.js';
@@ -384,8 +384,7 @@ export function renderHistory(root) {
       cell.addEventListener('click', () => {
         const dayNum = parseInt(cell.dataset.day, 10);
         const info = days.get(dayNum);
-        const label = new Date(y, m, dayNum)
-          .toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+        const label = fmtDay(new Date(y, m, dayNum));
         hmInfo.textContent = info
           ? [`${label} — ${plural(info.sets, 'set')}`,
             info.volume ? `${Math.round(info.volume)} ${unit}` : '',

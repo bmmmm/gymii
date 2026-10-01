@@ -362,6 +362,15 @@ ui.playTimerSound('double');
 ui.playTimerSound('no-such-sound');
 ui.primeAudio();
 
+// --- fmtDay: fixed names, so the string is pinnable ---
+
+assert.equal(ui.fmtDay(new Date(2026, 9, 1, 12).getTime()), 'Thu 1 Oct',
+  'weekday, day, month — the heatmap and the chart pick read the same');
+assert.equal(ui.fmtDay(new Date(2026, 8, 8, 23, 30).getTime()), 'Tue 8 Sep',
+  'September stays "Sep" — en-GB says "Sept" on newer ICU builds');
+assert.equal(ui.fmtDay(Date.UTC(2026, 0, 1, 21, 0)), 'Fri 2 Jan',
+  'the LOCAL day: 21:00 UTC on the 1st is already the 2nd in Auckland');
+
 // Deliberately not tested: download() (three browser APIs and no logic of
 // its own) and fmtDate/fmtTime (their output is Node's ICU data, so a
 // pinned string would go red on an ICU update without a bug in gymii).
