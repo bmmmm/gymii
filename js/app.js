@@ -10,7 +10,8 @@ import { onWriteError } from './store.js';
 const routes = {
   train: renderTrain,
   gym: renderGym,
-  history: renderHistory,
+  // a tab tap is an ENTRY: History opens on its overview, this month
+  history: (v) => renderHistory(v, { entry: true }),
   ai: renderAi,
   settings: renderSettings,
 };

@@ -1,5 +1,6 @@
-// Logic-level test for history.js: the workout-name filter (it narrows
-// the WHOLE view, not just the list), the full editor (add/remove sets and
+// Logic-level test for history.js: the two screens (overview, Workouts)
+// and what survives a re-render, the workout-name filter (it narrows the
+// WHOLE view, not just the list), the full editor (add/remove sets and
 // machines, edit the date) and logging a workout after the fact.
 // Run with: node test/history.test.mjs
 import './helpers/localstorage.mjs'; // FIRST: installs the stub
@@ -57,6 +58,7 @@ const stubEl = (over = {}) => ({
 let byId = new Map();
 const root = {
   innerHTML: '',
+  scrollTop: 0,
   // stable per selector, so a handler registered on it can be fired again
   querySelector(sel) {
     if (!byId.has(sel)) byId.set(sel, stubEl());
@@ -65,6 +67,26 @@ const root = {
   querySelectorAll: () => [],
 };
 const render = () => { byId = new Map(); renderHistory(root); };
+// a tab tap: app.js passes { entry: true }
+const enter = () => { byId = new Map(); renderHistory(root, { entry: true }); };
+
+// The stub hands back EVERY selector, and a stub keeps the listener of a
+// render long gone — so every screen change asserts where it starts and
+// where it lands, or a stale listener would let a test pass on a screen
+// that no longer shows that control.
+const onOverview = () => root.innerHTML.includes('<h1>History</h1>');
+const onWorkouts = () => root.innerHTML.includes('<h1>Workouts</h1>');
+const openWorkouts = () => {
+  assert.ok(onOverview() && root.innerHTML.includes('id="open-workouts"'),
+    'the Workouts screen is opened from the overview');
+  root.querySelector('#open-workouts').listeners.click();
+  assert.ok(onWorkouts(), '"All workouts" opens the Workouts screen');
+};
+const backToOverview = () => {
+  assert.ok(onWorkouts() && root.innerHTML.includes('id="hist-back"'), 'the back row is on show');
+  root.querySelector('#hist-back').listeners.click();
+  assert.ok(onOverview(), '"‹ History" returns to the overview');
+};
 
 // A click whose closest() answers ONLY the selector under test — history's
 // handler walks a chain of closest() calls, so a catch-all stub would make
@@ -84,6 +106,7 @@ const changeOn = (cls, value, card = null) => ({
 // --- the name filter narrows the whole view ---
 
 render();
+assert.ok(onOverview(), 'History opens on its overview');
 assert.ok(root.innerHTML.includes('id="name-filter"'), 'name chips render');
 assert.ok(root.innerHTML.includes('Leg day') && root.innerHTML.includes('· 2'),
   'each name carries how often it was trained');
@@ -92,31 +115,67 @@ assert.ok(root.innerHTML.includes('Leg day') && root.innerHTML.includes('· 2'),
 const options = () => [...root.innerHTML.matchAll(/<option value="[^"]*">([^<]+)</g)]
   .map((m) => m[1].trim());
 assert.deepEqual([...new Set(options())].sort(),
-  ['#14 Leg press', '#3 Lat pulldown', 'All machines'],
+  ['#14 Leg press', '#3 Lat pulldown'],
   'unfiltered, every trained machine is selectable');
 
-// What you did comes first: the workout list sits directly under the name
-// chips, everything that analyses or extends it follows.
-const order = ['Workouts', 'Muscles', 'Training days', 'Progress', 'Log a past workout']
-  .map((h) => root.innerHTML.search(new RegExp(`<h2[^>]*>${h}`)));
-assert.ok(order.every((i) => i > 0), 'every card renders');
-assert.deepEqual(order.slice().sort((a, b) => a - b), order,
-  'workouts lead, then muscles, training days, progress, log a past workout');
+// Two screens. The overview analyses; the Workouts screen holds what you
+// did, day by day and workout by workout, and the form that adds one.
+const order = (heads) => heads.map((h) => root.innerHTML.search(new RegExp(`<h2[^>]*>${h}`)));
+const overviewOrder = order(['Progress', 'Muscles']);
+assert.ok(overviewOrder.every((i) => i > 0), 'every overview card renders');
+assert.deepEqual(overviewOrder.slice().sort((a, b) => a - b), overviewOrder,
+  'the overview: progress, then muscles');
+assert.ok(!root.innerHTML.includes('id="workout-list"'), 'the full list is not on the overview');
+assert.ok(root.innerHTML.includes('All workouts (3) ›'), 'the way in counts what it leads to');
+openWorkouts();
+const workoutsOrder = order(['Training days', 'Workouts', 'Log a past workout']);
+assert.ok(workoutsOrder.every((i) => i > 0), 'every Workouts-screen card renders');
+assert.deepEqual(workoutsOrder.slice().sort((a, b) => a - b), workoutsOrder,
+  'the Workouts screen: training days, the list, log a past workout');
+assert.ok(!/<h2[^>]*>Progress/.test(root.innerHTML), 'and no analysis card');
+backToOverview();
+
+// a changed screen is navigation and starts at the top; an in-place
+// re-render (a filter tap) keeps the scroll where the user left it
+root.scrollTop = 480;
+root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: '' }));
+assert.equal(root.scrollTop, 480, 'a re-render on the same screen keeps the scroll');
+openWorkouts();
+assert.equal(root.scrollTop, 0, 'a screen change resets it');
+backToOverview();
 
 root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: 'Leg day' }));
-assert.ok(root.innerHTML.includes('Workouts — Leg day'), 'the heading names the active filter');
+assert.ok(onOverview(), 'a filter tap stays on the screen it was made on');
 assert.ok(!options().includes('#3 Lat pulldown'),
   'machine lists follow the filter, not just the workout list');
+assert.ok(root.innerHTML.includes('All workouts (2) ›'), 'and so does the count');
+openWorkouts();
+assert.ok(root.innerHTML.includes('Workouts — Leg day'), 'the heading names the active filter');
+assert.ok(root.innerHTML.includes('id="name-filter"'), 'the name chips sit on this screen too');
 
 // the filter clears itself when its last workout loses that name
 store.saveWorkouts(store.getWorkouts().map((w) => (w.name === 'Leg day' ? { ...w, name: 'Legs' } : w)));
 render();
-assert.ok(!root.innerHTML.includes('Workouts — Leg day'), 'a filter with nothing left resets');
+assert.ok(onWorkouts(), 'a re-render keeps the screen');
+assert.ok(root.innerHTML.includes('<h2>Workouts</h2>'), 'a filter with nothing left resets');
+backToOverview();
 assert.ok(options().includes('#3 Lat pulldown'), 'and the full view comes back');
+
+// a tab tap is the one thing that returns to the overview
+openWorkouts();
+enter();
+assert.ok(onOverview(), 'renderHistory(root, { entry: true }) lands on the overview');
 
 // --- the editor: add a set, add a machine, move the date ---
 
 const list = () => root.querySelector('#workout-list');
+openWorkouts();
+// the heatmap month is "where in time": a save keeps it, an entry resets it
+const hmTitle = () => root.querySelector('#hm-title').textContent;
+const thisMonth = hmTitle();
+root.querySelector('#hm-prev').listeners.click();
+const pickedMonth = hmTitle();
+assert.notEqual(pickedMonth, thisMonth, 'the heatmap steps back a month');
 list().listeners.click(clickOn('.edit-w', { wid: 'w1' }));
 assert.ok(list().innerHTML.includes('edit-save'), 'the card switches to edit mode');
 assert.ok(list().innerHTML.includes('+ Set') && list().innerHTML.includes('+ Machine'),
@@ -138,6 +197,9 @@ list().listeners.change(changeOn('edit-date', '2026-08-08', dateCard));
 
 list().listeners.click(clickOn('.edit-name-chips .chip', { name: 'Morning legs' }));
 list().listeners.click(clickOn('.edit-save'));
+
+assert.ok(onWorkouts(), 'a save stays on the Workouts screen');
+assert.equal(hmTitle(), pickedMonth, 'and keeps the heatmap month');
 
 const saved = store.getWorkouts().find((w) => w.id === 'w1');
 assert.equal(saved.entries.length, 2, 'the added machine survives the save');
@@ -173,6 +235,9 @@ list().listeners.click(clickOn('.entry-del', { ei: '1' }));
 list().listeners.click(clickOn('.edit-save'));
 assert.equal(store.getWorkouts().find((w) => w.id === 'w1').entries.length, 1,
   'a removed machine is gone after saving');
+enter();
+openWorkouts();
+assert.equal(hmTitle(), thisMonth, 'an entry brings the heatmap back to this month');
 
 // --- logging a workout after the fact, straight into edit mode ---
 
@@ -192,7 +257,7 @@ assert.ok(list().innerHTML.includes('edit-save'),
 
 // an empty history still offers the form — that is how paper users start
 store.saveWorkouts([]);
-render();
+enter();
 assert.ok(root.innerHTML.includes('No workouts yet.'), 'empty state renders');
 assert.ok(root.innerHTML.includes('id="past-log"'), 'and still lets you log a past workout');
 root.querySelector('#past-date').value = '2026-07-30';
@@ -200,6 +265,8 @@ root.querySelector('#past-time').value = '08:00';
 root.querySelector('#past-text').value = '#3 Lat pulldown 4x12 50';
 root.querySelector('#past-log').listeners.click();
 assert.equal(store.getWorkouts().length, 1, 'logging works from the empty screen too');
+assert.ok(onWorkouts() && list().innerHTML.includes('edit-save'),
+  'and opens it in edit mode on the Workouts screen, where the list lives');
 
 // --- the muscle card: usage bars that ARE the filter ---
 
@@ -214,22 +281,26 @@ store.saveWorkouts([
   },
 ]);
 
-render();
+enter();
 assert.ok(root.innerHTML.includes('id="muscle-list"'), 'the muscle card renders');
 assert.ok(root.innerHTML.includes('Quads') && root.innerHTML.includes('Lats'),
   'every layout muscle gets a row');
 assert.ok(root.innerHTML.includes('bar-fill'), 'rows carry usage bars');
 
 // tapping a row narrows the WHOLE view, like the name filter does
+const pressed = (mu) => new RegExp(`data-muscle="${mu}" aria-pressed="true"`).test(root.innerHTML);
 root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Lats' }));
-assert.ok(root.innerHTML.includes('Workouts — Lats'), 'the heading names the muscle');
+assert.ok(onOverview() && pressed('Lats'), 'the row shows its filter is on');
 assert.ok(!options().includes('#14 Leg press'),
   'machine selects follow the muscle filter too');
 assert.ok(root.innerHTML.includes('All muscles'), 'an explicit way out renders');
+openWorkouts();
+assert.ok(root.innerHTML.includes('Workouts — Lats'), 'the list heading names the muscle');
+backToOverview();
 
 // the same row again clears it
 root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Lats' }));
-assert.ok(!root.innerHTML.includes('Workouts — Lats'), 're-tap clears the filter');
+assert.ok(!pressed('Lats') && !root.innerHTML.includes('All muscles'), 're-tap clears the filter');
 assert.ok(options().includes('#14 Leg press'), 'and the full view comes back');
 
 // a muscle with zero sets still filters (the "neglected groups" feature) —
@@ -246,10 +317,12 @@ root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { musc
 // lists every muscle so the filter is never a dead end
 root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: 'Pull day' }));
 root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Quads' }));
-assert.ok(list().innerHTML.includes('No workouts match this filter.'),
-  'an empty combination is stated, not blank');
 assert.ok(root.innerHTML.includes('data-muscle="Lats"'),
   'other muscles stay reachable while one is selected');
+openWorkouts();
+assert.ok(list().innerHTML.includes('No workouts match this filter.'),
+  'an empty combination is stated, not blank');
+backToOverview();
 root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: '' }));
 
 // editing under an active filter must keep the WHOLE workout — the filter
@@ -266,6 +339,7 @@ render();
 // the Quads filter is still active from the block above — prove it before
 // editing, or this test passes without a filter in play at all (a re-tap
 // here would TOGGLE it off and make the assertion below vacuous)
+openWorkouts();
 assert.ok(root.innerHTML.includes('Workouts — Quads'),
   'the muscle filter is active going into the edit');
 list().listeners.click(clickOn('.edit-w', { wid: 'mw3' }));
@@ -274,11 +348,13 @@ list().listeners.click(clickOn('.edit-save'));
 const savedFiltered = store.getWorkouts().find((w) => w.id === 'mw3');
 assert.equal(savedFiltered.entries.length, 2,
   'a save under a muscle filter keeps the entries that did not match');
+backToOverview();
 root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Quads' }));
 
 // a freshly logged past workout resets the muscle filter, or it could
 // vanish behind it and never open in edit mode
 root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Lats' }));
+openWorkouts();
 root.querySelector('#past-date').value = '2026-08-04';
 root.querySelector('#past-time').value = '09:00';
 root.querySelector('#past-text').value = '#14 Leg press 3x10 90';
@@ -288,11 +364,12 @@ assert.ok(list().innerHTML.includes('edit-save'),
 
 // the filter clears itself when its muscle leaves the layout, and orphaned
 // sets are counted instead of silently dropped
+backToOverview();
 root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Lats' }));
-assert.ok(root.innerHTML.includes('Workouts — Lats'));
+assert.ok(pressed('Lats') && root.innerHTML.includes('All muscles'));
 store.saveLayout({ ...store.getLayout(), machines: store.getLayout().machines.filter((m) => m.id !== 'm2') });
 render();
-assert.ok(!root.innerHTML.includes('Workouts — Lats'), 'a stranded muscle filter resets');
+assert.ok(onOverview() && !root.innerHTML.includes('All muscles'), 'a stranded muscle filter resets');
 assert.ok(root.innerHTML.includes("can't be attributed"),
   'sets of a deleted machine are reported, not hidden');
 
@@ -304,6 +381,7 @@ store.saveWorkouts([...store.getWorkouts(), {
   entries: [{ ...entry('mrow', 9, 'Rower', [{ distance: 1000, seconds: 600 }]), cardio: true }],
 }]);
 render();
+openWorkouts();
 list().listeners.click(clickOn('.edit-w', { wid: 'wrow' }));
 assert.ok(/data-kind="time"[\s\S]*?value="10:00"/.test(list().innerHTML), 'the time field shows m:ss');
 const cardioChange = (cls, value) => {

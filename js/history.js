@@ -19,7 +19,50 @@ let muscleFilter = '';
 // Set when a workout should come back up in edit mode after the re-render.
 let openEditId = null;
 
-export function renderHistory(root) {
+// Which History screen is on show: 'overview' (the cards that analyse) or
+// 'workouts' (heatmap, the full list + editor, back-logging). Module state
+// like train.js's `screen` — no hash sub-route, the tab stays #history.
+let screen = 'overview';
+let lastScreen = null;
+// The heatmap's month as a Date on the 1st (null = this month). Module
+// state, so the full re-render after a save no longer snaps it back.
+let hmMonth = null;
+
+// `entry` = arriving from the tab bar (app.js). It is the ONE thing that
+// resets "where in time" — the screen and the heatmap month; the filters
+// survive it. Every other re-render (save, delete, filter) calls
+// renderHistory(root) without it, so nothing the user set moves.
+export function renderHistory(root, { entry = false } = {}) {
+  if (entry) {
+    screen = 'overview';
+    hmMonth = null;
+  }
+  // train.js's rule: a changed screen is NAVIGATION and starts at the top;
+  // reset BEFORE the render, while the old (tall) content can still
+  // scroll. An unchanged screen is an in-place update — its scroll
+  // position belongs to the user.
+  if (screen !== lastScreen && root.scrollTop) root.scrollTop = 0;
+  lastScreen = screen;
+
+  const ctx = historyContext();
+  // Nothing logged yet still gets the past-workout form: someone moving
+  // over from paper starts by typing in the weeks they already trained.
+  if (!ctx.all.length) {
+    root.innerHTML = `<h1>History</h1>
+      <div class="empty"><div class="big">📈</div>
+        <p>No workouts yet.</p>
+        <p>Finish your first <a href="#train">workout</a> and it shows up here.</p>
+      </div>
+      ${pastCardHtml()}`;
+    wirePastLog(root, ctx.s);
+    return;
+  }
+  if (screen === 'workouts') renderWorkoutsScreen(root, ctx);
+  else renderOverview(root, ctx);
+}
+
+// Everything both screens read, computed once per render.
+function historyContext() {
   const all = getWorkouts();
   // names in use, most-trained first — a name is only a way back in if
   // you can actually filter by it
@@ -35,26 +78,12 @@ export function renderHistory(root) {
   // the name-only list so a muscle tap can always reach every other muscle.
   const byName = nameFilter ? all.filter((w) => w.name === nameFilter) : all;
   const s = getSettings();
-  const unit = s.unit;
   const layout = getLayout();
   // muscles resolve against the LIVE layout — a deleted machine or a gym
   // switch can strand the filter, so it clears itself like nameFilter does
   const allMuscles = layout ? layoutMuscles(layout) : [];
   if (muscleFilter && !allMuscles.includes(muscleFilter)) muscleFilter = '';
   const workouts = muscleFilter ? workoutsWithMuscle(byName, layout, muscleFilter) : byName;
-
-  // Nothing logged yet still gets the past-workout form: someone moving
-  // over from paper starts by typing in the weeks they already trained.
-  if (!all.length) {
-    root.innerHTML = `<h1>History</h1>
-      <div class="empty"><div class="big">📈</div>
-        <p>No workouts yet.</p>
-        <p>Finish your first <a href="#train">workout</a> and it shows up here.</p>
-      </div>
-      ${pastCardHtml()}`;
-    wirePastLog(root, s);
-    return;
-  }
 
   // Machines — and, at multi-exercise machines, each exercise — seen in
   // history, labeled with their current name in the layout when still present.
@@ -72,21 +101,80 @@ export function renderHistory(root) {
   });
   const options = [...machines.entries()].sort((a, b) =>
     a[1].num - b[1].num || (a[1].exercise ?? '').localeCompare(b[1].exercise ?? ''));
-  const optionHtml = ([key, m]) => `<option value="${esc(key)}">#${m.num} ${esc(m.label)}${
-    m.exercise ? ` · ${esc(m.exercise)}` : ''}</option>`;
-  const decodeKey = (value) => {
-    if (!value) return null; // '' = the heatmap's "All machines"
-    const i = value.indexOf(' ');
-    if (i === -1) return { machineId: value, exercise: null }; // defensive: bare id
-    return { machineId: value.slice(0, i), exercise: value.slice(i + 1) || null };
-  };
-  const entryMatches = (e, sel) =>
-    e.machineId === sel.machineId && (e.exercise ?? null) === sel.exercise;
+  return { all, named, byName, workouts, s, unit: s.unit, layout, allMuscles, options };
+}
 
-  // Usage per muscle group over the name-filtered list — every row is also
-  // the filter for that muscle. Computing over `byName` (not `workouts`) is
-  // what keeps other muscles reachable while one is selected.
-  const muscleCardHtml = () => {
+const optionHtml = ([key, m]) => `<option value="${esc(key)}">#${m.num} ${esc(m.label)}${
+  m.exercise ? ` · ${esc(m.exercise)}` : ''}</option>`;
+const decodeKey = (value) => {
+  if (!value) return null; // '' = the heatmap's "All machines"
+  const i = value.indexOf(' ');
+  if (i === -1) return { machineId: value, exercise: null }; // defensive: bare id
+  return { machineId: value.slice(0, i), exercise: value.slice(i + 1) || null };
+};
+const entryMatches = (e, sel) =>
+  e.machineId === sel.machineId && (e.exercise ?? null) === sel.exercise;
+
+// The overview: a sequence of cards, rendered in this order. Each is
+// { html(ctx) -> markup, wire(root, ctx) }; a new card is one entry here.
+const overviewCards = () => [progressCard, muscleCard, workoutsLink];
+
+function renderOverview(root, ctx) {
+  const cards = overviewCards();
+  root.innerHTML = `
+    <h1>History</h1>
+    ${nameChipsHtml(ctx.named)}
+    ${cards.map((c) => c.html(ctx)).join('')}`;
+  wireNameFilter(root);
+  cards.forEach((c) => c.wire(root, ctx));
+}
+
+// The drill-down: what you did, day by day and workout by workout, plus the
+// form that adds one after the fact.
+function renderWorkoutsScreen(root, ctx) {
+  root.innerHTML = `
+    <button type="button" id="hist-back" class="back-row">‹ History</button>
+    <h1>Workouts</h1>
+    ${nameChipsHtml(ctx.named)}
+    ${heatmapCardHtml(ctx)}
+    <section class="card">
+      <h2>Workouts${nameFilter ? ` — ${esc(nameFilter)}` : ''}${
+        muscleFilter ? ` — ${esc(muscleFilter)}` : ''}</h2>
+      <div id="workout-list"></div>
+    </section>
+    ${pastCardHtml()}`;
+  root.querySelector('#hist-back').addEventListener('click', () => {
+    screen = 'overview';
+    renderHistory(root);
+  });
+  wireNameFilter(root);
+  wirePastLog(root, ctx.s);
+  wireWorkoutList(root, root.querySelector('#workout-list'), ctx.workouts, ctx.s, ctx.layout);
+  wireHeatmap(root, ctx);
+}
+
+// Workout-name chips, on both screens: the filter narrows everything.
+const nameChipsHtml = (named) => (named.length ? `
+    <div class="chip-select" id="name-filter">
+      <button type="button" class="chip${nameFilter ? '' : ' sel'}" data-name="">All</button>
+      ${named.map(([n, c]) => `<button type="button" class="chip${nameFilter === n ? ' sel' : ''}"
+        data-name="${esc(n)}">${esc(n)} <span class="muted">· ${c}</span></button>`).join('')}
+    </div>` : '');
+
+function wireNameFilter(root) {
+  root.querySelector('#name-filter')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    nameFilter = chip.dataset.name;
+    renderHistory(root);
+  });
+}
+
+// Usage per muscle group over the name-filtered list — every row is also
+// the filter for that muscle. Computing over `byName` (not `workouts`) is
+// what keeps other muscles reachable while one is selected.
+const muscleCard = {
+  html({ allMuscles, byName, layout }) {
     if (!allMuscles.length) return '';
     const usage = usageByMuscle(byName, layout);
     const rows = allMuscles
@@ -117,22 +205,87 @@ export function renderHistory(root) {
       ${lost ? `<p class="muted">${plural(lost, 'set')} can't be attributed —
         their machine is gone or has no muscles tagged.</p>` : ''}
     </section>`;
-  };
+  },
+  // one delegated listener: a muscle row toggles its filter
+  wire(root) {
+    root.querySelector('#muscle-list')?.addEventListener('click', (e) => {
+      const row = e.target.closest('.muscle-row');
+      if (!row) return;
+      const m = row.dataset.muscle;
+      muscleFilter = m && m !== muscleFilter ? m : '';
+      renderHistory(root);
+    });
+  },
+};
 
-  root.innerHTML = `
-    <h1>History</h1>
-    ${named.length ? `
-    <div class="chip-select" id="name-filter">
-      <button type="button" class="chip${nameFilter ? '' : ' sel'}" data-name="">All</button>
-      ${named.map(([n, c]) => `<button type="button" class="chip${nameFilter === n ? ' sel' : ''}"
-        data-name="${esc(n)}">${esc(n)} <span class="muted">· ${c}</span></button>`).join('')}
-    </div>` : ''}
+// The way into the Workouts screen, last on the overview.
+const workoutsLink = {
+  html: ({ workouts }) => `
+    <button type="button" id="open-workouts" class="btn">All workouts (${workouts.length}) ›</button>`,
+  wire(root) {
+    root.querySelector('#open-workouts').addEventListener('click', () => {
+      screen = 'workouts';
+      renderHistory(root);
+    });
+  },
+};
+
+const progressCard = {
+  html: ({ options }) => `
     <section class="card">
-      <h2>Workouts${nameFilter ? ` — ${esc(nameFilter)}` : ''}${
-        muscleFilter ? ` — ${esc(muscleFilter)}` : ''}</h2>
-      <div id="workout-list"></div>
-    </section>
-    ${muscleCardHtml()}
+      <h2 id="chart-title">Progress</h2>
+      <select id="chart-machine" aria-label="Machine">
+        ${options.length ? options.map(optionHtml).join('')
+    // '' decodes to null and the chart says "No data yet." — the picker
+    // states why it is empty instead of rendering optionless (#hm-machine
+    // never goes empty thanks to its fixed "All machines" option)
+    : '<option value="">No machines match this filter</option>'}
+      </select>
+      <div class="chart-wrap" id="chart"></div>
+    </section>`,
+  wire(root, { workouts, s, unit }) {
+    const select = root.querySelector('#chart-machine');
+    const chartEl = root.querySelector('#chart');
+    const chartTitle = root.querySelector('#chart-title');
+    const draw = () => {
+      const sel = decodeKey(select.value);
+      if (!sel) {
+        chartEl.innerHTML = '<p class="muted">No data yet.</p>';
+        return;
+      }
+      const relevant = workouts
+        .map((w) => ({ w, e: w.entries.find((e) => entryMatches(e, sel) && e.sets.length) }))
+        .filter((x) => x.e);
+      // A machine's type can be toggled over time; plot the metric of its
+      // most recent entry and skip entries of any other shape.
+      const latest = relevant[relevant.length - 1]?.e;
+      const cardio = !!latest?.cardio;
+      const bodyweight = !!latest?.bodyweight;
+      const series = relevant.filter(({ e }) => !!e.cardio === cardio && !!e.bodyweight === bodyweight);
+      // Bodyweight progress lives in reps until extra weight shows up.
+      const bwLoaded = bodyweight && series.some(({ e }) => e.sets.some((st) => st.weight > 0));
+      const points = series.map(({ w, e }) => ({
+        t: w.startedAt,
+        v: cardio ? Math.max(...e.sets.map((st) => st.distance || 0))
+          : bodyweight && !bwLoaded ? Math.max(...e.sets.map((st) => st.reps || 0))
+            : Math.max(...e.sets.map((st) => st.weight || 0)),
+      }));
+      const metric = cardio ? `top distance (${distUnit(s)})`
+        : bodyweight ? (bwLoaded ? `top added weight (${unit})` : 'top reps')
+          : `top set weight (${unit})`;
+      chartTitle.textContent = `Progress — ${metric}`;
+      lineChart(chartEl, points, {
+        unit: cardio ? distUnit(s) : bodyweight && !bwLoaded ? 'reps' : unit,
+        label: `Progress: ${metric} over time`,
+      });
+    };
+    select.addEventListener('change', draw);
+    draw();
+  },
+};
+
+// --- training-days heatmap: month × machine ---
+const heatmapCardHtml = ({ options }) => `
     <section class="card">
       <h2>Training days</h2>
       <div class="hm-head">
@@ -150,49 +303,105 @@ export function renderHistory(root) {
         <i class="hm-swatch l3"></i><i class="hm-swatch l4"></i>
       <span>more</span></div>
       <p id="hm-info" class="muted" role="status">Tap a day for details.</p>
-    </section>
-    <section class="card">
-      <h2 id="chart-title">Progress</h2>
-      <select id="chart-machine" aria-label="Machine">
-        ${options.length ? options.map(optionHtml).join('')
-    // '' decodes to null and the chart says "No data yet." — the picker
-    // states why it is empty instead of rendering optionless (#hm-machine
-    // never goes empty thanks to its fixed "All machines" option)
-    : '<option value="">No machines match this filter</option>'}
-      </select>
-      <div class="chart-wrap" id="chart"></div>
-    </section>
-    ${pastCardHtml()}`;
+    </section>`;
 
-  wirePastLog(root, s);
+function wireHeatmap(root, { workouts, s, unit }) {
+  const hmMachine = root.querySelector('#hm-machine');
+  const hmGrid = root.querySelector('#hm-grid');
+  const hmInfo = root.querySelector('#hm-info');
+  const month = () => {
+    if (hmMonth) return hmMonth;
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  };
 
-  root.querySelector('#name-filter')?.addEventListener('click', (e) => {
-    const chip = e.target.closest('.chip');
-    if (!chip) return;
-    nameFilter = chip.dataset.name;
-    renderHistory(root);
-  });
+  const drawHeatmap = () => {
+    const hmDate = month();
+    const y = hmDate.getFullYear();
+    const m = hmDate.getMonth();
+    root.querySelector('#hm-title').textContent =
+      hmDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 
-  // one delegated listener: a muscle row toggles its filter
-  root.querySelector('#muscle-list')?.addEventListener('click', (e) => {
-    const row = e.target.closest('.muscle-row');
-    if (!row) return;
-    const m = row.dataset.muscle;
-    muscleFilter = m && m !== muscleFilter ? m : '';
-    renderHistory(root);
-  });
+    // aggregate sets/volume per day of this month, optionally per machine
+    const days = new Map();
+    workouts.forEach((w) => {
+      const d = new Date(w.startedAt);
+      if (d.getFullYear() !== y || d.getMonth() !== m) return;
+      const sel = decodeKey(hmMachine.value);
+      const entries = sel ? w.entries.filter((e) => entryMatches(e, sel)) : w.entries;
+      const sets = entries.reduce((n, e) => n + e.sets.length, 0);
+      if (!sets) return;
+      const volume = entries.reduce(
+        (v, e) => v + e.sets.reduce((x, st) => x + (st.reps * st.weight || 0), 0), 0);
+      const dist = entries.reduce(
+        (v, e) => v + e.sets.reduce((x, st) => x + (st.distance || 0), 0), 0);
+      const day = days.get(d.getDate()) || { sets: 0, volume: 0, dist: 0, nums: new Set() };
+      day.sets += sets;
+      day.volume += volume;
+      day.dist += dist;
+      entries.forEach((e) => day.nums.add(e.num));
+      days.set(d.getDate(), day);
+    });
 
-  // One card at a time can be in edit mode; the draft is a deep clone so
-  // Cancel never touches stored data. A freshly logged past workout opens
-  // in edit mode straight away (openEditId), so its details can be checked
-  // and named while the workout is still in mind.
+    const startOffset = (new Date(y, m, 1).getDay() + 6) % 7; // Monday-first
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const now = new Date();
+    const isThisMonth = now.getFullYear() === y && now.getMonth() === m;
+    const level = (sets) => (sets >= 10 ? 4 : sets >= 6 ? 3 : sets >= 3 ? 2 : sets >= 1 ? 1 : 0);
+
+    hmGrid.innerHTML =
+      ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d) => `<span class="hm-dow">${d}</span>`).join('')
+      + '<span></span>'.repeat(startOffset)
+      + Array.from({ length: daysInMonth }, (_, i) => {
+        const dayNum = i + 1;
+        const info = days.get(dayNum);
+        const lvl = level(info?.sets ?? 0);
+        return `<button type="button" class="hm-cell${lvl ? ` l${lvl}` : ''}${isThisMonth
+          && now.getDate() === dayNum ? ' today' : ''}" data-day="${dayNum}">${dayNum}</button>`;
+      }).join('');
+
+    hmInfo.textContent = 'Tap a day for details.';
+    hmGrid.querySelectorAll('.hm-cell').forEach((cell) => {
+      cell.addEventListener('click', () => {
+        const dayNum = parseInt(cell.dataset.day, 10);
+        const info = days.get(dayNum);
+        const label = fmtDay(new Date(y, m, dayNum));
+        hmInfo.textContent = info
+          ? [`${label} — ${plural(info.sets, 'set')}`,
+            info.volume ? `${Math.round(info.volume)} ${unit}` : '',
+            info.dist ? `${Math.round(info.dist * 100) / 100} ${distUnit(s)}` : '',
+            [...info.nums].sort((a, b) => a - b).map((n) => `#${n}`).join(', ')]
+            .filter(Boolean).join(' · ')
+          : `${label} — no training`;
+      });
+    });
+  };
+
+  const step = (by) => {
+    const d = month();
+    hmMonth = new Date(d.getFullYear(), d.getMonth() + by, 1);
+    drawHeatmap();
+  };
+  root.querySelector('#hm-prev').addEventListener('click', () => step(-1));
+  root.querySelector('#hm-next').addEventListener('click', () => step(1));
+  hmMachine.addEventListener('change', drawHeatmap);
+  drawHeatmap();
+}
+
+// The workout list with its editor, over `items` (ascending, as stored;
+// rendered newest first). One card at a time can be in edit mode; the
+// draft is a deep clone so Cancel never touches stored data. A freshly
+// logged past workout opens in edit mode straight away (openEditId), so
+// its details can be checked and named while the workout is still in mind.
+// Shared by every list of workouts History shows; a save or a delete
+// re-renders the whole view (the screen and the module state survive).
+function wireWorkoutList(root, list, items, s, layout) {
   let editDraft = openEditId
-    ? JSON.parse(JSON.stringify(workouts.find((w) => w.id === openEditId) ?? null)) : null;
+    ? JSON.parse(JSON.stringify(items.find((w) => w.id === openEditId) ?? null)) : null;
   openEditId = null;
-  const list = root.querySelector('#workout-list');
   const renderList = () => {
     // reachable only by combining the name and muscle filters
-    list.innerHTML = workouts.length ? workouts.slice().reverse()
+    list.innerHTML = items.length ? items.slice().reverse()
       .map((w) => (editDraft?.id === w.id ? editWorkoutHtml(editDraft, s, layout) : workoutHtml(w, s)))
       .join('') : '<p class="muted">No workouts match this filter.</p>';
   };
@@ -206,7 +415,7 @@ export function renderHistory(root) {
         repeat.disabled = true;
         return;
       }
-      const workout = workouts.find((w) => w.id === repeat.dataset.wid);
+      const workout = items.find((w) => w.id === repeat.dataset.wid);
       if (!workout) return;
       startWorkoutFrom(workout);
       location.hash = '#train';
@@ -215,7 +424,7 @@ export function renderHistory(root) {
 
     const edit = e.target.closest('.edit-w');
     if (edit) {
-      const workout = workouts.find((w) => w.id === edit.dataset.wid);
+      const workout = items.find((w) => w.id === edit.dataset.wid);
       if (!workout) return;
       editDraft = JSON.parse(JSON.stringify(workout));
       renderList();
@@ -328,122 +537,6 @@ export function renderHistory(root) {
       shiftWorkout(editDraft, next - editDraft.startedAt);
     }
   });
-
-  // --- training-days heatmap: month × machine ---
-  let hmDate = new Date();
-  const hmMachine = root.querySelector('#hm-machine');
-  const hmGrid = root.querySelector('#hm-grid');
-  const hmInfo = root.querySelector('#hm-info');
-
-  const drawHeatmap = () => {
-    const y = hmDate.getFullYear();
-    const m = hmDate.getMonth();
-    root.querySelector('#hm-title').textContent =
-      hmDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-
-    // aggregate sets/volume per day of this month, optionally per machine
-    const days = new Map();
-    workouts.forEach((w) => {
-      const d = new Date(w.startedAt);
-      if (d.getFullYear() !== y || d.getMonth() !== m) return;
-      const sel = decodeKey(hmMachine.value);
-      const entries = sel ? w.entries.filter((e) => entryMatches(e, sel)) : w.entries;
-      const sets = entries.reduce((n, e) => n + e.sets.length, 0);
-      if (!sets) return;
-      const volume = entries.reduce(
-        (v, e) => v + e.sets.reduce((x, st) => x + (st.reps * st.weight || 0), 0), 0);
-      const dist = entries.reduce(
-        (v, e) => v + e.sets.reduce((x, st) => x + (st.distance || 0), 0), 0);
-      const day = days.get(d.getDate()) || { sets: 0, volume: 0, dist: 0, nums: new Set() };
-      day.sets += sets;
-      day.volume += volume;
-      day.dist += dist;
-      entries.forEach((e) => day.nums.add(e.num));
-      days.set(d.getDate(), day);
-    });
-
-    const startOffset = (new Date(y, m, 1).getDay() + 6) % 7; // Monday-first
-    const daysInMonth = new Date(y, m + 1, 0).getDate();
-    const now = new Date();
-    const isThisMonth = now.getFullYear() === y && now.getMonth() === m;
-    const level = (sets) => (sets >= 10 ? 4 : sets >= 6 ? 3 : sets >= 3 ? 2 : sets >= 1 ? 1 : 0);
-
-    hmGrid.innerHTML =
-      ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d) => `<span class="hm-dow">${d}</span>`).join('')
-      + '<span></span>'.repeat(startOffset)
-      + Array.from({ length: daysInMonth }, (_, i) => {
-        const dayNum = i + 1;
-        const info = days.get(dayNum);
-        const lvl = level(info?.sets ?? 0);
-        return `<button type="button" class="hm-cell${lvl ? ` l${lvl}` : ''}${isThisMonth
-          && now.getDate() === dayNum ? ' today' : ''}" data-day="${dayNum}">${dayNum}</button>`;
-      }).join('');
-
-    hmInfo.textContent = 'Tap a day for details.';
-    hmGrid.querySelectorAll('.hm-cell').forEach((cell) => {
-      cell.addEventListener('click', () => {
-        const dayNum = parseInt(cell.dataset.day, 10);
-        const info = days.get(dayNum);
-        const label = fmtDay(new Date(y, m, dayNum));
-        hmInfo.textContent = info
-          ? [`${label} — ${plural(info.sets, 'set')}`,
-            info.volume ? `${Math.round(info.volume)} ${unit}` : '',
-            info.dist ? `${Math.round(info.dist * 100) / 100} ${distUnit(s)}` : '',
-            [...info.nums].sort((a, b) => a - b).map((n) => `#${n}`).join(', ')]
-            .filter(Boolean).join(' · ')
-          : `${label} — no training`;
-      });
-    });
-  };
-
-  root.querySelector('#hm-prev').addEventListener('click', () => {
-    hmDate = new Date(hmDate.getFullYear(), hmDate.getMonth() - 1, 1);
-    drawHeatmap();
-  });
-  root.querySelector('#hm-next').addEventListener('click', () => {
-    hmDate = new Date(hmDate.getFullYear(), hmDate.getMonth() + 1, 1);
-    drawHeatmap();
-  });
-  hmMachine.addEventListener('change', drawHeatmap);
-  drawHeatmap();
-
-  const select = root.querySelector('#chart-machine');
-  const chartEl = root.querySelector('#chart');
-  const chartTitle = root.querySelector('#chart-title');
-  const draw = () => {
-    const sel = decodeKey(select.value);
-    if (!sel) {
-      chartEl.innerHTML = '<p class="muted">No data yet.</p>';
-      return;
-    }
-    const relevant = workouts
-      .map((w) => ({ w, e: w.entries.find((e) => entryMatches(e, sel) && e.sets.length) }))
-      .filter((x) => x.e);
-    // A machine's type can be toggled over time; plot the metric of its
-    // most recent entry and skip entries of any other shape.
-    const latest = relevant[relevant.length - 1]?.e;
-    const cardio = !!latest?.cardio;
-    const bodyweight = !!latest?.bodyweight;
-    const series = relevant.filter(({ e }) => !!e.cardio === cardio && !!e.bodyweight === bodyweight);
-    // Bodyweight progress lives in reps until extra weight shows up.
-    const bwLoaded = bodyweight && series.some(({ e }) => e.sets.some((st) => st.weight > 0));
-    const points = series.map(({ w, e }) => ({
-      t: w.startedAt,
-      v: cardio ? Math.max(...e.sets.map((st) => st.distance || 0))
-        : bodyweight && !bwLoaded ? Math.max(...e.sets.map((st) => st.reps || 0))
-          : Math.max(...e.sets.map((st) => st.weight || 0)),
-    }));
-    const metric = cardio ? `top distance (${distUnit(s)})`
-      : bodyweight ? (bwLoaded ? `top added weight (${unit})` : 'top reps')
-        : `top set weight (${unit})`;
-    chartTitle.textContent = `Progress — ${metric}`;
-    lineChart(chartEl, points, {
-      unit: cardio ? distUnit(s) : bodyweight && !bwLoaded ? 'reps' : unit,
-      label: `Progress: ${metric} over time`,
-    });
-  };
-  select.addEventListener('change', draw);
-  draw();
 }
 
 const setCount = (w) => w.entries.reduce((n, e) => n + e.sets.length, 0);
@@ -513,6 +606,7 @@ function wirePastLog(root, s) {
       nameFilter = ''; // a workout just logged must not vanish behind a filter
       muscleFilter = '';
       openEditId = workout.id; // reopen it for a once-over and a name
+      screen = 'workouts'; // …on the screen whose list holds the editor
       renderHistory(root);
       if (skipped.length) {
         root.querySelector('#past-msg').textContent = `Logged — ${plural(skipped.length, 'line')}
