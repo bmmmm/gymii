@@ -361,4 +361,81 @@ assert.ok(injSvg.innerHTML.includes('onclick=&quot;'), 'it is escaped instead');
 assert.equal(attr(tagsWith(injSvg.innerHTML, 'machine')[0], 'data-id'), 'x&quot; onclick=&quot;boom',
   'and &quot; is what the HTML parser hands back as the original id');
 
+// --- walking-path overlay ---
+
+const pathLayout = store.newLayout('Path');
+[['pa', 1, 0], ['pb', 2, 10], ['pc', 3, 20], ['pd', 4, 30]].forEach(([id, n, x]) =>
+  pathLayout.machines.push({ id, num: n, x, y: 0, w: 4, h: 3, color: '#ff0000', settingsFields: [] }));
+const polys = (html) => [...html.matchAll(/<polygon\b[^>]*>/g)].map((m) => m[0]);
+const legsOf = (html) => [...html.matchAll(/<line\b[^>]*>/g)].map((m) => m[0])
+  .filter((t) => (attr(t, 'class') || '').split(/\s+/).includes('path-leg'));
+const walk = {
+  start: { x: 0, y: 8 },
+  stops: [{ machineId: 'pa' }, { machineId: 'pb' }, { machineId: 'pc' }],
+  legs: [{ from: 'pa', to: 'pb', len: 10 }, { from: 'pb', to: 'pc', len: 10 }],
+};
+const walkSvg = fakeSvg();
+drawLayout(walkSvg, pathLayout, { path: walk });
+const walkLegs = legsOf(walkSvg.innerHTML);
+assert.equal(walkLegs.length, 3, 'two machine legs plus the entrance leg');
+assert.equal(polys(walkSvg.innerHTML).length, 3, 'one arrowhead per leg');
+assert.equal(walkLegs.filter((t) => attr(t, 'stroke-dasharray')).length, 1, 'only the start leg is dashed');
+assert.equal(tagsWith(walkSvg.innerHTML, 'path-start').length, 1, 'one start circle');
+assert.ok(walkLegs.every((t) => attr(t, 'stroke') === '#c08327' && attr(t, 'stroke-width')),
+  'colour and width are inline — the overlay needs no stylesheet');
+assert.ok(walkLegs.slice(0, 2).every((t) => num(t, 'stroke-width') === 0.35), 'path mode: width 0.35');
+// geometry: pa (x 0..4, centre 2,1.5) -> pb (x 10..14): clipped at 4+0.3 and 10-0.3, shifted 0.3 right (down)
+const ab = walkLegs.find((t) => attr(t, 'data-from') === 'pa');
+assert.ok(close(num(ab, 'x1'), 4.3) && close(num(ab, 'x2'), 9.7), 'clipped at both box edges plus 0.3');
+assert.ok(close(num(ab, 'y1'), 1.8) && close(num(ab, 'y2'), 1.8), 'shifted 0.3 to the right of travel');
+// arrowhead: tip at the leg end, base 3x stroke behind it
+const head = polys(walkSvg.innerHTML)[0].match(/points="([^"]+)"/)[1].split(' ').map((p) => p.split(',').map(Number));
+assert.ok(close(head[0][0], 9.7) && close(head[1][0], 9.7 - 1.05), 'head: tip at leg end, length 3x width');
+assert.ok(close(Math.abs(head[1][1] - head[2][1]), 1.05), 'head base is 3x width');
+// a reverse transition runs on the other side
+const rev = fakeSvg();
+drawLayout(rev, pathLayout, { pathWeights: new Map([['pa>pb', { from: 'pa', to: 'pb', n: 1 }], ['pb>pa', { from: 'pb', to: 'pa', n: 1 }]]) });
+const [f1, f2] = legsOf(rev.innerHTML);
+assert.ok(num(f1, 'y1') > 1.5 && num(f2, 'y1') < 1.5, 'A->B and B->A sit on opposite sides');
+
+// dim + colour
+assert.ok(!walkSvg.innerHTML.includes('#ff0000'), 'path mode ignores custom machine colours');
+const dimmed = tagsWith(walkSvg.innerHTML, 'machine').filter((t) => attr(t, 'opacity') === '0.35');
+assert.deepEqual(dimmed.map((t) => attr(t, 'data-id')), ['pd'], 'only the machine off the path dims');
+
+// weights: n=1 thinnest, n=max thickest
+const wSvg = fakeSvg();
+drawLayout(wSvg, pathLayout, { pathWeights: new Map([
+  ['pa>pb', { from: 'pa', to: 'pb', n: 1 }], ['pb>pc', { from: 'pb', to: 'pc', n: 5 }], ['pc>pd', { from: 'pc', to: 'pd', n: 3 }],
+]) });
+const wl = legsOf(wSvg.innerHTML).map((t) => num(t, 'stroke-width'));
+assert.equal(wl.length, 3, 'one leg per transition');
+assert.ok(close(wl[0], 0.25), 'n=1 -> 0.25');
+assert.ok(close(wl[1], 0.9), 'n=max -> 0.9');
+assert.ok(close(wl[2], 0.25 + 0.65 * 2 / 4), 'in between scales linearly');
+const solo = fakeSvg();
+drawLayout(solo, pathLayout, { pathWeights: new Map([['pa>pb', { from: 'pa', to: 'pb', n: 1 }]]) });
+assert.ok(close(num(legsOf(solo.innerHTML)[0], 'stroke-width'), 0.25), 'a lone n=1 does not divide by zero');
+
+// no path, no overlay; the editor never shows one; unknown ids are skipped
+const bare = fakeSvg();
+drawLayout(bare, pathLayout, {});
+assert.ok(!bare.innerHTML.includes('path-leg') && !bare.innerHTML.includes('opacity'), 'no path-leg without a path');
+const ed = fakeSvg();
+drawLayout(ed, pathLayout, { editor: true, path: walk });
+assert.ok(!ed.innerHTML.includes('path-leg'), 'ignored in the editor');
+const ghost = fakeSvg();
+drawLayout(ghost, pathLayout, { path: { start: null, stops: [], legs: [{ from: 'pa', to: 'gone', len: 1 }] } });
+assert.equal(legsOf(ghost.innerHTML).length, 0, 'a leg to a machine not in the layout is skipped');
+
+// template ids are untrusted here too
+const pInj = store.newLayout('PathInj');
+pInj.machines.push({ id: nasty, num: 1, x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
+pInj.machines.push({ id: 'ok', num: 2, x: 10, y: 0, w: 4, h: 3, settingsFields: [] });
+const pInjSvg = fakeSvg();
+drawLayout(pInjSvg, pInj, { path: { start: null, stops: [], legs: [{ from: nasty, to: 'ok', len: 1 }, { from: 'ok', to: nasty, len: 1 }] } });
+assert.equal(legsOf(pInjSvg.innerHTML).length, 2, 'both injected legs drew');
+assert.ok(!pInjSvg.innerHTML.includes('onclick="'), 'a quote in a leg id must not break out of the attribute');
+assert.ok(pInjSvg.innerHTML.includes('data-from="x&quot; onclick=&quot;boom"'), 'it is escaped instead');
+
 console.log('map renderer + geometry + collision: all assertions passed');

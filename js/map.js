@@ -97,7 +97,7 @@ function pxPerUnit(svg, viewBoxWidth) {
 
 export function drawLayout(svg, layout, {
   selectedId = null, editor = false, selectedVertex = null, usage = null,
-  highlightId = null, unlockedId = null,
+  highlightId = null, unlockedId = null, path = null, pathWeights = null,
 } = {}) {
   // Margin around the floor: outline handles and wall-snapped fixtures
   // straddle the boundary — without it they are clipped and only
@@ -133,6 +133,8 @@ export function drawLayout(svg, layout, {
     .filter((s) => !WALL_SNAPPED.has(s.fixture))
     .sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
   const shapePpu = editor ? ppu : null;
+  // walking-path overlay: view-only, so the editor never sees it
+  const overlay = editor ? null : pathOverlay(layout, path, pathWeights);
   svg.innerHTML =
     outlineFloorSvg(layout.outline) +
     (editor ? gridSvg(layout.grid) : '') +
@@ -140,7 +142,8 @@ export function drawLayout(svg, layout, {
     (editor ? outlineHitSvg(layout.outline) : '') +
     wallPieces.map((s) => shapeSvg(s, shapePpu)).join('') +
     (editor ? hitPadSvg(padded, ppu) : '') +
-    layout.machines.map((m) => machineSvg(m, usage, highlightId)).join('') +
+    layout.machines.map((m) => machineSvg(m, usage, highlightId, overlay && overlay.ids)).join('') +
+    (overlay ? overlay.svg : '') +
     (editor && selected
       ? selectionSvg(selected, ppu, layout.grid, pad, unlockedId === selected.id) : '') +
     // the floor outline locks like every item: its corner handles only
@@ -287,7 +290,10 @@ function shapeSvg(s, ppu = null) {
   </g>`;
 }
 
-function machineSvg(m, usage = null, highlightId = null) {
+// pathIds: ids on the walking path (null = no path mode). Path mode drops
+// custom colours like usage does, and dims every machine off the path with
+// the same opacity as the highlightId mechanism.
+function machineSvg(m, usage = null, highlightId = null, pathIds = null) {
   const fs = clamp(Math.min(m.w, m.h) * 0.55, 1.2, 2.4);
   let box = ''; // style-attribute body of the rect
   let numStyle = '';
@@ -303,7 +309,7 @@ function machineSvg(m, usage = null, highlightId = null) {
       box = `fill:${c};stroke:${c}`;
       if (t > 0.75) numStyle = ' style="fill:#06130c"';
     }
-  } else if (m.color) {
+  } else if (m.color && !pathIds) {
     box = `fill:${m.color};stroke:${m.color}`;
     numStyle = ' style="fill:#0c1116"';
   }
@@ -312,12 +318,104 @@ function machineSvg(m, usage = null, highlightId = null) {
   // just above; every other machine dims
   const locate = highlightId != null && m.id === highlightId;
   if (locate) box += `${box ? ';' : ''}stroke:#fff`;
-  const dim = highlightId != null && !locate ? ' opacity="0.35"' : '';
+  const dim = (highlightId != null && !locate) || (pathIds && !pathIds.has(m.id))
+    ? ' opacity="0.35"' : '';
   return `<g class="machine${locate ? ' locate' : ''}" data-id="${esc(m.id)}"${dim}>
     <rect class="machine-box" x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="0.4"${box ? ` style="${box}"` : ''}/>
     <text class="machine-num" x="${m.x + m.w / 2}" y="${m.y + m.h / 2}" font-size="${fs}"
       text-anchor="middle" dominant-baseline="central" pointer-events="none"${numStyle}>${m.num}</text>
   </g>`;
+}
+
+// --- walking-path overlay ---
+// ITEM_COLORS[3] (chart.js palette), validated against the surface #171c22.
+// Every presentation attribute is inline: the overlay must render without
+// stylesheet support; the classes are for CSS and tests only. No <marker>:
+// url(#id) collides when two maps share a page.
+const PATH_COLOR = '#c08327';
+const PATH_WIDTH = 0.35;
+const PATH_GAP = 0.3; // clearance outside a machine's box edge
+const PATH_SHIFT = 0.3; // sideways offset, right of travel
+const r3 = (v) => Math.round(v * 1000) / 1000;
+
+// One leg from point a to point b. Each end is clipped at its machine's box
+// edge (when it has one) plus PATH_GAP, then the segment moves PATH_SHIFT to
+// the right of travel so A->B and B->A run side by side. Returns '' when
+// nothing is left to draw.
+function legSvg(a, b, boxA, boxB, width, from, to, dashed) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (!len) return '';
+  const ux = dx / len;
+  const uy = dy / len;
+  // distance from a box centre to its edge along the direction of travel
+  const reach = (box) => (box
+    ? Math.min(box.w / 2 / Math.max(Math.abs(ux), 1e-9), box.h / 2 / Math.max(Math.abs(uy), 1e-9)) + PATH_GAP
+    : 0);
+  const t0 = reach(boxA);
+  const t1 = len - reach(boxB);
+  const head = 3 * width;
+  if (t1 - t0 <= 0) return '';
+  const nx = -uy * PATH_SHIFT; // SVG y points down: (-uy, ux) is the right-hand side
+  const ny = ux * PATH_SHIFT;
+  const x1 = a.x + ux * t0 + nx;
+  const y1 = a.y + uy * t0 + ny;
+  const x2 = a.x + ux * t1 + nx;
+  const y2 = a.y + uy * t1 + ny;
+  const bx = x2 - ux * head;
+  const by = y2 - uy * head;
+  const hw = head / 2;
+  return `<line class="path-leg" data-from="${esc(from)}" data-to="${esc(to)}"
+      x1="${r3(x1)}" y1="${r3(y1)}" x2="${r3(x2)}" y2="${r3(y2)}"
+      stroke="${PATH_COLOR}" stroke-width="${r3(width)}"${dashed ? ' stroke-dasharray="0.6 0.5"' : ''}
+      pointer-events="none"/>
+    <polygon class="path-head" data-from="${esc(from)}" data-to="${esc(to)}"
+      points="${r3(x2)},${r3(y2)} ${r3(bx - uy * hw)},${r3(by + ux * hw)} ${r3(bx + uy * hw)},${r3(by - ux * hw)}"
+      fill="${PATH_COLOR}" pointer-events="none"/>`;
+}
+
+// Returns { svg, ids } or null when there is nothing to draw. `path` is the
+// stats module's walk ({start, stops, legs}); `weights` a Map of
+// 'from>to' -> {from, to, n} that replaces the ordered legs by one leg per
+// transition whose width follows its count.
+function pathOverlay(layout, path, weights) {
+  const hasWeights = weights && weights.size > 0;
+  if (!hasWeights && !(path && Array.isArray(path.legs) && path.legs.length)) return null;
+  const box = (id) => layout.machines.find((m) => m.id === id) || null;
+  const centre = (m) => ({ x: m.x + m.w / 2, y: m.y + m.h / 2 });
+  const ids = new Set();
+  const legs = []; // {from, to, width}
+  if (hasWeights) {
+    const entries = [...weights.values()];
+    const max = Math.max(1, ...entries.map((e) => e.n));
+    entries.forEach((e) => {
+      ids.add(e.from);
+      ids.add(e.to);
+      legs.push({ from: e.from, to: e.to, width: 0.25 + 0.65 * (e.n - 1) / Math.max(1, max - 1) });
+    });
+  } else {
+    path.legs.forEach((l) => {
+      ids.add(l.from);
+      ids.add(l.to);
+      legs.push({ from: l.from, to: l.to, width: PATH_WIDTH });
+    });
+  }
+  if (path && Array.isArray(path.stops)) path.stops.forEach((st) => ids.add(st.machineId));
+  let svg = legs.map((l) => {
+    const a = box(l.from);
+    const b = box(l.to);
+    return a && b ? legSvg(centre(a), centre(b), a, b, l.width, l.from, l.to, false) : '';
+  }).join('');
+  // dashed leg from the entrance to the first machine reached
+  const first = path && path.start && Array.isArray(path.stops) && path.stops[0]
+    ? box(path.stops[0].machineId) : null;
+  if (first) {
+    svg += legSvg(path.start, centre(first), null, first, PATH_WIDTH, 'start', first.id, true) +
+      `<circle class="path-start" cx="${r3(path.start.x)}" cy="${r3(path.start.y)}" r="0.5"
+      fill="${PATH_COLOR}" pointer-events="none"/>`;
+  }
+  return { svg, ids };
 }
 
 // Invisible tap padding for items smaller than the touch-target guideline.
