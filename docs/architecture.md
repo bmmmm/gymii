@@ -269,6 +269,20 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   tabbar shows an emoji icon over each label with a Material-style pill
   behind the active tab's icon — pure CSS off the existing `.active`
   toggle, no router logic involved.
+- `js/ui.js` — shared helpers; owns the keyboard. `initFocusCentering()`
+  (wired once in app.js) centres every focused field in the VISIBLE band
+  once `visualViewport` settles — a field-to-field hop fires no resize, so
+  focusin settles 300 ms later, skipping a field `preserveFocus` merely
+  handed back — with its context when that fits (`[data-focus-context]`,
+  else the nearest `.card`; the log form carries the attribute so steppers
+  AND the log button land together), and pads #view by `--kb` while the
+  keyboard is up: #view is the only scroller, without that room iOS pans
+  the window ("the page jumps"). `keepInView` switches to the same centring
+  while the keyboard is up. The Train tab renders hub, start, plans,
+  builder, bind, log, overview and onboarding into one container, so
+  `screenKey()` detects a screen CHANGE and resets the scroll to the top;
+  an unchanged key is an in-place update whose scroll belongs to the user.
+  `hintHtml()` renders one stats.js hint (see § js/stats.js).
 - `js/map.js` — the shared floor-map renderer, split out of the editor so
   train.js/plan.js never import from gym.js. `drawLayout()` draws every
   map surface (editor, train mini-maps, builder); its `highlightId` opt

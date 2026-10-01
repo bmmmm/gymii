@@ -109,21 +109,11 @@ exist because breaking them was once a real bug.
   back focused with its selection intact, found again by its id. Both
   `renderProps()` (gym.js) and `renderSettings()` are wrapped whole, so
   every field inside them is covered once instead of per call site.
-  THE KEYBOARD: `initFocusCentering()` (ui.js, wired once in app.js)
-  centres every focused field in the VISIBLE band once `visualViewport`
-  settles (a field-to-field hop fires no resize: focusin settles 300 ms
-  later, skipping a field `preserveFocus` merely handed back) — with its context when that fits (`[data-focus-context]`, else
-  the nearest `.card`; the log form carries the attribute so steppers AND
-  the log button land together) — and pads #view by `--kb` while the
-  keyboard is up, because #view is the only scroller and without that room
-  iOS pans the window instead ("the page jumps"). `keepInView` switches to
-  the same centring while the keyboard is up. A new form whose parts belong
-  together gets `data-focus-context`, not a scroll handler of its own.
-  Navigation is the
-  opposite case: the Train tab renders its screens (hub, start, plans,
-  builder, bind, log, overview, onboarding) into one container, so
-  `screenKey()` detects a screen CHANGE and resets the scroll to the top —
-  an unchanged key means an in-place update whose scroll belongs to the user.
+  The keyboard is handled ONCE (`initFocusCentering()`, ui.js): a new form
+  whose parts belong together gets `data-focus-context`, never a scroll
+  handler of its own; a screen change in the Train tab resets the scroll
+  via `screenKey()`, an in-place update never does. Mechanics and the
+  reasons: docs/architecture.md § js/ui.js.
 - Numeric inputs arm for overwrite on focus — old value greyed out in the
   placeholder as "(40)", empty field types fresh, blur without input
   restores it (`initNumericOverwrite()` in ui.js, delegated globally).
