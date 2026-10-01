@@ -1,7 +1,7 @@
 import {
   getLayout, getWorkouts, saveWorkouts, getSettings, saveSettings, getActive, deleteWorkout,
   updateWorkout, distUnit, workoutFromText, newEntry, nameChipsFor,
-  layoutMuscles, usageByMuscle, workoutsWithMuscle, shiftWorkout,
+  layoutMuscles, usageByMuscle, workoutsWithMuscle, shiftWorkout, getPlans,
 } from './store.js';
 import {
   esc, fmtDate, fmtDay, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
@@ -9,7 +9,7 @@ import {
   parseDuration, parseDistance,
 } from './ui.js';
 import { lineChart, barChart } from './chart.js';
-import { machineSeries, weeklyBuckets } from './stats.js';
+import { machineSeries, weeklyBuckets, insights, SOURCES } from './stats.js';
 import { startWorkoutFrom } from './train.js';
 
 // Active workout-name filter ('' = all). Module state, so it survives the
@@ -143,7 +143,7 @@ const entryMatches = (e, sel) =>
 
 // The overview: a sequence of cards, rendered in this order. Each is
 // { html(ctx) -> markup, wire(root, ctx) }; a new card is one entry here.
-const overviewCards = () => [weekCard, progressCard, muscleCard];
+const overviewCards = () => [weekCard, insightCard, progressCard, muscleCard];
 
 function renderOverview(root, ctx) {
   const cards = overviewCards();
@@ -344,6 +344,66 @@ const weekCard = {
       renderHistory(root);
     });
     drawWeek();
+  },
+};
+
+// --- Worth a look: up to three observations, each with its why and source ---
+// Read over EVERY workout, not the filtered list: "1.5 strength days a
+// week" says nothing about one routine on its own. So a tap shows its
+// target unfiltered — the machine on the Progress card, or the muscle as
+// the only filter. A row with nothing to show is text, never a button that
+// does nothing. Omitted when no rule fires (stats.js: none under three
+// workouts) — "nothing to say" needs no card.
+
+// The newest 'machineId exercise' key trained at a machine (the insight
+// names the machine only), or null when it was never trained — a busy mark
+// can name a machine you always skipped.
+function latestKey(all, machineId) {
+  for (let i = all.length - 1; i >= 0; i--) { // stored oldest first
+    const e = all[i].entries.find((x) => x.machineId === machineId && x.sets.length);
+    if (e) return `${machineId} ${e.exercise ?? ''}`;
+  }
+  return null;
+}
+
+function insightHtml(it, all) {
+  const key = it.machineId ? latestKey(all, it.machineId) : null;
+  const target = key ? ` data-machine="${esc(key)}"` : it.muscle ? ` data-muscle="${esc(it.muscle)}"` : '';
+  const body = `<span class="insight-text">${esc(it.text)}</span><span class="why">${esc(it.why)}</span>`;
+  const src = SOURCES[it.source];
+  // the link sits OUTSIDE the row: a link inside a button is not clickable on its own
+  return `
+      <div class="insight">
+        ${target ? `<button type="button" class="insight-row"${target}>${body}</button>`
+    : `<p class="insight-row">${body}</p>`}
+        ${src ? `<p class="insight-src">Source: ${src.url
+    ? `<a href="${esc(src.url)}" target="_blank" rel="noopener">${esc(src.label)}</a>` : esc(src.label)}</p>` : ''}
+      </div>`;
+}
+
+const insightCard = {
+  html({ all, layout, s }) {
+    const list = insights(all, layout, s, { plans: getPlans() });
+    return list.length ? `
+    <section class="card" id="insight-card">
+      <h2>Worth a look</h2>
+      ${list.map((it) => insightHtml(it, all)).join('')}
+    </section>` : '';
+  },
+  wire(root) {
+    root.querySelector('#insight-card')?.addEventListener('click', (e) => {
+      const row = e.target.closest('.insight-row');
+      const { machine, muscle } = row?.dataset ?? {};
+      if (!machine && !muscle) return; // a text row
+      nameFilter = '';
+      muscleFilter = muscle ?? '';
+      if (machine) {
+        pickedMachine = machine;
+        pickedT = null; // a point of another machine means nothing here
+      }
+      renderHistory(root);
+      keepInView(root, '#progress-card');
+    });
   },
 };
 

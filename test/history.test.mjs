@@ -566,4 +566,54 @@ assert.deepEqual(tile('volume'), ['2,500 kg', 'vs 500 kg the week before']);
 root.querySelector('#week-tiles').listeners.click(clickOn('.tile', { metric: 'minutes' }));
 assert.deepEqual(tile('minutes'), ['2:00 h', 'vs 45 min the week before'], 'time reads in hours from 60 min');
 
+// --- Worth a look: insights with a why, a source, and a target to tap ---
+// Same weekday 21/14/7/0 days back at 18:00: Chest press 14 × 50 twice
+// (progress), Leg press busy on three of those evenings (busy, own data),
+// Quads last trained 21 days ago while training went on (muscle gap).
+const dayAt = (daysBack, hour) => {
+  const d = store.startOfDay(Date.now());
+  d.setDate(d.getDate() - daysBack);
+  d.setHours(hour);
+  return d.getTime();
+};
+const chestDay = (id, back) => ({
+  id, startedAt: dayAt(back, 18), finishedAt: dayAt(back, 19),
+  entries: [entry('m3', 7, 'Chest press', [{ reps: 14, weight: 50 }])],
+  visits: [{ machineId: 'm3', in: dayAt(back, 18), out: dayAt(back, 18) + 600000, busy: 'm1' }],
+});
+store.saveWorkouts([
+  { id: 'i1', startedAt: dayAt(21, 18), finishedAt: dayAt(21, 19), entries: [entry('m1', 14, 'Leg press', sets(3))] },
+  chestDay('i2', 14), chestDay('i3', 7), chestDay('i4', 0),
+]);
+enter();
+const insightBlocks = () => root.innerHTML.split('<div class="insight">').slice(1);
+const block = (text) => insightBlocks().find((b) => b.includes(text)) ?? '';
+assert.ok(root.innerHTML.includes('id="insight-card"'), 'the insight card renders');
+assert.deepEqual(order(['This week', 'Worth a look', 'Progress']).slice().sort((a, b) => a - b),
+  order(['This week', 'Worth a look', 'Progress']), 'right after This week, before Progress');
+assert.equal(insightBlocks().length, 3, 'three insights at most');
+assert.ok(/<button type="button" class="insight-row" data-machine="m3 ">/.test(block('try 52.5 kg')),
+  'a machine insight is a button that carries its machine');
+assert.ok(block('try 52.5 kg').includes(
+  'href="https://doi.org/10.1249/MSS.0b013e3181915670" target="_blank" rel="noopener"'),
+  'a study source links to the study');
+assert.ok(block('busy 3×').includes('Your own logged workouts') && !block('busy 3×').includes('<a'),
+  'your own data is named as the source, with no link to nowhere');
+assert.ok(block('Quads: last trained 21 days ago').includes('data-muscle="Quads"'),
+  'a muscle insight carries its muscle');
+
+// a tap selects its target on the Progress card
+tapMachine('m1 '); // not the default (the newest, m3), or the tap would prove nothing
+const insightCard = () => root.querySelector('#insight-card');
+insightCard().listeners.click(clickOn('.insight-row', { machine: 'm3 ' }));
+assert.equal(selKey(root.innerHTML), 'm3 ', 'a machine insight selects its machine');
+insightCard().listeners.click(clickOn('.insight-row', { muscle: 'Quads' }));
+assert.ok(pressed('Quads'), 'a muscle insight sets the muscle filter');
+root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: '' }));
+
+// nothing worth saying, no card: under three workouts no rule runs
+store.saveWorkouts(store.getWorkouts().slice(-2));
+render();
+assert.ok(!root.innerHTML.includes('id="insight-card"'), 'no insights, no card');
+
 console.log('history: all assertions passed');
