@@ -1,7 +1,8 @@
 // Logic-level test for the demo data generator: deterministic output,
-// entry/set invariants, weekday plan states on any day of the week, unit
-// conversion, template mirroring, and the load-is-a-replace gym
-// behavior. Run with: node test/demo.test.mjs
+// entry/set invariants, live-log data (at/rir/visits) on the last four
+// weeks only and the History insights it makes fire, weekday plan states
+// on any day of the week, unit conversion, template mirroring, and the
+// load-is-a-replace gym behavior. Run with: node test/demo.test.mjs
 
 // Pinned to a DST-observing zone: the hour-of-day assertions below can
 // only catch DAY_MS-style drift where transitions exist (CI runs UTC).
@@ -16,6 +17,7 @@ import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const demo = await import(new URL('../js/demo.js', import.meta.url).href);
+const stats = await import(new URL('../js/stats.js', import.meta.url).href);
 
 const KG = { unit: 'kg' };
 const NOW = new Date('2026-08-12T14:00:00').getTime(); // a Wednesday
@@ -67,10 +69,9 @@ workouts.forEach((w) => w.entries.forEach((e) => {
     assert.ok(m.exercises.includes(e.exercise), 'exercise comes from the machine');
   }
   e.sets.forEach((st) => {
-    assert.ok(!('at' in st), 'generated sets must not fake the live-log stamp');
     if (e.cardio) {
       sawCardio++;
-      assert.deepEqual(Object.keys(st).sort(), ['distance', 'seconds']);
+      assert.deepEqual(Object.keys(st).filter((k) => k !== 'at').sort(), ['distance', 'seconds']);
     } else {
       assert.ok(Number.isFinite(st.reps) && Number.isFinite(st.weight));
     }
@@ -87,6 +88,123 @@ workouts.forEach((w) => {
   const today = new Date(w.startedAt).toDateString() === new Date(NOW).toDateString();
   if (!today) assert.ok(mins >= 45 && mins <= 75, `${w.id} lasts 45-75 min (${mins})`);
 });
+
+// --- live-log data: the last four weeks only ---
+// A recent workout carries what Train records live — `at` on every set,
+// rir 1-3 on every strength/bodyweight set, visits; an older one none of it.
+const backOf = (w) => Number(/-w(\d+)$/.exec(w.id)[1]);
+let stampedN = 0; let bareN = 0;
+workouts.forEach((w) => {
+  const sets = w.entries.flatMap((e) => e.sets.map((st) => ({ st, cardio: !!e.cardio })));
+  const stamped = Array.isArray(w.visits) && w.visits.length > 0
+    && sets.every(({ st, cardio }) => Number.isFinite(st.at)
+      && (cardio ? !('rir' in st) : [1, 2, 3].includes(st.rir)));
+  const bare = !('visits' in w) && sets.every(({ st }) => !('at' in st) && !('rir' in st));
+  assert.ok(backOf(w) <= 3 ? stamped : bare, `${w.id}: stamped exactly when back <= 3`);
+  if (backOf(w) <= 3) stampedN++; else bareN++;
+});
+assert.ok(stampedN && bareN, 'both sides of the four-week cut are populated');
+
+// `at` strictly increasing per entry inside [startedAt, finishedAt]; visits
+// in the shape finishWorkout saves (no id, >= 15 s unless busy), inside the
+// workout and in order. Checked on every build below, the clamped midnight
+// "today" workout included.
+function checkTiming(data, label) {
+  let stamps = 0;
+  data.workouts.forEach((w) => {
+    w.entries.forEach((e) => {
+      const ats = e.sets.filter((st) => 'at' in st).map((st) => st.at);
+      ats.forEach((t, i) => {
+        assert.ok(Number.isInteger(t) && t >= w.startedAt && t <= w.finishedAt,
+          `${label} ${w.id}: at inside [startedAt, finishedAt]`);
+        assert.ok(i === 0 || t > ats[i - 1], `${label} ${w.id}: at strictly increasing at ${e.machineId}`);
+      });
+      stamps += ats.length;
+    });
+    (w.visits ?? []).forEach((v, i, vs) => {
+      assert.ok(!('id' in v), `${label} ${w.id}: a visit never carries an id`);
+      assert.ok(v.in >= w.startedAt && v.in < v.out && v.out <= w.finishedAt,
+        `${label} ${w.id}: visit inside the workout`);
+      assert.ok(v.busy || v.out - v.in >= 15000, `${label} ${w.id}: visit >= 15 s unless busy`);
+      assert.ok(i === 0 || v.in >= vs[i - 1].out, `${label} ${w.id}: visits in order, never overlapping`);
+    });
+  });
+  assert.ok(stamps, `${label}: stamps exist to check`);
+}
+checkTiming({ workouts }, 'now');
+
+// every set ends while its own machine's log screen was current
+let inVisit = 0;
+workouts.filter((w) => w.visits).forEach((w) => w.entries.forEach((e) => e.sets.forEach((st) => {
+  assert.ok(w.visits.some((v) => v.machineId === e.machineId && v.in <= st.at && st.at <= v.out),
+    `${w.id}: a ${e.machineId} set ends during a visit there`);
+  inVisit++;
+})));
+assert.ok(inVisit, 'sets to match against visits exist');
+
+// --- the live-log data moved no drawn value ---
+// Digests of everything the main PRNG draws or the generator fixes (ids,
+// dates, names, lockers, reps, weights; layout, plans), recorded BEFORE the
+// stamps existed. Stripped first: the live-log fields, and the reps of the
+// two lat pulldown sets the progress fixture sets to 12 (both drew 10).
+const LAT_FIXTURE = ['demo-pull-w0', 'demo-pull-w1'];
+const latSets = (data, id) => data.workouts.find((w) => w.id === id)
+  .entries.find((e) => e.machineId === 'lat-pulldown').sets;
+const { createHash } = await import('node:crypto');
+const digest = (x) => createHash('sha256').update(JSON.stringify(x)).digest('hex').slice(0, 16);
+const drawn = structuredClone({ layout, workouts, plans });
+drawn.workouts.forEach((w) => {
+  delete w.visits;
+  w.entries.forEach((e) => e.sets.forEach((st) => { delete st.at; delete st.rir; }));
+});
+LAT_FIXTURE.forEach((id) => { latSets(drawn, id).at(-1).reps = null; });
+assert.deepEqual({
+  layout: digest(drawn.layout),
+  plans: digest(drawn.plans),
+  ...Object.fromEntries(drawn.workouts.map((w) => [w.id, digest(w)])),
+}, {
+  layout: '21e8c6f7fc01ce67',
+  plans: 'bc4649e543b946cd',
+  'demo-legs-w7': 'bf889f2b82a18df0',
+  'demo-push-w7': '74d2144fe2ef7da4',
+  'demo-pull-w7': '88cddfd1b3bca4c1',
+  'demo-push-w6': '707d9d1e3e1d94a6',
+  'demo-pull-w6': 'ae908a541d3e9291',
+  'demo-legs-w5': '78c37d9d9f4d3762',
+  'demo-push-w5': '8b117583c2651d0c',
+  'demo-pull-w5': '2ec4eab26dcb47f9',
+  'demo-legs-w4': '929a07be9afa7f18',
+  'demo-push-w4': 'a556442b59468cab',
+  'demo-pull-w4': '70e27f552c228a02',
+  'demo-legs-w3': '8352604a6cc8bd4a',
+  'demo-pull-w3': '9633f779195c286a',
+  'demo-legs-w2': '32e6fe7e72909a14',
+  'demo-push-w2': '5496ea7d9177305f',
+  'demo-pull-w2': '3698a7228e677821',
+  'demo-legs-w1': 'eed95836439f6307',
+  'demo-push-w1': '084896a6d7bd68e1',
+  'demo-pull-w1': '99af453f37e83795',
+  'demo-legs-w0': '2f4d3b154df0f2e9',
+  'demo-pull-w0': '0114d89b91b0de08',
+}, 'every value drawn before the live-log data existed is unchanged');
+
+// --- the insights the demo exists to show ---
+// rule 1: the last two pull days end the lat pulldown on target + 2 reps
+// with 2 in reserve at the plan's target weight
+const latTarget = plans.find((p) => p.id === 'demo-plan-pull')
+  .items.find((it) => it.machineId === 'lat-pulldown').target;
+LAT_FIXTURE.forEach((id) => {
+  const last = latSets({ workouts }, id).at(-1);
+  assert.deepEqual([last.reps, last.rir, last.weight], [latTarget.reps + 2, 2, latTarget.weight],
+    `${id}: lat pulldown fixture at the plan target`);
+});
+// progress (lat pulldown), busy (pull-up bar, rule 7) and route (back to
+// the seated row, rule 6) fire and outrank everything else
+const worthALook = (data, now) => Object.fromEntries(stats.insights(
+  data.workouts, data.layout, KG, { now, plans: data.plans }).map((i) => [i.kind, i.machineId]));
+const SHOWN = { progress: 'lat-pulldown', busy: 'demo-pullup', route: 'seated-row' };
+assert.deepEqual(worthALook({ layout, workouts, plans }, NOW), SHOWN,
+  'the demo shows progress, busy and route insights');
 
 // --- machines #1-#11 and the zone shapes hand-copy the example template;
 // this diff is what keeps the copy honest when the template changes ---
@@ -108,6 +226,7 @@ for (const offset of [0, 10 * 60000]) {
   const b = demo.buildDemoData({ now: night, settings: KG });
   b.workouts.forEach((w) => assert.ok(w.finishedAt > w.startedAt,
     `${w.id} keeps a positive duration at midnight+${offset / 60000}min`));
+  checkTiming(b, `midnight+${offset / 60000}min`);
   const today = b.workouts.filter((w) =>
     new Date(w.startedAt).toDateString() === new Date(night).toDateString());
   assert.equal(today.length, 1, 'exactly one workout lands on the load day');
@@ -124,6 +243,7 @@ for (const offset of [0, 10 * 60000]) {
 // steps would put the pre-transition workouts an hour off (18:xx).
 const dstNow = new Date('2026-11-04T14:00:00').getTime(); // a Wednesday
 const dst = demo.buildDemoData({ now: dstNow, settings: KG });
+checkTiming(dst, 'dst');
 dst.workouts.forEach((w) => {
   if (new Date(w.startedAt).toDateString() === new Date(dstNow).toDateString()) return;
   assert.equal(new Date(w.startedAt).getHours(), 17,
@@ -141,6 +261,8 @@ for (let d = 0; d < 7; d++) {
   assert.equal(state('demo-plan-core'), 'due', `core due (day ${d})`);
   assert.equal(store.todayStatus(built.plans, built.workouts, now).plan.id,
     'demo-plan-core', `due wins the headline (day ${d})`);
+  checkTiming(built, `day ${d}`);
+  assert.deepEqual(worthALook(built, now), SHOWN, `the three insights show on day ${d}`);
 }
 
 // --- unit conversion ---
