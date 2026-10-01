@@ -805,6 +805,52 @@ assert.ok(root.innerHTML.includes('id="plan-back"'), 'the builder carries its ow
 root.querySelector('#plan-back').listeners.click();
 assert.ok(root.innerHTML.includes('<h1>Plans</h1>'),
   'backing out of the builder returns to the plans screen');
+// --- the route hint: the builder of the plan those workouts go by ---
+// Three "Pull day" workouts walking #1 → #2 → #3 → back to #1 (stats.js
+// route rule): the builder of the plan named "Pull day" says so above the
+// items it reorders, from the user's own records, so without a ↗; any
+// other plan's builder stays quiet.
+{
+  const before = store.getLayout(); // earlier blocks replaced the gym
+  const g3 = store.newLayout('Route gym');
+  g3.machines.push({ id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
+  g3.machines.push({ id: 'db', num: 2, label: 'Dumbbells', x: 6, y: 0, w: 4, h: 3, settingsFields: [], exercises: ['Biceps curls'] });
+  g3.machines.push({ id: 'm2', num: 3, label: 'Leg press', x: 12, y: 0, w: 4, h: 3, settingsFields: [] });
+  store.saveLayout(g3);
+  const walk = (id, back) => {
+    const t = Date.now() - back * 864e5;
+    return {
+      id, startedAt: t, finishedAt: t + 1800e3, name: 'Pull day',
+      entries: [{ machineId: 'm1', num: 1, label: 'Chest press', settings: {}, sets: [{ reps: 10, weight: 40 }] }],
+      visits: [
+        { machineId: 'm1', in: t, out: t + 500e3 },
+        { machineId: 'db', in: t + 500e3, out: t + 1000e3 },
+        { machineId: 'm2', in: t + 1000e3, out: t + 1400e3 },
+        { machineId: 'm1', in: t + 1400e3, out: t + 1800e3 },
+      ],
+    };
+  };
+  store.saveWorkouts([walk('r1', 21), walk('r2', 14), walk('r3', 7)]);
+  store.savePlan({ id: 'pull', name: 'Pull day', items: [{ machineId: 'm1', exercise: null }, { machineId: 'db', exercise: 'Biceps curls' }] });
+  store.savePlan({ id: 'push', name: 'Push day', items: [{ machineId: 'm1', exercise: null }] });
+  const openBuilder = (pid) => {
+    byId.get('#plan-back')?.listeners.click?.(); // a builder outranks the screen: leave the last one
+    byId.clear();
+    goToPlans();
+    renderTrain(root);
+    root.querySelector('#plan-list').listeners.click(fakeClick({
+      dataset: { pid }, classList: { contains: (c) => c === 'row-open' },
+    }));
+    return root.innerHTML;
+  };
+  const LINE = '<p class="hint"><span>Reorder — back to #1 after #3 in 3 workouts.</span></p>';
+  const pull = openBuilder('pull');
+  assert.ok(pull.includes(LINE), 'the builder of that plan carries the route line, no link: own records');
+  assert.ok(pull.indexOf(LINE) < pull.indexOf('id="plan-items"'), 'above the items it reorders');
+  assert.ok(!openBuilder('push').includes('Reorder —'), 'another plan: not its walk');
+  store.saveWorkouts([]);
+  store.saveLayout(before);
+}
 store.savePlans([]);
 goToHub();
 

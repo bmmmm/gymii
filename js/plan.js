@@ -15,7 +15,9 @@ import {
 import { drawLayout } from './map.js';
 import {
   esc, twoTapConfirm, stepperField, plural, keepInView, fmtDuration, parseDuration, parseDistance,
+  hintHtml,
 } from './ui.js';
+import { insights } from './stats.js';
 
 // Weekday labels indexed by Date#getDay() (0 = Sunday); chips render
 // Monday-first, like gym weeks are planned.
@@ -166,6 +168,10 @@ export function renderPlanBuilder(
     // you did
     const usual = usualWeekday(draft, getWorkouts());
     const rhythm = usual != null && !draft.days?.includes(usual) ? usual : null;
+    // a walk back that keeps recurring in the workouts that go by this
+    // plan's name (stats.js route rule) — shown where the order is changed
+    const routeHints = draft.name ? insights(getWorkouts(), layout, s, { plans: getPlans() })
+      .filter((it) => it.kind === 'route' && it.workout === draft.name) : [];
     // what this plan trains, plus names already in use — a nameless plan
     // is a plan nobody finds again
     const nameChips = nameChipsFor(draft.items.map((it) => it.machineId).filter(Boolean), layout);
@@ -212,6 +218,7 @@ export function renderPlanBuilder(
         <p class="muted">One exercise per line. Move a line to reorder, delete
           one to drop it. A <em>#number</em> keeps it tied to that machine.</p>`
     : `
+        ${routeHints.map((it) => hintHtml(it)).join('')}
         <div id="plan-items">
           ${draft.items.map(itemRow).join('') || '<p class="muted">Nothing planned yet — add exercises below.</p>'}
         </div>

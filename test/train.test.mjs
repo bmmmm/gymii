@@ -1011,4 +1011,87 @@ try {
 }
 store.saveWorkouts([]);
 
+
+// --- hints where the user acts: the log screen, the plan row, the builder ---
+// stats.js insights are not a card any more. Three "Pull day" workouts a
+// week apart, each walking #1 → #2 → #3 → back to #1 with #1 marked busy
+// from #2 at 18:00: curls 14 × 30 twice (progress: the curls log screen,
+// and ONLY that exercise), #1 busy on this weekday (busy: the #1 log
+// screen, on that weekday only), and the walk back (route: the plan row
+// says "reorder?"; the builder's line is pinned in plan.test.mjs).
+{
+  const before = store.getLayout(); // earlier blocks reshaped the gym
+  const g3 = store.newLayout('Hints gym');
+  g3.machines.push({ id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
+  g3.machines.push({
+    id: 'db', num: 2, label: 'Dumbbells', x: 6, y: 0, w: 4, h: 3, settingsFields: [],
+    exercises: ['Biceps curls', 'Shoulder press'],
+  });
+  g3.machines.push({ id: 'm3', num: 3, label: 'Row', x: 12, y: 0, w: 4, h: 3, settingsFields: [] });
+  store.saveLayout(g3);
+  const atDay = (back, h, m = 0) => {
+    const d = new Date();
+    d.setDate(d.getDate() - back);
+    d.setHours(h, m, 0, 0);
+    return d.getTime();
+  };
+  const pull = (id, back, shift = 0) => {
+    const t = atDay(back, 18) + shift;
+    return {
+      id, startedAt: t, finishedAt: t + 1800e3, name: 'Pull day',
+      entries: [
+        { machineId: 'm1', num: 1, label: 'Chest press', settings: {}, sets: [{ reps: 10, weight: 40 }] },
+        { machineId: 'db', num: 2, label: 'Dumbbells', exercise: 'Biceps curls', settings: {}, sets: [{ reps: 14, weight: 30 }] },
+        { machineId: 'm3', num: 3, label: 'Row', settings: {}, sets: [{ reps: 10, weight: 40 }] },
+      ],
+      visits: [
+        { machineId: 'm1', in: t, out: t + 500e3 },
+        { machineId: 'db', in: t + 500e3, out: t + 1000e3, busy: 'm1' },
+        { machineId: 'm3', in: t + 1000e3, out: t + 1400e3 },
+        { machineId: 'm1', in: t + 1400e3, out: t + 1800e3 },
+      ],
+    };
+  };
+  store.saveWorkouts([pull('h1', 21), pull('h2', 14), pull('h3', 7)]);
+  store.savePlan({ id: 'pull', name: 'Pull day', items: [{ machineId: 'm1', exercise: null }, { machineId: 'db', exercise: 'Biceps curls' }] });
+  store.savePlan({ id: 'push', name: 'Push day', items: [{ machineId: 'm1', exercise: null }] });
+  const logAt = (machineId, exercise) => {
+    byId.clear();
+    store.saveActive({
+      v: 2, id: 'w-hint', startedAt: Date.now() - 60000,
+      plan: [{ machineId, exercise }], currentMachineId: machineId, currentExercise: exercise, entries: [],
+    });
+    renderTrain(root);
+    return root.innerHTML;
+  };
+  const curls = logAt('db', 'Biceps curls');
+  assert.ok(curls.includes('<p class="hint head-hint"><span>Target beaten twice — try 32.5 kg.</span><a href="https://doi.org/10.1249/MSS.0b013e3181915670" target="_blank" rel="noopener"'),
+    'the progress hint with its ↗, on the exercise it is about');
+  assert.ok(curls.indexOf('</div>\n    <p class="hint head-hint">') > 0
+    && curls.indexOf('machine-head') < curls.indexOf('head-hint'), 'full width right below the machine head');
+  assert.ok(!curls.includes('Usually busy'), '#1\'s busy hint is not on the curls screen');
+  assert.ok(!logAt('db', 'Shoulder press').includes('Target beaten'),
+    'the same machine, another exercise: no hint — it would name the wrong load');
+  const weekday = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
+  assert.ok(logAt('m1', null).includes(`<p class="hint head-hint"><span>Usually busy ${weekday}s 18–19 h — start elsewhere.</span></p>`),
+    'the busy hint on its weekday, from your own marks: no link');
+  assert.ok(!logAt('m1', null).includes('Target beaten'), 'no progress at #1: 10 × 40 is under target');
+  store.saveWorkouts([pull('h1', 22), pull('h2', 15), pull('h3', 8)]); // another weekday
+  assert.ok(!logAt('m1', null).includes('Usually busy'), 'not today: the busy hint waits for its weekday');
+  store.saveWorkouts([pull('h1', 21), pull('h2', 14), pull('h3', 7)]);
+  store.clearActive();
+
+  byId.clear();
+  goToStart();
+  renderTrain(root);
+  // the row's muted line: everything up to the first closing span
+  const row = (name) => root.innerHTML.slice(root.innerHTML.indexOf(`<strong>${name}`)).split('</span>')[0];
+  assert.ok(row('Pull day').endsWith(' · reorder?'), 'the plan whose workouts walk back says so on its row');
+  assert.ok(!row('Push day').includes('reorder'), 'the other plan does not');
+  // the builder's own line lives in plan.test.mjs (its stub draws the map)
+  store.savePlans([]);
+  store.saveWorkouts([]);
+  store.saveLayout(before);
+}
+
 console.log('train plan construction: all assertions passed');

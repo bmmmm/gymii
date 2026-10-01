@@ -1,14 +1,31 @@
 # TODO
 
 Shipped 2026-10-01 (`2026-10-01b` + `2026-10-01c`): the History redesign —
-an overview (This week tiles + twelve weekly bars, Worth a look insights
-with a why and a source, a draggable Progress chart with machine and range
-chips, the Walking paths card on the floor map, Muscles) and a Workouts
-drill-down screen; `js/stats.js` holds the rules (docs/insights.md); a
+an overview (This week tiles + twelve weekly bars, a draggable Progress
+chart with machine and range chips, the Walking paths card on the floor
+map, Muscles) and a Workouts
+drill-down screen; `js/stats.js` holds the hint rules (docs/insights.md) —
+since `2026-10-01e` each hint is an instruction with a ↗ to its study,
+shown where you act (log screen, rest overlay, under the chart, under a
+muscle row, plan builder), no card; a
 workout now records machine visits (`visits`, with `busy` marks from the
 "Busy?" button) and per-set reps-in-reserve chips (`rir`) after a set; the
 date editor shifts set and visit timestamps; the demo gym carries stamps,
 visits and ratings for its last four weeks.
+
+### Hints — open (review findings 2026-10-01, built on request)
+
+- The busy hint filters on the weekday only: marks on Mondays 17–19 h show
+  the line on a Monday-morning workout too. It would need `h0`/`h1` on the
+  insight and a window check in `renderLog`.
+- `insights()` runs on every History render (the Workouts screen never
+  reads it), twice per logged set (log screen + overlay) and in
+  `planListCard` even when no plan has a name — 3 ms warm at 29 workouts,
+  ~100 ms cold at 435. A memo keyed on the workout list, if it ever shows.
+- Unpinned: that History computes hints over `all`, never the filtered
+  list; the overlay click exemption for the hint's ↗ (`button, a`); the
+  train-test busy fixture reads the weekday at three instants (a run across
+  local midnight could fail, once).
 
 ### History — open (review findings, built on request)
 
@@ -16,9 +33,6 @@ visits and ratings for its last four weeks.
   rebuilds it and drops an open edit draft silently. Either lock the week
   list while a draft is open or render it read-only (edit on the Workouts
   screen).
-- An insight tap selects the machine's most recently trained EXERCISE, which
-  can differ from the exercise the insight names (multi-exercise machines).
-  Insights would need to carry the exercise key.
 - Tiles and chip rows re-render via innerHTML on their own click, so
   keyboard focus drops to `body` (touch is unaffected). Re-focus by id after
   the redraw, as `preserveFocus` does for fields.

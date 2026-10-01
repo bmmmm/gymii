@@ -375,4 +375,14 @@ assert.equal(ui.fmtDay(Date.UTC(2026, 0, 1, 21, 0)), 'Fri 2 Jan',
 // its own) and fmtDate/fmtTime (their output is Node's ICU data, so a
 // pinned string would go red on an ICU update without a bug in gymii).
 
+// --- hintHtml: text and attributes escaped, ↗ only for a study ---
+{
+  const h = ui.hintHtml({ text: 'Try <b>60</b> & "more"', source: 'acsm2009' }, 'x');
+  assert.ok(h.startsWith('<p class="hint x"><span>Try &lt;b&gt;60&lt;/b&gt; &amp; &quot;more&quot;</span><a href="https://doi.org/'),
+    'the text is escaped — template files are untrusted');
+  assert.ok(h.includes('target="_blank" rel="noopener" aria-label="Source: Ratamess et al. 2009 (ACSM)"'));
+  assert.equal(ui.hintHtml({ text: 'Own.', source: 'own' }), '<p class="hint"><span>Own.</span></p>',
+    'your own records: no link to nowhere');
+}
+
 console.log('ui helpers: all assertions passed');

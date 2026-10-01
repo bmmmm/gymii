@@ -198,13 +198,14 @@ LAT_FIXTURE.forEach((id) => {
   assert.deepEqual([last.reps, last.rir, last.weight], [latTarget.reps + 2, 2, latTarget.weight],
     `${id}: lat pulldown fixture at the plan target`);
 });
-// progress (lat pulldown), busy (pull-up bar, rule 7) and route (back to
-// the seated row, rule 6) fire and outrank everything else
-const worthALook = (data, now) => Object.fromEntries(stats.insights(
-  data.workouts, data.layout, KG, { now, plans: data.plans }).map((i) => [i.kind, i.machineId]));
-const SHOWN = { progress: 'lat-pulldown', busy: 'demo-pullup', route: 'seated-row' };
+// progress (lat pulldown), busy (pull-up bar, rule 7), route (back to the
+// seated row, rule 6) and one low-volume muscle fire — and nothing else:
+// the demo must not nag (no plateau, no gap, no rest, no frequency)
+const worthALook = (data, now) => stats.insights(
+  data.workouts, data.layout, KG, { now, plans: data.plans }).map((i) => [i.kind, i.machineId ?? i.muscle]);
+const SHOWN = [['progress', 'lat-pulldown'], ['busy', 'demo-pullup'], ['route', 'seated-row'], ['muscle-volume', 'Hamstrings']];
 assert.deepEqual(worthALook({ layout, workouts, plans }, NOW), SHOWN,
-  'the demo shows progress, busy and route insights');
+  'the demo shows progress, busy, route and one volume hint');
 
 // --- machines #1-#11 and the zone shapes hand-copy the example template;
 // this diff is what keeps the copy honest when the template changes ---
@@ -262,7 +263,7 @@ for (let d = 0; d < 7; d++) {
   assert.equal(store.todayStatus(built.plans, built.workouts, now).plan.id,
     'demo-plan-core', `due wins the headline (day ${d})`);
   checkTiming(built, `day ${d}`);
-  assert.deepEqual(worthALook(built, now), SHOWN, `the three insights show on day ${d}`);
+  assert.deepEqual(worthALook(built, now), SHOWN, `the four hints show on day ${d}`);
 }
 
 // --- unit conversion ---

@@ -12,9 +12,10 @@ import { focusMachine } from './gym.js';
 import {
   esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural, machineChain,
   minsBetween,
-  primeAudio, playTimerSound, keepInView, parseDuration, parseDistance,
+  primeAudio, playTimerSound, keepInView, parseDuration, parseDistance, hintHtml,
 } from './ui.js';
 import { ensurePersisted } from './persist.js';
+import { insights } from './stats.js';
 
 // Active workout shape:
 //   { v: 2, id, startedAt, plan: [{machineId, exercise|null, target?}…],
@@ -308,6 +309,10 @@ const startPlanWorkout = (root, plan) => {
 // screen render the identical list, so its markup and wiring live once.
 function planListCard(layout, plans, workouts) {
   const sortedPlans = sortPlansToday(plans);
+  // plans whose workouts keep walking back to a machine (stats.js route
+  // rule) — a word on the row, the builder has the line and its ↗
+  const toReorder = new Set(insights(workouts, layout, getSettings(), { plans })
+    .filter((it) => it.kind === 'route' && it.workout).map((it) => it.workout));
   const html = `
     <section class="card">
       <h2>Planned workouts</h2>
@@ -326,7 +331,8 @@ function planListCard(layout, plans, workouts) {
               <span class="muted">${p.name && planChain(p, layout) ? `${planChain(p, layout)} · ` : ''}${plural(count, 'exercise')}${open
     ? ` · ${open} to assign` : ''}${p.days?.length
     ? ` · ${p.days.map((d) => DAY_LABELS[d]).join(' ')}` : ''}${done
-    ? ` · last: ${new Date(done.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>
+    ? ` · last: ${new Date(done.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}${
+  toReorder.has(p.name) ? ' · reorder?' : ''}</span>
             </span>
             <span class="row-chevron" aria-hidden="true">›</span>
           </button>
@@ -1292,6 +1298,14 @@ function renderLog(root, layout, active, reveal = null) {
   const lastSets = last
     && !!last.cardio === !!entry?.cardio
     && !!last.bodyweight === !!entry?.bodyweight ? last : null;
+  // What to do at THIS machine and exercise (stats.js): the progress
+  // hint for exactly this pair — a hint about the machine's other exercise
+  // would name the wrong load — and the busy hint on its weekday only.
+  const today = new Date().getDay();
+  const hints = insights(getWorkouts(), layout, s, { plans: getPlans() }).filter((it) =>
+    it.machineId === machine.id && (it.kind === 'progress'
+      ? (it.exercise ?? null) === (exercise ?? null)
+      : it.kind === 'busy' && it.weekday === today));
   // Plan target for this slot — dropped when its shape no longer matches
   // the machine's type (flag toggled since the plan was made).
   const rawTarget = pickPending ? null : planTargetFor(active, machine.id, exercise);
@@ -1395,6 +1409,7 @@ function renderLog(root, layout, active, reveal = null) {
           aria-label="Finish workout">🏁</button>
       </div>
     </div>
+    ${pickPending ? '' : hints.map((it) => hintHtml(it, 'head-hint')).join('')}
 
     ${lockerAsk ? `
     <div class="row locker-ask">
@@ -1927,6 +1942,8 @@ function openRestOverlay() {
     <div class="muted">REST</div>
     <div class="countdown" id="cd"></div>
     ${nextUpLabel ? `<div class="muted rest-next">Next: ${esc(nextUpLabel)}</div>` : ''}
+    ${insights(getWorkouts(), getLayout(), getSettings(), { plans: getPlans() })
+    .filter((it) => it.kind === 'rest').map((it) => hintHtml(it, 'rest-hint')).join('')}
     ${rated && !rated.entry.cardio
     ? `<div class="rest-opts" id="rir-opts">${rirChips(rated.set.rir)}</div>` : ''}
     <div class="row">
@@ -1948,7 +1965,7 @@ function openRestOverlay() {
   // running in the inline row on the log screen. Narrower than
   // showMapOverlay's "any tap closes": every button here keeps its own job.
   overlay.addEventListener('click', (e) => {
-    if (e.target.closest('button')) return;
+    if (e.target.closest('button, a')) return; // the hint's ↗ opens the study, not the backdrop
     dismissRest();
   });
 

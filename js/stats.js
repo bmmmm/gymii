@@ -370,20 +370,17 @@ const insight = (kind, magnitude, fields) => ({
   kind, ...fields, score: WEIGHT[kind] + Math.max(0, Math.min(9, Math.round(magnitude))),
 });
 
-// "#2 Lat pulldown" (· exercise) — from the live layout, else the entry snapshot.
-function machineName(layout, machineId, entry = null, exercise = null) {
-  const m = layout?.machines?.find((x) => x.id === machineId) ?? entry;
-  if (!m) return null;
-  return `#${m.num} ${m.label}${exercise ? ` · ${exercise}` : ''}`;
-}
+// Whether the live layout still has the machine — a busy mark can name
+// one that was deleted since, and a hint about it has no screen to sit on.
+const inLayout = (layout, machineId) => !!layout?.machines?.find((x) => x.id === machineId);
 
-// Every (machineId, exercise) pair trained, with one entry for its name.
+// Every (machineId, exercise) pair trained.
 function trainedPairs(workouts) {
   const pairs = new Map();
   workouts.forEach((w) => w.entries.forEach((e) => {
     if (!e.sets.length) return;
     const key = `${e.machineId} ${e.exercise ?? ''}`;
-    pairs.set(key, { machineId: e.machineId, exercise: e.exercise ?? null, entry: e });
+    pairs.set(key, { machineId: e.machineId, exercise: e.exercise ?? null });
   }));
   return [...pairs.values()];
 }
@@ -402,10 +399,10 @@ function targetReps(plans, machineId, exercise, planId) {
 const RECENT_DAYS = 21;
 
 // 1 — the target is beaten twice at the same load: time to add weight.
-function progressRule(ws, layout, settings, plans, now) {
+function progressRule(ws, settings, plans, now) {
   const unit = settings?.unit ?? 'kg';
   const step = settings?.weightStep ?? 2.5;
-  return trainedPairs(ws).flatMap(({ machineId, exercise, entry }) => {
+  return trainedPairs(ws).flatMap(({ machineId, exercise }) => {
     const series = seriesEntries(ws, machineId, exercise);
     if (series.length < 2 || series[0].kind !== 'strength') return [];
     const [p, q] = series.slice(-2);
@@ -422,10 +419,10 @@ function progressRule(ws, layout, settings, plans, now) {
     const reps = Math.min(repsAt(p.e), repsAt(q.e));
     const next = step > 0.1 * W ? 'add 1–2 reps first' : `try ${num(W + step, 2)} ${unit}`;
     return [insight('progress', reps - T, {
-      text: `${machineName(layout, machineId, entry, exercise)}: ${reps} × ${num(W, 2)} ${unit} twice — ${next}.`,
-      why: 'ACSM: add load once the target is beaten by 1–2 reps.',
+      text: `Target beaten twice — ${next}.`,
       source: 'acsm2009',
       machineId,
+      exercise,
     })];
   });
 }
@@ -440,8 +437,7 @@ function frequencyRule(ws, now) {
   const mean = sum(full.map((b) => b.strengthDays)) / 4;
   if (!(mean < 2)) return [];
   return [insight('frequency', (2 - mean) * 4.5, {
-    text: `Last 4 weeks: ${num(mean, 2)} strength days/week.`,
-    why: 'WHO: strength training on 2 or more days a week.',
+    text: `Aim for 2 strength days a week — ${num(mean, 2)} over the last 4 weeks.`,
     source: 'who2020',
   })];
 }
@@ -460,8 +456,7 @@ function muscleGapRule(ws, layout, now) {
     const d = daysBetween(t, now);
     if (d < 10 || d >= 42) return [];
     return [insight('muscle-gap', d - 10, {
-      text: `${muscle}: last trained ${d} days ago.`,
-      why: 'Training a muscle twice a week beats once at equal volume.',
+      text: `Train it this week — last trained ${d} days ago.`,
       source: 'schoenfeld2016',
       muscle,
     })];
@@ -483,8 +478,7 @@ function muscleVolumeRule(ws, layout, now) {
   // always at or below any percentile, so it could never decide anything.
   if (!(lowest.mean < median / 2)) return [];
   return [insight('muscle-volume', 9 * (1 - lowest.mean / (median / 2)), {
-    text: `${lowest.muscle}: ${num(lowest.mean)} sets/week — your median muscle gets ${num(median)}.`,
-    why: 'Each extra weekly set adds growth, with diminishing returns.',
+    text: `Add a set or two — ${num(lowest.mean)} sets/week, your median muscle gets ${num(median)}.`,
     source: 'schoenfeld2017',
     muscle: lowest.muscle,
   })];
@@ -498,8 +492,7 @@ function restRule(ws) {
   const median = quantile(gaps, 0.5);
   if (!(median < 90)) return [];
   return [insight('rest', (90 - median) / 10, {
-    text: `Median ${Math.floor(median)} s between sets (incl. the set).`,
-    why: 'Rests longer than 60–90 s help strength gains.',
+    text: `Hold 90 s — your median is ${Math.floor(median)} s (incl. the set).`,
     source: 'pmc11349676',
   })];
 }
@@ -526,12 +519,11 @@ function routeRule(ws, layout) {
     const names = new Map();
     [...hw].reverse().forEach((w) => w.name && names.set(w.name, (names.get(w.name) ?? 0) + 1));
     const name = [...names].reduce((a, b) => (b[1] > a[1] ? b : a), [null, 0])[0];
-    const body = `back to #${numOf(to)} after #${numOf(from)} in ${hw.length} workouts — reorder the plan?`;
     return insight('route', (hw.length - 3) * 2, {
-      text: name ? `${name}: ${body}` : body[0].toUpperCase() + body.slice(1),
-      why: 'From your own route: walking back costs time between sets.',
+      text: `Reorder — back to #${numOf(to)} after #${numOf(from)} in ${hw.length} workouts.`,
       source: 'own',
       machineId: to,
+      workout: name, // the plan this belongs to goes by this name, or null
     });
   });
 }
@@ -556,8 +548,7 @@ function busyRule(ws, layout, now) {
   });
   });
   return [...groups.values()].flatMap(({ machineId, day, mins }) => {
-    const name = machineName(layout, machineId);
-    if (!name) return [];
+    if (!inLayout(layout, machineId)) return [];
     mins.sort((a, b) => a - b);
     // the largest run of marks within a two-hour span
     let best = { n: 0 };
@@ -569,19 +560,19 @@ function busyRule(ws, layout, now) {
     const h0 = Math.floor(best.lo / 60);
     const h1 = Math.max(h0 + 1, Math.ceil(best.hi / 60));
     return [insight('busy', best.n - 3, {
-      text: `${name} busy ${best.n}× on ${WEEKDAYS[day]}s ${h0}–${h1} h.`,
-      why: 'From your own busy marks: this machine tends to be taken then.',
+      text: `Usually busy ${WEEKDAYS[day]}s ${h0}–${h1} h — start elsewhere.`,
       source: 'own',
       machineId,
+      weekday: day,
     })];
   });
 }
 
 // 8 — no new best estimated 1RM for six or more workouts on a machine that
 // is still being trained.
-function plateauRule(ws, layout, settings, now) {
+function plateauRule(ws, settings, now) {
   const unit = settings?.unit ?? 'kg';
-  return trainedPairs(ws).flatMap(({ machineId, exercise, entry }) => {
+  return trainedPairs(ws).flatMap(({ machineId, exercise }) => {
     const pts = machineSeries(ws, machineId, exercise).filter((p) => p.kind === 'strength' && p.e1rm != null);
     if (pts.length < 8) return [];
     const best = Math.max(...pts.slice(0, -6).map((p) => p.e1rm));
@@ -589,42 +580,31 @@ function plateauRule(ws, layout, settings, now) {
     if (daysBetween(pts[pts.length - 1].t, now) >= RECENT_DAYS) return [];
     const since = pts.length - 1 - pts.findIndex((p) => p.e1rm === best);
     return [insight('plateau', since - 6, {
-      text: `${machineName(layout, machineId, entry, exercise)}: no new best in ${since} workouts (${num(best)} ${unit} e1RM).`,
-      why: 'Estimated 1RM (Epley) compared per exercise, valid up to 10 reps.',
+      text: `No new best in ${since} workouts (${num(best)} ${unit} e1RM) — vary reps or load.`,
       source: 'pmc11435939',
       machineId,
+      exercise,
     })];
   });
 }
 
-// At most `max` observations worth a look, ranked by kind weight plus a
-// 0–9 magnitude; one per kind (progress: two), one per machine or muscle,
-// ties broken on the text. Nothing with fewer than three workouts.
-export function insights(workouts, layout, settings, { now = Date.now(), plans = [], max = 3 } = {}) {
+// Every observation that fires, as a one-line instruction (`text`, raw —
+// the UI escapes) with its `source` key and its target (`machineId` +
+// `exercise`, `muscle`, `workout` name, `weekday`), ordered by kind weight
+// plus a 0–9 magnitude, ties on the text. No cap and no one-per-machine
+// pick: each screen shows only the rows about the thing on it, so a cap
+// would silence the third machine. Nothing with fewer than three workouts.
+export function insights(workouts, layout, settings, { now = Date.now(), plans = [] } = {}) {
   if (workouts.length < 3) return [];
   const ws = byStart(workouts);
-  const candidates = [
-    ...progressRule(ws, layout, settings, plans, now),
+  return [
+    ...progressRule(ws, settings, plans, now),
     ...frequencyRule(ws, now),
     ...(layout ? muscleGapRule(ws, layout, now) : []),
     ...(layout ? muscleVolumeRule(ws, layout, now) : []),
     ...restRule(ws),
     ...(layout ? routeRule(ws, layout) : []),
     ...(layout ? busyRule(ws, layout, now) : []),
-    ...plateauRule(ws, layout, settings, now),
+    ...plateauRule(ws, settings, now),
   ].sort((a, b) => b.score - a.score || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0));
-  const out = [];
-  const perKind = new Map();
-  const targets = new Set();
-  for (const c of candidates) {
-    if (out.length >= max) break;
-    const k = perKind.get(c.kind) ?? 0;
-    if (k >= (c.kind === 'progress' ? 2 : 1)) continue;
-    const target = c.machineId ? `m:${c.machineId}` : c.muscle ? `u:${c.muscle}` : null;
-    if (target && targets.has(target)) continue;
-    out.push(c);
-    perKind.set(c.kind, k + 1);
-    if (target) targets.add(target);
-  }
-  return out;
 }

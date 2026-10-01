@@ -389,7 +389,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   shows a plain "‹ Train" back row to the hub instead. Undo/redo =
   snapshot history via the local `save()` wrapper — every mutation must
   go through `save()`, never `saveLayout()` directly.
-- `js/train.js` — guided workout: `active.plan` is a list of slots
+- `js/train.js` — guided workout; under the log screen's machine head sit
+  the hints for THIS machine and exercise (progress) and this weekday
+  (busy) — full width, not inside the head's flex row, where the 44px ↗
+  would squeeze the text — the rest overlay the rest hint, a plan row "· reorder?" when its
+  builder has a route hint (`planListCard`). `active.plan` is a list of slots
   `{machineId, exercise|null, target?}` (null = whole machine) — a repeat
   plans one slot per (machine, exercise) pair so "Next:" walks every
   exercise of a multi-exercise machine; overview hub, per-machine
@@ -562,7 +566,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   unknown numbers via `store.addMachine()` — training never requires a
   gym visit first.
 - `js/plan.js` — the plan builder: muscle-filtered machine picking, per-item
-  targets, reorder, weekday chips. It renders INSIDE the Train tab via
+  targets, reorder, weekday chips, and the route hint of the plan this
+  name's workouts walk (above the items it reorders). It renders INSIDE the Train tab via
   train.js's module state (`openPlanBuilder()`, which ai.js uses for import
   review); an active workout always outranks it. It runs WITHOUT a gym:
   unbound items get a `📍 Assign machine` prompt (number field prefilled
@@ -577,10 +582,12 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
 - `js/history.js` — two screens in one module, switched by module state like
   train.js (no hash sub-routes; `#history` stays one route). The OVERVIEW is
   what a glance needs: This week (tiles, a bar chart of the last 12 weeks,
-  that week's workouts) → Worth a look (`insights()` from stats.js, each
-  row with its why and source) → Progress (machine chips, range chips,
-  `lineChart`) → Walking paths (the route of one workout, or all of them
-  weighted, on the floor map) → Muscles. The WORKOUTS screen, one tap
+  that week's workouts, the frequency hint between tiles and bars) →
+  Progress (machine chips, range chips, `lineChart`, the plateau hint of
+  the picked machine AND exercise in `#chart-note`) → Walking paths (the
+  route of one workout, or all of them weighted, on the floor map) →
+  Muscles (a muscle's gap or volume hint as a line UNDER its row — a
+  sibling, never inside the button: a link in a button is no link). The WORKOUTS screen, one tap
   from the week card, holds the month heatmap (per-machine filter), the full
   workout list with repeat and the editor, and `Log a past workout`; its
   back row returns to the overview. A screen CHANGE resets the scroll to the
@@ -637,11 +644,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   via `dateValue` for the same reason) and `machineChain` is the deduping
   "#1 → #3" chain used by the start screen and the workout list alike.
   Workout-name chips at the top
-  filter everything but Worth a look: `workouts` is narrowed once, right
+  filter everything but the hints: `workouts` is narrowed once, right
   after `getWorkouts()`, so week, heatmap, chart, path and the list all
-  follow; the insights read every workout, because a rule like "strength
-  days per week" means nothing for one routine — an insight tap therefore
-  clears the name filter before it selects its machine or muscle. The filter is
+  follow; `ctx.hints` is computed once over `all`, because a rule like
+  "strength days per week" means nothing for one routine. The filter is
   module state (`nameFilter`) because a save or delete re-renders the whole
   view, and it self-clears when its last workout is renamed or deleted.
   The Muscles card (store's `usageByMuscle`/`workoutsWithMuscle`) shows
@@ -655,8 +661,13 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   name-only list so every muscle stays reachable while one is selected.
 - `js/stats.js` — pure History analytics: weekly buckets, per-machine series
   with estimated 1RM, muscle sets per week, the walked route, transition
-  counts, rest gaps and the insight rules. NO imports, like merge.js —
-  workouts, layout, settings and `now` come in as arguments, so it tests
+  counts, rest gaps and the hint rules (`insights()`: every observation
+  that fires, as an instruction with a `source` and its target — no card,
+  no cap; docs/insights.md says which screen shows which). `hintHtml()` in
+  ui.js renders one: the text, a ↗ to the study, nothing from `own`. NO
+  imports, like merge.js (history.js, train.js, plan.js and ui.js import it,
+  never the other way) — workouts, layout, settings and `now` come in as
+  arguments, so it tests
   without a clock or a browser. Every string it returns is RAW; the UI
   escapes. It reads time only as DIFFERENCES between stamps of the same kind
   (`at` to `at`, visit `in` to `out`), never `at − startedAt`: a workout

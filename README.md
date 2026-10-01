@@ -57,10 +57,8 @@ ever sees ciphertext.
   Four tones to pick from, each one audible before you commit — and they play
   like music, so an iPhone's silent switch doesn't swallow them.
 - 📈 **History** — opens on a weekly dashboard: this week's workouts, sets,
-  volume and time against last week, twelve weeks of bars to tap, then a few
-  observations worth a look — each with a one-line reason and its source
-  (a plateau, a weight to raise, a muscle that dropped out, a machine that
-  is busy at your hour). A progress chart per machine you can drag along,
+  volume and time against last week, twelve weeks of bars to tap, a
+  progress chart per machine you can drag along,
   the route you walked through the gym drawn on your floor map, and a muscle
   card that shows how many sets each group got — tap a row and the view
   narrows to that muscle. A second screen holds every workout (one tap
@@ -69,8 +67,10 @@ ever sees ciphertext.
   After each strength set, one tap rates it by reps left in the tank (0, 1,
   2, 3+) — gymii also remembers the order you visited the machines in. Name
   a workout (gymii suggests one from the muscles you trained) and one tap
-  filters everything down to it, except Worth a look, which always reads
-  all of your training.
+  filters everything down to it. Hints — "try 60 kg", "train it this
+  week", each with a ↗ to the study behind it — sit where you act on them:
+  under "Last:" at the machine, under a muscle, under the chart, in the
+  plan; they always read all of your training.
 - 🏨 **Gyms & units** — home gym, hotel gym, whatever. kg or lbs, switched
   in one go.
 - 📦 **Templates** — export your gym as JSON, import someone else's. Want to

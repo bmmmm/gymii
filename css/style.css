@@ -458,8 +458,7 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
    rows share this reset and add only their own layout below */
 .plan-row,
 .recent-row .recent-info,
-.muscle-row,
-button.insight-row {
+.muscle-row {
   background: none;
   border: 0;
   color: var(--text);
@@ -470,8 +469,7 @@ button.insight-row {
 
 .plan-row:active,
 .recent-row .recent-info:active,
-.muscle-row:active,
-button.insight-row:active { filter: brightness(1.3); }
+.muscle-row:active { filter: brightness(1.3); }
 
 /* workout overview hub */
 .plan-row {
@@ -793,14 +791,14 @@ svg .path-leg { stroke-linecap: round; }
    from tick()), which reads as "the timer is alive" while the average lit
    area stays low. Controls fade further back but stay tappable — opacity
    does not affect hit testing. */
-.overlay .countdown, .overlay > .muted, .overlay .row, .overlay .rest-opts {
+.overlay .countdown, .overlay > .muted, .overlay .row, .overlay .rest-opts, .overlay .rest-hint {
   transition: opacity 320ms ease;
 }
 
 .overlay.dim { background: rgba(4, 5, 7, 0.985); }
 .overlay.dim .countdown { opacity: 0.22; transition: opacity 220ms ease-out; }
 .overlay.dim .countdown.lit { opacity: 0.55; transition-duration: 60ms; }
-.overlay.dim > .muted, .overlay.dim .row, .overlay.dim .rest-opts { opacity: 0.3; }
+.overlay.dim > .muted, .overlay.dim .row, .overlay.dim .rest-opts, .overlay.dim .rest-hint { opacity: 0.3; }
 
 /* the timer's own settings row — small chips, out of the way */
 .rest-opts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
@@ -970,35 +968,26 @@ details.workout summary::-webkit-details-marker { display: none; }
    (#212932): 4.6:1 — re-check against THAT, not the card surface */
 .bar-fill { display: block; height: 100%; background: #35a273; border-radius: 3px; }
 
-/* "Worth a look" is an info box, not a card of its own: no surface, a
-   dashed border, an i-in-a-circle, muted text — it reads as a note beside
-   the numbers, not as the numbers (user, 2026-10-01: "aktuell sehr
-   präsent"). The row stays the tap target (shared row reset above); its
-   source link sits outside it — a link inside a button is no link — as a
-   real 44px box at 16px, like every focusable text */
-.info-box { background: transparent; border-style: dashed; padding: 8px 12px 4px; }
-.info-box h2 { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
-/* the i-in-a-circle is decoration, so it lives in CSS: the heading text
-   stays plain for screen readers and for the card-order pin in the tests */
-.info-box h2::before {
-  content: 'i';
-  display: inline-flex; justify-content: center; align-items: center;
-  width: 15px; height: 15px; border: 1px solid var(--muted); border-radius: 50%;
-  font-family: Georgia, serif; font-style: italic; font-weight: 700; font-size: 11px;
-  line-height: 1; text-transform: none; letter-spacing: 0;
+/* A hint line (ui.js hintHtml): one instruction from stats.js where the
+   user acts on it — under "Last:" on the log screen, under a muscle row,
+   under the Progress chart, in the plan builder, on the rest overlay. The
+   ↗ is a real 44px box at 16px like every focusable text; its negative
+   margin keeps the line at text height (user, 2026-10-01: "direkt die
+   Anweisung, nur ein Hinweis zu den Docs") */
+.hint { display: flex; align-items: center; gap: 6px; margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.hint a {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  min-width: 44px; min-height: 44px; margin: -12px 0; font-size: 16px;
+  color: var(--muted); text-decoration: none;
 }
-.insight + .insight { border-top: 1px dashed var(--border); }
-.insight-row { display: block; width: 100%; margin: 0; padding: 6px 2px 0; }
-/* beats the shared row reset's `button.insight-row { color: var(--text) }` */
-.info-box button.insight-row, .info-box p.insight-row { color: var(--muted); }
-.insight-text { display: block; font-size: 16px; }
-button.insight-row .insight-text::after { content: ' ›'; }
-.insight-row .why { display: block; margin-top: 1px; font-size: 12px; }
-.insight-src { margin: 0 2px 2px; color: var(--muted); font-size: 12px; }
-.insight-src a {
-  display: inline-flex; align-items: center; min-height: 44px; font-size: 16px;
-  color: var(--muted); text-decoration: underline dotted;
-}
+#chart-note .hint { margin-top: 6px; } /* air between the legend and the line */
+/* below the machine head, full width: inside its flex row the 44px ↗ would
+   squeeze the text column and push the head's buttons out at 320 px */
+.head-hint { margin: 0 0 6px; }
+/* under a muscle row: the row's border moves down below the hint */
+.muscle-row:has(+ .muscle-hint) { border-bottom: 0; }
+.muscle-hint { margin: -4px 0 0; padding: 0 4px 8px; border-bottom: 1px solid var(--border); }
+.muscle-hint:last-child, .muscle-hint:has(+ .muscle-hint) { border-bottom: 0; }
 
 /* Walking paths: the counts, then where the time went */
 #path-stats p { margin: 4px 0; }

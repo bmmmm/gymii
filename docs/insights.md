@@ -1,27 +1,49 @@
-# History insights — rules, thresholds, sources
+# Hints — rules, thresholds, sources
 
-The "Worth a look" card on the History overview shows at most three
-observations about your own training. They come from `insights()` in
-`js/stats.js`, which is pure: workouts, layout, settings, `now` and the saved
-plans go in, raw strings come out (the UI escapes). **This file and the code
-are one contract — change both together.** Thresholds below are the ones in
-the code; test/stats.test.mjs pins every rule at its threshold and one step
-short of it.
+A hint is one instruction about your own training, shown where you act on
+it, with a ↗ to the study it rests on and no explainer (user, 2026-10-01:
+"direkt die Anweisung, nur ein Hinweis zu den Docs"). They come from
+`insights()` in `js/stats.js`, which is pure: workouts, layout, settings,
+`now` and the saved plans go in, raw strings come out (the UI escapes via
+`hintHtml()` in ui.js). **This file and the code are one contract — change
+both together.** Thresholds below are the ones in the code;
+test/stats.test.mjs pins every rule at its threshold and one step short of
+it.
 
-Every row carries a `why` line and a `source` key into `SOURCES`. The UI
-shows the source's label as a link to its `url`; `SOURCES.own` ("Your own
-logged workouts") has `url: null`, so the rules that rest on the user's own
-records render a label and no link.
+Every row carries `kind`, `text`, `score`, a `source` key into `SOURCES`
+and its target: `machineId` + `exercise` (progress, plateau — `null` for a
+whole-machine entry; the log screen and the Progress chart match on BOTH),
+`machineId` + `weekday` (busy), `machineId` + `workout` (route — the name
+those workouts go by most often, `null` when they have none), or `muscle`.
+The text names no subject: the screen it sits on does. `SOURCES.own` ("Your
+own logged workouts") has `url: null`, so route and busy render no link.
 
-## Ranking
+## Where each hint shows
+
+| kind | where | only when |
+|---|---|---|
+| progress | Train log screen, below the machine head (train.js `renderLog`) | the machine AND exercise on screen |
+| busy | Train log screen, below the machine head | the machine on screen, on `weekday` (today) |
+| rest | the rest overlay, under "Next:" (train.js `openRestOverlay`) | — |
+| plateau | History → Progress, `#chart-note` under the chart | the picked machine AND exercise |
+| muscle-gap, muscle-volume | History → Muscles, a line under the muscle's row | — |
+| frequency | History → This week, between the tiles and the bars | — |
+| route | the plan builder, above the items in List view (plan.js); the plan's row on the start screen says "· reorder?" (train.js `planListCard`) | a plan named like `workout` |
+
+History computes the list once per render over EVERY workout (never the
+filtered list: "1.5 strength days a week" says nothing about one routine);
+train.js and plan.js compute it per render of their screen.
+
+## Order
 
 - Nothing is returned with fewer than three workouts.
 - `score` = the kind's weight plus a magnitude term, rounded and clamped to
   0–9. Weights: progress 50, plateau 40, busy 35, muscle-gap 30, route 30,
   frequency 25, rest 20, muscle-volume 15.
-- Sorted by score, ties on the text; then at most 3 rows (`max`), at most one
-  per kind (progress: two), and one per machine or muscle — a second row about
-  the same machine or muscle is skipped.
+- Sorted by score, ties on the text. Everything that fires is returned —
+  no cap, no one-per-machine pick: each screen filters to the thing on it,
+  and a cap would silence the third machine. The order only decides which
+  line comes first when a screen shows two (progress above busy).
 - Rules 3, 4, 6 and 7 need a layout (muscles, machine positions); without one
   they stay silent.
 
@@ -33,14 +55,14 @@ treadmill tagged Calves is not a calf set).
 
 | # | kind | fires when | magnitude | text | source |
 |---|---|---|---|---|---|
-| 1 | progress | The latest session on a strength exercise is at most 20 days old, the last two sessions share the same top weight W, and in each one the target was beaten: the best reps at W are at least T + 2, or a set at W has reps ≥ T and `rir` ≥ 2. T = the target reps of the plan the latest session came from, else the first plan targeting that machine, else 12 | lowest reps at W minus T | "#2 Lat pulldown: 12 × 57.5 kg twice — try 60 kg." The next load is W plus `settings.weightStep` (default 2.5); if that step is above 10 % of W: "… twice — add 1–2 reps first." | `acsm2009` |
-| 2 | frequency | The first workout is at least 28 days old AND predates the oldest of the last four full weeks (a week the history only partly covers would read as a low week), and the mean number of strength days per week over the last four full weeks (the current week excluded) is below 2 | (2 − mean) × 4.5 | "Last 4 weeks: 1.5 strength days/week." | `who2020` |
-| 3 | muscle-gap | A muscle was last trained 10 to 41 days ago, and at least two workouts happened in the last 10 days (so it is not a holiday) | days since − 10 | "Hamstrings: last trained 12 days ago." | `schoenfeld2016` |
-| 4 | muscle-volume | At least 28 days of history, at least 4 muscles with a non-zero 4-week mean (a tagged muscle nobody trains is untrained, not low volume — it is never named here), and the lowest 4-week mean of weekly sets is below half the median muscle's | scaled 0–9 by how far below half the median | "Calves: 2 sets/week — your median muscle gets 9." | `schoenfeld2017` |
-| 5 | rest | At least 10 rest gaps over the last five workouts that have stamped sets, median below 90 s. A gap is the time between two consecutive stamped sets of the same entry, 600 s at most; `at` is the END of a set, so it includes the next set itself | (90 − median) / 10 | "Median 70 s between sets (incl. the set)." | `pmc11349676` |
-| 6 | route | The same backtrack (same machine A, then B, then back to a machine already visited, A → B → A excluded) shows up in at least three of the last eight workouts that have a path; counted once per workout | (workouts − 3) × 2 | "Pull day: back to #3 after #16 in 4 workouts — reorder the plan?" (the workout name is the one those workouts go by most often, omitted when they have none) | `own` |
-| 7 | busy | At least three `busy` marks on one machine, on the same weekday, within a two-hour span of wall-clock time, in the last 56 days | marks − 3 | "#8 Pec deck busy 3× on Mondays 17–19 h." | `own` |
-| 8 | plateau | At least eight sessions with an estimated 1RM, none of the last six beating the best of the earlier ones, and the machine was trained in the last 21 days | workouts since the best − 6 | "#1 Chest press: no new best in 6 workouts (76 kg e1RM)." | `pmc11435939` |
+| 1 | progress | The latest session on a strength exercise is at most 20 days old, the last two sessions share the same top weight W, and in each one the target was beaten: the best reps at W are at least T + 2, or a set at W has reps ≥ T and `rir` ≥ 2. T = the target reps of the plan the latest session came from, else the first plan targeting that machine, else 12 | lowest reps at W minus T | "Target beaten twice — try 60 kg." The next load is W plus `settings.weightStep` (default 2.5); if that step is above 10 % of W: "Target beaten twice — add 1–2 reps first." | `acsm2009` |
+| 2 | frequency | The first workout is at least 28 days old AND predates the oldest of the last four full weeks (a week the history only partly covers would read as a low week), and the mean number of strength days per week over the last four full weeks (the current week excluded) is below 2 | (2 − mean) × 4.5 | "Aim for 2 strength days a week — 1.5 over the last 4 weeks." | `who2020` |
+| 3 | muscle-gap | A muscle was last trained 10 to 41 days ago, and at least two workouts happened in the last 10 days (so it is not a holiday) | days since − 10 | "Train it this week — last trained 12 days ago." | `schoenfeld2016` |
+| 4 | muscle-volume | At least 28 days of history, at least 4 muscles with a non-zero 4-week mean (a tagged muscle nobody trains is untrained, not low volume — it is never named here), and the lowest 4-week mean of weekly sets is below half the median muscle's | scaled 0–9 by how far below half the median | "Add a set or two — 2 sets/week, your median muscle gets 9." | `schoenfeld2017` |
+| 5 | rest | At least 10 rest gaps over the last five workouts that have stamped sets, median below 90 s. A gap is the time between two consecutive stamped sets of the same entry, 600 s at most; `at` is the END of a set, so it includes the next set itself | (90 − median) / 10 | "Hold 90 s — your median is 70 s (incl. the set)." | `pmc11349676` |
+| 6 | route | The same backtrack (same machine A, then B, then back to a machine already visited, A → B → A excluded) shows up in at least three of the last eight workouts that have a path; counted once per workout | (workouts − 3) × 2 | "Reorder — back to #3 after #16 in 4 workouts." (`workout` carries the name those workouts go by most often, `null` when they have none — then no builder shows it) | `own` |
+| 7 | busy | At least three `busy` marks on one machine, on the same weekday, within a two-hour span of wall-clock time, in the last 56 days | marks − 3 | "Usually busy Mondays 17–19 h — start elsewhere." | `own` |
+| 8 | plateau | At least eight sessions with an estimated 1RM, none of the last six beating the best of the earlier ones, and the machine was trained in the last 21 days | workouts since the best − 6 | "No new best in 6 workouts (76 kg e1RM) — vary reps or load." | `pmc11435939` |
 
 Estimated 1RM is Epley, `w × (1 + reps / 30)`, only for a real load and 1 to
 10 reps (1 rep is the weight itself). Beyond 10 reps it overestimates badly,

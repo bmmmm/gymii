@@ -273,7 +273,7 @@ const ROUTE = W(T0, [
 // --- insights: every rule fires at its threshold and stays quiet one step short ---
 const seen = []; // every insight produced below, for the shape checks at the end
 const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => {
-  const out = stats.insights(ws, layout, settings, { now: NOW, plans, max: 20 });
+  const out = stats.insights(ws, layout, settings, { now: NOW, plans });
   seen.push(...out);
   return out.find((i) => i.kind === kind);
 };
@@ -287,15 +287,16 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     W(day(1), [E(machine, [S(10, w), S(r3, w, rir3 != null ? { rir: rir3 } : {})])]),
   ];
   const fired = find(prog(14, 14), 'progress');
-  assert.equal(fired?.text, '#2 Lat pulldown: 14 × 57.5 kg twice — try 60 kg.');
+  assert.equal(fired?.text, 'Target beaten twice — try 60 kg.');
   assert.equal(fired.source, 'acsm2009');
   assert.equal(fired.machineId, 'm2');
+  assert.equal(fired.exercise, null, 'a whole-machine entry carries exercise null (the log screen matches on it)');
   assert.equal(find(prog(14, 13), 'progress'), undefined, 'progress: 13 reps is one short of T+2');
   const aged = (n) => prog(14, 14).map((w) => ({ ...w, startedAt: w.startedAt - n * 864e5, finishedAt: w.finishedAt - n * 864e5 }));
   assert.ok(find(aged(19), 'progress'), 'progress: a last session 20 days ago still counts');
   assert.equal(find(aged(20), 'progress'), undefined, 'progress: a machine not trained for 21 days is not due for more load');
   assert.equal(find(prog(12, 12, { rir2: 2, rir3: 2 }), 'progress')?.text,
-    '#2 Lat pulldown: 12 × 57.5 kg twice — try 60 kg.', 'progress: reps ≥ T with rir 2');
+    'Target beaten twice — try 60 kg.', 'progress: reps ≥ T with rir 2');
   assert.equal(find(prog(12, 12, { rir2: 2, rir3: 1 }), 'progress'), undefined, 'progress: rir 1 is one short');
   assert.equal(find(prog(11, 11, { rir2: 3, rir3: 3 }), 'progress'), undefined, 'progress: rir needs reps ≥ T');
   const plan = [{ id: 'p', name: 'Pull', items: [
@@ -307,11 +308,11 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   heavier[1].entries[0].sets.push(S(5, 60));
   assert.equal(find(heavier, 'progress'), undefined, 'progress: an earlier top set of 60 kg is not W twice');
   assert.equal(find(prog(14, 14, { machine: 'm3', w: 20, w2: 20 }), 'progress')?.text,
-    '#3 Seated row: 14 × 20 kg twice — add 1–2 reps first.', 'progress: a step over 10 % of W');
+    'Target beaten twice — add 1–2 reps first.', 'progress: a step over 10 % of W');
   assert.equal(find(prog(14, 14, { machine: 'm3', w: 25, w2: 25 }), 'progress')?.text,
-    '#3 Seated row: 14 × 25 kg twice — try 27.5 kg.', 'progress: a step of exactly 10 % is fine');
+    'Target beaten twice — try 27.5 kg.', 'progress: a step of exactly 10 % is fine');
   assert.equal(find(prog(14, 14), 'progress', { settings: { unit: 'lbs', weightStep: 5 } })?.text,
-    '#2 Lat pulldown: 14 × 57.5 lbs twice — try 62.5 lbs.', 'progress: unit and step from settings');
+    'Target beaten twice — try 62.5 lbs.', 'progress: unit and step from settings');
 }
 
 // 2 frequency — ≥ 28 days of history, < 2 strength days/week over 4 full weeks
@@ -320,7 +321,7 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   // Oct 5 (2 days), Oct 12 (2), Oct 19 (2), Oct 26 (1) = 7 → 1.75
   const freq = (first, extra = []) => [first, 27, 26, 22, 20, 15, 13, 8, ...extra]
     .map((n) => W(day(n), [E('m1', [S(10, 40)])]));
-  assert.equal(find(freq(31), 'frequency')?.text, 'Last 4 weeks: 1.75 strength days/week.');
+  assert.equal(find(freq(31), 'frequency')?.text, 'Aim for 2 strength days a week — 1.75 over the last 4 weeks.');
   assert.equal(find(freq(31), 'frequency').source, 'who2020');
   assert.equal(find(freq(31, [6]), 'frequency'), undefined, 'frequency: a mean of exactly 2 is enough');
   assert.equal(find(freq(27), 'frequency'), undefined, 'frequency: 27 days of history is too short');
@@ -329,7 +330,7 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   const partial = [30, 26, 22, 20, 15, 13, 8].map((n) => W(day(n), [E('m1', [S(10, 40)])]));
   assert.equal(find(partial, 'frequency'), undefined, 'frequency: a first workout inside the oldest week leaves it partial');
   const covered = [31, 26, 22, 20, 15, 13, 8].map((n) => W(day(n), [E('m1', [S(10, 40)])]));
-  assert.equal(find(covered, 'frequency')?.text, 'Last 4 weeks: 1.5 strength days/week.',
+  assert.equal(find(covered, 'frequency')?.text, 'Aim for 2 strength days a week — 1.5 over the last 4 weeks.',
     'frequency: a first workout before the oldest week makes it full');
 }
 
@@ -340,7 +341,7 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     ...recent.map((n) => W(day(n), [E('m1', [S(10, 40)])])),
   ];
   const g = find(gap(10), 'muscle-gap');
-  assert.equal(g?.text, 'Hamstrings: last trained 10 days ago.');
+  assert.equal(g?.text, 'Train it this week — last trained 10 days ago.');
   assert.equal(g.muscle, 'Hamstrings');
   assert.equal(g.source, 'schoenfeld2016');
   assert.equal(find(gap(9), 'muscle-gap'), undefined, 'muscle-gap: 9 days is still recent');
@@ -356,7 +357,7 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     E('vt', Array.from({ length: 10 }, () => C(1000, 300))),
   ]));
   const v = find(vol([4, 4, 4, 3]), 'muscle-volume', { layout: L4 });
-  assert.equal(v?.text, 'Calves: 3.8 sets/week — your median muscle gets 8.',
+  assert.equal(v?.text, 'Add a set or two — 3.8 sets/week, your median muscle gets 8.',
     'muscle-volume fires — and the treadmill does not count as calf sets');
   assert.equal(v.muscle, 'Calves');
   assert.equal(v.source, 'schoenfeld2017');
@@ -381,7 +382,7 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   };
   const five = (gap, lastCount = 3) => [12, 10, 8, 6].map((n) => restW(n, gap)).concat(restW(4, gap, lastCount));
   const r = find(five(89), 'rest');
-  assert.equal(r?.text, 'Median 89 s between sets (incl. the set).');
+  assert.equal(r?.text, 'Hold 90 s — your median is 89 s (incl. the set).');
   assert.equal(r.source, 'pmc11349676');
   assert.equal(find(five(90), 'rest'), undefined, 'rest: a 90 s median is long enough');
   assert.equal(find(five(89, 2), 'rest'), undefined, 'rest: 9 gaps are too few');
@@ -405,12 +406,13 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     return W(t0, [...by].map(([id, s]) => E(id, s)), name ? { name } : {});
   };
   const rt = find([walk(9, BT), walk(6, BT), walk(3, BT)], 'route');
-  assert.equal(rt?.text, 'Pull day: back to #1 after #3 in 3 workouts — reorder the plan?');
+  assert.equal(rt?.text, 'Reorder — back to #1 after #3 in 3 workouts.');
   assert.equal(rt.machineId, 'm1');
   assert.equal(rt.source, 'own');
+  assert.equal(rt.workout, 'Pull day', 'the plan builder of that name shows it');
   assert.equal(find([walk(9, BT), walk(6, BT), walk(3, CLEAN)], 'route'), undefined, 'route: 2 workouts are one short');
-  assert.equal(find([walk(9, BT, null), walk(6, BT, null), walk(3, BT, null)], 'route')?.text,
-    'Back to #1 after #3 in 3 workouts — reorder the plan?', 'route: no name, no prefix');
+  assert.equal(find([walk(9, BT, null), walk(6, BT, null), walk(3, BT, null)], 'route')?.workout,
+    null, 'route: nameless workouts belong to no plan');
   const old = [30, 28, 26].map((n) => walk(n, BT));
   const recent = [20, 18, 16, 14, 12, 10, 8, 6].map((n) => walk(n, CLEAN));
   assert.equal(find([...old, ...recent], 'route'), undefined, 'route: only the last 8 paths count');
@@ -428,8 +430,9 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   });
   const mon = (n, hh, mm) => busyW(day(n, hh, mm)); // day(16|9|2) = Mondays 19 Oct (CEST), 26 Oct, 2 Nov
   const b = find([mon(16, 17, 10), mon(9, 17, 40), mon(2, 18, 30)], 'busy');
-  assert.equal(b?.text, '#8 Pec deck busy 3× on Mondays 17–19 h.');
+  assert.equal(b?.text, 'Usually busy Mondays 17–19 h — start elsewhere.');
   assert.equal(b.machineId, 'm8');
+  assert.equal(b.weekday, 1, 'Monday, for the log screen to show it on Mondays only');
   assert.equal(b.source, 'own');
   assert.equal(find([mon(16, 17, 10), mon(9, 17, 40), busyW(day(2, 18, 30), null)], 'busy'), undefined,
     'busy: 2 marks are one short');
@@ -443,7 +446,7 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   assert.equal(find([mon(16, 17, 10), threeHops, busyW(day(9, 18, 0), null)], 'busy'), undefined,
     'busy: three hops in one evening are one mark, not a weekday pattern');
   assert.equal(find([mon(16, 17, 10), mon(9, 17, 40), mon(2, 19, 10)], 'busy')?.text,
-    '#8 Pec deck busy 3× on Mondays 17–20 h.', 'busy: a span of exactly 2 h still counts');
+    'Usually busy Mondays 17–20 h — start elsewhere.', 'busy: a span of exactly 2 h still counts');
   assert.equal(find([mon(16, 17, 10), mon(9, 17, 40), mon(2, 19, 11)], 'busy'), undefined,
     'busy: 2 h 1 min is too wide');
   assert.equal(find([mon(16, 17, 10), mon(9, 17, 40), busyW(day(1, 18, 30))], 'busy'), undefined,
@@ -457,40 +460,37 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   // 60 × 8 → 76 e1RM (the best), 60 × 7 → 74; one session every 3 days
   const plat = (reps, last = 2) => reps.map((r, i) => W(day(last + (reps.length - 1 - i) * 3), [E('m1', [S(r, 60)])]));
   const p = find(plat([7, 8, 7, 7, 7, 7, 7, 7]), 'plateau');
-  assert.equal(p?.text, '#1 Chest press: no new best in 6 workouts (76 kg e1RM).');
+  assert.equal(p?.text, 'No new best in 6 workouts (76 kg e1RM) — vary reps or load.');
   assert.equal(p.machineId, 'm1');
+  assert.equal(p.exercise, null);
   assert.equal(p.source, 'pmc11435939');
+  const named = plat([7, 8, 7, 7, 7, 7, 7, 7]).map((w) => ({ ...w, entries: w.entries.map((e) => ({ ...e, exercise: 'Incline' })) }));
+  assert.equal(find(named, 'plateau')?.exercise, 'Incline', 'plateau names its exercise — the chart of that exercise shows it');
   assert.equal(find(plat([8, 7, 7, 7, 7, 7, 7]), 'plateau'), undefined, 'plateau: 7 sessions are one short');
   assert.equal(find(plat([7, 7, 8, 7, 7, 7, 7, 7]), 'plateau'), undefined, 'plateau: a best inside the last 6 is recent');
   assert.ok(find(plat([7, 8, 7, 7, 7, 7, 7, 7], 20), 'plateau'), 'plateau: trained 20 days ago still counts');
   assert.equal(find(plat([7, 8, 7, 7, 7, 7, 7, 7], 21), 'plateau'), undefined, 'plateau: 21 days ago is dropped');
 }
 
-// --- ranking ---
+// --- order: everything that fires, by weight then text — no cap ---
 {
   // three machines beat 12 by 2 at the same load: equal scores, so the
-  // text decides, and progress stops at two
+  // text decides, and all three come back — each log screen shows its own
   const trio = [9, 5, 1].map((n) => W(day(n), [E('m1', [S(14, 40)]), E('m2', [S(14, 40)]), E('m3', [S(14, 40)])]));
   const ranked = stats.insights(trio, LAYOUT, KG, { now: NOW });
   seen.push(...ranked);
-  assert.deepEqual(ranked.map((i) => i.text), [
-    '#1 Chest press: 14 × 40 kg twice — try 42.5 kg.',
-    '#2 Lat pulldown: 14 × 40 kg twice — try 42.5 kg.',
-  ], 'progress: at most two, ties broken on the text');
-  assert.equal(stats.insights(trio, LAYOUT, KG, { now: NOW, max: 1 }).length, 1, 'max is honoured');
+  assert.deepEqual(ranked.map((i) => [i.kind, i.machineId]),
+    [['progress', 'm1'], ['progress', 'm2'], ['progress', 'm3']], 'no cap: a third machine is not silenced');
   assert.deepEqual(stats.insights(trio.slice(1), LAYOUT, KG, { now: NOW }), [], 'fewer than 3 workouts: nothing');
 
-  // one machine, two findings: progress (50) outranks plateau (40) on the
-  // same machine, and plateau shows once progress no longer fires
+  // one machine, two findings: progress (50) sorts before plateau (40),
+  // and both come back — they sit on different screens
   const both = [100, ...Array(7).fill(60)].map((kg, i) => W(day(23 - i * 3), [E('m1', [S(kg === 100 ? 8 : 10, kg)])]));
   const plan = [{ id: 'p', items: [{ machineId: 'm1', exercise: null, target: { sets: 3, reps: 8, weight: 60 } }] }];
-  const withPlan = stats.insights(both, LAYOUT, KG, { now: NOW, plans: plan, max: 20 });
-  const noPlan = stats.insights(both, LAYOUT, KG, { now: NOW, max: 20 });
-  seen.push(...withPlan, ...noPlan);
-  assert.deepEqual(withPlan.filter((i) => i.machineId === 'm1').map((i) => i.kind), ['progress'],
-    'one insight per machine');
-  assert.deepEqual(noPlan.filter((i) => i.machineId === 'm1').map((i) => i.kind), ['plateau'],
-    'the plateau is real — only the per-machine rule hid it');
+  const withPlan = stats.insights(both, LAYOUT, KG, { now: NOW, plans: plan });
+  seen.push(...withPlan);
+  assert.deepEqual(withPlan.filter((i) => i.machineId === 'm1').map((i) => i.kind), ['progress', 'plateau'],
+    'progress first, the plateau stays visible under its chart');
 }
 
 // --- shape of every insight produced above ---
@@ -504,7 +504,8 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     const mag = i.score - WEIGHT[i.kind];
     assert.ok(mag >= 0 && mag <= 9 && Number.isInteger(mag), `${i.kind}: magnitude ${mag} within 0–9`);
     assert.ok(stats.SOURCES[i.source], `${i.kind}: source ${i.source} is a SOURCES key`);
-    assert.match(i.why, /^[A-Z].*\.$/, `${i.kind}: why is one sentence`);
+    assert.match(i.text, /^[A-Z][^:]*\.$/, `${i.kind}: an instruction, one sentence, no "Machine:" prefix — the screen names the subject`);
+    assert.equal('why' in i, false, `${i.kind}: no explainer, the ↗ is the detail`);
   });
   for (const key of ['who2020', 'acsm2009', 'garber2011', 'schoenfeld2016', 'schoenfeld2017',
     'pelland2025', 'pmc11435939', 'pmc11349676', 'detraining']) {

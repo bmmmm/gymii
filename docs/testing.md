@@ -42,7 +42,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   matrix, RS vectors, full decode round-trip, penalty rules, overflow), `train` (guided-plan
   construction, hub/start/plans navigation), `plan` (stored plans, the note parser/serialiser, AI
   import, binding, targets), `history` (the two screens and the
-  entry reset, name filter, week card, insights, progress chips/range/pick,
+  entry reset, name filter, week card, hints, progress chips/range/pick,
   walking paths, muscle card + filter, heatmap state, full editor,
   back-logging), `map` (the shared renderer: px-sized touch
   targets, viewBox clamping, wall/door geometry, the usage ramp, collision

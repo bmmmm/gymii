@@ -6,11 +6,11 @@ import {
 import {
   esc, fmtDate, fmtDay, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
   dateValue, timeValue, machineChain, keepInView, minsBetween, fmtDuration,
-  parseDuration, parseDistance,
+  parseDuration, parseDistance, hintHtml,
 } from './ui.js';
 import { lineChart, barChart } from './chart.js';
 import {
-  machineSeries, weeklyBuckets, insights, SOURCES, workoutPath, transitionCounts,
+  machineSeries, weeklyBuckets, insights, workoutPath, transitionCounts,
 } from './stats.js';
 import { drawLayout } from './map.js';
 import { startWorkoutFrom } from './train.js';
@@ -137,7 +137,11 @@ function historyContext() {
   const options = [...machines.entries()].sort(byNum); // the heatmap's <select>
   // the Progress chips: most recently trained first
   const recent = [...machines.entries()].sort((a, b) => b[1].last - a[1].last || byNum(a, b));
-  return { all, named, byName, workouts, s, unit: s.unit, layout, allMuscles, options, recent };
+  // The hints (stats.js insights) read EVERY workout, never the filtered
+  // list: "1.5 strength days a week" says nothing about one routine on its
+  // own. Each card shows only the rows about the thing on it.
+  const hints = insights(all, layout, s, { plans: getPlans() });
+  return { all, named, byName, workouts, s, unit: s.unit, layout, allMuscles, options, recent, hints };
 }
 
 const optionHtml = ([key, m]) => `<option value="${esc(key)}">#${m.num} ${esc(m.label)}${
@@ -153,7 +157,7 @@ const entryMatches = (e, sel) =>
 
 // The overview: a sequence of cards, rendered in this order. Each is
 // { html(ctx) -> markup, wire(root, ctx) }; a new card is one entry here.
-const overviewCards = () => [weekCard, insightCard, progressCard, pathCard, muscleCard];
+const overviewCards = () => [weekCard, progressCard, pathCard, muscleCard];
 
 function renderOverview(root, ctx) {
   const cards = overviewCards();
@@ -212,7 +216,7 @@ function wireNameFilter(root) {
 // the filter for that muscle. Computing over `byName` (not `workouts`) is
 // what keeps other muscles reachable while one is selected.
 const muscleCard = {
-  html({ allMuscles, byName, layout }) {
+  html({ allMuscles, byName, layout, hints }) {
     if (!allMuscles.length) return '';
     const usage = usageByMuscle(byName, layout);
     const rows = allMuscles
@@ -238,7 +242,7 @@ const muscleCard = {
               ? ` · ${plural(r.workouts, 'workout')}` : ''}</span></span>
           <span class="bar-track"><span class="bar-fill"
             style="width:${Math.round((r.sets / max) * 100)}%"></span></span>
-        </button>`).join('')}
+        </button>${hints.filter((it) => it.muscle === r.mu).map((it) => hintHtml(it, 'muscle-hint')).join('')}`).join('')}
       </div>
       ${lost ? `<p class="muted">${plural(lost, 'set')} can't be attributed —
         their machine is gone or has no muscles tagged.</p>` : ''}
@@ -259,8 +263,8 @@ const muscleCard = {
 // --- This week: four totals, twelve weeks of bars, that week's workouts ---
 // The tiles pick what the bars count (`settings.historyMetric`, device-local
 // like the range — merge.js does not sync it); a bar picks the week that the
-// title, the tiles and the list describe. Follows the filters (only Worth a
-// look reads everything), and ends in the way into the Workouts screen.
+// title, the tiles and the list describe. Follows the filters (only the
+// hints read everything), and ends in the way into the Workouts screen.
 const WEEKS = 12;
 const METRICS = [['workouts', 'Workouts'], ['sets', 'Sets'], ['volume', 'Volume'], ['minutes', 'Time']];
 const metricOf = (s) => (METRICS.some(([k]) => k === s.historyMetric) ? s.historyMetric : 'sets');
@@ -299,6 +303,7 @@ const weekCard = {
     <section class="card" id="week-card">
       <h2 id="week-title">${weekTitle(weekData(ctx))}</h2>
       <div class="tile-grid" id="week-tiles"></div>
+      ${ctx.hints.filter((it) => it.kind === 'frequency').map((it) => hintHtml(it, 'week-hint')).join('')}
       <div class="chart-wrap" id="week-chart"></div>
       <div id="week-workouts"></div>
       <button type="button" id="open-workouts" class="btn">All workouts (${ctx.workouts.length}) ›</button>
@@ -359,68 +364,6 @@ const weekCard = {
   },
 };
 
-// --- Worth a look: up to three observations, each with its why and source ---
-// Read over EVERY workout, not the filtered list: "1.5 strength days a
-// week" says nothing about one routine on its own. So a tap shows its
-// target unfiltered — the machine on the Progress card, or the muscle as
-// the only filter. A row with nothing to show is text, never a button that
-// does nothing. Omitted when no rule fires (stats.js: none under three
-// workouts) — "nothing to say" needs no card.
-
-// The newest 'machineId exercise' key trained at a machine (the insight
-// names the machine only), or null when it was never trained — a busy mark
-// can name a machine you always skipped.
-function latestKey(all, machineId) {
-  for (let i = all.length - 1; i >= 0; i--) { // stored oldest first
-    const e = all[i].entries.find((x) => x.machineId === machineId && x.sets.length);
-    if (e) return `${machineId} ${e.exercise ?? ''}`;
-  }
-  return null;
-}
-
-function insightHtml(it, all) {
-  const key = it.machineId ? latestKey(all, it.machineId) : null;
-  const target = key ? ` data-machine="${esc(key)}"` : it.muscle ? ` data-muscle="${esc(it.muscle)}"` : '';
-  const body = `<span class="insight-text">${esc(it.text)}</span><span class="why">${esc(it.why)}</span>`;
-  const src = SOURCES[it.source];
-  // The link sits OUTSIDE the row: a link inside a button is not clickable
-  // on its own. A study's name reads as its source; plain text says so.
-  return `
-      <div class="insight">
-        ${target ? `<button type="button" class="insight-row"${target}>${body}</button>`
-    : `<p class="insight-row">${body}</p>`}
-        ${src ? `<p class="insight-src">${src.url
-    ? `<a href="${esc(src.url)}" target="_blank" rel="noopener">${esc(src.label)} ↗</a>`
-    : `Source: ${esc(src.label)}`}</p>` : ''}
-      </div>`;
-}
-
-const insightCard = {
-  html({ all, layout, s }) {
-    const list = insights(all, layout, s, { plans: getPlans() });
-    return list.length ? `
-    <section class="card info-box" id="insight-card">
-      <h2>Worth a look</h2>
-      ${list.map((it) => insightHtml(it, all)).join('')}
-    </section>` : '';
-  },
-  wire(root) {
-    root.querySelector('#insight-card')?.addEventListener('click', (e) => {
-      const row = e.target.closest('.insight-row');
-      const { machine, muscle } = row?.dataset ?? {};
-      if (!machine && !muscle) return; // a text row
-      nameFilter = '';
-      muscleFilter = muscle ?? '';
-      if (machine) {
-        pickedMachine = machine;
-        pickedT = null; // a point of another machine means nothing here
-      }
-      renderHistory(root);
-      keepInView(root, '#progress-card');
-    });
-  },
-};
-
 // --- Progress: one machine's top set over time ---
 // Machine chips (most recently trained first) pick the machine, range
 // chips the window (`settings.historyRange`, device-local — merge.js does
@@ -471,15 +414,17 @@ const progressCard = {
       <div class="chip-select scroll" id="machine-chips">${machineChipsHtml(recent)}</div>
       <div class="map-mode" id="range-chips">${rangeChipsHtml(rangeOf(s))}</div>
       <div class="chart-wrap" id="chart"></div>
+      <div id="chart-note"></div>
       <div class="c-pick" id="chart-pick" role="status"></div>`
     // a filter combination can leave no machine at all — say so
     : '<p class="muted">No machines match this filter.</p>'}
     </section>`,
-  wire(root, { workouts, recent, s, unit }) {
+  wire(root, { workouts, recent, s, unit, hints }) {
     if (!recent.length) return;
     const chipsEl = root.querySelector('#machine-chips');
     const rangeEl = root.querySelector('#range-chips');
     const chartEl = root.querySelector('#chart');
+    const noteEl = root.querySelector('#chart-note');
     const pickEl = root.querySelector('#chart-pick');
     const chartTitle = root.querySelector('#chart-title');
 
@@ -493,6 +438,11 @@ const progressCard = {
       const key = shownKey(recent);
       const m = new Map(recent).get(key);
       const sel = decodeKey(key);
+      // the plateau hint for exactly this machine AND exercise — a hint
+      // about another exercise on the same machine says nothing about
+      // this chart
+      noteEl.innerHTML = hints.filter((it) => it.kind === 'plateau' && entryMatches(it, sel))
+        .map((it) => hintHtml(it)).join('');
       const series = machineSeries(workouts, sel.machineId, sel.exercise);
       if (!series.length) { // an entry without sets: nothing to plot
         chartTitle.textContent = 'Progress';

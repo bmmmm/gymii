@@ -77,3 +77,33 @@ const toSeconds = (text) => {
   const parts = text.trim().split(':').map(Number);
   return parts.reduce((total, part) => total * 60 + part, 0);
 };
+
+// The rest hint (stats.js rule 5) lives only in the overlay, and the
+// overlay only exists in a browser: runRest() returns before any DOM when
+// there is no `document`, so the Node suite never sees this markup.
+test('the rest overlay carries the rest hint with its 44px ↗', async ({ page }) => {
+  await seedDemoGym(page);
+  // five workouts in the last hours with 60 s between stamped sets: a
+  // median under 90 s, from ten or more gaps
+  await page.evaluate(async () => {
+    const store = await import('/js/store.js');
+    const now = Date.now();
+    const short = [1, 2, 3, 4, 5].map((n) => {
+      const t0 = now - n * 3600e3 - 1800e3;
+      return {
+        id: `short${n}`, startedAt: t0, finishedAt: t0 + 900e3,
+        entries: [{ machineId: 'lat-pulldown', num: 2, label: 'Lat pulldown', settings: {},
+          sets: [0, 1, 2].map((k) => ({ reps: 10, weight: 50, at: t0 + 100e3 + k * 60e3 })) }],
+      };
+    });
+    store.saveWorkouts([...store.getWorkouts(), ...short]);
+  });
+  await startWorkoutAt(page, 1);
+  await page.locator('#log-set').click();
+  const hint = page.locator('.overlay .rest-hint');
+  await expect(hint).toHaveText(/^Hold 90 s — your median is 60 s \(incl\. the set\)\.↗$/);
+  const box = await hint.locator('a').boundingBox();
+  expect(box.width).toBeGreaterThanOrEqual(44);
+  expect(box.height).toBeGreaterThanOrEqual(44);
+  await expect(hint.locator('a')).toHaveAttribute('href', /PMC11349676/);
+});

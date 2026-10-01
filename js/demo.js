@@ -227,7 +227,7 @@ const secs = (trng, lo, hi) => Math.round((lo + trng() * (hi - lo)) * SEC);
 const rirFor = (reps) => Math.min(3, Math.max(1, 11 - reps));
 
 // The machine stops of a workout in walking order, one per machine block
-// (entry order). Pull days carry two detours, each a History insight:
+// (entry order). Pull days carry two detours, each a hint (stats.js):
 // - the seated row's LAST set waits until after the curls, every week — a
 //   recurring walk back (stats.js rule 6, route);
 // - weeks 1-3 the pull-up bar was taken after the rows, so the user took

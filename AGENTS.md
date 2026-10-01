@@ -68,7 +68,8 @@ exist because breaking them was once a real bug.
   `save()`) and never imports from train.js/plan.js.
 - `js/train.js` — hub, guided workout, rest timer (the rest belongs to the
   WORKOUT); `js/plan.js` — the plan builder, works without a gym.
-- `js/history.js` — overview (week, insights, progress, paths, muscles) +
+- `js/history.js` — overview (week, progress, paths, muscles, with the hints
+  of stats.js where they apply) +
   Workouts screen (list, editor, back-logging); `js/chart.js` — its charts;
   `js/stats.js` — pure History analytics, no imports (like merge.js); rules,
   thresholds and sources live in docs/insights.md — change both together;

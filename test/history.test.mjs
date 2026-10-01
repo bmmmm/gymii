@@ -132,7 +132,6 @@ assert.ok(/class="chip sel"\s+data-key="m1 "/.test(root.innerHTML),
 // Two screens. The overview analyses; the Workouts screen holds what you
 // did, day by day and workout by workout, and the form that adds one.
 const order = (heads) => heads.map((h) => root.innerHTML.search(new RegExp(`<h2[^>]*>${h}`)));
-// "Worth a look" renders only when a rule fires, so it is pinned below
 const overviewOrder = order(['This week', 'Progress', 'Walking paths', 'Muscles']);
 assert.ok(overviewOrder.every((i) => i > 0), 'every overview card renders');
 assert.deepEqual(overviewOrder.slice().sort((a, b) => a - b), overviewOrder,
@@ -580,55 +579,66 @@ assert.deepEqual(tile('volume'), ['2,500 kg', 'vs 500 kg the week before']);
 root.querySelector('#week-tiles').listeners.click(clickOn('.tile', { metric: 'minutes' }));
 assert.deepEqual(tile('minutes'), ['2:00 h', 'vs 45 min the week before'], 'time reads in hours from 60 min');
 
-// --- Worth a look: insights with a why, a source, and a target to tap ---
-// Same weekday 21/14/7/0 days back at 18:00: Chest press 14 × 50 twice
-// (progress), Leg press busy on three of those evenings (busy, own data),
-// Quads last trained 21 days ago while training went on (muscle gap).
+// --- Hints: an instruction with a ↗ to its study, where the user acts ---
+// Weekly on one weekday, 49 … 0 days back at 18:00: Chest press 14 × 50
+// twice (progress — a log-screen hint, train.test.mjs), its Incline
+// exercise stuck at 60 kg for eight sessions (plateau — under the chart of
+// THAT exercise), Leg press busy on three evenings (busy — a log-screen
+// hint), Quads last trained 21 days ago while training went on (muscle
+// gap — under the Quads row), one strength day a week (frequency — under
+// the week tiles). History reads every workout, so nothing here depends
+// on a filter.
 const dayAt = (daysBack, hour) => {
   const d = store.startOfDay(Date.now());
   d.setDate(d.getDate() - daysBack);
   d.setHours(hour);
   return d.getTime();
 };
-const chestDay = (id, back) => ({
+const incline = (reps) => ({ ...entry('m3', 7, 'Chest press', [{ reps, weight: 60 }]), exercise: 'Incline' });
+const chestDay = (id, back, reps) => ({
   id, startedAt: dayAt(back, 18), finishedAt: dayAt(back, 19),
-  entries: [entry('m3', 7, 'Chest press', [{ reps: 14, weight: 50 }])],
+  entries: [entry('m3', 7, 'Chest press', [{ reps: 14, weight: 50 }]), incline(reps)],
   visits: [{ machineId: 'm3', in: dayAt(back, 18), out: dayAt(back, 18) + 600000, busy: 'm1' }],
 });
+const inclineDay = (id, back, reps) => ({
+  id, startedAt: dayAt(back, 18), finishedAt: dayAt(back, 19), entries: [incline(reps)],
+});
 store.saveWorkouts([
-  { id: 'i1', startedAt: dayAt(21, 18), finishedAt: dayAt(21, 19), entries: [entry('m1', 14, 'Leg press', sets(3))] },
-  chestDay('i2', 14), chestDay('i3', 7), chestDay('i4', 0),
+  inclineDay('i0', 49, 7), inclineDay('i1', 42, 8), inclineDay('i2', 35, 7), inclineDay('i3', 28, 7),
+  { id: 'i4', startedAt: dayAt(21, 18), finishedAt: dayAt(21, 19), entries: [entry('m1', 14, 'Leg press', sets(3)), incline(7)] },
+  chestDay('i5', 14, 7), chestDay('i6', 7, 7), chestDay('i7', 0, 7),
 ]);
 enter();
-const insightBlocks = () => root.innerHTML.split('<div class="insight">').slice(1);
-const block = (text) => insightBlocks().find((b) => b.includes(text)) ?? '';
-assert.ok(root.innerHTML.includes('id="insight-card"'), 'the insight card renders');
-assert.deepEqual(order(['This week', 'Worth a look', 'Progress']).slice().sort((a, b) => a - b),
-  order(['This week', 'Worth a look', 'Progress']), 'right after This week, before Progress');
-assert.equal(insightBlocks().length, 3, 'three insights at most');
-assert.ok(/<button type="button" class="insight-row" data-machine="m3 ">/.test(block('try 52.5 kg')),
-  'a machine insight is a button that carries its machine');
-assert.ok(block('try 52.5 kg').includes(
-  'href="https://doi.org/10.1249/MSS.0b013e3181915670" target="_blank" rel="noopener"'),
-  'a study source links to the study');
-assert.ok(block('busy 3×').includes('Your own logged workouts') && !block('busy 3×').includes('<a'),
-  'your own data is named as the source, with no link to nowhere');
-assert.ok(block('Quads: last trained 21 days ago').includes('data-muscle="Quads"'),
-  'a muscle insight carries its muscle');
+const hint = (text) => root.innerHTML.split('<p class="hint').slice(1).find((h) => h.includes(text)) ?? '';
+assert.ok(!root.innerHTML.includes('Worth a look') && !root.innerHTML.includes('insight'),
+  'no card of its own: a hint sits where the user acts');
+assert.ok(hint('Aim for 2 strength days a week — 1 over the last 4 weeks.').startsWith(' week-hint"'),
+  'frequency under the week tiles');
+assert.ok(root.innerHTML.search('week-hint') < root.innerHTML.search('id="week-chart"'),
+  'the week hint sits between the tiles and the bars');
+assert.ok(hint('Aim for 2 strength days').includes(
+  'href="https://pmc.ncbi.nlm.nih.gov/articles/PMC7719906/" target="_blank" rel="noopener" aria-label="Source: WHO 2020 guidelines"'),
+  'the ↗ opens the study, named for screen readers');
+const quadsRow = root.innerHTML.slice(root.innerHTML.indexOf('data-muscle="Quads"'));
+assert.match(quadsRow, /^[^]*?<\/button><p class="hint muscle-hint"><span>Train it this week — last trained 21 days ago\.<\/span><a /,
+  'the muscle hint follows its row as a sibling — a link inside a button is no link');
+assert.ok(!hint('Target beaten twice') && !hint('Usually busy'),
+  'progress and busy belong to the log screen, not to History');
+assert.equal(root.querySelector('#chart-note').innerHTML, '',
+  'the plateau hint is not on show for the newest machine (Chest press, no exercise)');
+assert.equal(root.innerHTML.split('class="hint muscle-hint"').length - 1, 1, 'one muscle hint: Quads only');
+tapMachine('m3 Incline');
+assert.equal(selKey(machineChips().innerHTML), 'm3 Incline');
+assert.ok(root.querySelector('#chart-note').innerHTML.includes('No new best in 6 workouts (76 kg e1RM) — vary reps or load.'),
+  'the plateau hint sits under the chart of exactly that exercise');
+assert.ok(root.querySelector('#chart-note').innerHTML.includes('href="https://pmc.ncbi.nlm.nih.gov/articles/PMC11435939/"'));
+tapMachine('m3 ');
+assert.equal(root.querySelector('#chart-note').innerHTML, '', 'the same machine, another exercise: no note');
 
-// a tap selects its target on the Progress card
-tapMachine('m1 '); // not the default (the newest, m3), or the tap would prove nothing
-const insightCard = () => root.querySelector('#insight-card');
-insightCard().listeners.click(clickOn('.insight-row', { machine: 'm3 ' }));
-assert.equal(selKey(root.innerHTML), 'm3 ', 'a machine insight selects its machine');
-insightCard().listeners.click(clickOn('.insight-row', { muscle: 'Quads' }));
-assert.ok(pressed('Quads'), 'a muscle insight sets the muscle filter');
-root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: '' }));
-
-// nothing worth saying, no card: under three workouts no rule runs
+// nothing to say, nothing shown: under three workouts no rule runs
 store.saveWorkouts(store.getWorkouts().slice(-2));
 render();
-assert.ok(!root.innerHTML.includes('id="insight-card"'), 'no insights, no card');
+assert.ok(!root.innerHTML.includes('class="hint'), 'no hint anywhere');
 
 // --- Walking paths: the route of a live-logged workout ---
 store.saveLayout({

@@ -1,6 +1,7 @@
 // Small shared UI helpers.
 
 import { distUnit } from './store.js';
+import { SOURCES } from './stats.js'; // stats.js imports nothing: no cycle
 
 // Local-time values for the date/time inputs — toISOString would shift a
 // late-evening workout onto the previous day for anyone west of UTC.
@@ -469,4 +470,16 @@ export function workoutTotals(workout, settings) {
   if (volume) parts.push(`${Math.round(volume)} ${settings.unit}`);
   if (distance) parts.push(`${Math.round(distance * 100) / 100} ${distUnit(settings)}`);
   return parts.join(' · ') || `0 ${settings.unit}`;
+}
+
+// One insight (stats.js `insights()`) as a hint line: the instruction, and
+// a ↗ to the study it rests on — the row's own subject (machine, muscle,
+// plan) is on the screen already, so the text names none. A hint from the
+// user's own records (`own`, url null) gets no link. Never inside a
+// button: a link in a button is no link.
+export function hintHtml(it, cls = '') {
+  const src = SOURCES[it.source];
+  return `<p class="hint${cls ? ` ${cls}` : ''}"><span>${esc(it.text)}</span>${src?.url
+    ? `<a href="${esc(src.url)}" target="_blank" rel="noopener" aria-label="Source: ${esc(src.label)}" title="${esc(src.label)}">↗</a>`
+    : ''}</p>`;
 }
