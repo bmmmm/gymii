@@ -624,6 +624,7 @@ export async function pairWithCode(gid, code) {
   // readable — pretending otherwise here would be theater), and an E2E code
   // cannot pair where the browser refuses crypto.
   if (!plain && !e2eAvailable()) throw new Error('no-crypto');
+  const before = { cfg: getSyncConfig(gid), key: getSyncKey(gid) };
   if (plain) {
     saveSyncKey(gid, null);
     saveSyncConfig(gid, {
@@ -642,7 +643,17 @@ export async function pairWithCode(gid, code) {
       v: 1, server, token, remoteId: gymId, rev: 0, lastSyncAt: null, lastError: null,
     });
   }
-  return { code: getSyncCode(gid), sync: await syncNow(gid) };
+  const sync = await syncNow(gid);
+  // A refused token is a dead code — most often an invite another device
+  // already redeemed, whose token that device then retired. Keep nothing of
+  // it: a config holding a dead token would read as "paired" while every
+  // sync fails, so the gym goes back to exactly what it was.
+  if (sync.status === 'auth') {
+    saveSyncConfig(gid, before.cfg);
+    saveSyncKey(gid, before.key);
+    throw new Error('code-used');
+  }
+  return { code: getSyncCode(gid), sync };
 }
 
 // Turning sync off drops the credentials, never the data.

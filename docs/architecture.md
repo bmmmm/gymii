@@ -252,7 +252,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `lastSeenAt`/`kind` pass through untouched. A minted pairing code carries
   `invite: true`; `getSyncCode` (this device's OWN token) never does — a
   redeemer like gymii-cli revokes an invite token once its own works, so a
-  flag on an own code would cut a live device off (test-pinned). The Sync
+  flag on an own code would cut a live device off (test-pinned). So a code
+  can be dead when it arrives: `pairWithCode` keeps nothing when its first
+  sync answers `auth` — config and key go back to what they were and it
+  throws `code-used`, never a "paired" gym on a dead token. The Sync
   card's backup hint (settings.js `backupHint`) reads that list at most
   once per 10 min per gym, cached in module state so re-renders neither
   refetch nor drop it; only `kind:"backup"` ever triggers it. Both writers

@@ -882,4 +882,24 @@ try {
   secureContext();
 }
 
+// 18 — a code whose token the server refuses (an invite another device
+// already redeemed and retired) pairs nothing: no dead config is left behind
+devices.V = new Map();
+useDevice('V');
+seedRegistry();
+srv = fakeServer({
+  tokens: [{
+    token: 'tok-live', hash: 'e'.repeat(64), mintedAt: '2026-09-01T00:00:00Z', name: 'phone',
+  }],
+});
+const code18 = (token) => `gymii-sync:v1:${Buffer.from(JSON.stringify({
+  server: 'http://box:8639', token, pass: 'used-code-pass', gymId: 'g18', invite: true,
+})).toString('base64url')}`;
+await assert.rejects(() => sync.pairWithCode(gid, code18('tok-retired')), /code-used/,
+  '18: a refused code says so');
+assert.equal(store.getSyncConfig(gid), null, '18: no config with a dead token');
+assert.equal(store.getSyncKey(gid), null, '18: no key from a dead code');
+const ok18 = await sync.pairWithCode(gid, code18('tok-live'));
+assert.equal(ok18.sync.status, 'synced', '18: a live code still pairs after a refused one');
+
 console.log('sync client: all assertions passed');

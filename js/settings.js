@@ -114,6 +114,8 @@ const SYNC_ERRORS = {
   'bad-server': 'Enter both the server URL and the token your sync server printed.',
   'empty-server': 'Enter the new server address first.',
   'bad-code': 'That is not a gymii sync code — copy the whole line, it starts with "gymii-sync:v1:".',
+  'code-used': 'This code no longer works — another device already used it, or it was revoked. '
+    + 'On a paired device, tap "Pair another device" for a fresh one.',
   'demo-gym': 'The demo gym never syncs.',
   'unknown-gym': 'This gym is gone — switch gyms and try again.',
   'no-crypto': 'This code is for an encrypted gym, and this page runs without HTTPS, '
