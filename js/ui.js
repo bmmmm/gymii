@@ -182,6 +182,17 @@ export function download(filename, data) {
 export const fmtDate = (ts) =>
   new Date(ts).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 
+// "Thu 1 Oct" — a day inside a range the reader already has in view (a
+// heatmap month, a chart). Fixed English names, not toLocaleDateString:
+// en-GB reads "Sept" on newer ICU builds, and a label must not change with
+// the runtime (chart.js keeps its own copy — it imports nothing).
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export const fmtDay = (ts) => {
+  const d = new Date(ts);
+  return `${DAY_NAMES[d.getDay()]} ${d.getDate()} ${MONTH_NAMES[d.getMonth()]}`;
+};
+
 export const fmtTime = (ts) =>
   new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
