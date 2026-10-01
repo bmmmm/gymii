@@ -17,8 +17,10 @@ export const timeValue = (ts) => {
 
 // Distinct machine nums of a workout's entries, in entry order — dedup so a
 // workout with two exercises at one machine reads '#16', not '#16 → #16'.
+// HTML-ready, like setStr and workoutTotals: every caller interpolates it
+// into markup, and a stored record may predate store.js § untrusted input.
 export const machineChain = (workout) =>
-  [...new Set(workout.entries.map((e) => `#${e.num}`))].join(' → ');
+  [...new Set(workout.entries.map((e) => `#${esc(e.num)}`))].join(' → ');
 
 // One delegated handler powers every .stepper on the page:
 // <div class="stepper" data-step="2.5" data-min="0"><button class="step-down">−</button><input><button class="step-up">+</button></div>
@@ -307,18 +309,18 @@ export function parseDistance(str, metric) {
 // reports the field as empty.
 export const stepperField = (label, id, { step, min, value, mode = 'decimal', kind, metric }) => `
   <div class="spread"><span class="label">${label}</span>
-    <div class="stepper" data-step="${step}" data-min="${min}">
+    <div class="stepper" data-step="${esc(step)}" data-min="${min}">
       <button type="button" class="step-down" aria-label="decrease ${label.toLowerCase()}">−</button>
       ${kind ? `<input id="${id}" type="text" inputmode="${kind === 'time' ? 'numeric' : 'decimal'}" autocomplete="off" data-kind="${kind}"${
-    metric ? ' data-metric="1"' : ''} value="${kind === 'time' ? fmtDuration(value) : value}">`
-    : `<input id="${id}" type="number" inputmode="${mode}" value="${value}">`}
+    metric ? ' data-metric="1"' : ''} value="${esc(kind === 'time' ? fmtDuration(value) : value)}">`
+    : `<input id="${id}" type="number" inputmode="${mode}" value="${esc(value)}">`}
       <button type="button" class="step-up" aria-label="increase ${label.toLowerCase()}">+</button>
     </div>
   </div>`;
 
 // One set, rendered compactly; bodyweight shares {reps,weight}, so its
-// flag is passed in rather than sniffed from the shape.
-export const setStr = (st, settings, bodyweight = false) => (st.distance != null
+// flag is passed in rather than sniffed from the shape. HTML-ready.
+export const setStr = (st, settings, bodyweight = false) => esc(st.distance != null
   ? `${st.distance} ${distUnit(settings)} · ${fmtDuration(st.seconds)}`
   : bodyweight
     ? (st.weight ? `BW+${st.weight}×${st.reps}` : `BW×${st.reps}`)
@@ -471,16 +473,17 @@ export function playTimerSound(name) {
 
 // "500 kg · 3.2 km"-style rollup of a workout's strength volume and cardio
 // distance; parts appear only when non-zero so pure-cardio workouts don't
-// read "0 kg".
+// read "0 kg". HTML-ready.
 export function workoutTotals(workout, settings) {
   const volume = workout.entries.reduce(
     (v, e) => v + e.sets.reduce((x, st) => x + (st.reps * st.weight || 0), 0), 0);
   const distance = workout.entries.reduce(
     (v, e) => v + e.sets.reduce((x, st) => x + (st.distance || 0), 0), 0);
+  const unit = esc(settings.unit);
   const parts = [];
-  if (volume) parts.push(`${Math.round(volume)} ${settings.unit}`);
+  if (volume) parts.push(`${Math.round(volume)} ${unit}`);
   if (distance) parts.push(`${Math.round(distance * 100) / 100} ${distUnit(settings)}`);
-  return parts.join(' · ') || `0 ${settings.unit}`;
+  return parts.join(' · ') || `0 ${unit}`;
 }
 
 // One insight (stats.js `insights()`) as a hint line: the instruction, and

@@ -282,7 +282,7 @@ function statusText(status) {
 // machineChain (which reads a workout's entries).
 const planChain = (plan, layout) => [...new Set(plan.items
   .map((it) => layout?.machines.find((m) => m.id === it.machineId))
-  .filter(Boolean).map((m) => `#${m.num}`))].join(' → ');
+  .filter(Boolean).map((m) => `#${esc(m.num)}`))].join(' → ');
 
 // "last done" for a plan comes from history via its name
 const planLastDone = (workouts, p) => (p.name
@@ -324,7 +324,7 @@ function planListCard(layout, plans, workouts) {
     const count = p.items.length;
     const open = p.items.filter((it) => !it.machineId).length;
     return `<div class="recent-row">
-          <button type="button" class="recent-info row-open" data-pid="${p.id}">
+          <button type="button" class="recent-info row-open" data-pid="${esc(p.id)}">
             <span class="row-text">
               <strong>${p.name ? esc(p.name) : planChain(p, layout) || 'Unnamed plan'}${isTodayPlan(p)
     ? ' <span class="muted">· today</span>' : ''}</strong>
@@ -336,7 +336,7 @@ function planListCard(layout, plans, workouts) {
             </span>
             <span class="row-chevron" aria-hidden="true">›</span>
           </button>
-          <button class="btn btn-inline plan-start" data-pid="${p.id}">Start</button>
+          <button class="btn btn-inline plan-start" data-pid="${esc(p.id)}">Start</button>
         </div>`;
   }).join('')}
       </div>
@@ -548,7 +548,7 @@ function renderStart(root, layout, message) {
       <div id="routine-list">
         ${routines.map((w) => `
         <div class="recent-row">
-          <button type="button" class="recent-info row-open" data-wid="${w.id}">
+          <button type="button" class="recent-info row-open" data-wid="${esc(w.id)}">
             <span class="row-text">
               <strong>${w.name ? esc(w.name) : machineChain(w)}</strong>
               <span class="muted">${w.name ? `${machineChain(w)} · ` : ''}last: ${new Date(w.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
@@ -556,7 +556,7 @@ function renderStart(root, layout, message) {
             </span>
             <span class="row-chevron" aria-hidden="true">›</span>
           </button>
-          <button class="btn btn-inline repeat-w" data-wid="${w.id}">Repeat</button>
+          <button class="btn btn-inline repeat-w" data-wid="${esc(w.id)}">Repeat</button>
         </div>`).join('')}
       </div>
       <p class="muted">These come from what you've logged. Tap one to make it a
@@ -802,7 +802,7 @@ function machinePicker(container, layout, onPick, { actionLabel = 'Open' } = {})
     if (chips) {
       chips.innerHTML = matching
         .sort((a, b) => a.num - b.num)
-        .map((m) => `<button class="chip" data-id="${m.id}">#${m.num} ${esc(m.label)}</button>`)
+        .map((m) => `<button class="chip" data-id="${esc(m.id)}">#${esc(m.num)} ${esc(m.label)}</button>`)
         .join('');
     }
   };
@@ -842,7 +842,7 @@ function showMapOverlay(layout, machine) {
   overlay.className = 'overlay map-overlay';
   overlay.innerHTML = `
     <div class="machine-head">
-      <span class="machine-badge">${machine.num}</span>
+      <span class="machine-badge">${esc(machine.num)}</span>
       <div class="title">${esc(machine.label)}</div>
     </div>
     <div class="map-wrap"><svg xmlns="http://www.w3.org/2000/svg"></svg></div>
@@ -942,10 +942,10 @@ function renderOverview(root, layout, active) {
     const status = !slotSets && !done ? 'open'
       : `${done ? '✓ ' : ''}${slotSets}${goal ? `/${goal}` : ''} set${(goal ?? slotSets) === 1 ? '' : 's'}`;
     return `<button class="plan-row" data-i="${i}" ${machine ? '' : 'disabled'}>
-      <span class="machine-badge sm">${num}</span>
+      <span class="machine-badge sm">${esc(num)}</span>
       <span class="plan-label">${esc(label)}${slot.exercise
         ? ` <span class="muted">· ${esc(slot.exercise)}</span>` : ''}</span>
-      <span class="plan-status${done ? ' done' : ''}">${status}</span>
+      <span class="plan-status${done ? ' done' : ''}">${esc(status)}</span>
     </button>`;
   }).join('');
 
@@ -953,7 +953,7 @@ function renderOverview(root, layout, active) {
     <h1>Workout</h1>
     <p class="muted">${mins} min · ${plural(sets, 'set')} · ${workoutTotals(active, s)}${(() => {
     const tally = targetTally(active);
-    return tally.total ? ` · ${tally.hit}/${tally.total} target sets` : '';
+    return tally.total ? ` · ${esc(`${tally.hit}/${tally.total}`)} target sets` : '';
   })()}</p>
     ${lockerLeads ? `
     <section class="card">
@@ -1087,7 +1087,7 @@ function renderBind(root, layout, active) {
     return label && n && (label.includes(n) || n.includes(label));
   });
   const chips = (list) => list.map((m) => `<button type="button" class="chip bind-pick"
-    data-id="${m.id}">#${m.num} ${esc(m.label)}</button>`).join('');
+    data-id="${esc(m.id)}">#${esc(m.num)} ${esc(m.label)}</button>`).join('');
 
   root.innerHTML = `
     <button type="button" id="bind-back" class="back-row">‹ Workout</button>
@@ -1097,7 +1097,7 @@ function renderBind(root, layout, active) {
     <section class="card">
       <div class="row">
         <input id="bind-num" type="number" inputmode="numeric" min="1"
-          placeholder="Machine #" value="${slot.num ?? ''}">
+          placeholder="Machine #" value="${esc(slot.num ?? '')}">
         <button id="bind-go" class="btn btn-primary btn-inline">That's it</button>
       </div>
     </section>
@@ -1382,7 +1382,7 @@ function renderLog(root, layout, active, reveal = null) {
   root.innerHTML = `
     <button type="button" id="log-back" class="back-row">‹ Workout</button>
     <div class="machine-head">
-      <span class="machine-badge">${machine.num}</span>
+      <span class="machine-badge">${esc(machine.num)}</span>
       <div>
         <div class="title">${esc(machine.label)} <span class="muted">${planPos}</span>
           ${active.locker ? `<span class="muted">· 🔒 ${esc(active.locker)}</span>` : ''}</div>
@@ -1391,8 +1391,8 @@ function renderLog(root, layout, active, reveal = null) {
     : lastSets
       ? `Last: ${setsSummary(lastSets.sets, s, !!lastSets.bodyweight)}`
       : `First time on this ${exercise ? 'exercise' : 'machine'}`}</div>
-        ${target ? `<div class="muted">Target: ${targetStr(target, type, s)}${targetDone
-    ? ' · ✓ done' : setGoal ? ` · set ${setPos}/${setGoal}` : ''}</div>` : ''}
+        ${target ? `<div class="muted">Target: ${esc(`${targetStr(target, type, s)}${targetDone
+    ? ' · ✓ done' : setGoal ? ` · set ${setPos}/${setGoal}` : ''}`)}</div>` : ''}
         ${machine.muscles?.length ? `<div class="muted">${machine.muscles.map(esc).join(' · ')}</div>` : ''}
         ${machineBrand(layout, machine) || machine.model
     ? `<div class="muted">${[machineBrand(layout, machine), machine.model].filter(Boolean).map(esc).join(' · ')}</div>`
@@ -1447,11 +1447,11 @@ function renderLog(root, layout, active, reveal = null) {
         ${entry.sets.map((st, i) => `
           <div class="set-row">
             <span>Set ${i + 1}</span>
-            <span>${cardio
+            <span>${esc(cardio
     ? `${st.distance} ${du} · ${fmtDuration(st.seconds)}`
     : type === 'bodyweight'
       ? (st.weight ? `BW+${st.weight} ${s.unit} × ${st.reps}` : `BW × ${st.reps}`)
-      : `${st.weight} ${s.unit} × ${st.reps}`}</span>
+      : `${st.weight} ${s.unit} × ${st.reps}`)}</span>
             <button class="x" data-i="${i}" aria-label="Remove set ${i + 1}">✕</button>
           </div>`).join('') || '<p class="muted">No sets logged yet.</p>'}
       </div>
@@ -1467,31 +1467,31 @@ function renderLog(root, layout, active, reveal = null) {
         ${stepperField('Reps', 'set-reps', { step: 1, min: 1, value: def.reps, mode: 'numeric' })}`}
         ${stepperField('Rest (s)', 'set-rest', { step: 15, min: 0, value: restSeconds, mode: 'numeric' })}
         <button type="button" id="rest-keep" class="linkish rest-keep"${restSeconds === machineRest()
-    ? ' hidden' : ''}>Keep ${restSeconds} s for #${machine.num}</button>
+    ? ' hidden' : ''}>Keep ${esc(restSeconds)} s for #${esc(machine.num)}</button>
         ${restRemaining ? `<div class="rest-inline" id="rest-inline">Rest
           <span class="cd" id="rest-cd">${fmtDuration(restRemaining)}</span>
           <button type="button" id="rest-plus" class="chip">+15s</button>
           <button type="button" id="rest-skip" class="chip">Skip</button>
         </div>` : ''}
         ${rirHere ? `<div class="rest-opts" id="rir-log">${rirChips(rated.set.rir)}</div>` : ''}
-        <button id="log-set" class="btn ${targetDone && nextMachine ? '' : 'btn-primary '}btn-big">${logLabel(def)}</button>
+        <button id="log-set" class="btn ${targetDone && nextMachine ? '' : 'btn-primary '}btn-big">${esc(logLabel(def))}</button>
       </div>
     </section>`}
 
     ${quickSwitch.length ? `
     <div class="quick-switch">
       ${quickSwitch.map((c) => `<button type="button" class="chip" data-machine="${esc(c.machineId)}">
-        ↩ #${c.m.num} ${esc(c.m.label)}</button>`).join('')}
+        ↩ #${esc(c.m.num)} ${esc(c.m.label)}</button>`).join('')}
     </div>` : ''}
 
     ${nextMachine
     ? `<div class="next-row">
-        <button id="next-machine" class="btn ${targetDone ? 'btn-primary' : 'btn-next'} btn-big">Next: #${nextMachine.num}
+        <button id="next-machine" class="btn ${targetDone ? 'btn-primary' : 'btn-next'} btn-big">Next: #${esc(nextMachine.num)}
           ${esc(nextMachine.label)}${nextSlot.exercise ? ` · ${esc(nextSlot.exercise)}` : ''} →</button>
         <button type="button" id="locate-next" class="btn btn-next btn-big locate-next"
           aria-label="Show the next machine on the map">📍</button>
       </div>
-      ${nearby ? `<button id="nearby-machine" class="btn">Busy? #${nearby.machine.num}
+      ${nearby ? `<button id="nearby-machine" class="btn">Busy? #${esc(nearby.machine.num)}
         ${esc(nearby.machine.label)} is nearby →</button>` : ''}
       <button id="change-machine" class="btn">Change machine / overview</button>`
     : nextUnbound
@@ -1734,11 +1734,11 @@ export function nextSetDefaults(entry, last, type, s, target = null) {
 }
 
 // Joins ui.js's setStr per set; the weight unit is appended once when any
-// weight was actually moved.
+// weight was actually moved. HTML-ready, like setStr.
 const setsSummary = (sets, s, bodyweight = false) => {
   const body = sets.map((st) => setStr(st, s, bodyweight)).join(', ');
   const suffix = sets.every((st) => st.distance == null) && sets.some((st) => st.weight)
-    ? ` ${s.unit}` : '';
+    ? ` ${esc(s.unit)}` : '';
   return body + suffix;
 };
 

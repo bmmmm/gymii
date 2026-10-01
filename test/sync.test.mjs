@@ -902,4 +902,106 @@ assert.equal(store.getSyncKey(gid), null, '18: no key from a dead code');
 const ok18 = await sync.pairWithCode(gid, code18('tok-live'));
 assert.equal(ok18.sync.status, 'synced', '18: a live code still pairs after a refused one');
 
+// 19 — a peer's blob is untrusted input like any imported file (store.js
+// § untrusted input; the render half is test/untrusted.test.mjs): what
+// fails is dropped record by record, and the rest of the sync goes through
+devices.U = new Map();
+useDevice('U');
+seedRegistry();
+srv = fakeServer();
+insecureContext(); // plain mode: the test writes the peer's payload by hand
+try {
+  const X = '"><img src=x onerror=alert(1)>';
+  await sync.enableSync(gid, { server: 'http://box:8639', token: 'tok-19', plain: true });
+  const before = store.getSettings();
+  const peer = srv.blob.plain;
+  peer.workouts = [
+    workout('w-ok', 5000),
+    { ...workout('w-bad', 6000), id: `w-bad${X}` },
+    { id: 'w-hollow', startedAt: 6500 }, // no entries: dropped, never a crash
+    {
+      ...workout('w-num', 7000),
+      entries: [{ machineId: 'm9', num: `9${X}`, label: 'Row', settings: {}, sets: [{ reps: 10, weight: `4${X}` }] }],
+    },
+  ];
+  peer.plans = [
+    { id: 'p-ok', name: 'Ok', updatedAt: 5000, items: [{ machineId: null, name: 'Row', num: `2${X}` }] },
+    { id: `p-bad${X}`, name: 'Bad', updatedAt: 5000, items: [] },
+  ];
+  peer.gym = {
+    v: 1,
+    name: 'Peer',
+    grid: { w: 60, h: 40 },
+    updatedAt: 5000,
+    shapes: [{ id: 'z-ok', kind: 'rect', x: 1, y: 1, w: 2, h: 2 },
+      { id: 'z-bad', kind: 'rect', x: 1, y: 1, w: 2, h: 2, color: `red${X}` }],
+    machines: [
+      { id: 'm9', num: 9, label: 'Ok', x: 1, y: 1, w: 3, h: 3, settingsFields: [] },
+      { id: `m-bad${X}`, num: 8, label: 'Bad id', x: 5, y: 5, w: 3, h: 3, settingsFields: [] },
+      { id: 'm7', num: `7${X}`, label: 'Bad num', x: 9, y: 9, w: 3, h: 3, settingsFields: [] },
+    ],
+  };
+  peer.userSettings = {
+    ...peer.userSettings, unit: `lbs${X}`, restSeconds: `30${X}`, weightStep: 5, updatedAt: Date.now() + 60000,
+  };
+  srv.revision += 1;
+  const res19 = await sync.syncNow(gid);
+  assert.equal(res19.status, 'synced', '19: a blob with bad records still syncs');
+  assert.deepEqual(store.getWorkouts().map((w) => w.id).sort(), ['w-num', 'w-ok'],
+    '19: a workout with a bad id is dropped, the rest arrives');
+  assert.deepEqual(store.getWorkouts().find((w) => w.id === 'w-num').entries[0],
+    { machineId: 'm9', label: 'Row', settings: {}, sets: [{ reps: 10 }] },
+    '19: numbers that are no numbers are dropped');
+  assert.deepEqual(store.getPlans().map((p) => p.id), ['p-ok'], '19: a plan with a bad id is dropped');
+  assert.equal('num' in store.getPlans()[0].items[0], false, '19: a plan item num is repaired');
+  assert.deepEqual(store.getLayout().machines.map((m) => m.id), ['m9'],
+    '19: machines with a bad id or num are dropped, the good one arrives');
+  assert.deepEqual(store.getLayout().shapes.map((s) => s.id), ['z-ok'], '19: a shape with a bad color is dropped');
+  const after = store.getSettings();
+  assert.equal(after.unit, before.unit, '19: a unit that is neither kg nor lbs is refused');
+  assert.equal(after.restSeconds, 90, '19: a rest that is no number is refused');
+  assert.equal(after.weightStep, 5, '19: the sound settings of the same blob still apply');
+
+  // a frame (grid) that fails takes the local one — and the push back
+  // carries that frame with every good machine, never an empty layout
+  const ownOutline = [{ x: 0, y: 0 }, { x: 70, y: 0 }, { x: 70, y: 30 }, { x: 40, y: 50 }, { x: 0, y: 50 }];
+  store.saveLayout({ ...store.getLayout(), grid: { w: 70, h: 50 }, outline: ownOutline });
+  assert.equal((await sync.syncNow(gid)).status, 'synced', '19: the local grid is pushed');
+  const peer2 = JSON.parse(JSON.stringify(srv.blob.plain));
+  peer2.gym = { ...peer2.gym, grid: { w: `80${X}`, h: 40 }, updatedAt: Date.now() + 60000 };
+  srv.blob = { ...srv.blob, plain: peer2 };
+  srv.revision += 1;
+  assert.equal((await sync.syncNow(gid)).status, 'synced', '19: a bad frame still syncs');
+  assert.deepEqual(store.getLayout().grid, { w: 70, h: 50 }, '19: the local grid stays');
+  assert.deepEqual(store.getLayout().outline, ownOutline, '19: and so does the local outline');
+  assert.deepEqual(srv.blob.plain.gym?.grid, { w: 70, h: 50 }, '19: and is what the server gets back');
+  assert.deepEqual(srv.blob.plain.gym.machines.map((m) => m.id), ['m9'], '19: with the machines');
+
+  // a device with no layout yet takes a fresh frame instead of dropping
+  // the peer's machines (and then emptying the server's layout)
+  mem.delete(`gymii.${gid}.layout`);
+  assert.equal(store.getLayout(), null, '19: this device has no layout now');
+  const peer3 = JSON.parse(JSON.stringify(srv.blob.plain));
+  peer3.gym = { ...peer3.gym, grid: { w: `80${X}`, h: 40 }, updatedAt: Date.now() + 120000 };
+  srv.blob = { ...srv.blob, plain: peer3 };
+  srv.revision += 1;
+  assert.equal((await sync.syncNow(gid)).status, 'synced', '19: a bad frame syncs on a fresh device');
+  assert.deepEqual(store.getLayout()?.machines.map((m) => m.id), ['m9'], '19: the good machine arrives');
+  assert.deepEqual(store.getLayout().grid, store.newLayout().grid, '19: in a fresh frame');
+  assert.deepEqual(srv.blob.plain.gym?.machines.map((m) => m.id), ['m9'], '19: the server keeps it');
+
+  // a local frame stored before the checks is no fallback either
+  mem.set(`gymii.${gid}.layout`, JSON.stringify({
+    ...store.getLayout(), grid: { w: `90${X}`, h: 40 }, updatedAt: 1,
+  }));
+  const peer4 = JSON.parse(JSON.stringify(srv.blob.plain));
+  peer4.gym = { ...peer4.gym, grid: { w: `80${X}`, h: 40 }, updatedAt: Date.now() + 180000 };
+  srv.blob = { ...srv.blob, plain: peer4 };
+  srv.revision += 1;
+  assert.equal((await sync.syncNow(gid)).status, 'synced', '19: two bad frames still sync');
+  assert.deepEqual(store.getLayout().grid, store.newLayout().grid, '19: a bad local frame is no fallback');
+} finally {
+  secureContext();
+}
+
 console.log('sync client: all assertions passed');

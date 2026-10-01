@@ -19,7 +19,23 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   (`gymii.settings`). Two historical shapes migrate lazily in
   `ensureGyms()`: the profile era (`gymii.profiles`, and a `gym` part per
   id) and pre-profile top-level keys. Parts move before the registry, so
-  a crash mid-migration replays instead of orphaning a layout. Stored
+  a crash mid-migration replays instead of orphaning a layout.
+  Untrusted input (§ untrusted input in the file): a backup, a gym
+  template, an AI-pasted plan and a sync blob may come from someone else,
+  and the views put stored ids, numbers, colors and the unit into
+  innerHTML. So every entry point holds those fields to their shape —
+  ids `^[\w-]+$` (every id ever minted passes), numbers finite, colors
+  hex, unit `kg`/`lbs`. Files refuse what they cannot repair (a layout or
+  a workout with a bad id: "Invalid gym template" / "Invalid backup"),
+  repair numbers (`"40"` → 40, markup → dropped), drop bad plans as plans
+  always were; sync drops bad records one by one (`cleanRemote` in
+  sync.js) and gives a bad layout frame the local one — or a fresh
+  layout's, never none: a gridless layout is not written, and the push
+  back would empty the server's machines. The views escape the same
+  fields anyway, for records stored before the checks (map.js draws
+  geometry through `Number()`), and index.html's CSP keeps any inline
+  handler that slips through from running. Pinned by test/untrusted.test.mjs and
+  sync.test.mjs block 19. Stored
   weights are always in the current display
   unit — `setUnit()` converts ALL gyms' data in one shot. Set shapes:
   strength `{reps, weight}`, cardio `{distance, seconds}` (distance in the
@@ -333,9 +349,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   arrowhead is a plain polygon. In path mode machines drop custom colours,
   as in usage mode, and those off the path dim. Its only import is `esc` from ui.js —
   keep it free of store/gym imports so the cycle cannot reappear. Every id
-  interpolated into an attribute goes through `esc()`: ids arrive from
-  community template FILES off the network and `isValidLayout()` only
-  checks that they are truthy, so a raw one can end the attribute.
+  interpolated into an attribute goes through `esc()`, and so do colors
+  and machine numbers; geometry is drawn from a `Number()` copy
+  (`numericGeometry`): ids arrive from community template FILES off the
+  network, and a layout stored before `isValidLayout()` checked them
+  (store.js § untrusted input) may still hold one that ends the attribute.
   `snapDoorToWall` rounds its result to one decimal — an unrounded float
   would be a new value on every save, and `saveLayout` stamps what changed,
   so sync would see edits nobody made.

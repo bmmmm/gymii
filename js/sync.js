@@ -24,6 +24,7 @@ import {
   getSettings, restoreSettings, setUnit, convertWeight, convertDistance,
   getSyncConfig, saveSyncConfig, getSyncKey, saveSyncKey,
   onStoreChange, getPendingDeletes, savePendingDeletes,
+  cleanLayout, cleanWorkout, cleanPlan, cleanSettings,
 } from './store.js';
 import {
   stamp, mergeWorkouts, mergePlans, mergeLayout, mergeSettings, USER_SETTINGS,
@@ -357,8 +358,23 @@ function reconcile(gid, remote, rid) {
   }
 }
 
-function reconcileInner(gid, remote, rid) {
+// A peer's blob is untrusted input like any imported file (store.js
+// § untrusted input), taken record by record: what fails is dropped, so
+// one bad record never stalls the gym's whole sync. A bad layout frame
+// takes `localLayout`'s (see cleanLayout).
+function cleanRemote(remote, localLayout) {
+  if (!remote || typeof remote !== 'object') return remote;
+  const out = { ...remote };
+  if (remote.userSettings) out.userSettings = cleanSettings(remote.userSettings);
+  if (Array.isArray(remote.workouts)) out.workouts = remote.workouts.map(cleanWorkout).filter(Boolean);
+  if (Array.isArray(remote.plans)) out.plans = remote.plans.map(cleanPlan).filter(Boolean);
+  if (remote.gym) out.gym = cleanLayout(remote.gym, localLayout);
+  return out;
+}
+
+function reconcileInner(gid, raw, rid) {
   return withGym(gid, () => {
+    const remote = cleanRemote(raw, getLayout()); // inside withGym: THIS gym's layout
     // 1. settings decide the unit, so they go first
     const before = getSettings();
     const settings = mergeSettings(before, remote?.userSettings ?? {});

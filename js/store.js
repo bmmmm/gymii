@@ -1123,15 +1123,107 @@ export function exportBackup() {
   };
 }
 
+// --- untrusted input ---
+// A backup, a gym template, an AI-pasted plan and a sync blob are files
+// someone else may have written, and every view renders stored records into
+// innerHTML. Free text (names, labels) is escaped where it renders; the
+// fields the views interpolate as they are — ids into attributes, numbers,
+// map colors, the unit — are held to their real shape HERE, on the way in,
+// so a crafted file cannot park markup in storage. Every id gymii mints
+// passes: uid()'s base36, the legacy 8-char Math.random() ids, the slugs
+// of demo.js and templates/ — none can close an attribute.
+export const isSafeId = (id) => typeof id === 'string' && /^[\w-]+$/.test(id);
+const isColor = (c) => c == null || (typeof c === 'string' && /^#(?:[0-9a-f]{3}){1,2}$/i.test(c));
+const finiteOrAbsent = (o, keys) => keys.every((k) => o[k] == null || Number.isFinite(o[k]));
+const isPlaced = (o) => finiteOrAbsent(o, ['x', 'y', 'w', 'h', 'rot']);
+const SET_NUMBERS = ['reps', 'weight', 'distance', 'seconds'];
+
+// A present numeric field becomes a finite number — a stringified one from
+// an old export survives — or is dropped; every consumer guards absence.
+// Only numbers and numeric strings count: Number('') or Number(true) would
+// invent a 0 or a 1.
+function numFields(o, keys) {
+  const out = { ...o };
+  keys.forEach((k) => {
+    const v = out[k];
+    if (v == null) return;
+    const n = typeof v === 'number' || (typeof v === 'string' && v.trim()) ? Number(v) : NaN;
+    if (Number.isFinite(n)) out[k] = n;
+    else delete out[k];
+  });
+  return out;
+}
+
+const isValidMachine = (m) => !!m && isSafeId(m.id) && Number.isFinite(m.num)
+  && isPlaced(m) && finiteOrAbsent(m, ['restSeconds']) && isColor(m.color)
+  && (m.exercises === undefined
+    || (Array.isArray(m.exercises) && m.exercises.every((x) => typeof x === 'string')));
+const isValidShape = (s) => !!s && isSafeId(s.id) && isPlaced(s) && isColor(s.color);
+const hasValidFrame = (layout) => !!layout.grid
+  && Number.isFinite(layout.grid.w) && Number.isFinite(layout.grid.h)
+  && (layout.outline === undefined || (Array.isArray(layout.outline) && layout.outline.length >= 3
+    && layout.outline.every((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))));
+
 function isValidLayout(layout) {
-  return layout && typeof layout === 'object'
-    && layout.grid && Number.isFinite(layout.grid.w) && Number.isFinite(layout.grid.h)
+  return !!layout && typeof layout === 'object' && hasValidFrame(layout)
     && Array.isArray(layout.shapes) && Array.isArray(layout.machines)
-    && layout.machines.every((m) => m.id && Number.isFinite(m.num)
-      && (m.exercises === undefined
-        || (Array.isArray(m.exercises) && m.exercises.every((x) => typeof x === 'string'))))
-    && (layout.outline === undefined || (Array.isArray(layout.outline) && layout.outline.length >= 3
-      && layout.outline.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))));
+    && layout.machines.every(isValidMachine) && layout.shapes.every(isValidShape);
+}
+
+// A synced layout is taken record by record instead: one bad machine from
+// a peer must not stall the gym's whole sync. Bad machines and shapes are
+// dropped; a bad frame (grid, outline) is replaced by `local`'s, or by a
+// fresh layout's on a device that has none yet. Dropping the frame instead
+// would leave a gridless layout that is never written — and the next push
+// would empty the server's copy of every good machine with it.
+export function cleanLayout(layout, local = null) {
+  if (!layout || typeof layout !== 'object') return null;
+  const out = {
+    ...layout,
+    machines: (Array.isArray(layout.machines) ? layout.machines : []).filter(isValidMachine),
+    shapes: (Array.isArray(layout.shapes) ? layout.shapes : []).filter(isValidShape),
+  };
+  if (!hasValidFrame(out)) {
+    const frame = local?.grid && hasValidFrame(local) ? local : newLayout();
+    out.grid = { ...frame.grid };
+    if (frame.outline) out.outline = frame.outline.map((p) => ({ x: p.x, y: p.y }));
+    else delete out.outline;
+  }
+  return out;
+}
+
+// A workout or plan whose ids fail is not a record: null. Its numbers are
+// repaired (numFields), never a reason to refuse it.
+export function cleanWorkout(w) {
+  if (!w || !isSafeId(w.id) || !Array.isArray(w.entries)) return null;
+  const entries = w.entries.map((e) => (e && (e.machineId == null || isSafeId(e.machineId))
+    && Array.isArray(e.sets)
+    ? { ...numFields(e, ['num']), sets: e.sets.map((st) => numFields(st, SET_NUMBERS)) }
+    : null));
+  return entries.includes(null) ? null : { ...w, entries };
+}
+
+export function cleanPlan(p) {
+  if (!p || !isSafeId(p.id) || !Array.isArray(p.items)
+    || !p.items.every((it) => it && typeof it === 'object'
+      && (it.machineId == null || isSafeId(it.machineId)))) return null;
+  return {
+    ...p,
+    items: p.items.map((it) => ({
+      ...numFields(it, ['num']),
+      ...(it.target ? { target: numFields(it.target, ['sets', ...SET_NUMBERS]) } : {}),
+    })),
+  };
+}
+
+// Settings keep what they can: a field that fails is dropped. A backup
+// import then keeps the device's own value; in sync an absent user field
+// is a reset (merge.js mergeSettings), so the default stands in.
+export function cleanSettings(settings) {
+  const out = numFields(settings && typeof settings === 'object' ? settings : {},
+    ['restSeconds', 'weightStep']);
+  if (out.unit !== undefined && out.unit !== 'kg' && out.unit !== 'lbs') delete out.unit;
+  return out;
 }
 
 // --- plan text: the trainer's note ---
@@ -1280,7 +1372,10 @@ function normalizeTarget(raw, cardio) {
 // Turns raw items ({num?, name?, exercise?, target?} — from an LLM file or
 // a typed note) into plan items, binding what the layout already knows.
 export function planItemsFrom(rawItems, layout) {
-  return rawItems.map((raw) => {
+  return rawItems.map((item) => {
+    // an unbound item's `num` lands in the bind prompt's value attribute: a
+    // number or nothing (§ untrusted input)
+    const raw = numFields(item, ['num']);
     const { machine, name } = resolveItem(raw, layout);
     const flat = raw.target ? { ...raw, ...raw.target } : raw;
     const cardio = machine ? !!machine.cardio : flat.distance != null || flat.seconds != null;
@@ -1420,15 +1515,18 @@ export function importData(data) {
   if (data.kind === 'backup') {
     // gym may be null: a gym that never opened the editor has no layout,
     // and its backup must still round-trip (workouts/plans only)
-    if ((data.gym != null && !isValidLayout(data.gym)) || !Array.isArray(data.workouts)) {
+    // a workout that fails refuses the whole file (nothing is restored); a
+    // plan that fails is dropped, as plans always were (§ untrusted input)
+    const workouts = Array.isArray(data.workouts) ? data.workouts.map(cleanWorkout) : null;
+    if ((data.gym != null && !isValidLayout(data.gym)) || !workouts || workouts.includes(null)) {
       throw new Error('Invalid backup');
     }
     if (data.gym != null) restoreLayout(data.gym);
-    saveWorkouts(data.workouts);
+    saveWorkouts(workouts);
     if (Array.isArray(data.plans)) {
-      savePlans(data.plans.filter((p) => p && p.id && Array.isArray(p.items)));
+      savePlans(data.plans.map(cleanPlan).filter(Boolean));
     }
-    saveSettings({ ...getSettings(), ...data.settings });
+    saveSettings({ ...getSettings(), ...cleanSettings(data.settings) });
     // a v1 file carries none — restoring it clears the slate, same
     // whole-overwrite semantics as every other part of a backup import
     saveTombstones(data.tombstones ?? {});

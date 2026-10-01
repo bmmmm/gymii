@@ -349,7 +349,7 @@ function renderSettingsView(root) {
       <label class="field"><span>Rest timer (seconds)</span>
         <div class="stepper" data-step="15" data-min="0">
           <button type="button" class="step-down" aria-label="decrease">−</button>
-          <input id="rest-seconds" type="number" inputmode="numeric" value="${s.restSeconds}">
+          <input id="rest-seconds" type="number" inputmode="numeric" value="${esc(s.restSeconds)}">
           <button type="button" class="step-up" aria-label="increase">+</button>
         </div>
       </label>
@@ -388,10 +388,10 @@ function renderSettingsView(root) {
           <button type="button" class="chip${s.unit === 'lbs' ? ' sel' : ''}" data-unit="lbs">lbs · mi</button>
         </div>
       </div>
-      <label class="field"><span>Weight step (${s.unit})</span>
+      <label class="field"><span>Weight step (${esc(s.unit)})</span>
         <div class="stepper" data-step="0.5" data-min="0.5">
           <button type="button" class="step-down" aria-label="decrease">−</button>
-          <input id="weight-step" type="number" inputmode="decimal" value="${s.weightStep}">
+          <input id="weight-step" type="number" inputmode="decimal" value="${esc(s.weightStep)}">
           <button type="button" class="step-up" aria-label="increase">+</button>
         </div>
       </label>

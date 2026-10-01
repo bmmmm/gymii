@@ -94,12 +94,12 @@ export function renderPlanBuilder(
     return `<div class="plan-bind">
       <div class="row">
         <input class="bind-num" type="number" inputmode="numeric" min="1"
-          placeholder="Machine #" value="${it.num ?? ''}">
+          placeholder="Machine #" value="${esc(it.num ?? '')}">
         <button type="button" class="btn btn-inline bind-go" data-i="${i}">Assign</button>
       </div>
       ${candidates.length ? `<div class="chip-select bind-chips">
         ${candidates.map((m) => `<button type="button" class="chip bind-pick"
-          data-i="${i}" data-id="${m.id}">#${m.num} ${esc(m.label)}</button>`).join('')}
+          data-i="${i}" data-id="${esc(m.id)}">#${esc(m.num)} ${esc(m.label)}</button>`).join('')}
       </div>` : ''}
       <p class="muted">Enter the number on the machine — gymii creates
         &ldquo;${esc(it.name || 'it')}&rdquo; under that number if it doesn't know it yet.</p>
@@ -126,7 +126,7 @@ export function renderPlanBuilder(
     const cardio = itemIsCardio(it, m);
     return `<div class="plan-item${m ? '' : ' unbound'}">
       <div class="plan-item-head">
-        <span class="machine-badge sm">${m ? m.num : '?'}</span>
+        <span class="machine-badge sm">${m ? esc(m.num) : '?'}</span>
         <span class="plan-label">${esc(label)}</span>
         <span class="plan-item-actions">
           <button type="button" class="x it-up" data-i="${i}" aria-label="Move ${esc(label)} up">↑</button>
@@ -247,7 +247,7 @@ export function renderPlanBuilder(
         </div>` : ''}
         <div class="chip-select" id="machine-chips">
           ${filtered.map((m) => `<button type="button" class="chip${inPlan.has(m.id) ? ' sel' : ''}"
-            data-id="${m.id}">#${m.num} ${esc(m.label)}</button>`).join('')
+            data-id="${esc(m.id)}">#${esc(m.num)} ${esc(m.label)}</button>`).join('')
             || '<p class="muted">No machines match this muscle.</p>'}
         </div>
         <div class="map-wrap"><svg xmlns="http://www.w3.org/2000/svg"></svg></div>

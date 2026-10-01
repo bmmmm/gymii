@@ -144,7 +144,7 @@ function historyContext() {
   return { all, named, byName, workouts, s, unit: s.unit, layout, allMuscles, options, recent, hints };
 }
 
-const optionHtml = ([key, m]) => `<option value="${esc(key)}">#${m.num} ${esc(m.label)}${
+const optionHtml = ([key, m]) => `<option value="${esc(key)}">#${esc(m.num)} ${esc(m.label)}${
   m.exercise ? ` · ${esc(m.exercise)}` : ''}</option>`;
 const decodeKey = (value) => {
   if (!value) return null; // '' = the heatmap's "All machines"
@@ -594,7 +594,7 @@ const pathCard = {
         const end = i + 1 < p.stops.length ? p.stops[i + 1].at : w.finishedAt;
         return `#${num(st.machineId)}${Number.isFinite(end) && end > st.at ? ` ${minsBetween(st.at, end)} min` : ''}`;
       }).join(' → ');
-      return { stats: `<p class="muted">${parts.join(' · ')}</p><p class="path-chain">${chain}</p>`, chain };
+      return { stats: `<p class="muted">${parts.join(' · ')}</p><p class="path-chain">${esc(chain)}</p>`, chain };
     };
 
     const drawPath = () => {
@@ -908,7 +908,7 @@ const setCount = (w) => w.entries.reduce((n, e) => n + e.sets.length, 0);
 const minsOf = (w) => // finishedAt can be absent in imported data
   minsBetween(w.startedAt, w.finishedAt ?? w.startedAt);
 
-const entryTitle = (e) => `#${e.num} ${esc(e.label)}${e.exercise ? ` · ${esc(e.exercise)}` : ''}`;
+const entryTitle = (e) => `#${esc(e.num)} ${esc(e.label)}${e.exercise ? ` · ${esc(e.exercise)}` : ''}`;
 
 function workoutHtml(w, s, open = false) {
   const sets = setCount(w);
@@ -926,10 +926,10 @@ function workoutHtml(w, s, open = false) {
         <div>${entryTitle(e)}</div>
         <div class="sets">${e.sets.map((st) => setStr(st, s, !!e.bodyweight)).join(', ')}${settingsStr(e)}</div>
       </div>`).join('')}
-    <button class="btn repeat-w" data-wid="${w.id}">Repeat this workout</button>
+    <button class="btn repeat-w" data-wid="${esc(w.id)}">Repeat this workout</button>
     <div class="row">
-      <button class="btn btn-inline edit-w" data-wid="${w.id}">Edit</button>
-      <button class="btn btn-inline btn-danger delete-w" data-wid="${w.id}">Delete</button>
+      <button class="btn btn-inline edit-w" data-wid="${esc(w.id)}">Edit</button>
+      <button class="btn btn-inline btn-danger delete-w" data-wid="${esc(w.id)}">Delete</button>
     </div>
   </details>`;
 }
@@ -1014,15 +1014,15 @@ function editWorkoutHtml(w, s, layout) {
             <span class="edit-set">${e.cardio ? `
               <input type="text" inputmode="decimal" autocomplete="off" data-kind="distance"
                 class="edit-distance" data-ei="${ei}" data-si="${si}"
-                value="${st.distance}" aria-label="Distance (${du})"> ${du} ·
+                value="${esc(st.distance)}" aria-label="Distance (${du})"> ${du} ·
               <input type="text" inputmode="numeric" autocomplete="off" data-kind="time"
                 class="edit-minutes" data-ei="${ei}" data-si="${si}"
                 value="${fmtDuration(st.seconds)}" aria-label="Time (m:ss)">` : `
               ${e.bodyweight ? 'BW+' : ''}<input type="number" inputmode="decimal" class="edit-weight"
-                data-ei="${ei}" data-si="${si}" value="${st.weight}"
-                aria-label="${e.bodyweight ? 'Extra weight' : 'Weight'} (${s.unit})"> ${s.unit} ×
+                data-ei="${ei}" data-si="${si}" value="${esc(st.weight)}"
+                aria-label="${e.bodyweight ? 'Extra weight' : 'Weight'} (${esc(s.unit)})"> ${esc(s.unit)} ×
               <input type="number" inputmode="numeric" class="edit-reps" data-ei="${ei}" data-si="${si}"
-                value="${st.reps}" aria-label="Reps">`}
+                value="${esc(st.reps)}" aria-label="Reps">`}
             </span>
             <button class="x set-del" data-ei="${ei}" data-si="${si}" aria-label="Remove set ${si + 1}">✕</button>
           </div>`).join('') || '<p class="muted">No sets left — removed on save.</p>'}
@@ -1031,7 +1031,7 @@ function editWorkoutHtml(w, s, layout) {
     ${addable.length ? `
     <div class="row">
       <select class="entry-pick" aria-label="Machine to add">
-        ${addable.map((m) => `<option value="${m.id}">#${m.num} ${esc(m.label)}</option>`).join('')}
+        ${addable.map((m) => `<option value="${esc(m.id)}">#${esc(m.num)} ${esc(m.label)}</option>`).join('')}
       </select>
       <button class="btn btn-inline entry-add">+ Machine</button>
     </div>` : ''}

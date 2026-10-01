@@ -59,7 +59,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `demo` (generator determinism, entry invariants, weekday plan states,
   unit conversion, load-replaces-gym), `ai` (export plans section,
   paste-back new-vs-replace flow), `templates` (the community-library
-  gate: manifest ↔ files ↔ real import validation), `sw` (the real
+  gate: manifest ↔ files ↔ real import validation), `untrusted` (crafted
+  templates, backups and AI pastes refused or repaired at entry, and
+  hostile values seeded straight into storage rendering escaped in every
+  view — the sync half is sync.test.mjs block 19), `sw` (the real
   `sw.js` run in a `node:vm` sandbox: method/origin gate, cache writes,
   offline fallback, and the stalled-network timeout — the sandbox owns
   `setTimeout`, so 2.5 s are proven in microseconds). Modules import

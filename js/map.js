@@ -95,10 +95,28 @@ function pxPerUnit(svg, viewBoxWidth) {
 
 // --- shared renderer (also used by the Train mini-map) ---
 
-export function drawLayout(svg, layout, {
+// Geometry goes into the markup as numbers, unescaped. A layout stored
+// before store.js held it to finite numbers (§ untrusted input) may carry
+// markup there instead; Number() turns that into an inert NaN. A copy for
+// this draw only — the caller's layout is never touched.
+const asNum = (v) => (v == null ? v : Number(v));
+const placed = (o) => ({
+  ...o, x: asNum(o.x), y: asNum(o.y), w: asNum(o.w), h: asNum(o.h), rot: asNum(o.rot),
+});
+const numericGeometry = (layout) => ({
+  ...layout,
+  grid: { w: Number(layout.grid.w), h: Number(layout.grid.h) },
+  outline: Array.isArray(layout.outline)
+    ? layout.outline.map((p) => ({ x: Number(p.x), y: Number(p.y) })) : layout.outline,
+  shapes: layout.shapes.map(placed),
+  machines: layout.machines.map(placed),
+});
+
+export function drawLayout(svg, rawLayout, {
   selectedId = null, editor = false, selectedVertex = null, usage = null,
   highlightId = null, unlockedId = null, path = null, pathWeights = null,
 } = {}) {
+  const layout = numericGeometry(rawLayout);
   // Margin around the floor: outline handles and wall-snapped fixtures
   // straddle the boundary — without it they are clipped and only
   // half-tappable exactly where the SVG ends. The viewer needs just
@@ -282,7 +300,7 @@ function shapeSvg(s, ppu = null) {
     </g>`;
   }
   const zoneStyle = s.color
-    ? ` style="fill:${s.color};fill-opacity:0.13;stroke:${s.color};stroke-opacity:0.55"` : '';
+    ? ` style="fill:${esc(s.color)};fill-opacity:0.13;stroke:${esc(s.color)};stroke-opacity:0.55"` : '';
   return `<g class="shape" data-id="${esc(s.id)}">
     <rect class="shape-rect" x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}" rx="0.3"${zoneStyle}/>
     ${s.label ? `<text class="zone-label" x="${s.x + 1}" y="${s.y + 2.1}" font-size="1.4"
@@ -310,7 +328,7 @@ function machineSvg(m, usage = null, highlightId = null, pathIds = null) {
       if (t > 0.75) numStyle = ' style="fill:#06130c"';
     }
   } else if (m.color && !pathIds) {
-    box = `fill:${m.color};stroke:${m.color}`;
+    box = `fill:${esc(m.color)};stroke:${esc(m.color)}`;
     numStyle = ' style="fill:#0c1116"';
   }
   // "where is it?" highlight: the target carries .locate (CSS pulses its
@@ -323,7 +341,7 @@ function machineSvg(m, usage = null, highlightId = null, pathIds = null) {
   return `<g class="machine${locate ? ' locate' : ''}" data-id="${esc(m.id)}"${dim}>
     <rect class="machine-box" x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="0.4"${box ? ` style="${box}"` : ''}/>
     <text class="machine-num" x="${m.x + m.w / 2}" y="${m.y + m.h / 2}" font-size="${fs}"
-      text-anchor="middle" dominant-baseline="central" pointer-events="none"${numStyle}>${m.num}</text>
+      text-anchor="middle" dominant-baseline="central" pointer-events="none"${numStyle}>${esc(m.num)}</text>
   </g>`;
 }
 

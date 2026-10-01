@@ -585,7 +585,7 @@ export function renderGym(root) {
       return `<div class="mrow" data-id="${esc(m.id)}">
         <div class="mrow-head">
           <input class="mrow-num" type="number" inputmode="numeric" min="1" data-field="num"
-            value="${m.num}" aria-label="Number">
+            value="${esc(m.num)}" aria-label="Number">
           <input id="ml-label-${esc(m.id)}" class="mrow-label" type="text" data-field="label"
             value="${esc(m.label)}" aria-label="Label">
         </div>
@@ -794,14 +794,14 @@ export function renderGym(root) {
           <label class="field"><span>Floor width</span>
             <div class="stepper" data-step="5" data-min="20">
               <button type="button" class="step-down">−</button>
-              <input id="floor-w" type="number" inputmode="numeric" value="${layout.grid.w}">
+              <input id="floor-w" type="number" inputmode="numeric" value="${esc(layout.grid.w)}">
               <button type="button" class="step-up">+</button>
             </div>
           </label>
           <label class="field"><span>Floor height</span>
             <div class="stepper" data-step="5" data-min="20">
               <button type="button" class="step-down">−</button>
-              <input id="floor-h" type="number" inputmode="numeric" value="${layout.grid.h}">
+              <input id="floor-h" type="number" inputmode="numeric" value="${esc(layout.grid.h)}">
               <button type="button" class="step-up">+</button>
             </div>
           </label>
@@ -956,7 +956,7 @@ export function renderGym(root) {
           <label class="field"><span>Number</span>
             <div class="stepper" data-step="1" data-min="1">
               <button type="button" class="step-down">−</button>
-              <input id="m-num" type="number" inputmode="numeric" value="${item.num}">
+              <input id="m-num" type="number" inputmode="numeric" value="${esc(item.num)}">
               <button type="button" class="step-up">+</button>
             </div>
           </label>
