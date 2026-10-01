@@ -289,8 +289,9 @@ function machineChipsHtml(recent) {
     + (more ? `<button type="button" class="chip" data-more="1">+${more} more</button>` : '');
 }
 
+// plain .chip, not .chip.sm: the small chip leaves "All" 40px wide
 const rangeChipsHtml = (range) => RANGES.map(([k, label]) => `<button type="button"
-      class="chip sm${k === range ? ' sel' : ''}" data-range="${k}" aria-pressed="${k === range}">${label}</button>`)
+      class="chip${k === range ? ' sel' : ''}" data-range="${k}" aria-pressed="${k === range}">${label}</button>`)
   .join('');
 
 const progressCard = {

@@ -236,7 +236,7 @@ assert.ok(chartEl().innerHTML.includes('No data in this range.'),
   'and narrows the chart (the fixtures are older than four weeks)');
 assert.equal(pickEl().innerHTML, '', 'an empty range shows no stale pick');
 render();
-assert.ok(/class="chip sm sel" data-range="4w"/.test(root.innerHTML), 'the range survives a re-render');
+assert.ok(/class="chip sel" data-range="4w"/.test(root.innerHTML), 'the range survives a re-render');
 root.querySelector('#range-chips').listeners.click(clickOn('.chip', { range: 'all' }));
 
 // the picked machine survives the save that re-renders everything
