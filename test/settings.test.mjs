@@ -510,7 +510,8 @@ try {
   const devHtml = root.querySelector('#sync-devices-body').innerHTML;
   assert.match(devHtml, /phone · this device\s*<span class="muted">· seen just now</, 'health: self, seen now');
   assert.match(devHtml, /mac-mini · backup\s*<span class="muted">· seen 3 days ago</, 'health: the backup is labelled');
-  assert.match(devHtml, /tablet\s*<span class="muted">· not seen yet</, 'health: a token never seen says so');
+  assert.match(devHtml, new RegExp(`tablet\\s*<span class="muted">· paired ${iso(clock - DAY).slice(0, 10)} · not seen yet<`),
+    'health: a token never seen says so — and keeps its mint date, the one fact an unnamed row has');
   assert.equal(hintEl().innerHTML,
     '<p class="hint">Check the backup on mac-mini — last seen 3 days ago.</p>',
     'health: opening the list refreshes the line from the same answer');
@@ -528,6 +529,48 @@ try {
   assert.equal(hintEl().innerHTML, 'untouched', 'health: a late answer never paints another gym');
   store.setActiveGym(realId);
   store.deleteGym(otherId);
+
+  // the same for the devices list: opened on this gym, answered on another
+  renderSettings(root);
+  await settled();
+  hintEl().innerHTML = 'untouched';
+  const listing = root.querySelector('#sync-devices').listeners.toggle();
+  const otherId2 = store.createGym('Other gym'); // activates it
+  await listing;
+  assert.equal(hintEl().innerHTML, 'untouched', 'health: a late device list never paints another gym');
+  store.setActiveGym(realId);
+  store.deleteGym(otherId2);
+
+  // sync turned off while a request is out: its answer must not come back
+  // as the cached line of a later setup (maybe another account)
+  const cfgH = { server: 'https://sync.example.org', token: 'tok-h' };
+  const turnOff = () => {
+    const btn = root.querySelector('#sync-off');
+    btn.classList.remove('armed');
+    btn.listeners.click();
+    btn.listeners.click();
+  };
+  clock += 11 * MIN;
+  server.tokens = [self(), backup({ lastSeenAt: iso(clock - 5 * DAY) })];
+  renderSettings(root); // the background refresh goes out
+  turnOff();
+  store.saveSyncConfig(realId, cfgH);
+  server.tokens = [self()];
+  await settled(); // ... and lands after the turn-off
+  renderSettings(root);
+  assert.ok(!root.innerHTML.includes('Check the backup'),
+    'health: a refresh answered after sync off is dropped');
+  await settled();
+  server.tokens = [self(), backup({ lastSeenAt: iso(clock - 5 * DAY) })];
+  const listing2 = root.querySelector('#sync-devices').listeners.toggle(); // the list goes out
+  turnOff();
+  store.saveSyncConfig(realId, cfgH);
+  server.tokens = [self()];
+  await listing2;
+  renderSettings(root);
+  assert.ok(!root.innerHTML.includes('Check the backup'),
+    'health: a device list answered after sync off is dropped too');
+  await settled();
 
   // an unconfigured card asks nothing; turning sync off forgets the answer
   const getsOff = tokenGets;

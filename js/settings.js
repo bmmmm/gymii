@@ -133,10 +133,13 @@ const SYNC_ERRORS = {
 const syncErrorText = (err, prefix) => SYNC_ERRORS[err?.message] ?? `${prefix}: ${err?.message}`;
 
 // "seen 2 h ago" from the server's lastSeenAt — absent for a token that
-// has not authenticated since the server began tracking.
+// has not authenticated since the server began tracking, and on servers
+// older than lastSeenAt itself. Then the mint date stays: for an
+// "(unnamed)" token it is the only fact that tells two rows apart.
 const seenText = (d) => {
   const seen = Date.parse(d.lastSeenAt);
-  return Number.isFinite(seen) ? `seen ${fmtAgo(seen)}` : 'not seen yet';
+  if (Number.isFinite(seen)) return `seen ${fmtAgo(seen)}`;
+  return d.mintedAt ? `paired ${esc(String(d.mintedAt).slice(0, 10))} · not seen yet` : 'not seen yet';
 };
 
 // --- the backup hint (sync-protocol.md § Kind) ---
@@ -179,12 +182,15 @@ async function refreshBackupCheck(gid) {
   const now = Date.now();
   const cached = backupCheck.get(gid);
   if (cached && now - cached.at < BACKUP_CHECK_MS) return;
-  backupCheck.set(gid, { at: now, list: cached?.list ?? null });
+  const slot = { at: now, list: cached?.list ?? null };
+  backupCheck.set(gid, slot);
   let list = null;
   try {
     list = await listDevices(gid);
   } catch { /* nothing to say — see above */ }
-  backupCheck.set(gid, { at: now, list });
+  // Sync turned off (or set up again, maybe on another account) while the
+  // request was out: the slot is gone, and so is the right to fill it.
+  if (backupCheck.get(gid) === slot) backupCheck.set(gid, { at: now, list });
 }
 
 // The code plus the one warning that has to sit next to it, never a screen
@@ -723,10 +729,13 @@ function renderSettingsView(root) {
     const body = root.querySelector('#sync-devices-body');
     body.innerHTML = '<p class="muted">Loading…</p>';
     try {
+      const slot = backupCheck.get(gid);
       const list = await listDevices(gid);
-      // the freshest answer there is — the hint follows it (a revoke too)
-      backupCheck.set(gid, { at: Date.now(), list });
-      paintBackupHint();
+      // the freshest answer there is — the hint follows it (a revoke too),
+      // under the same two rules as the background refresh: never into a
+      // slot sync-off emptied meanwhile, never onto another gym's card
+      if (backupCheck.get(gid) === slot) backupCheck.set(gid, { at: Date.now(), list });
+      if (getGyms().activeId === gid) paintBackupHint();
       body.innerHTML = list.map((d) => `
         <div class="spread">
           <span>${esc(d.name || '(unnamed)')}${d.kind === 'backup' ? ' · backup' : ''}${d.self ? ' · this device' : ''}

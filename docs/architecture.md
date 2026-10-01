@@ -255,7 +255,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   flag on an own code would cut a live device off (test-pinned). The Sync
   card's backup hint (settings.js `backupHint`) reads that list at most
   once per 10 min per gym, cached in module state so re-renders neither
-  refetch nor drop it; only `kind:"backup"` ever triggers it. The QR on the
+  refetch nor drop it; only `kind:"backup"` ever triggers it. Both writers
+  (the background refresh and the Devices list) write only into the cache
+  slot that was current when their request went out — sync off empties it,
+  so a late answer never comes back under a new setup — and paint only
+  while their gym is still active. The QR on the
   pairing code is `js/qr.js` (hand-written encoder, byte mode, EC M, SVG
   string — hard black/white, cameras need the contrast) wrapping
   `<app-url>#pair=<code>`; app.js intercepts `#pair=` BEFORE the route
