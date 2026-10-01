@@ -135,11 +135,14 @@ const syncErrorText = (err, prefix) => SYNC_ERRORS[err?.message] ?? `${prefix}: 
 // "seen 2 h ago" from the server's lastSeenAt — absent for a token that
 // has not authenticated since the server began tracking, and on servers
 // older than lastSeenAt itself. Then the mint date stays: for an
-// "(unnamed)" token it is the only fact that tells two rows apart.
+// "(unnamed)" token it is the only fact that tells two rows apart —
+// except where the name already says it ("Paired Thu 1 Oct 2026", the
+// name "Pair another device" mints).
 const seenText = (d) => {
   const seen = Date.parse(d.lastSeenAt);
   if (Number.isFinite(seen)) return `seen ${fmtAgo(seen)}`;
-  return d.mintedAt ? `paired ${esc(String(d.mintedAt).slice(0, 10))} · not seen yet` : 'not seen yet';
+  if (!d.mintedAt || String(d.name ?? '').startsWith('Paired ')) return 'not seen yet';
+  return `paired ${esc(String(d.mintedAt).slice(0, 10))} · not seen yet`;
 };
 
 // --- the backup hint (sync-protocol.md § Kind) ---

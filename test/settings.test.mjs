@@ -503,6 +503,10 @@ try {
   // the devices list: kind and last seen after the name
   server.tokens = [self(), backup({ lastSeenAt: iso(clock - 3.1 * DAY) }), {
     token: 'tok-n', hash: '3'.repeat(64), name: 'tablet', mintedAt: iso(clock - DAY),
+  }, {
+    token: 'tok-p', hash: '4'.repeat(64), name: 'Paired Wed 30 Sep 2026', mintedAt: iso(clock - DAY),
+  }, {
+    token: 'tok-d', hash: '5'.repeat(64), name: 'undated',
   }];
   const devEl = root.querySelector('#sync-devices');
   devEl.open = true;
@@ -512,6 +516,10 @@ try {
   assert.match(devHtml, /mac-mini · backup\s*<span class="muted">· seen 3 days ago</, 'health: the backup is labelled');
   assert.match(devHtml, new RegExp(`tablet\\s*<span class="muted">· paired ${iso(clock - DAY).slice(0, 10)} · not seen yet<`),
     'health: a token never seen says so — and keeps its mint date, the one fact an unnamed row has');
+  assert.match(devHtml, /Paired Wed 30 Sep 2026\s*<span class="muted">· not seen yet</,
+    'health: a name the app minted already carries the date — the row does not repeat it');
+  assert.match(devHtml, /undated\s*<span class="muted">· not seen yet</,
+    'health: no mint date, no "paired undefined"');
   assert.equal(hintEl().innerHTML,
     '<p class="hint">Check the backup on mac-mini — last seen 3 days ago.</p>',
     'health: opening the list refreshes the line from the same answer');
