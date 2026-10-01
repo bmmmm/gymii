@@ -587,17 +587,22 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   top, an in-place update never does (the same rule as train.js's
   `screenKey`). `renderHistory(root, {entry})`: app.js passes `entry: true`
   when the tab is opened, which resets "where in time" (screen, picked
-  week, path workout, heatmap month, picked point); every other call —
-  save, delete, filter change — omits it, so nothing the user was looking at
-  moves. Module state, all of it surviving those re-renders: `screen`,
-  `nameFilter`, `muscleFilter`, `pickedMachine` (a `machineId exercise`
-  key), `pickedT`, `pickedWeek`, `pathWorkoutId` (null = the latest,
-  `'all'` = weighted), `hmMonth`, `focusWorkoutId`, `openEditId`. The range
-  and metric chips persist as `settings.historyRange` ('4w'|'12w'|'1y'|'all',
-  default 12w) and `settings.historyMetric` ('workouts'|'sets'|'volume'|
-  'minutes', default sets); both are device-local — deliberately NOT in
-  merge.js's `USER_SETTINGS` — and read with `?? default`, store.js knows
-  nothing of them. Past workouts are fully editable: per-set
+  week, path workout, heatmap month and machine, picked point, the expanded
+  chip row, a pending `focusWorkoutId`); every other call — save, delete,
+  filter change — omits it, so the screen, the picked machine/week/route
+  and the heatmap stay put (an edit draft open in the overview's week list
+  does NOT survive a bar or tile tap — those rebuild the list). Module
+  state surviving those re-renders: `screen`, `lastScreen`, `nameFilter`,
+  `muscleFilter`, `pickedMachine` (a `machineId exercise` key), `pickedT`,
+  `pickedWeek`, `pathWorkoutId` (null = the latest, `'all'` = weighted),
+  `hmMonth`, `hmMachineKey`, `machinesExpanded`; `focusWorkoutId` and
+  `openEditId` are one-shot — `wireWorkoutList` consumes them on the render
+  they were set for. The range chips and the metric tiles persist as
+  `settings.historyRange` ('4w'|'12w'|'1y'|'all', default 12w) and
+  `settings.historyMetric` ('workouts'|'sets'|'volume'|'minutes', default
+  sets); both are device-local — deliberately NOT in merge.js's
+  `USER_SETTINGS` — and validated on read (`rangeOf`/`metricOf`: any unknown
+  value falls back to the default), store.js knows nothing of them. Past workouts are fully editable: per-set
   values, `+ Set` (copies the previous one, minus its `at` and `rir` — it
   was neither logged live nor rated), `+ Machine` (snapshots num/label/type
   flags like the log screen), remove set or whole machine, date + time and
@@ -632,8 +637,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   via `dateValue` for the same reason) and `machineChain` is the deduping
   "#1 → #3" chain used by the start screen and the workout list alike.
   Workout-name chips at the top
-  filter EVERYTHING: `workouts` is narrowed once, right after `getWorkouts()`,
-  so week, heatmap, chart, path and the list all follow. The filter is
+  filter everything but Worth a look: `workouts` is narrowed once, right
+  after `getWorkouts()`, so week, heatmap, chart, path and the list all
+  follow; the insights read every workout, because a rule like "strength
+  days per week" means nothing for one routine — an insight tap therefore
+  clears the name filter before it selects its machine or muscle. The filter is
   module state (`nameFilter`) because a save or delete re-renders the whole
   view, and it self-clears when its last workout is renamed or deleted.
   The Muscles card (store's `usageByMuscle`/`workoutsWithMuscle`) shows

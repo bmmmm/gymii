@@ -31,6 +31,8 @@ let lastScreen = null;
 // The heatmap's month as a Date on the 1st (null = this month). Module
 // state, so the full re-render after a save no longer snaps it back.
 let hmMonth = null;
+// … and its machine filter ('' = all machines), for the same reason.
+let hmMachineKey = '';
 // Progress card: the picked machine as its 'machineId exercise' key (null =
 // the most recently trained) and the picked point's time (null = the
 // newest; cleared when the machine changes). Module state, like the
@@ -58,6 +60,7 @@ export function renderHistory(root, { entry = false } = {}) {
   if (entry) {
     screen = 'overview';
     hmMonth = null;
+    hmMachineKey = '';
     pickedT = null;
     pickedWeek = null;
     pathWorkoutId = null;
@@ -182,8 +185,10 @@ function renderWorkoutsScreen(root, ctx) {
   });
   wireNameFilter(root);
   wirePastLog(root, ctx.s);
-  wireWorkoutList(root, root.querySelector('#workout-list'), ctx.workouts, ctx.s, ctx.layout);
+  // the heatmap first: it sits ABOVE the list and fills its grid on wiring,
+  // so the list's keepInView ("Open workout ›") measures the final layout
   wireHeatmap(root, ctx);
+  wireWorkoutList(root, root.querySelector('#workout-list'), ctx.workouts, ctx.s, ctx.layout);
 }
 
 // Workout-name chips, on both screens: the filter narrows everything.
@@ -254,8 +259,8 @@ const muscleCard = {
 // --- This week: four totals, twelve weeks of bars, that week's workouts ---
 // The tiles pick what the bars count (`settings.historyMetric`, device-local
 // like the range — merge.js does not sync it); a bar picks the week that the
-// title, the tiles and the list describe. Follows the filters like every
-// other card, and ends in the way into the Workouts screen.
+// title, the tiles and the list describe. Follows the filters (only Worth a
+// look reads everything), and ends in the way into the Workouts screen.
 const WEEKS = 12;
 const METRICS = [['workouts', 'Workouts'], ['sets', 'Sets'], ['volume', 'Volume'], ['minutes', 'Time']];
 const metricOf = (s) => (METRICS.some(([k]) => k === s.historyMetric) ? s.historyMetric : 'sets');
@@ -547,6 +552,10 @@ const progressCard = {
     chipsEl.addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
       if (!chip) return;
+      // "+N more" sits at the END of the scrolled row: the chips it reveals
+      // appear where the thumb is, so the row keeps its scroll instead of
+      // snapping back to the selected chip at the start
+      const keep = chip.dataset.more ? chipsEl.scrollLeft : null;
       if (chip.dataset.more) {
         machinesExpanded = true;
       } else if (chip.dataset.key !== shownKey(recent)) {
@@ -554,6 +563,7 @@ const progressCard = {
         pickedT = null; // a point of another machine means nothing here
       }
       drawProgress();
+      if (keep != null) chipsEl.scrollLeft = keep;
     });
     rangeEl.addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
@@ -782,7 +792,9 @@ function wireHeatmap(root, { workouts, s, unit }) {
   };
   root.querySelector('#hm-prev').addEventListener('click', () => step(-1));
   root.querySelector('#hm-next').addEventListener('click', () => step(1));
-  hmMachine.addEventListener('change', drawHeatmap);
+  // a select ignores a value it has no option for, so a deleted machine falls back to all
+  if (hmMachineKey) hmMachine.value = hmMachineKey;
+  hmMachine.addEventListener('change', () => { hmMachineKey = hmMachine.value; drawHeatmap(); });
   drawHeatmap();
 }
 

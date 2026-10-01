@@ -259,6 +259,10 @@ const thisMonth = hmTitle();
 root.querySelector('#hm-prev').listeners.click();
 const pickedMonth = hmTitle();
 assert.notEqual(pickedMonth, thisMonth, 'the heatmap steps back a month');
+// so is its machine filter
+const hmSel = root.querySelector('#hm-machine');
+hmSel.value = 'm1 ';
+hmSel.listeners.change();
 list().listeners.click(clickOn('.edit-w', { wid: 'w1' }));
 assert.ok(list().innerHTML.includes('edit-save'), 'the card switches to edit mode');
 assert.ok(list().innerHTML.includes('+ Set') && list().innerHTML.includes('+ Machine'),
@@ -283,6 +287,9 @@ list().listeners.click(clickOn('.edit-save'));
 
 assert.ok(onWorkouts(), 'a save stays on the Workouts screen');
 assert.equal(hmTitle(), pickedMonth, 'and keeps the heatmap month');
+// the save replaced the <select> node (innerHTML), so a fresh stub must get the value back
+render();
+assert.equal(root.querySelector('#hm-machine').value, 'm1 ', 'and the heatmap machine filter');
 
 const saved = store.getWorkouts().find((w) => w.id === 'w1');
 assert.equal(saved.entries.length, 2, 'the added machine survives the save');

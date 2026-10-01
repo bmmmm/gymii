@@ -66,10 +66,11 @@ ever sees ciphertext.
   narrows to that muscle. A second screen holds every workout (one tap
   repeats it), the training heatmap and the editor: add or remove sets and
   machines, fix the date, or type in a workout you did without your phone.
-  After each set, one tap rates it by reps left in the tank (0, 1, 2, 3+) —
-  gymii also remembers the order you visited the machines in. Name a workout
-  (gymii suggests one from the muscles you trained) and one tap filters
-  everything down to it.
+  After each strength set, one tap rates it by reps left in the tank (0, 1,
+  2, 3+) — gymii also remembers the order you visited the machines in. Name
+  a workout (gymii suggests one from the muscles you trained) and one tap
+  filters everything down to it, except Worth a look, which always reads
+  all of your training.
 - 🏨 **Gyms & units** — home gym, hotel gym, whatever. kg or lbs, switched
   in one go.
 - 📦 **Templates** — export your gym as JSON, import someone else's. Want to

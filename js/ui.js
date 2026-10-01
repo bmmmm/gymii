@@ -185,7 +185,8 @@ export const fmtDate = (ts) =>
 // "Thu 1 Oct" — a day inside a range the reader already has in view (a
 // heatmap month, a chart). Fixed English names, not toLocaleDateString:
 // en-GB reads "Sept" on newer ICU builds, and a label must not change with
-// the runtime (chart.js keeps its own copy — it imports nothing).
+// the runtime (chart.js has its own month table — it imports nothing — and
+// formats WITHOUT the weekday, so the two are not copies of each other).
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const fmtDay = (ts) => {
