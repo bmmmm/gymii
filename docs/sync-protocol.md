@@ -48,7 +48,10 @@ they were decided during implementation and are now part of the contract.
   authenticated with that token, recorded at most once an hour — a device
   list answer ("which of these is the phone?", "is the backup still
   running?"), not an audit log. It is OMITTED for a token never seen since
-  the server began tracking. The server learns nothing new by it: every
+  the server began tracking. The sighting is recorded AFTER the request is
+  answered, so a token's own entry (`self`) reports its PREVIOUS use —
+  which is what lets a redeemer tell an unused invite token from one a
+  device already adopted. The server learns nothing new by it: every
   request already reaches it with that token.
 - **Kind** (`kind`): an optional closed vocabulary set at mint time, today
   only `"backup"` — a standing device that is expected to check in on a
@@ -172,7 +175,11 @@ settings, plus the sync-relevant sidecars:
   token is that device's live credential. A redeemer that mints a token of
   its own (`gymii-cli pair`) revokes an invite token once its own works,
   so no orphaned credential stays behind; it never revokes the token of a
-  code without the flag. A redeemer that adopts the code's token (the
+  code without the flag. An invite code is meant to be redeemed once, but
+  nothing enforces that — so the redeemer's FIRST request with the invite
+  token is `GET /v1/tokens`, and if that token's `self` entry already
+  carries a `lastSeenAt`, another device adopted it: the redeemer leaves it
+  alone and says so instead of cutting that device off. A redeemer that adopts the code's token (the
   browser) ignores the flag. Parsers ignore fields they do not know.
 
 ## Sync flow (client)
