@@ -3,6 +3,7 @@ import {
   lastEntryFor, getWorkouts, getPlans, savePlan, planFromText, uid,
   usageByMachine, layoutMuscles, distUnit, newLayout, addMachine,
   bindOrCreateMachine, newEntry, nameChipsFor, todayStatus, skipPlanDay, machineBrand,
+  switchMachine, rateLastSet,
 } from './store.js';
 import { drawLayout, usagePayload, findMachineByNum } from './map.js';
 import { ambientWorkoutStart, ambientFinished } from './sync.js';
@@ -205,8 +206,9 @@ export function startWorkoutFrom(source, firstMachineId = null) {
   // standing between the tap and the first set. Starting AT a machine
   // (the picker) always overrules it — that machine is the answer.
   const openBind = !firstMachineId && plan[0] && !plan[0].machineId;
-  saveActive({
-    v: 2, id: uid(), startedAt: Date.now(),
+  const startedAt = Date.now();
+  const active = {
+    v: 2, id: uid(), startedAt,
     // repeating a named workout keeps its identity — without this the
     // routine group would split into a named and an unnamed half
     ...(source?.name ? { name: source.name } : {}),
@@ -217,10 +219,14 @@ export function startWorkoutFrom(source, firstMachineId = null) {
     ...(pendingLocker ? { locker: pendingLocker } : {}),
     plan,
     ...(openBind ? { binding: 0 } : {}),
-    currentMachineId: firstMachineId ?? plan[0]?.machineId ?? null,
-    currentExercise: firstMachineId ? null : plan[0]?.exercise ?? null,
+    currentMachineId: null, // switchMachine below opens the first visit
+    currentExercise: null,
     entries: [],
-  });
+  };
+  // the first machine's visit begins with the workout itself
+  switchMachine(active, firstMachineId ?? plan[0]?.machineId ?? null,
+    firstMachineId ? null : plan[0]?.exercise ?? null, { now: startedAt });
+  saveActive(active);
   pendingLocker = '';
 }
 
@@ -1018,8 +1024,7 @@ function renderOverview(root, layout, active) {
         renderTrain(root);
         return;
       }
-      active.currentMachineId = slot.machineId;
-      active.currentExercise = slot.exercise;
+      switchMachine(active, slot.machineId, slot.exercise);
       saveActive(active);
       renderTrain(root);
     });
@@ -1029,8 +1034,7 @@ function renderOverview(root, layout, active) {
     if (!active.plan.some((p) => p.machineId === machineId)) {
       active.plan.push({ machineId, exercise: null });
     }
-    active.currentMachineId = machineId;
-    active.currentExercise = null;
+    switchMachine(active, machineId);
     saveActive(active);
     renderTrain(root);
   }, { actionLabel: 'Add' });
@@ -1123,8 +1127,7 @@ function renderBind(root, layout, active) {
       }
     }
     delete active.binding;
-    active.currentMachineId = machine.id;
-    active.currentExercise = null;
+    switchMachine(active, machine.id);
     saveActive(active);
     renderTrain(root);
   };
@@ -1257,8 +1260,7 @@ function resolveEntry(machine, active) {
 function renderLog(root, layout, active, reveal = null) {
   const machine = layout.machines.find((m) => m.id === active.currentMachineId);
   if (!machine) { // machine was deleted in the gym mid-workout
-    active.currentMachineId = null;
-    active.currentExercise = null;
+    switchMachine(active, null);
     saveActive(active);
     renderTrain(root);
     return;
@@ -1358,6 +1360,11 @@ function renderLog(root, layout, active, reveal = null) {
   // row, gone once a set is logged or it's skipped, never nagging after.
   const lockerAsk = !active.locker && !active.lockerDismissed && !workoutSetCount(active);
 
+  // Rest 0 opens no overlay, so its "Reps left?" chips sit above the log
+  // button instead — only while the set they would rate was logged HERE.
+  const rated = newestStamped(active);
+  const rirHere = restSeconds === 0 && !cardio && rated?.entry === entry;
+
   root.innerHTML = `
     <button type="button" id="log-back" class="back-row">‹ Workout</button>
     <div class="machine-head">
@@ -1451,6 +1458,7 @@ function renderLog(root, layout, active, reveal = null) {
           <button type="button" id="rest-plus" class="chip">+15s</button>
           <button type="button" id="rest-skip" class="chip">Skip</button>
         </div>` : ''}
+        ${rirHere ? `<div class="rest-opts" id="rir-log">${rirChips(rated.set.rir)}</div>` : ''}
         <button id="log-set" class="btn ${targetDone && nextMachine ? '' : 'btn-primary '}btn-big">${logLabel(def)}</button>
       </div>
     </section>`}
@@ -1562,6 +1570,18 @@ function renderLog(root, layout, active, reveal = null) {
     startRest(rest, root, active);
   });
 
+  // Through THIS screen's own `active`: the next Log set saves this very
+  // object, so a rating written to a fresh store copy would be overwritten.
+  // No re-render — the chips toggle in place, under the thumb.
+  const rirLog = root.querySelector('#rir-log');
+  rirLog?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    const set = rateLastSet(active, Number(chip.dataset.rir));
+    saveActive(active);
+    paintRir(rirLog, set?.rir);
+  });
+
   // "Next:" for the rest screen — this render already knows all of it.
   // Keyed on slotDone, not targetDone: a slot with no target counts as done
   // after one set, so the answer jumps to the next machine rather than
@@ -1601,8 +1621,7 @@ function renderLog(root, layout, active, reveal = null) {
     if (!chip) return;
     const c = quickSwitch.find((x) => x.machineId === chip.dataset.machine);
     if (!c) return;
-    active.currentMachineId = c.machineId;
-    active.currentExercise = c.exercise ?? null;
+    switchMachine(active, c.machineId, c.exercise ?? null);
     saveActive(active);
     renderTrain(root);
   });
@@ -1644,17 +1663,16 @@ function renderLog(root, layout, active, reveal = null) {
     renderLog(root, layout, active);
   });
 
-  // same move as a Next tap, just to the nearby machine instead
+  // same move as a Next tap, just to the nearby machine instead — and the
+  // skipped next machine goes on record as busy at this hour
   root.querySelector('#nearby-machine')?.addEventListener('click', () => {
-    active.currentMachineId = nearby.slot.machineId;
-    active.currentExercise = nearby.slot.exercise;
+    switchMachine(active, nearby.slot.machineId, nearby.slot.exercise, { busy: nextSlot.machineId });
     saveActive(active);
     renderTrain(root);
   });
 
   root.querySelector('#next-machine')?.addEventListener('click', () => {
-    active.currentMachineId = nextSlot.machineId;
-    active.currentExercise = nextSlot.exercise;
+    switchMachine(active, nextSlot.machineId, nextSlot.exercise);
     saveActive(active);
     renderTrain(root);
   });
@@ -1666,8 +1684,7 @@ function renderLog(root, layout, active, reveal = null) {
   });
 
   const toOverview = () => {
-    active.currentMachineId = null;
-    active.currentExercise = null;
+    switchMachine(active, null);
     saveActive(active);
     renderTrain(root);
   };
@@ -1874,10 +1891,35 @@ function runRest(root, { overlay }) {
   paintRest();
 }
 
+// --- reps in reserve ---
+// "Reps left?" rates the set just logged via store's rateLastSet (0..3,
+// 3 = "3 or more"; the same chip again clears it). Chips, never a field.
+const RIR_CHOICES = [[0, '0'], [1, '1'], [2, '2'], [3, '3+']];
+
+const rirChips = (sel) => `<span class="muted">Reps left?</span>${RIR_CHOICES
+  .map(([v, label]) => `<button type="button" class="chip sm${v === sel ? ' sel' : ''}"
+    data-rir="${v}">${label}</button>`).join('')}`;
+
+const paintRir = (row, rir) => row.querySelectorAll('.chip').forEach((c) =>
+  c.classList.toggle('sel', Number(c.dataset.rir) === rir));
+
+// The workout's newest `at`-stamped set and its entry — the set rateLastSet
+// rates whenever that entry is not cardio (same >= tie-break).
+function newestStamped(active) {
+  let best = null;
+  active?.entries.forEach((e) => e.sets.forEach((st) => {
+    if (Number.isFinite(st.at) && (!best || st.at >= best.set.at)) best = { entry: e, set: st };
+  }));
+  return best;
+}
+
 function openRestOverlay() {
   const dimChips = (sel) => [['off', 'Never'], ['10s', 'After 10 s'], ['now', 'Now']]
     .map(([v, label]) => `<button type="button" class="chip sm${v === sel ? ' sel' : ''}"
       data-dim="${v}">${label}</button>`).join('');
+
+  // the set this rest follows — a cardio bout gets no "Reps left?"
+  const rated = newestStamped(getActive());
 
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
@@ -1885,6 +1927,8 @@ function openRestOverlay() {
     <div class="muted">REST</div>
     <div class="countdown" id="cd"></div>
     ${nextUpLabel ? `<div class="muted rest-next">Next: ${esc(nextUpLabel)}</div>` : ''}
+    ${rated && !rated.entry.cardio
+    ? `<div class="rest-opts" id="rir-opts">${rirChips(rated.set.rir)}</div>` : ''}
     <div class="row">
       <button class="btn" id="rest-minus">−15s</button>
       <button class="btn" id="rest-plus-big">+15s</button>
@@ -1915,6 +1959,21 @@ function openRestOverlay() {
     overlay.querySelector('#dim-opts').innerHTML =
       `<span class="muted">🌙 Darken</span>${dimChips(chip.dataset.dim)}`;
     restRun.dimAt = Date.now() + dimDelaySeconds(chip.dataset.dim) * 1000;
+  });
+
+  // The log screen under the overlay holds its OWN copy of the workout and
+  // saves it on the next Log set, so after rating it is re-rendered from the
+  // store — same screenKey, no scroll reset; the overlay lives on body.
+  const rirOpts = overlay.querySelector('#rir-opts');
+  rirOpts?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    const a = getActive();
+    if (!a) return;
+    const set = rateLastSet(a, Number(chip.dataset.rir));
+    saveActive(a);
+    renderTrain(restRun.root);
+    paintRir(rirOpts, set?.rir);
   });
 
   overlay.querySelector('#rest-skip-big').addEventListener('click', endRest);

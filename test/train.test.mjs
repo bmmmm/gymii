@@ -931,4 +931,84 @@ assert.equal(store.getActive().entries[0].sets.length, 1, 'the second tap remove
 assert.equal(store.getActive().entries[0].sets[0].weight, 40, 'the one it pointed at');
 store.clearActive();
 
+// --- "Reps left?" with the rest timer off ---
+// Rest 0 opens no overlay, so the chips sit above Log set. They must write
+// through the log screen's OWN active: the next Log set saves that object,
+// and a rating written to a fresh store copy would be overwritten by it.
+byId.clear();
+const rirGym = store.newLayout('RIR gym');
+rirGym.machines.push({
+  id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
+});
+store.saveLayout(rirGym);
+store.saveActive({
+  v: 2, id: 'w-rir', startedAt: Date.now() - 60000,
+  plan: [{ machineId: 'm1', exercise: null }],
+  currentMachineId: 'm1', currentExercise: null, entries: [],
+  restOverrides: { m1: 0 },
+});
+renderTrain(root);
+byId.get('#set-weight').value = '40';
+byId.get('#set-reps').value = '8';
+byId.get('#set-rest').value = '0';
+byId.get('#log-set').listeners.click();
+// the stub hands back every selector, so prove the row really rendered
+assert.ok(root.innerHTML.includes('id="rir-log"') && root.innerHTML.includes('data-rir="2"'),
+  'with the rest timer off the chips sit on the log screen');
+byId.get('#rir-log').listeners.click({ target: { closest: () => ({ dataset: { rir: '2' } }) } });
+byId.get('#log-set').listeners.click();
+const [ratedSet, nextSet] = store.getActive().entries[0].sets;
+assert.equal(ratedSet.rir, 2, 'the next Log set keeps the rating');
+assert.ok(!('rir' in nextSet), 'and the new set starts unrated');
+store.clearActive();
+
+// --- visits: the walking route, recorded at every machine switch ---
+// start → Next → "Busy?" → finish, on a clock the test owns: closeVisits
+// drops stops under 15 s, so real milliseconds would leave nothing to see.
+byId.clear();
+const visitGym = store.newLayout('Visit gym');
+visitGym.machines.push(
+  { id: 'va', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] },
+  { id: 'vb', num: 2, label: 'Lat pulldown', x: 10, y: 0, w: 4, h: 3, settingsFields: [] },
+  { id: 'vc', num: 3, label: 'Leg press', x: 40, y: 0, w: 4, h: 3, settingsFields: [] },
+  { id: 'vd', num: 4, label: 'Pec deck', x: 10, y: 6, w: 4, h: 3, settingsFields: [] },
+);
+store.saveLayout(visitGym);
+store.saveWorkouts([]);
+const realNow = Date.now;
+const t0 = 1760000000000;
+let clock = t0;
+Date.now = () => clock;
+try {
+  startWorkoutFrom({ entries: [entry('va'), entry('vb'), entry('vc'), entry('vd')] });
+  const visitId = store.getActive().id;
+  assert.deepEqual(store.getActive().visits, [{ machineId: 'va', in: t0 }],
+    'the first visit opens with the workout');
+  renderTrain(root);
+  byId.get('#set-weight').value = '40';
+  byId.get('#set-reps').value = '8';
+  byId.get('#set-rest').value = '0';
+  clock = t0 + 60000;
+  byId.get('#log-set').listeners.click();
+  clock = t0 + 90000;
+  byId.get('#next-machine').listeners.click(); // → #2, the plan's next
+  // #3 is next now; the "Busy?" button offers #4, which stands closer
+  assert.ok(root.innerHTML.includes('Busy? #4'), 'the busy escape hatch is on offer');
+  clock = t0 + 120000;
+  byId.get('#nearby-machine').listeners.click();
+  clock = t0 + 180000;
+  byId.get('#log-set').listeners.click();
+  clock = t0 + 200000;
+  byId.get('#log-finish').listeners.click();
+  byId.get('#log-finish').listeners.click();
+  assert.deepEqual(store.getWorkouts().find((w) => w.id === visitId).visits, [
+    { machineId: 'va', in: t0, out: t0 + 90000 },
+    { machineId: 'vb', in: t0 + 90000, out: t0 + 120000 },
+    { machineId: 'vd', in: t0 + 120000, out: t0 + 200000, busy: 'vc' },
+  ], 'every switch closes one visit and opens the next; "Busy?" names the skipped machine');
+} finally {
+  Date.now = realNow;
+}
+store.saveWorkouts([]);
+
 console.log('train plan construction: all assertions passed');
