@@ -328,7 +328,7 @@ function machineSvg(m, usage = null, highlightId = null, pathIds = null) {
 }
 
 // --- walking-path overlay ---
-// ITEM_COLORS[3] (chart.js palette), validated against the surface #171c22.
+// ITEM_COLORS[3] (map.js, above), validated against the surface #171c22.
 // Every presentation attribute is inline: the overlay must render without
 // stylesheet support; the classes are for CSS and tests only. No <marker>:
 // url(#id) collides when two maps share a page.

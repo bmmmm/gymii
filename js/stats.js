@@ -272,10 +272,13 @@ export function workoutPath(workout, layout) {
 
 // How many workouts walked each machine-to-machine transition — counted once
 // per workout, so one workout's back-and-forth cannot outweigh a habit.
-export function transitionCounts(workouts) {
+export function transitionCounts(workouts, layout = null) {
   const counts = new Map();
+  // with a layout, machines missing from it drop out BEFORE collapsing —
+  // the same stops workoutPath draws, so the weighted map matches it
+  const known = layout ? new Set((layout.machines ?? []).map((m) => m.id)) : null;
   workouts.forEach((w) => {
-    const stops = collapse(rawStops(w));
+    const stops = collapse(rawStops(w).filter((s) => !known || known.has(s.machineId)));
     const seen = new Set();
     for (let i = 1; i < stops.length; i++) {
       const from = stops[i - 1].machineId;
@@ -395,14 +398,20 @@ function targetReps(plans, machineId, exercise, planId) {
   return hit ? hit.target.reps : null;
 }
 
+// A machine counts as "still being trained" for this many days (rules 1, 8).
+const RECENT_DAYS = 21;
+
 // 1 — the target is beaten twice at the same load: time to add weight.
-function progressRule(ws, layout, settings, plans) {
+function progressRule(ws, layout, settings, plans, now) {
   const unit = settings?.unit ?? 'kg';
   const step = settings?.weightStep ?? 2.5;
   return trainedPairs(ws).flatMap(({ machineId, exercise, entry }) => {
     const series = seriesEntries(ws, machineId, exercise);
     if (series.length < 2 || series[0].kind !== 'strength') return [];
     const [p, q] = series.slice(-2);
+    // a machine not trained in three weeks is not "due" for more load —
+    // the same recency window as the plateau rule
+    if (daysBetween(q.w.startedAt, now) >= RECENT_DAYS) return [];
     const W = topSet(q.e.sets).weight;
     if (!(W > 0) || topSet(p.e.sets).weight !== W) return [];
     const T = targetReps(plans, machineId, exercise, q.w.planId) ?? 12;
@@ -424,7 +433,11 @@ function progressRule(ws, layout, settings, plans) {
 // 2 — fewer than two strength days a week over the last four full weeks.
 function frequencyRule(ws, now) {
   if (daysBetween(ws[0].startedAt, now) < 28) return [];
-  const mean = sum(weeklyBuckets(ws, { weeks: 5, now }).slice(0, 4).map((b) => b.strengthDays)) / 4;
+  const full = weeklyBuckets(ws, { weeks: 5, now }).slice(0, 4);
+  // a first workout INSIDE the oldest week leaves that week partial — it
+  // would read as a low week that never was one
+  if (ws[0].startedAt > full[0].weekStart.getTime()) return [];
+  const mean = sum(full.map((b) => b.strengthDays)) / 4;
   if (!(mean < 2)) return [];
   return [insight('frequency', (2 - mean) * 4.5, {
     text: `Last 4 weeks: ${num(mean, 2)} strength days/week.`,
@@ -459,7 +472,10 @@ function muscleGapRule(ws, layout, now) {
 function muscleVolumeRule(ws, layout, now) {
   if (daysBetween(ws[0].startedAt, now) < 28) return [];
   const means = [...muscleWeekly(ws, layout, { weeks: 5, now })]
-    .map(([muscle, weeks]) => ({ muscle, mean: sum(weeks.slice(0, 4)) / 4 }));
+    .map(([muscle, weeks]) => ({ muscle, mean: sum(weeks.slice(0, 4)) / 4 }))
+    // a muscle the layout tags but nobody trains is not low volume, it is
+    // untrained — nagging about it would never stop (tone rule)
+    .filter((m) => m.mean > 0);
   if (means.length < 4) return [];
   const median = quantile(means.map((m) => m.mean).sort((a, b) => a - b), 0.5);
   const lowest = means.reduce((a, b) => (b.mean < a.mean ? b : a));
@@ -523,15 +539,22 @@ function routeRule(ws, layout) {
 // 7 — a machine that keeps being busy at the same weekday and hour.
 function busyRule(ws, layout, now) {
   const groups = new Map();
-  ws.forEach((w) => (w.visits ?? []).forEach((v) => {
+  ws.forEach((w) => {
+  // one mark per workout per machine: three "Busy?" hops in one evening are
+  // one busy evening, not a weekday pattern
+  const marked = new Set();
+  (w.visits ?? []).forEach((v) => {
     if (!v?.busy || !finite(v.in) || daysBetween(v.in, now) >= 56) return;
+    if (marked.has(v.busy)) return;
+    marked.add(v.busy);
     const d = new Date(v.in);
     const key = `${v.busy}|${d.getDay()}`;
     const g = groups.get(key) ?? { machineId: v.busy, day: d.getDay(), mins: [] };
     // wall-clock minutes, so a mark before and after a DST switch compare
     g.mins.push(d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60);
     groups.set(key, g);
-  }));
+  });
+  });
   return [...groups.values()].flatMap(({ machineId, day, mins }) => {
     const name = machineName(layout, machineId);
     if (!name) return [];
@@ -563,7 +586,7 @@ function plateauRule(ws, layout, settings, now) {
     if (pts.length < 8) return [];
     const best = Math.max(...pts.slice(0, -6).map((p) => p.e1rm));
     if (Math.max(...pts.slice(-6).map((p) => p.e1rm)) > best) return [];
-    if (daysBetween(pts[pts.length - 1].t, now) >= 21) return [];
+    if (daysBetween(pts[pts.length - 1].t, now) >= RECENT_DAYS) return [];
     const since = pts.length - 1 - pts.findIndex((p) => p.e1rm === best);
     return [insight('plateau', since - 6, {
       text: `${machineName(layout, machineId, entry, exercise)}: no new best in ${since} workouts (${num(best)} ${unit} e1RM).`,
@@ -581,7 +604,7 @@ export function insights(workouts, layout, settings, { now = Date.now(), plans =
   if (workouts.length < 3) return [];
   const ws = byStart(workouts);
   const candidates = [
-    ...progressRule(ws, layout, settings, plans),
+    ...progressRule(ws, layout, settings, plans, now),
     ...frequencyRule(ws, now),
     ...(layout ? muscleGapRule(ws, layout, now) : []),
     ...(layout ? muscleVolumeRule(ws, layout, now) : []),

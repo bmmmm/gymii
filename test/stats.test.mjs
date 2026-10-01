@@ -244,6 +244,17 @@ const ROUTE = W(T0, [
     ['m1>m2', { from: 'm1', to: 'm2', n: 2 }],
     ['m2>m1', { from: 'm2', to: 'm1', n: 1 }],
   ], 'once per workout per transition');
+  // with a layout, a deleted machine drops out BEFORE collapsing — the
+  // weighted map then counts the same legs workoutPath draws
+  const viaGone = W(T0, [], { visits: [
+    { machineId: 'm2', in: stamp(0), out: stamp(100) },
+    { machineId: 'gone', in: stamp(110), out: stamp(200) },
+    { machineId: 'm3', in: stamp(210), out: stamp(300) },
+  ] });
+  assert.deepEqual([...stats.transitionCounts([viaGone], LAYOUT).keys()], ['m2>m3'],
+    'transitionCounts with a layout skips machines missing from it');
+  assert.deepEqual([...stats.transitionCounts([viaGone]).keys()], ['m2>gone', 'gone>m3'],
+    'without a layout every stop counts');
 }
 
 // --- restGaps ---
@@ -280,6 +291,9 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   assert.equal(fired.source, 'acsm2009');
   assert.equal(fired.machineId, 'm2');
   assert.equal(find(prog(14, 13), 'progress'), undefined, 'progress: 13 reps is one short of T+2');
+  const aged = (n) => prog(14, 14).map((w) => ({ ...w, startedAt: w.startedAt - n * 864e5, finishedAt: w.finishedAt - n * 864e5 }));
+  assert.ok(find(aged(19), 'progress'), 'progress: a last session 20 days ago still counts');
+  assert.equal(find(aged(20), 'progress'), undefined, 'progress: a machine not trained for 21 days is not due for more load');
   assert.equal(find(prog(12, 12, { rir2: 2, rir3: 2 }), 'progress')?.text,
     '#2 Lat pulldown: 12 × 57.5 kg twice — try 60 kg.', 'progress: reps ≥ T with rir 2');
   assert.equal(find(prog(12, 12, { rir2: 2, rir3: 1 }), 'progress'), undefined, 'progress: rir 1 is one short');
@@ -302,13 +316,21 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
 
 // 2 frequency — ≥ 28 days of history, < 2 strength days/week over 4 full weeks
 {
-  // full weeks: Oct 5 (2 days), Oct 12 (2), Oct 19 (2), Oct 26 (1) = 7 → 1.75
-  const freq = (first, extra = []) => [first, 26, 22, 20, 15, 13, 8, ...extra]
+  // first workout Sun 4 Oct (before the oldest full week), then full weeks:
+  // Oct 5 (2 days), Oct 12 (2), Oct 19 (2), Oct 26 (1) = 7 → 1.75
+  const freq = (first, extra = []) => [first, 27, 26, 22, 20, 15, 13, 8, ...extra]
     .map((n) => W(day(n), [E('m1', [S(10, 40)])]));
-  assert.equal(find(freq(28), 'frequency')?.text, 'Last 4 weeks: 1.75 strength days/week.');
-  assert.equal(find(freq(28), 'frequency').source, 'who2020');
-  assert.equal(find(freq(28, [6]), 'frequency'), undefined, 'frequency: a mean of exactly 2 is enough');
+  assert.equal(find(freq(31), 'frequency')?.text, 'Last 4 weeks: 1.75 strength days/week.');
+  assert.equal(find(freq(31), 'frequency').source, 'who2020');
+  assert.equal(find(freq(31, [6]), 'frequency'), undefined, 'frequency: a mean of exactly 2 is enough');
   assert.equal(find(freq(27), 'frequency'), undefined, 'frequency: 27 days of history is too short');
+  // first workout on Mon 5 Oct 18:00 — inside the oldest week, which would
+  // otherwise read as a low week (1.75 without the guard)
+  const partial = [30, 26, 22, 20, 15, 13, 8].map((n) => W(day(n), [E('m1', [S(10, 40)])]));
+  assert.equal(find(partial, 'frequency'), undefined, 'frequency: a first workout inside the oldest week leaves it partial');
+  const covered = [31, 26, 22, 20, 15, 13, 8].map((n) => W(day(n), [E('m1', [S(10, 40)])]));
+  assert.equal(find(covered, 'frequency')?.text, 'Last 4 weeks: 1.5 strength days/week.',
+    'frequency: a first workout before the oldest week makes it full');
 }
 
 // 3 muscle-gap — trained in the last 42 d, not in the last 10, ≥ 2 workouts in those 10
@@ -338,6 +360,9 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     'muscle-volume fires — and the treadmill does not count as calf sets');
   assert.equal(v.muscle, 'Calves');
   assert.equal(v.source, 'schoenfeld2017');
+  const L5 = { ...L4, machines: [...L4.machines, M('ve', 6, 'E', 32, 2, ['Abs'])] };
+  assert.equal(find(vol([4, 4, 4, 3]), 'muscle-volume', { layout: L5 })?.muscle, 'Calves',
+    'muscle-volume: a muscle nobody trains is untrained, not low volume');
   assert.equal(find(vol([4, 4, 4, 4]), 'muscle-volume', { layout: L4 }), undefined,
     'muscle-volume: exactly half the median is not below it');
   const L3 = { ...L4, machines: L4.machines.filter((m) => m.id !== 'vb') };
@@ -408,6 +433,15 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   assert.equal(b.source, 'own');
   assert.equal(find([mon(16, 17, 10), mon(9, 17, 40), busyW(day(2, 18, 30), null)], 'busy'), undefined,
     'busy: 2 marks are one short');
+  const t3 = day(2, 18, 30);
+  const threeHops = W(t3 - 600e3, [E('m1', [S(10, 40)]), E('m3', [S(10, 40)])], { visits: [
+    { machineId: 'm1', in: t3 - 600e3, out: t3 - 60e3 },
+    { machineId: 'm3', in: t3, out: t3 + 100e3, busy: 'm8' },
+    { machineId: 'm1', in: t3 + 110e3, out: t3 + 200e3, busy: 'm8' },
+    { machineId: 'm3', in: t3 + 210e3, out: t3 + 500e3, busy: 'm8' },
+  ] });
+  assert.equal(find([mon(16, 17, 10), threeHops, busyW(day(9, 18, 0), null)], 'busy'), undefined,
+    'busy: three hops in one evening are one mark, not a weekday pattern');
   assert.equal(find([mon(16, 17, 10), mon(9, 17, 40), mon(2, 19, 10)], 'busy')?.text,
     '#8 Pec deck busy 3× on Mondays 17–20 h.', 'busy: a span of exactly 2 h still counts');
   assert.equal(find([mon(16, 17, 10), mon(9, 17, 40), mon(2, 19, 11)], 'busy'), undefined,

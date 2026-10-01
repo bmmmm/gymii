@@ -759,7 +759,7 @@ const MIN_VISIT_MS = 15000;
 
 // The visits a finished workout keeps: the open one closed at `now`, tap
 // throughs dropped; undefined when nothing is left (absent, never empty).
-// Pure — returns new objects, never touches the input.
+// Pure — never touches the input (closed visits come back by reference).
 export function closeVisits(visits, now) {
   if (!Array.isArray(visits)) return undefined;
   const kept = visits
