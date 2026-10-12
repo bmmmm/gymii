@@ -2078,7 +2078,7 @@ function openRestOverlay() {
     if (!a) return;
     const set = rateLastSet(a, Number(chip.dataset.rir));
     saveActive(a);
-    renderTrain(restRun.root);
+    if (onTrainTab()) renderTrain(restRun.root);
     paintRir(rirOpts, set?.rir);
   });
 
@@ -2144,8 +2144,19 @@ function dismissRest() {
   restRun.overlay?.remove();
   restRun.overlay = null;
   const { root } = restRun;
+  if (!onTrainTab()) return;
   renderTrain(root); // same screenKey → no scroll reset
   keepInView(root, '.next-set');
+}
+
+// The overlay lives on body and outlives a route change: Browser Back
+// under it leaves #view showing another tab, and re-rendering Train into
+// it would paint the workout under that tab's pill. Mirrors app.js's
+// route(): every hash it does not know is the Train tab.
+const OTHER_TABS = ['gym', 'history', 'ai', 'settings'];
+function onTrainTab() {
+  const name = location.hash.replace('#', '');
+  return !OTHER_TABS.includes(name) && !name.startsWith('pair=');
 }
 
 // Stop the machinery, leave the fact: used when a new rest replaces this

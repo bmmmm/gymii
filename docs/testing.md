@@ -91,6 +91,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   re-focused field, a pinch-zoom and a too-tall field do NOT scroll, and
   --kb drops on keyboard close and on return to the app), and the
   standalone/PWA safe-area padding scales correctly under a CDP-emulated notch inset,
+  a rest overlay closed after Browser Back paints nothing of Train under
+  another tab's pill (`workout.spec.mjs`),
   and the History tab (`history.spec.mjs`, demo gym): a machine chip names
   the chart, a bar tap opens that week, the Workouts screen passes the same
   44px / 16px / no-overflow measures, and the path card draws a route.

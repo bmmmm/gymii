@@ -107,3 +107,23 @@ test('the rest overlay carries the rest hint with its 44px ↗', async ({ page }
   expect(box.height).toBeGreaterThanOrEqual(44);
   await expect(hint.locator('a')).toHaveAttribute('href', /PMC11349676/);
 });
+
+// The rest overlay lives on body and survives a route change. Browser Back
+// under it used to let a backdrop tap (or a RIR chip) render the workout
+// into #view while the History pill stayed lit.
+test('closing the rest overlay after Back never paints Train under another tab', async ({ page }) => {
+  await seedDemoGym(page);
+  await page.goto('/#history');
+  await page.locator('#tabbar a[data-tab="train"]').click();
+  await startWorkoutAt(page, 1);
+  await page.locator('#log-set').click();
+  const overlay = page.locator('.overlay');
+  await expect(overlay).toBeVisible();
+
+  await page.evaluate(() => history.back());
+  await expect(page.locator('#tabbar a.active')).toHaveAttribute('data-tab', 'history');
+  await overlay.click({ position: { x: 5, y: 5 } });
+  await expect(overlay).toHaveCount(0);
+  await expect(page.locator('#tabbar a.active')).toHaveAttribute('data-tab', 'history');
+  await expect(page.locator('#view #log-set')).toHaveCount(0);
+});
