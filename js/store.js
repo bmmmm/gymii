@@ -508,25 +508,38 @@ export function addMachineVariant(machineId, { exercises = [], grips = [] } = {}
 // sets, the second target lost on the next start): the item keeps its own
 // exercise part ("#2 Dumbbells: Curls"), else takes its name — and when the
 // machine had no exercises yet, its whole-machine siblings take the
-// machine's label. A grip the item names stays, and the machine learns it.
-// Returns what the machine has to learn ({ exercises, grips }, for
-// addMachineVariant); writes nothing itself.
-export function bindItemTo(items, i, machine, name) {
+// machine's label. EXCEPT at a machine already trained whole (`trainedWhole`
+// — sets without an exercise in history or this workout): relabelling would
+// cut those sets off the sibling's slot, its tally and every later prefill,
+// so there the line stays a whole-machine slot. A grip the item names
+// stays, and the machine learns it. Returns what the machine has to learn
+// ({ exercises, grips }, for addMachineVariant); writes nothing itself.
+export function bindItemTo(items, i, machine, name, { trainedWhole = false } = {}) {
   const item = items[i];
   const siblings = items.filter((p, j) => j !== i && p.machineId === machine.id);
-  const exercise = item.exercise ?? (siblings.length && name !== machine.label ? name : null);
+  const fresh = !(machine.exercises ?? []).length;
+  const whole = siblings.filter((p) => !p.exercise);
+  const keepWhole = fresh && trainedWhole && whole.length > 0;
+  const sameAsLabel = String(name).trim().toLowerCase() === String(machine.label).trim().toLowerCase();
+  const exercise = keepWhole ? null
+    : item.exercise ?? (siblings.length && !sameAsLabel ? name : null);
   item.machineId = machine.id;
   const learn = { exercises: [], grips: item.grip ? [item.grip] : [] };
-  if (!exercise) { item.exercise = item.exercise ?? null; return learn; }
+  if (!exercise) { item.exercise = null; return learn; }
   item.exercise = exercise;
   learn.exercises.push(exercise);
-  if (!(machine.exercises ?? []).length) {
-    const whole = siblings.filter((p) => !p.exercise);
+  if (fresh && whole.length) {
     whole.forEach((p) => { p.exercise = machine.label; });
-    if (whole.length) learn.exercises.unshift(machine.label);
+    learn.exercises.unshift(machine.label);
   }
   return learn;
 }
+
+// Whether a machine has sets logged WITHOUT an exercise — in history, or in
+// the given entries (a running workout's). bindItemTo's `trainedWhole`.
+export const machineTrainedWhole = (machineId, entries = []) =>
+  [...getWorkouts().flatMap((w) => w.entries), ...entries]
+    .some((e) => e.machineId === machineId && !e.exercise && e.sets.length);
 
 export function newLayout(name = 'My layout') {
   const grid = { w: 60, h: 40 };

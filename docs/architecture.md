@@ -171,7 +171,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   picker's create-on-miss and the builder's bind), `bindItemTo(items, i,
   machine, name)` (binds a slot or plan item; a SECOND line on one machine
   becomes a second exercise there — its own exercise part, else its name,
-  and the machine's whole-machine siblings take its label — or the two
+  and the machine's whole-machine siblings take its label, unless the
+  machine was already trained whole (`machineTrainedWhole`): relabelling
+  would cut those sets off their slot and their prefill, so there the line
+  stays a whole-machine twin — or the two
   would be one slot twice: Next pointing at itself, "✓ 3/3" on both rows,
   the second target gone on restart; unbound items keep their exercise
   part for this; an unbound slot carries `itemIdx` so the write-back hits

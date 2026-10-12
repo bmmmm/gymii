@@ -7,7 +7,7 @@
 // (a name and a target, no machine) and bind here or on the gym floor.
 
 import {
-  getLayout, ensureMachine, addMachineVariant, bindItemTo, getPlans, savePlan, deletePlan,
+  getLayout, ensureMachine, addMachineVariant, bindItemTo, machineTrainedWhole, getPlans, savePlan, deletePlan,
   lastEntryFor, getSettings, getWorkouts, usualWeekday, uid, distUnit,
   layoutMuscles, isUnbound,
   parsePlanText, planItemsFrom, planToText, nameChipsFor,
@@ -342,7 +342,8 @@ export function renderPlanBuilder(
       }
       if (!machine) return;
       // a second line on one machine becomes a second exercise there
-      const learn = bindItemTo(draft.items, i, machine, it.name);
+      const learn = bindItemTo(draft.items, i, machine, it.name,
+        { trainedWhole: machineTrainedWhole(machine.id) });
       if (learn.exercises.length || learn.grips.length) {
         addMachineVariant(machine.id, learn);
         layout = getLayout();

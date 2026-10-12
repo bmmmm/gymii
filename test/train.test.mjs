@@ -1588,6 +1588,8 @@ const withPicker = (fn) => {
   byId.clear();
   renderTrain(root);
   assert.equal(selected(), null, 'and is not re-resolved on the next render');
+  byId.get('#exercise-chips').listeners.click({ target: { closest: () => ({ dataset: { exercise: 'Pushdown' } }) } });
+  assert.strictEqual(store.getActive().currentGrip, null, 'tapping the exercise already on screen keeps the choice');
 
   // a wildcard slot counts both grips; two grip slots walk Next between them
   start([{ machineId: 'ct', exercise: 'Pushdown', grip: 'Rope' }, { machineId: 'ct', exercise: 'Pushdown', grip: 'V-bar' },
@@ -1688,6 +1690,54 @@ const withPicker = (fn) => {
   renderTrain(root);
   assert.ok(!root.innerHTML.includes('id="grip-chips"'), 'no grips, no grip row');
   store.clearActive();
+  store.saveWorkouts([]);
+  store.saveLayout(before);
+}
+
+// --- binding onto a machine already trained WHOLE never relabels its slot ---
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Whole gym');
+  g.machines.push({ id: 'm3', num: 3, label: 'Leg press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
+  store.saveLayout(g);
+  store.clearActive();
+  const p = store.planFromText('#3 Leg press 3x10 80\nCalf raise 3x15 60');
+  store.savePlan(p);
+  startWorkoutFrom({ planId: p.id, entries: p.items });
+  byId.clear();
+  renderTrain(root);
+  for (let k = 0; k < 3; k++) {
+    byId.get('#set-weight').value = '80';
+    byId.get('#set-reps').value = '10';
+    byId.get('#set-rest').value = '0';
+    byId.get('#log-set').listeners.click();
+  }
+  const a = store.getActive();
+  a.binding = 1;
+  store.saveActive(a);
+  byId.clear();
+  renderTrain(root);
+  root.querySelector('#bind-num').value = '3';
+  byId.get('#bind-go').listeners.click();
+  const plan = store.getActive().plan;
+  assert.strictEqual(plan[0].exercise ?? null, null, 'the slot with logged whole-machine sets keeps them');
+  assert.equal(store.getLayout().machines.find((m) => m.id === 'm3').exercises, undefined,
+    'and the machine is not split into exercises its history never had');
+  const b = store.getActive();
+  store.switchMachine(b, null);
+  store.saveActive(b);
+  byId.clear();
+  renderTrain(root);
+  // the price, accepted: two whole-machine slots are twins and both count
+  // these sets (6/6) — never fewer, which is what relabelling cost
+  assert.ok(root.innerHTML.includes('6/6 target sets'), 'the three sets still count — on both twins');
+  // a name differing only in case is the machine itself
+  store.clearActive();
+  const fresh = store.newLayout('Case gym');
+  fresh.machines.push({ id: 'm4', num: 4, label: 'Leg press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
+  const items = [{ machineId: 'm4', exercise: null }, { machineId: null, name: 'leg press', exercise: null }];
+  assert.deepEqual(store.bindItemTo(items, 1, fresh.machines[0], 'leg press').exercises, [],
+    'case alone makes no new exercise');
   store.saveWorkouts([]);
   store.saveLayout(before);
 }

@@ -2,7 +2,7 @@ import {
   getLayout, saveLayout, getSettings, saveSettings, getActive, saveActive, finishWorkout,
   lastEntryFor, lastGripFor, getWorkouts, getPlans, savePlan, planFromText, uid,
   usageByMachine, layoutMuscles, distUnit, newLayout, addMachine, nextNum,
-  ensureMachine, addMachineVariant, bindItemTo, newEntry, nameChipsFor, todayStatus, skipPlanDay, machineBrand,
+  ensureMachine, addMachineVariant, bindItemTo, machineTrainedWhole, newEntry, nameChipsFor, todayStatus, skipPlanDay, machineBrand,
   switchMachine, rateLastSet,
 } from './store.js';
 import { drawLayout, usagePayload, findMachineByNum } from './map.js';
@@ -1151,7 +1151,8 @@ function renderBind(root, layout, active) {
     <button id="bind-skip" class="btn">Skip for now</button>`;
 
   const bindSlot = (machine) => {
-    const learn = bindItemTo(active.plan, i, machine, name);
+    const trainedWhole = machineTrainedWhole(machine.id, active.entries);
+    const learn = bindItemTo(active.plan, i, machine, name, { trainedWhole });
     const itemIdx = slot.itemIdx;
     delete slot.name;
     delete slot.num;
@@ -1173,7 +1174,7 @@ function renderBind(root, layout, active) {
         : plan?.items.findIndex((it) => !it.machineId && it.name === name) ?? -1;
       if (at !== -1) {
         const item = plan.items[at];
-        const more = bindItemTo(plan.items, at, machine, name);
+        const more = bindItemTo(plan.items, at, machine, name, { trainedWhole });
         learn.exercises.push(...more.exercises);
         learn.grips.push(...more.grips);
         delete item.name;
@@ -1594,6 +1595,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   root.querySelector('#exercise-chips')?.addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
+    if (chip.dataset.exercise === exercise) return; // already on it — keep its grip
     active.currentExercise = chip.dataset.exercise;
     delete active.currentGrip; // resolved afresh for the new exercise
     saveLog(active);
