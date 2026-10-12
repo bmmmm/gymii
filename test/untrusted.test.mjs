@@ -158,11 +158,14 @@ store.saveSettings({ ...store.getSettings(), unit: 'kg', restSeconds: 90 });
     app: 'gymii',
     kind: 'workout-plan',
     name: 'AI',
-    items: [{ name: 'Zzz', num: `4${X}` }, { name: 'Somewhere', num: '7' }, { name: 'Blank', num: '' }],
+    items: [{ name: 'Zzz', num: `4${X}` }, { name: 'Somewhere', num: '7' }, { name: 'Blank', num: '' },
+      { name: 'Half', num: 2.5 }, { name: 'Below', num: -3 }, { name: 'Zero', num: 0 }, { name: 'Twelve', num: '12' }],
   });
   assert.equal('num' in plan.items[0], false, 'AI paste: a num that is no number is dropped');
   assert.equal(plan.items[1].machineId, 'm7', 'AI paste: a stringified num still binds');
   assert.equal('num' in plan.items[2], false, 'AI paste: an empty num is no machine 0');
+  assert.deepEqual(plan.items.slice(3).map((it) => it.num ?? null), [null, null, null, 12],
+    'AI paste: only a whole number from 1 up names a machine');
   store.importData({ app: 'gymii', kind: 'workout-plan', name: 'Filed', items: [{ name: 'Zzz', num: X }] });
   const filed = store.getPlans().find((p) => p.name === 'Filed');
   assert.equal('num' in filed.items[0], false, 'workout-plan file: the same rule');

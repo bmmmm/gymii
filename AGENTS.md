@@ -63,7 +63,8 @@ exist because breaking them was once a real bug.
   mode without a secure context); frozen public
   API; `docs/sync-protocol.md` is the wire contract.
 - `js/app.js` — hash-router; `#gym` is deliberately NOT in the tabbar.
-- `js/map.js` — shared floor-map renderer (imports only `esc`; every id
+- `js/map.js` — shared floor-map renderer (imports only `esc` and store's
+  placement geometry, which it re-exports; every id
   into an attribute goes through `esc()` — template files are untrusted);
   `js/gym.js` — the editor (everything starts locked, every mutation via
   `save()`) and never imports from train.js/plan.js.

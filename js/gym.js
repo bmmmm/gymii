@@ -2,12 +2,12 @@ import {
   getLayout, saveLayout, newLayout, uid, importData, defaultOutline, exportGymTemplate,
   getSettings, saveSettings, usageByMachine, getActive, ownBrand, setGymBrand, matchBrand,
   MUSCLE_REGIONS, MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS, MACHINE_BRANDS, MAP_LAYERS, nextNum,
-  COMMON_GRIPS,
+  COMMON_GRIPS, freeSpot, WALL_SNAPPED,
 } from './store.js';
 import { esc, download, twoTapConfirm, keepInView, preserveFocus } from './ui.js';
 import {
-  drawLayout, usagePayload, findMachineByNum, findItem, fits, freeSpot,
-  snapDoorToWall, snap, clamp, FIXTURES, WALL_SNAPPED, ITEM_COLORS, OUTLINE_ID,
+  drawLayout, usagePayload, findMachineByNum, findItem, fits,
+  snapDoorToWall, snap, clamp, FIXTURES, ITEM_COLORS, OUTLINE_ID,
 } from './map.js';
 
 // --- editor view ---

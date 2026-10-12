@@ -147,6 +147,24 @@ assert.equal(store.getSyncConfig(demoId), null);
 store.setActiveGym(realId);
 renderSettings(root);
 assert.ok(root.innerHTML.includes('<h2>Sync</h2>'), 'a real gym gets the card');
+
+// the weight step is a decimal text field: type=number turned "2,5" into 25
+{
+  assert.ok(/id="weight-step" type="text" inputmode="decimal"[^>]*data-kind="decimal"/.test(root.innerHTML),
+    'the weight step takes a comma');
+  const keep = store.getSettings().weightStep;
+  const stepChange = (value) => {
+    const target = { value, dataset: {} };
+    byId.get('#weight-step').listeners.change({ target });
+    return target.value;
+  };
+  assert.equal(stepChange('2,5'), 2.5, 'a comma is the decimal mark');
+  assert.equal(store.getSettings().weightStep, 2.5, 'and 2.5 is what is stored');
+  assert.equal(stepChange('0'), 0.5, 'a typed 0 lands on the minimum');
+  assert.equal(stepChange('abc'), 0.5, 'unreadable text too');
+  store.saveSettings({ ...store.getSettings(), weightStep: keep });
+  renderSettings(root);
+}
 assert.ok(root.innerHTML.includes('Turn on sync'), 'and it starts in the unconfigured state');
 assert.ok(!root.innerHTML.includes('class="synccode"'),
   'no key on screen before there is one');

@@ -490,6 +490,20 @@ list().listeners.click(clickOn('.edit-save'));
 assert.deepEqual(store.getWorkouts().find((w) => w.id === 'wrow').entries[0].sets[0],
   { distance: 2000, seconds: 750 });
 
+// --- the editor's weight: a decimal text field, "12,5" is 12.5 ---
+store.saveWorkouts([...store.getWorkouts(), {
+  id: 'wdec', startedAt: Date.UTC(2026, 7, 11, 10), finishedAt: Date.UTC(2026, 7, 11, 11),
+  entries: [entry('mdec', 8, 'Curl', [{ reps: 10, weight: 10 }])],
+}]);
+render(); // still on the Workouts screen
+list().listeners.click(clickOn('.edit-w', { wid: 'wdec' }));
+assert.ok(/type="text" inputmode="decimal"[^>]*data-kind="decimal" class="edit-weight"/.test(list().innerHTML),
+  'the set weight takes a comma');
+assert.equal(cardioChange('edit-weight', '12,5'), 12.5, 'a comma is the decimal mark (type=number made it 125)');
+assert.equal(cardioChange('edit-weight', 'x'), 12.5, 'refused input keeps the last good weight');
+list().listeners.click(clickOn('.edit-save'));
+assert.equal(store.getWorkouts().find((w) => w.id === 'wdec').entries[0].sets[0].weight, 12.5, 'and Save stores 12.5');
+
 // --- machine chips: the first eight, "+N more", the shown one always ---
 // ten machines, trained one per day: x0 oldest … x9 newest
 store.saveWorkouts(Array.from({ length: 10 }, (_, i) => ({

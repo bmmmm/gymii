@@ -6,7 +6,7 @@ import {
 import {
   esc, fmtDate, fmtDay, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
   dateValue, timeValue, machineChain, keepInView, minsBetween, fmtDuration,
-  parseDuration, parseDistance, hintHtml, variantStr,
+  parseDuration, parseDistance, hintHtml, variantStr, fieldValue,
 } from './ui.js';
 import { lineChart, barChart } from './chart.js';
 import {
@@ -895,9 +895,10 @@ function wireWorkoutList(root, list, items, s, layout) {
     if (!editDraft) return;
     const t = e.target;
     if (t.classList.contains('edit-weight')) {
-      const v = Math.max(0, parseFloat(t.value) || 0);
-      t.value = v;
-      editDraft.entries[+t.dataset.ei].sets[+t.dataset.si].weight = v;
+      // a decimal text field: "12,5" is 12.5 (type=number turned it into 125)
+      const st = editDraft.entries[+t.dataset.ei].sets[+t.dataset.si];
+      st.weight = Math.max(0, parseDistance(fieldValue(t), false) ?? st.weight ?? 0);
+      t.value = st.weight;
     } else if (t.classList.contains('edit-reps')) {
       const v = Math.max(1, Math.round(parseFloat(t.value) || 1));
       t.value = v;
@@ -1058,7 +1059,7 @@ function editWorkoutHtml(w, s, layout, gripMsg = null) {
               <input type="text" inputmode="numeric" autocomplete="off" data-kind="time"
                 class="edit-minutes" data-ei="${ei}" data-si="${si}"
                 value="${fmtDuration(st.seconds)}" aria-label="Time (m:ss)">` : `
-              ${e.bodyweight ? 'BW+' : ''}<input type="number" inputmode="decimal" class="edit-weight"
+              ${e.bodyweight ? 'BW+' : ''}<input type="text" inputmode="decimal" autocomplete="off" data-kind="decimal" class="edit-weight"
                 data-ei="${ei}" data-si="${si}" value="${esc(st.weight)}"
                 aria-label="${e.bodyweight ? 'Extra weight' : 'Weight'} (${esc(s.unit)})"> ${esc(s.unit)} ×
               <input type="number" inputmode="numeric" class="edit-reps" data-ei="${ei}" data-si="${si}"

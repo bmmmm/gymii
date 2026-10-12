@@ -353,6 +353,19 @@ assert.ok(Number.isFinite(quickMachine.x) && Number.isFinite(quickMachine.y), 'a
 assert.equal(store.addMachine(quickGym, 2, 'Row').num, 2);
 store.saveLayout(quickGym);
 assert.equal(store.getLayout().machines.length, 2, 'quick layout saves cleanly');
+// C7: a machine already standing on the auto spot is stepped around…
+{
+  const g = store.newLayout('Occupied');
+  g.machines.push({ id: 'u', num: 9, label: 'Moved here', x: 7, y: 2, w: 4, h: 3 });
+  const m = store.addMachine(g, 1, 'Next');
+  assert.ok(!store.overlapsSolid(g, m, m.x, m.y, m.w, m.h), 'a new machine lands on a free spot, not on #9');
+  // …and a packed small floor still never stacks two machines on one spot
+  const tiny = store.newLayout('Tiny');
+  tiny.grid = { w: 6, h: 6 };
+  for (let n = 1; n <= 5; n++) store.addMachine(tiny, n, `M${n}`);
+  const spots = tiny.machines.map((mm) => `${mm.x},${mm.y}`);
+  assert.equal(new Set(spots).size, 5, `five machines on a 6x6 floor, five spots: ${spots.join(' ')}`);
+}
 
 // bindOrCreateMachine — the one invariant behind every binding surface
 // (train's bind screen, the plan builder, workoutFromText)

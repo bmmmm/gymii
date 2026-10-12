@@ -15,7 +15,7 @@ import {
 import { drawLayout } from './map.js';
 import {
   esc, twoTapConfirm, stepperField, plural, keepInView, fmtDuration, parseDuration, parseDistance,
-  hintHtml, variantStr,
+  hintHtml, variantStr, fieldValue,
 } from './ui.js';
 import { insights } from './stats.js';
 
@@ -158,7 +158,7 @@ export function renderPlanBuilder(
     : `
         ${stepperField('Sets', `t-sets-${i}`, { step: 1, min: 1, value: t.sets, mode: 'numeric' })}
         ${stepperField('Reps', `t-reps-${i}`, { step: 1, min: 1, value: t.reps, mode: 'numeric' })}
-        ${stepperField(m?.bodyweight ? 'Extra weight' : 'Weight', `t-weight-${i}`, { step: s.weightStep, min: 0, value: t.weight })}`}
+        ${stepperField(m?.bodyweight ? 'Extra weight' : 'Weight', `t-weight-${i}`, { step: s.weightStep, min: 0, value: t.weight, kind: 'decimal' })}`}
       </div>
     </div>`;
   };
@@ -416,7 +416,11 @@ export function renderPlanBuilder(
       const v = parseFloat(e.target.value) || 0;
       if (match[1] === 'sets') { t.sets = Math.max(1, Math.round(v)); e.target.value = t.sets; }
       else if (match[1] === 'reps') { t.reps = Math.max(1, Math.round(v)); e.target.value = t.reps; }
-      else if (match[1] === 'weight') { t.weight = Math.max(0, v); e.target.value = t.weight; }
+      else if (match[1] === 'weight') {
+        // a decimal text field: "12,5" is 12.5 (type=number turned it into 125)
+        t.weight = Math.max(0, parseDistance(fieldValue(e.target), false) ?? t.weight);
+        e.target.value = t.weight;
+      }
       else if (match[1] === 'distance') {
         t.distance = parseDistance(e.target.value, s.unit === 'kg') ?? t.distance;
         e.target.value = t.distance;

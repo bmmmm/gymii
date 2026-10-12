@@ -27,7 +27,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   ids `^[\w-]+$` (every id ever minted passes), numbers finite, colors
   hex, unit `kg`/`lbs`. Files refuse what they cannot repair (a layout or
   a workout with a bad id: "Invalid gym template" / "Invalid backup"),
-  repair numbers (`"40"` → 40, markup → dropped), drop bad plans as plans
+  repair numbers (`"40"` → 40, markup → dropped; a plan item's `num`
+  survives `planItemsFrom` only as a whole number from 1 up), drop bad plans as plans
   always were; sync drops bad records one by one (`cleanRemote` in
   sync.js) and gives a bad layout frame the local one — or a fresh
   layout's, never none: a gridless layout is not written, and the push
@@ -391,8 +392,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   across the floor, and the resize handle sat exactly where the thumb grabs
   an item — both now need a deliberate double tap first, and a second one
   takes it back (gym.js owns the gesture). Also exports `findMachineByNum`, the collision helpers
-  (`overlapsSolid`/`fits`/`freeSpot`), `snapDoorToWall`, `FIXTURES`,
-  `WALL_SNAPPED`, `ITEM_COLORS`. Its `path` and `pathWeights` opts draw the
+  (`fits`, plus `overlapsSolid`/`freeSpot`/`WALL_SNAPPED` re-exported from
+  store.js, which owns the placement geometry because its `addMachine`
+  places machines too), `snapDoorToWall`, `FIXTURES`, `ITEM_COLORS`. Its `path` and `pathWeights` opts draw the
   walking-path overlay (view-only: the editor ignores them) — one line plus
   arrowhead polygon per leg from stats.js's `workoutPath`, or, with
   `pathWeights` (a `transitionCounts` map), one leg per transition whose
@@ -687,7 +689,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   outranks onboarding, and the start screen falls back to quick start
   when the gym has no machines. The picker offers create-on-miss for
   unknown numbers via `store.addMachine()` — training never requires a
-  gym visit first.
+  gym visit first. It places through `freeSpot` (a row of five from the top
+  left as the preferred spot): the old modulo stacked a new machine onto
+  whatever already stood there, and on a packed floor it may overlap but
+  never land on another solid item's exact spot.
 - `js/plan.js` — the plan builder: muscle-filtered machine picking, per-item
   targets, reorder, weekday chips, and the route hint of the plan this
   name's workouts walk (above the items it reorders). It renders INSIDE the Train tab via
@@ -768,7 +773,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   what initSteppers/initNumericOverwrite key on. The log screen's WEIGHT is
   the same text field (`kind: 'decimal'`, read by `parseDistance(…, false)`):
   as `type=number`, Chromium turned a typed "12,5" into 125 kg and Firefox
-  into an empty field. Reps and rest stay `type=number` — whole numbers.
+  into an empty field. The builder's target weight, the History editor's
+  set weight and Settings' weight step are the same decimal text field
+  (measured 2026-10-13 in Chromium: "12,5" was stored as 125, "2,5" as 25).
+  Reps and rest stay `type=number` — whole numbers.
   Every stepper field is READ through `fieldValue(input)`: a field the
   overwrite arming emptied on focus still means the value it showed
   (`dataset.prevValue`), because iOS can deliver the Log set tap before the

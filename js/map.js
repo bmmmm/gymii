@@ -2,8 +2,13 @@
 // editor, the Train mini-maps/overlay and the plan builder alike, together
 // with the fixture registry, the SVG symbol builders and the geometry and
 // collision helpers all three surfaces share. Nothing here imports the
-// editor: the dependency runs one way, gym.js -> map.js.
+// editor: the dependency runs one way, gym.js -> map.js. The solid-item
+// placement geometry lives in store.js, whose addMachine places machines
+// too (quick start, the picker's create-on-miss) — one rule, two callers.
 import { esc } from './ui.js';
+import { WALL_SNAPPED, overlapsSolid, isSolid } from './store.js';
+
+export { WALL_SNAPPED, overlapsSolid, freeSpot } from './store.js';
 
 // Map furniture beyond machines. Entrances, doors and windows snap onto
 // the nearest wall and render as floor-plan symbols; the rest are boxes.
@@ -18,7 +23,6 @@ export const FIXTURES = {
   trash: { icon: '🗑️', label: 'Trash', w: 2, h: 2 },
 };
 
-export const WALL_SNAPPED = new Set(['entrance', 'door', 'window']);
 
 // Item accent colors — categorical palette validated (dataviz checks)
 // against surface #171c22; identity never rides on color alone (machines
@@ -227,18 +231,6 @@ export function findItem(layout, id) {
   return layout.machines.find((m) => m.id === id) || layout.shapes.find((s) => s.id === id) || null;
 }
 
-// Machines and free-standing fixtures (reception, lockers, trash, …) are
-// solid furniture nothing may overlap. Zones are areas items stand IN,
-// wall pieces live ON walls — neither is solid.
-const isSolid = (it) => !it.kind || (it.kind === 'fixture' && !WALL_SNAPPED.has(it.fixture));
-
-// Axis-aligned overlap between a proposed box and any solid item other
-// than `item`. Edge-to-edge contact is fine (strict inequalities).
-export function overlapsSolid(layout, item, x, y, w, h) {
-  return [...layout.machines, ...layout.shapes.filter(isSolid)].some((m) => m !== item
-    && x < m.x + m.w && x + w > m.x && y < m.y + m.h && y + h > m.y);
-}
-
 // Whether an item may occupy the proposed box. Only solid items are
 // exclusive — and only when they start from a non-overlapping spot, so
 // layouts saved before this rule stay fully editable and can be
@@ -247,23 +239,6 @@ export function fits(layout, it, x, y, w, h) {
   if (!isSolid(it)) return true;
   if (overlapsSolid(layout, it, it.x, it.y, it.w, it.h)) return true;
   return !overlapsSolid(layout, it, x, y, w, h);
-}
-
-// Placement for a new solid item: the preferred position if free, else
-// the nearest non-overlapping spot so new items line up next to existing
-// ones; a packed floor falls back to the preferred spot (overlapping
-// beats refusing to add).
-export function freeSpot(layout, x, y, w, h) {
-  if (!overlapsSolid(layout, null, x, y, w, h)) return { x, y };
-  let best = null;
-  for (let sy = 0; sy + h <= layout.grid.h; sy += SNAP) {
-    for (let sx = 0; sx + w <= layout.grid.w; sx += SNAP) {
-      if (overlapsSolid(layout, null, sx, sy, w, h)) continue;
-      const d = (sx - x) ** 2 + (sy - y) ** 2;
-      if (!best || d < best.d) best = { x: sx, y: sy, d };
-    }
-  }
-  return best ? { x: best.x, y: best.y } : { x, y };
 }
 
 function gridSvg(grid) {

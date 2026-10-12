@@ -434,17 +434,59 @@ export function defaultOutline(grid) {
   ];
 }
 
-// Appends a machine near the grid center (loosely mirroring the gym's
-// placement). Quick start and the picker's create-on-miss use this, so a
-// layout can grow without ever opening the gym — arranging is optional.
+// --- placement geometry (map.js re-exports it for the editor) ---
+
+// Fixtures that snap onto the nearest wall and render as floor-plan symbols.
+export const WALL_SNAPPED = new Set(['entrance', 'door', 'window']);
+
+// Machines and free-standing fixtures (reception, lockers, trash, …) are
+// solid furniture nothing may overlap. Zones are areas items stand IN,
+// wall pieces live ON walls — neither is solid.
+export const isSolid = (it) => !it.kind || (it.kind === 'fixture' && !WALL_SNAPPED.has(it.fixture));
+
+// Axis-aligned overlap between a proposed box and any solid item other
+// than `item`. Edge-to-edge contact is fine (strict inequalities).
+export function overlapsSolid(layout, item, x, y, w, h) {
+  return [...layout.machines, ...layout.shapes.filter(isSolid)].some((m) => m !== item
+    && x < m.x + m.w && x + w > m.x && y < m.y + m.h && y + h > m.y);
+}
+
+// Placement for a new solid item: the preferred position if free, else
+// the nearest non-overlapping spot (whole grid units, map.js's SNAP) so new
+// items line up next to existing ones. A packed floor overlaps rather than
+// refusing to add — but never on the exact spot of another solid item,
+// where one would hide the other: the preferred spot if that is clear of
+// such a twin, else the nearest one that is.
+export function freeSpot(layout, x, y, w, h) {
+  if (!overlapsSolid(layout, null, x, y, w, h)) return { x, y };
+  const solids = [...layout.machines, ...layout.shapes.filter(isSolid)];
+  const taken = (sx, sy) => solids.some((m) => m.x === sx && m.y === sy);
+  let best = null;
+  let loose = taken(x, y) ? null : { x, y, d: 0 };
+  for (let sy = 0; sy + h <= layout.grid.h; sy += 1) {
+    for (let sx = 0; sx + w <= layout.grid.w; sx += 1) {
+      const d = (sx - x) ** 2 + (sy - y) ** 2;
+      if (!overlapsSolid(layout, null, sx, sy, w, h)) {
+        if (!best || d < best.d) best = { x: sx, y: sy, d };
+      } else if (!taken(sx, sy) && (!loose || d < loose.d)) loose = { x: sx, y: sy, d };
+    }
+  }
+  const spot = best ?? loose ?? { x, y };
+  return { x: spot.x, y: spot.y };
+}
+
+// Appends a machine to the layout. Quick start and the picker's
+// create-on-miss use this, so a layout can grow without ever opening the
+// gym — arranging is optional. The preferred spot is a row of five from
+// the top left; freeSpot moves it off anything already standing there (a
+// plain modulo stacked new machines onto occupied cells).
 export function addMachine(layout, num, label) {
-  // 5 per row, next row below, wrapping inside the grid — plain modulo
-  // would stack machine 1/6/11 on the same spot
   const n = layout.machines.length;
+  const pos = freeSpot(layout,
+    Math.round(2 + (n % 5) * 5) % Math.max(1, layout.grid.w - 4),
+    Math.round(2 + Math.floor(n / 5) * 4) % Math.max(1, layout.grid.h - 3), 4, 3);
   const machine = {
-    id: uid(), num, label,
-    x: Math.round(2 + (n % 5) * 5) % Math.max(1, layout.grid.w - 4),
-    y: Math.round(2 + Math.floor(n / 5) * 4) % Math.max(1, layout.grid.h - 3),
+    id: uid(), num, label, x: pos.x, y: pos.y,
     w: 4, h: 3, settingsFields: [], muscles: [], docUrl: '',
   };
   layout.machines.push(machine);
@@ -1506,8 +1548,10 @@ function normalizeTarget(raw, cardio) {
 export function planItemsFrom(rawItems, layout) {
   return rawItems.map((item) => {
     // an unbound item's `num` lands in the bind prompt's value attribute: a
-    // number or nothing (§ untrusted input)
+    // machine number or nothing (§ untrusted input) — 2.5 or -3 is no number
+    // on a machine, and a bind would round it into a different one
     const raw = numFields(item, ['num']);
+    if (raw.num != null && !(Number.isInteger(raw.num) && raw.num >= 1)) delete raw.num;
     const { machine, name } = resolveItem(raw, layout);
     const flat = raw.target ? { ...raw, ...raw.target } : raw;
     const cardio = machine ? !!machine.cardio : flat.distance != null || flat.seconds != null;

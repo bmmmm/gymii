@@ -5,7 +5,7 @@ import {
 } from './store.js';
 import {
   download, esc, twoTapConfirm, keepInView, preserveFocus, fmtDate, fmtTime, fmtAgo,
-  TIMER_SOUNDS, playTimerSound,
+  TIMER_SOUNDS, playTimerSound, parseDistance, fieldValue,
 } from './ui.js';
 import { loadDemoData } from './demo.js';
 import {
@@ -391,7 +391,8 @@ function renderSettingsView(root) {
       <label class="field"><span>Weight step (${esc(s.unit)})</span>
         <div class="stepper" data-step="0.5" data-min="0.5">
           <button type="button" class="step-down" aria-label="decrease">−</button>
-          <input id="weight-step" type="number" inputmode="decimal" value="${esc(s.weightStep)}">
+          <input id="weight-step" type="text" inputmode="decimal" autocomplete="off" data-kind="decimal"
+            value="${esc(s.weightStep)}">
           <button type="button" class="step-up" aria-label="increase">+</button>
         </div>
       </label>
@@ -477,8 +478,9 @@ function renderSettingsView(root) {
 
   root.querySelector('#weight-step').addEventListener('change', (e) => {
     // 0.5 min matches the stepper's data-min and setUnit's clamp; the ||
-    // catches NaN AND a typed 0, so both land on the minimum, not the default
-    const v = Math.max(0.5, parseFloat(e.target.value) || 0.5);
+    // catches unreadable text AND a typed 0, so both land on the minimum,
+    // not the default. A decimal text field: "2,5" is 2.5, never 25.
+    const v = Math.max(0.5, parseDistance(fieldValue(e.target), false) || 0.5);
     e.target.value = v;
     saveSettings({ ...getSettings(), weightStep: v });
   });

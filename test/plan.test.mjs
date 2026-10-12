@@ -583,6 +583,12 @@ const targetChange = (id, value) => {
 assert.equal(targetChange(`t-time-${tmIdx}`, '12,30'), '12:30', 'comma time reads as minutes,seconds');
 assert.equal(targetChange(`t-time-${tmIdx}`, '12:75'), '12:30', 'refused input keeps the last good value');
 assert.equal(targetChange(`t-distance-${tmIdx}`, '2.000'), 2000, 'a thousands dot in metres');
+// a target weight is a decimal text field: type=number turned "12,5" into 125
+const lpIdx = typed.items.findIndex((it) => it.target?.reps != null);
+assert.ok(new RegExp(`id="t-weight-${lpIdx}" type="text" inputmode="decimal"[^>]*data-kind="decimal"`).test(root.innerHTML),
+  'the target weight takes a comma');
+assert.equal(targetChange(`t-weight-${lpIdx}`, '12,5'), 12.5, 'a comma is the decimal mark');
+assert.equal(targetChange(`t-weight-${lpIdx}`, 'abc'), 12.5, 'refused input keeps the last good weight');
 // the list view is on screen — the stub DOM would hand back a #plan-text
 // anyway, and fromText() would re-parse the note over these edits
 byId.set('#plan-text', null);
@@ -980,11 +986,11 @@ goToHub();
   });
   tap('it-grip', 0, { grip: 'Rope' });
   assert.ok(/class="chip it-grip sel"\s+data-i="0" data-grip="Rope"/.test(root.innerHTML), 'a tap picks the grip');
-  assert.ok(root.innerHTML.includes('id="t-weight-0" type="number" inputmode="decimal" value="22.5"'),
+  assert.ok(/id="t-weight-0" type="text" inputmode="decimal"[^>]*value="22.5"/.test(root.innerHTML),
     'and reseeds the target from that grip\'s history');
   tap('it-grip', 0, { grip: 'Rope' });
   assert.ok(!/it-grip sel/.test(root.innerHTML), 'the same chip again means any grip');
-  assert.ok(root.innerHTML.includes('id="t-weight-0" type="number" inputmode="decimal" value="40"'),
+  assert.ok(/id="t-weight-0" type="text" inputmode="decimal"[^>]*value="40"/.test(root.innerHTML),
     'back to the gripless target');
   // the machine's grips cleared since: its gripped history still seeds a target
   store.saveWorkouts([{ id: 'bw2', startedAt: 1000, entries: [
@@ -995,7 +1001,7 @@ goToHub();
   byId.clear();
   byId.set('#plan-text', null);
   renderPlanBuilder(root, { seed: [{ machineId: 'ct', exercise: 'Pushdown' }] }, () => {});
-  assert.ok(root.innerHTML.includes('id="t-weight-0" type="number" inputmode="decimal" value="22.5"'),
+  assert.ok(/id="t-weight-0" type="text" inputmode="decimal"[^>]*value="22.5"/.test(root.innerHTML),
     'grips gone, no gripless entry: the rope history seeds the target, not 20');
   store.saveWorkouts([]);
 }
