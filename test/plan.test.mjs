@@ -188,7 +188,7 @@ assert.deepEqual(active.plan[0].target, { sets: 3, reps: 10, weight: 20 });
 assert.ok(root.innerHTML.includes('Target: 3 × 10 @ 20 kg'), 'log header shows the target');
 assert.ok(root.innerHTML.includes('· set 1/3'), 'header counts the upcoming target set');
 assert.ok(root.innerHTML.includes('✓ Log set 1/3 — 20 kg × 10'), 'one-tap button says what it logs');
-assert.ok(root.innerHTML.includes('id="set-weight" type="number" inputmode="decimal" value="20"'),
+assert.ok(root.innerHTML.includes('id="set-weight" type="text" inputmode="decimal" autocomplete="off" data-kind="decimal" value="20"'),
   'first set prefills from the target');
 
 // after a deviating set the prefill follows the real working weight
@@ -196,7 +196,7 @@ root.querySelector('#set-weight').value = '15';
 root.querySelector('#set-reps').value = '8';
 root.querySelector('#set-rest').value = '0';
 root.querySelector('#log-set').listeners.click();
-assert.ok(root.innerHTML.includes('id="set-weight" type="number" inputmode="decimal" value="15"'),
+assert.ok(root.innerHTML.includes('id="set-weight" type="text" inputmode="decimal" autocomplete="off" data-kind="decimal" value="15"'),
   'prefill follows the logged set, not the target');
 assert.ok(root.innerHTML.includes('✓ Log set 2/3 — 15 kg × 8'),
   'one-tap button advances and follows the logged set');

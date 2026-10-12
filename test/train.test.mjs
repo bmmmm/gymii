@@ -1094,4 +1094,69 @@ store.saveWorkouts([]);
   store.saveLayout(before);
 }
 
+// --- the log screen reads what its fields SHOW (fieldValue) ---
+// iOS lets the Log set tap land before the blur that restores a field the
+// overwrite arming emptied on focus: '' + dataset.prevValue must log the
+// value it showed, never 0 kg × 1 with no rest.
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Read gym');
+  g.machines.push({ id: 'r1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
+  store.saveLayout(g);
+  store.saveActive({
+    v: 2, id: 'w-read', startedAt: Date.now() - 60000,
+    plan: [{ machineId: 'r1', exercise: null }],
+    currentMachineId: 'r1', currentExercise: null, entries: [],
+  });
+  byId.clear();
+  renderTrain(root);
+  for (const [id, v] of [['#set-weight', '50'], ['#set-reps', '10'], ['#set-rest', '90']]) {
+    const el = byId.get(id);
+    el.value = '';
+    el.dataset = { prevValue: v };
+  }
+  byId.get('#log-set').listeners.click();
+  let a = store.getActive();
+  assert.deepEqual(a.entries[0].sets.map(({ reps, weight }) => ({ reps, weight })), [{ reps: 10, weight: 50 }],
+    'an armed-empty field logs the value it showed before focus');
+  assert.ok(restLeft(a) > 80, 'and its rest still starts');
+  delete a.restUntil;
+  store.saveActive(a);
+
+  // the weight is a decimal TEXT field: a comma is a decimal mark, not a typo
+  byId.clear();
+  renderTrain(root);
+  assert.ok(/id="set-weight" type="text" inputmode="decimal"/.test(root.innerHTML),
+    'the weight is typed on the decimal pad as text, like the distance');
+  byId.get('#set-weight').value = '12,5';
+  byId.get('#set-reps').value = '8';
+  byId.get('#set-rest').value = '0';
+  byId.get('#set-weight').listeners.input();
+  assert.equal(byId.get('#log-set').textContent, '✓ Log set — 12.5 kg × 8',
+    'the button follows the field while it is typed, not only on change');
+  assert.equal(byId.get('#set-weight').value, '12,5', 'and input never rewrites a field mid-word');
+  byId.get('#set-reps').value = '0';
+  byId.get('#set-reps').listeners.change();
+  assert.equal(byId.get('#set-reps').value, 1, 'a change writes back what will be logged');
+  byId.get('#log-set').listeners.click();
+  a = store.getActive();
+  assert.equal(a.entries[0].sets.at(-1).weight, 12.5, '"12,5" logs 12.5');
+  byId.get('#set-weight').value = '0';
+  byId.get('#set-reps').value = '8';
+  byId.get('#set-rest').value = '0';
+  byId.get('#log-set').listeners.click();
+  assert.equal(store.getActive().entries[0].sets.at(-1).weight, 0, 'a typed 0 kg is a weight, not a refusal');
+  byId.get('#set-rest').value = 'x';
+  byId.get('#log-set').listeners.click();
+  assert.ok(restLeft(store.getActive()) > 80, 'an unreadable rest falls back to the machine rest, never 0');
+  store.clearActive();
+  store.saveLayout(before);
+}
+
+// a stored set may lack its weight: the prefill is a full copy, never undefined
+assert.deepEqual(nextSetDefaults({ sets: [{ reps: 8 }] }, null, 'strength', { unit: 'kg' }), { reps: 8, weight: 0 },
+  'a weightless set prefills 0, not undefined');
+assert.deepEqual(nextSetDefaults({ sets: [] }, { sets: [{ reps: 6, at: 1 }] }, 'strength', { unit: 'kg' }),
+  { reps: 6, weight: 0 }, 'the last workout\'s weightless first set too');
+
 console.log('train plan construction: all assertions passed');

@@ -684,7 +684,15 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   exactly three digits is a thousands mark ("2.000" = 2000 m). Both return
   `null` on unreadable input and the caller keeps the old value — so these
   fields are `type=text` with `data-kind` (stepperField's `kind`), which is
-  what initSteppers/initNumericOverwrite key on. `pad2`/`dateValue`/`timeValue`
+  what initSteppers/initNumericOverwrite key on. The log screen's WEIGHT is
+  the same text field (`kind: 'decimal'`, read by `parseDistance(…, false)`):
+  as `type=number`, Chromium turned a typed "12,5" into 125 kg and Firefox
+  into an empty field. Reps and rest stay `type=number` — whole numbers.
+  Every stepper field is READ through `fieldValue(input)`: a field the
+  overwrite arming emptied on focus still means the value it showed
+  (`dataset.prevValue`), because iOS can deliver the Log set tap before the
+  blur that would restore it — read raw, that was a logged 0 kg × 1 with no
+  rest. `pad2`/`dateValue`/`timeValue`
   build LOCAL-time input values (toISOString is UTC and shifts a
   past-midnight workout onto the previous day — ai.js dates its export
   via `dateValue` for the same reason) and `machineChain` is the deduping

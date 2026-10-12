@@ -57,7 +57,8 @@ exist because breaking them was once a real bug.
   `{distance, seconds}`, bodyweight = ADDED weight, and `at` is optional —
   every consumer guards (`st.reps * st.weight || 0`). Stored weights and
   distances are in the DISPLAY unit: a new such field must be converted by
-  `setUnit()` too.
+  `setUnit()` too. A stepper field is read only via `fieldValue()` (ui.js)
+  — an armed field is empty while it still shows its value.
 - `js/sync.js` + `js/merge.js` — cross-device sync (E2E, or explicit plain
   mode without a secure context); frozen public
   API; `docs/sync-protocol.md` is the wire contract.

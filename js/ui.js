@@ -22,6 +22,14 @@ export const timeValue = (ts) => {
 export const machineChain = (workout) =>
   [...new Set(workout.entries.map((e) => `#${esc(e.num)}`))].join(' → ');
 
+// What a field shows — the typed value, or, while initNumericOverwrite has
+// it armed and empty, the value it showed before focus. Every reader of a
+// stepper field goes through this: on iOS a tap on a button does not
+// reliably blur the field first, so its own restore may land after the
+// click that reads it (see initSteppers), and '' would log as 0.
+export const fieldValue = (input) =>
+  (input.value !== '' ? input.value : input.dataset?.prevValue ?? '');
+
 // One delegated handler powers every .stepper on the page:
 // <div class="stepper" data-step="2.5" data-min="0"><button class="step-down">−</button><input><button class="step-up">+</button></div>
 export function initSteppers() {
@@ -43,12 +51,13 @@ export function initSteppers() {
     // type=number value IDL, so it takes this same fallback and steps from
     // the pre-focus value rather than the (unparsed) partial input — an
     // acceptable, if incidental, side effect of the same guard.
-    const base = input.value !== '' ? input.value : input.dataset?.prevValue;
+    const base = fieldValue(input);
     if (input.dataset?.kind === 'time') {
       // a clock field steps in seconds and shows m:ss, never a decimal
       input.value = fmtDuration(Math.max(min, (parseDuration(base) ?? 0) + dir * step));
     } else {
-      const cur = input.dataset?.kind === 'distance'
+      const kind = input.dataset?.kind;
+      const cur = kind === 'distance' || kind === 'decimal'
         ? parseDistance(base, input.dataset.metric === '1') : parseFloat(base);
       const next = (cur || 0) + dir * step;
       input.value = String(Math.max(min, Math.round(next * 100) / 100));
@@ -304,7 +313,8 @@ export function parseDistance(str, metric) {
 // render several and the markup is identical apart from label/id/step.
 // Pairs with initSteppers()'s delegated +/− handling. `kind` 'time' (value
 // in seconds, step in seconds, shown as m:ss, typed on the digit pad — see
-// clockDigits) and 'distance' (decimal pad) render a text field, because
+// clockDigits), 'distance' and 'decimal' (a weight: decimal pad, the comma
+// read as a decimal mark by parseDistance) render a text field, because
 // type=number refuses a comma or a colon outright in some locales and
 // reports the field as empty.
 export const stepperField = (label, id, { step, min, value, mode = 'decimal', kind, metric }) => `
@@ -324,7 +334,7 @@ export const setStr = (st, settings, bodyweight = false) => esc(st.distance != n
   ? `${st.distance} ${distUnit(settings)} · ${fmtDuration(st.seconds)}`
   : bodyweight
     ? (st.weight ? `BW+${st.weight}×${st.reps}` : `BW×${st.reps}`)
-    : `${st.weight}×${st.reps}`);
+    : `${st.weight ?? 0}×${st.reps}`);
 
 // A re-render replaces whole subtrees, so the control you JUST used drifts
 // down whenever the list above it grew by a row — log a set and the log

@@ -12,7 +12,7 @@ import { focusMachine } from './gym.js';
 import {
   esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural, machineChain,
   minsBetween,
-  primeAudio, playTimerSound, keepInView, parseDuration, parseDistance, hintHtml,
+  primeAudio, playTimerSound, keepInView, parseDuration, parseDistance, hintHtml, fieldValue,
 } from './ui.js';
 import { ensurePersisted } from './persist.js';
 import { insights } from './stats.js';
@@ -1461,9 +1461,9 @@ function renderLog(root, layout, active, reveal = null) {
         ${stepperField('Time (m:ss)', 'set-time', { step: 60, min: 0, value: def.seconds, kind: 'time' })}`
     : type === 'bodyweight' ? `
         ${stepperField('Reps', 'set-reps', { step: 1, min: 1, value: def.reps, mode: 'numeric' })}
-        ${stepperField('Extra weight', 'set-weight', { step: s.weightStep, min: 0, value: def.weight })}`
+        ${stepperField('Extra weight', 'set-weight', { step: s.weightStep, min: 0, value: def.weight, kind: 'decimal' })}`
       : `
-        ${stepperField('Weight', 'set-weight', { step: s.weightStep, min: 0, value: def.weight })}
+        ${stepperField('Weight', 'set-weight', { step: s.weightStep, min: 0, value: def.weight, kind: 'decimal' })}
         ${stepperField('Reps', 'set-reps', { step: 1, min: 1, value: def.reps, mode: 'numeric' })}`}
         ${stepperField('Rest (s)', 'set-rest', { step: 15, min: 0, value: restSeconds, mode: 'numeric' })}
         <button type="button" id="rest-keep" class="linkish rest-keep"${restSeconds === machineRest()
@@ -1530,6 +1530,24 @@ function renderLog(root, layout, active, reveal = null) {
     renderLog(root, layout, active, '.next-set');
   });
 
+  // An unreadable field logs what it was prefilled with, never a zero —
+  // and every field is read through fieldValue: a field the overwrite arming
+  // emptied on focus still means the value it showed (iOS lets the Log set
+  // tap land before the blur that would restore it).
+  const field = (sel) => fieldValue(root.querySelector(sel));
+  const readCardio = () => ({
+    distance: parseDistance(field('#set-distance'), s.unit === 'kg') ?? def.distance,
+    seconds: parseDuration(field('#set-time')) ?? def.seconds,
+  });
+  const readStrength = () => ({
+    weight: parseDistance(field('#set-weight'), false) ?? def.weight,
+    reps: Math.max(1, Math.round(parseFloat(field('#set-reps')))) || def.reps,
+  });
+  const readRest = () => {
+    const v = Math.round(parseFloat(field('#set-rest')));
+    return Number.isFinite(v) ? Math.max(0, v) : restSeconds;
+  };
+
   // The rest stepper writes to the WORKOUT; the machine only learns it if
   // you say so. Both handlers update #rest-keep by hand instead of
   // re-rendering — a re-render would replace the + button mid-tap.
@@ -1540,7 +1558,8 @@ function renderLog(root, layout, active, reveal = null) {
     if (!Object.keys(active.restOverrides).length) delete active.restOverrides;
   };
   root.querySelector('#set-rest')?.addEventListener('change', (e) => {
-    const v = Math.max(0, Math.round(parseFloat(e.target.value) || 0));
+    const n = Math.round(parseFloat(fieldValue(e.target)));
+    const v = Number.isFinite(n) ? Math.max(0, n) : restSeconds;
     e.target.value = v;
     if (v === machineRest()) dropOverride();
     else active.restOverrides = { ...active.restOverrides, [machine.id]: v };
@@ -1552,7 +1571,7 @@ function renderLog(root, layout, active, reveal = null) {
   });
 
   restKeep?.addEventListener('click', () => {
-    const v = Math.max(0, Math.round(parseFloat(root.querySelector('#set-rest').value) || 0));
+    const v = readRest();
     // back to the app default means NO value on the machine, so a later
     // change of the default reaches this machine too
     if (v === s.restSeconds) delete machine.restSeconds;
@@ -1563,20 +1582,12 @@ function renderLog(root, layout, active, reveal = null) {
     restKeep.hidden = true;
   });
 
-  // an unreadable field logs what it was prefilled with, never a zero
-  const readCardio = () => ({
-    distance: parseDistance(root.querySelector('#set-distance').value, s.unit === 'kg') ?? def.distance,
-    seconds: parseDuration(root.querySelector('#set-time').value) ?? def.seconds,
-  });
-
   root.querySelector('#log-set')?.addEventListener('click', () => {
-    const rest = Math.max(0, Math.round(parseFloat(root.querySelector('#set-rest').value) || 0));
+    const rest = readRest();
     if (cardio) {
       entry.sets.push({ ...readCardio(), at: Date.now() });
     } else {
-      const weight = Math.max(0, parseFloat(root.querySelector('#set-weight').value) || 0);
-      const reps = Math.max(1, Math.round(parseFloat(root.querySelector('#set-reps').value) || 1));
-      entry.sets.push({ reps, weight, at: Date.now() });
+      entry.sets.push({ ...readStrength(), at: Date.now() });
     }
     saveActive(active);
     // the set list just grew a row above the inputs — put them back under
@@ -1610,25 +1621,29 @@ function renderLog(root, layout, active, reveal = null) {
 
   // the steppers update the one-tap label live, so the button never lies
   if (!pickPending) {
-    const refreshLogLabel = () => {
+    // `input` keeps the label live while typing; only `change` writes the
+    // clean form back, so a half-typed "12," is never snapped mid-word
+    const refreshLogLabel = (clean) => {
       const btn = root.querySelector('#log-set');
       if (!btn) return;
-      const d = cardio
-        ? readCardio()
-        : {
-          weight: Math.max(0, parseFloat(root.querySelector('#set-weight').value) || 0),
-          reps: Math.max(1, Math.round(parseFloat(root.querySelector('#set-reps').value) || 1)),
-        };
+      const d = cardio ? readCardio() : readStrength();
       btn.textContent = logLabel(d);
+      if (!clean) return;
       // the fields show what will be logged too: a refused entry snaps back
       // to the prefill, an accepted one to its clean form ("12,30" → 12:30)
       if (cardio) {
         root.querySelector('#set-time').value = fmtDuration(d.seconds);
         root.querySelector('#set-distance').value = d.distance;
+      } else {
+        root.querySelector('#set-weight').value = d.weight;
+        root.querySelector('#set-reps').value = d.reps;
       }
     };
-    (cardio ? ['#set-distance', '#set-time'] : ['#set-weight', '#set-reps']).forEach((sel) =>
-      root.querySelector(sel)?.addEventListener('change', refreshLogLabel));
+    (cardio ? ['#set-distance', '#set-time'] : ['#set-weight', '#set-reps']).forEach((sel) => {
+      const el = root.querySelector(sel);
+      el?.addEventListener('change', () => refreshLogLabel(true));
+      el?.addEventListener('input', () => refreshLogLabel(false));
+    });
   }
 
   root.querySelector('.quick-switch')?.addEventListener('click', (e) => {
@@ -1720,17 +1735,17 @@ function renderLog(root, layout, active, reveal = null) {
 // precedence matrix is pure logic and pinning it through the stub DOM would
 // only test the renderer.
 export function nextSetDefaults(entry, last, type, s, target = null) {
-  if (target) {
-    if (entry.sets.length) return entry.sets[entry.sets.length - 1];
-    return type === 'cardio'
-      ? { distance: target.distance, seconds: target.seconds }
-      : { reps: target.reps, weight: target.weight };
-  }
-  if (entry.sets.length) return entry.sets[entry.sets.length - 1];
-  if (last?.sets?.length) return last.sets[0];
-  if (type === 'cardio') return { distance: s.unit === 'kg' ? 1000 : 0.5, seconds: 600 };
-  if (type === 'bodyweight') return { reps: 10, weight: 0 };
-  return { reps: 10, weight: 20 };
+  const base = type === 'cardio' ? { distance: s.unit === 'kg' ? 1000 : 0.5, seconds: 600 }
+    : type === 'bodyweight' ? { reps: 10, weight: 0 } : { reps: 10, weight: 20 };
+  // a copy with every field present — a stored set may lack one (`at` and
+  // even `weight` are optional), and "undefined kg × 8" is no prefill
+  const from = (st) => (type === 'cardio'
+    ? { distance: st.distance ?? base.distance, seconds: st.seconds ?? base.seconds }
+    : { reps: st.reps ?? 10, weight: st.weight ?? 0 });
+  if (entry.sets.length) return from(entry.sets[entry.sets.length - 1]);
+  if (target) return from(target);
+  if (last?.sets?.length) return from(last.sets[0]);
+  return base;
 }
 
 // Joins ui.js's setStr per set; the weight unit is appended once when any

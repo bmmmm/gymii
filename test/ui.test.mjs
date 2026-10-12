@@ -398,4 +398,11 @@ assert.equal(ui.fmtDay(Date.UTC(2026, 0, 1, 21, 0)), 'Fri 2 Jan',
   assert.equal(ui.fmtAgo(now - 3.9 * 24 * 60 * MIN, now), '3 days ago', 'rounded down, never up');
 }
 
+// --- fieldValue: what a field shows, armed or not ---
+assert.equal(ui.fieldValue({ value: '40', dataset: { prevValue: '50' } }), '40', 'typed input wins');
+assert.equal(ui.fieldValue({ value: '', dataset: { prevValue: '50' } }), '50',
+  'an armed-empty field still means the value it showed before focus');
+assert.equal(ui.fieldValue({ value: '', dataset: {} }), '', 'a plain empty field stays empty');
+assert.equal(ui.fieldValue({ value: '0', dataset: { prevValue: '50' } }), '0', 'a typed 0 is input, not emptiness');
+
 console.log('ui helpers: all assertions passed');
