@@ -484,18 +484,21 @@ export function ensureMachine(num, name, target = null) {
   return { layout, machine };
 }
 
-// Teaches a machine exercises it does not list yet — read in the tap like
-// ensureMachine, never through a render closure. Returns the fresh machine
-// (null when it is gone); saves only when something was actually added.
-export function addMachineVariant(machineId, { exercises = [] } = {}) {
+// Teaches a machine exercises and grips it does not list yet — read in the
+// tap like ensureMachine, never through a render closure. Returns the fresh
+// machine (null when it is gone); saves only when something was added.
+export function addMachineVariant(machineId, { exercises = [], grips = [] } = {}) {
   const layout = getLayout();
   const machine = layout?.machines.find((m) => m.id === machineId) ?? null;
   if (!machine) return null;
-  const add = [...new Set(exercises)].filter((x) => x && !(machine.exercises ?? []).includes(x));
-  if (add.length) {
-    machine.exercises = [...(machine.exercises ?? []), ...add];
-    saveLayout(layout);
-  }
+  let changed = false;
+  [['exercises', exercises], ['grips', grips]].forEach(([field, wanted]) => {
+    const add = [...new Set(wanted)].filter((x) => x && !(machine[field] ?? []).includes(x));
+    if (!add.length) return;
+    machine[field] = [...(machine[field] ?? []), ...add];
+    changed = true;
+  });
+  if (changed) saveLayout(layout);
   return machine;
 }
 
@@ -505,20 +508,22 @@ export function addMachineVariant(machineId, { exercises = [] } = {}) {
 // sets, the second target lost on the next start): the item keeps its own
 // exercise part ("#2 Dumbbells: Curls"), else takes its name — and when the
 // machine had no exercises yet, its whole-machine siblings take the
-// machine's label. Returns the exercises the machine has to learn (via
+// machine's label. A grip the item names stays, and the machine learns it.
+// Returns what the machine has to learn ({ exercises, grips }, for
 // addMachineVariant); writes nothing itself.
 export function bindItemTo(items, i, machine, name) {
   const item = items[i];
   const siblings = items.filter((p, j) => j !== i && p.machineId === machine.id);
   const exercise = item.exercise ?? (siblings.length && name !== machine.label ? name : null);
   item.machineId = machine.id;
-  if (!exercise) { item.exercise = item.exercise ?? null; return []; }
+  const learn = { exercises: [], grips: item.grip ? [item.grip] : [] };
+  if (!exercise) { item.exercise = item.exercise ?? null; return learn; }
   item.exercise = exercise;
-  const learn = [exercise];
+  learn.exercises.push(exercise);
   if (!(machine.exercises ?? []).length) {
     const whole = siblings.filter((p) => !p.exercise);
     whole.forEach((p) => { p.exercise = machine.label; });
-    if (whole.length) learn.unshift(machine.label);
+    if (whole.length) learn.exercises.unshift(machine.label);
   }
   return learn;
 }
@@ -819,7 +824,9 @@ export function clearActive() {
 // NEVER give a visit an `id`: sync's canon() sorts arrays whose items all
 // carry one before it compares, so a changed ORDER — the walking route —
 // would look like no change at all. Mutates `active`.
-export function switchMachine(active, machineId, exercise = null, { busy = null, now = Date.now() } = {}) {
+// `grip`: undefined leaves the grip unresolved (the log screen picks one:
+// the slot's, else the last one trained); null is a deliberate "no grip".
+export function switchMachine(active, machineId, exercise = null, { busy = null, now = Date.now(), grip } = {}) {
   const next = machineId ?? null;
   if ((active.currentMachineId ?? null) !== next) {
     const visits = active.visits ?? [];
@@ -829,6 +836,8 @@ export function switchMachine(active, machineId, exercise = null, { busy = null,
   }
   active.currentMachineId = next;
   active.currentExercise = exercise; // the default already maps undefined to null
+  if (grip === undefined) delete active.currentGrip;
+  else active.currentGrip = grip;
   return active;
 }
 

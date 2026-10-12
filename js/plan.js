@@ -337,8 +337,8 @@ export function renderPlanBuilder(
       if (!machine) return;
       // a second line on one machine becomes a second exercise there
       const learn = bindItemTo(draft.items, i, machine, it.name);
-      if (learn.length) {
-        addMachineVariant(machine.id, { exercises: learn });
+      if (learn.exercises.length || learn.grips.length) {
+        addMachineVariant(machine.id, learn);
         layout = getLayout();
         machine = machineFor(machine.id);
       }

@@ -1,6 +1,6 @@
 import {
   getLayout, saveLayout, getSettings, saveSettings, getActive, saveActive, finishWorkout,
-  lastEntryFor, getWorkouts, getPlans, savePlan, planFromText, uid,
+  lastEntryFor, lastGripFor, getWorkouts, getPlans, savePlan, planFromText, uid,
   usageByMachine, layoutMuscles, distUnit, newLayout, addMachine, nextNum,
   ensureMachine, addMachineVariant, bindItemTo, newEntry, nameChipsFor, todayStatus, skipPlanDay, machineBrand,
   switchMachine, rateLastSet,
@@ -13,9 +13,10 @@ import {
   esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural, machineChain,
   minsBetween,
   primeAudio, playTimerSound, keepInView, parseDuration, parseDistance, hintHtml, fieldValue,
+  variantStr,
 } from './ui.js';
 import { ensurePersisted } from './persist.js';
-import { insights } from './stats.js';
+import { insights, sameSeries } from './stats.js';
 
 // Active workout shape:
 //   { v: 2, id, startedAt, plan: [{machineId, exercise|null, target?}…],
@@ -71,12 +72,24 @@ function planSeedFrom(workout, layout) {
       return machine ? {
         machineId: e.machineId,
         exercise: machine.exercises?.includes(e.exercise) ? e.exercise : null,
+        ...(machine.grips?.includes(e.grip) ? { grip: e.grip } : {}),
       } : null;
     })
     .filter(Boolean);
-  return pairs.filter((p, i) => pairs.findIndex(
-    (q) => q.machineId === p.machineId && q.exercise === p.exercise) === i);
+  return pairs.filter((p, i) => pairs.findIndex((q) => sameSlot(q, p)) === i);
 }
+
+// One (machine, exercise, grip) triple — the identity of a slot or plan item.
+const sameSlot = (a, b) => a.machineId === b.machineId
+  && (a.exercise ?? null) === (b.exercise ?? null) && (a.grip ?? null) === (b.grip ?? null);
+// `b` counts everything `a` counts and more: a missing exercise or grip on
+// `b` is a wildcard. A broader slot next to a narrower sibling would count
+// the same sets twice.
+const broaderThan = (b, a) => a !== b && a.machineId === b.machineId && !sameSlot(a, b)
+  && (b.exercise == null || b.exercise === a.exercise) && (b.grip == null || b.grip === a.grip);
+// switchMachine's grip option for a slot: its own grip, or — a wildcard
+// slot — left for the log screen to resolve
+const slotGrip = (slot) => (slot?.grip != null ? { grip: slot.grip } : {});
 
 // Which screen of the Train tab is on show. The tab renders its screens
 // into one container, so a changed key means NAVIGATION (hub → start →
@@ -183,6 +196,7 @@ export function startWorkoutFrom(source, firstMachineId = null) {
         return e.name
           ? {
             machineId: null, name: e.name, exercise: e.exercise ?? null,
+            ...(e.grip ? { grip: e.grip } : {}),
             ...(e.num != null ? { num: e.num } : {}),
             ...(e.target ? { target: e.target } : {}),
             // which stored item this slot came from — two lines may share
@@ -193,15 +207,17 @@ export function startWorkoutFrom(source, firstMachineId = null) {
       const machine = layout.machines.find((m) => m.id === e.machineId);
       if (!machine) return null;
       const exercise = machine.exercises?.includes(e.exercise) ? e.exercise : null;
+      const grip = machine.grips?.includes(e.grip) ? e.grip : null;
       // a stored plan's items carry their target through to the slot
-      return { machineId: e.machineId, exercise, ...(e.target ? { target: e.target } : {}) };
+      return {
+        machineId: e.machineId, exercise, ...(grip ? { grip } : {}),
+        ...(e.target ? { target: e.target } : {}),
+      };
     })
     .filter(Boolean);
   const plan = pairs
-    .filter((p, i) => !p.machineId || pairs.findIndex(
-      (q) => q.machineId === p.machineId && q.exercise === p.exercise) === i)
-    .filter((p) => !p.machineId || p.exercise
-      || !pairs.some((q) => q.machineId === p.machineId && q.exercise));
+    .filter((p, i) => !p.machineId || pairs.findIndex((q) => q.machineId && sameSlot(q, p)) === i)
+    .filter((p) => !p.machineId || !pairs.some((q) => q.machineId && broaderThan(p, q)));
   if (firstMachineId && !plan.some((p) => p.machineId === firstMachineId)) {
     plan.push({ machineId: firstMachineId, exercise: null });
   }
@@ -229,7 +245,8 @@ export function startWorkoutFrom(source, firstMachineId = null) {
   };
   // the first machine's visit begins with the workout itself
   switchMachine(active, firstMachineId ?? plan[0]?.machineId ?? null,
-    firstMachineId ? null : plan[0]?.exercise ?? null, { now: startedAt });
+    firstMachineId ? null : plan[0]?.exercise ?? null,
+    { now: startedAt, ...(firstMachineId ? {} : slotGrip(plan[0])) });
   saveActive(active);
   pendingLocker = '';
 }
@@ -865,11 +882,13 @@ function showMapOverlay(layout, machine) {
 // Exact-match lookup for the logging screen (exercise-scoped entries at
 // multi-exercise machines); slotEntries aggregates a whole machine when the
 // slot's exercise is null. A slot is done once any of its entries has sets.
-const entryFor = (active, machineId, exercise = null) =>
-  active.entries.find((e) => e.machineId === machineId && (e.exercise ?? null) === exercise);
+const entryFor = (active, machineId, exercise = null, grip = null) =>
+  active.entries.find((e) => sameSeries(e, { machineId, exercise, grip }));
+// a slot without a grip is a wildcard: it counts every grip
 const slotEntries = (active, slot) =>
   active.entries.filter((e) => e.machineId === slot.machineId
-    && (!slot.exercise || (e.exercise ?? null) === slot.exercise));
+    && (!slot.exercise || (e.exercise ?? null) === slot.exercise)
+    && (slot.grip == null || (e.grip ?? null) === slot.grip));
 const slotSetCount = (active, slot) =>
   slotEntries(active, slot).reduce((n, e) => n + e.sets.length, 0);
 // Done means any set logged — or, when the slot carries a plan target,
@@ -957,8 +976,8 @@ function renderOverview(root, layout, active, message = '') {
       : `${done ? '✓ ' : ''}${slotSets}${goal ? `/${goal}` : ''} set${(goal ?? slotSets) === 1 ? '' : 's'}`;
     return `<button class="plan-row" data-i="${i}" ${machine ? '' : 'disabled'}>
       <span class="machine-badge sm">${esc(num)}</span>
-      <span class="plan-label">${esc(label)}${slot.exercise
-        ? ` <span class="muted">· ${esc(slot.exercise)}</span>` : ''}</span>
+      <span class="plan-label">${esc(label)}${variantStr(slot)
+        ? ` <span class="muted">· ${esc(variantStr(slot))}</span>` : ''}</span>
       <span class="plan-status${done ? ' done' : ''}">${esc(status)}</span>
     </button>`;
   }).join('');
@@ -1045,7 +1064,7 @@ function renderOverview(root, layout, active, message = '') {
         renderTrain(root);
         return;
       }
-      switchMachine(active, slot.machineId, slot.exercise);
+      switchMachine(active, slot.machineId, slot.exercise, slotGrip(slot));
       saveActive(active);
       renderTrain(root);
     });
@@ -1057,8 +1076,8 @@ function renderOverview(root, layout, active, message = '') {
     }
     // straight to the machine's first OPEN exercise slot: without one the
     // multi-exercise pick screen named another machine as "Next"
-    switchMachine(active, machineId, active.plan.find((p) => p.machineId === machineId
-      && !slotDone(active, p))?.exercise ?? null);
+    const open = active.plan.find((p) => p.machineId === machineId && !slotDone(active, p));
+    switchMachine(active, machineId, open?.exercise ?? null, slotGrip(open));
     saveActive(active);
     renderTrain(root);
   }, { actionLabel: 'Add' });
@@ -1154,16 +1173,18 @@ function renderBind(root, layout, active) {
         : plan?.items.findIndex((it) => !it.machineId && it.name === name) ?? -1;
       if (at !== -1) {
         const item = plan.items[at];
-        learn.push(...bindItemTo(plan.items, at, machine, name));
+        const more = bindItemTo(plan.items, at, machine, name);
+        learn.exercises.push(...more.exercises);
+        learn.grips.push(...more.grips);
         delete item.name;
         delete item.num;
         if (item.target && !!machine.cardio !== (item.target.distance != null)) delete item.target;
         savePlan(plan);
       }
     }
-    if (learn.length) addMachineVariant(machine.id, { exercises: learn });
+    if (learn.exercises.length || learn.grips.length) addMachineVariant(machine.id, learn);
     delete active.binding;
-    switchMachine(active, machine.id, slot.exercise ?? null);
+    switchMachine(active, machine.id, slot.exercise ?? null, slotGrip(slot));
     saveActive(active);
     renderTrain(root, message);
   };
@@ -1202,18 +1223,21 @@ function renderBind(root, layout, active) {
 // Next unfinished plan slot after the current one, wrapping around so a
 // skipped (busy) machine comes up again at the end. Another exercise at
 // the SAME machine is a valid next stop — only the current slot is out.
-function nextOpenSlot(active, layout, afterId, afterExercise = null) {
-  const idx = planSlotIndex(active, afterId, afterExercise);
+function nextOpenSlot(active, layout, afterId, afterExercise = null, afterGrip = null) {
+  const idx = planSlotIndex(active, afterId, afterExercise, afterGrip);
   const order = [...active.plan.slice(idx + 1), ...active.plan.slice(0, Math.max(idx, 0))];
   return order.find((slot) => slotLive(layout, slot) && !slotDone(active, slot)) ?? null;
 }
 
-// The plan index the logging screen is at: the exact (machine, exercise)
-// slot when one exists, else the machine's first slot (pick pending).
-function planSlotIndex(active, machineId, exercise = null) {
-  const exact = active.plan.findIndex(
-    (p) => p.machineId === machineId && (p.exercise ?? null) === (exercise ?? null));
-  return exact !== -1 ? exact
+// The plan index the logging screen is at: the exact (machine, exercise,
+// grip) slot when one exists, else the (machine, exercise) slot without a
+// grip (it counts every grip), else the machine's first slot (pick pending).
+function planSlotIndex(active, machineId, exercise = null, grip = null) {
+  const here = { machineId, exercise, grip };
+  const exact = active.plan.findIndex((p) => sameSlot(p, here));
+  if (exact !== -1) return exact;
+  const anyGrip = active.plan.findIndex((p) => p.grip == null && sameSlot(p, { ...here, grip: null }));
+  return anyGrip !== -1 ? anyGrip
     : active.plan.findIndex((p) => p.machineId === machineId);
 }
 
@@ -1243,8 +1267,8 @@ export function nearbyAlternative(active, layout, machine, excludeMachineId = nu
 }
 
 // The plan target that applies at this logging position, if any.
-const planTargetFor = (active, machineId, exercise = null) => {
-  const idx = planSlotIndex(active, machineId, exercise);
+const planTargetFor = (active, machineId, exercise = null, grip = null) => {
+  const idx = planSlotIndex(active, machineId, exercise, grip);
   return idx === -1 ? null : active.plan[idx].target ?? null;
 };
 
@@ -1269,14 +1293,31 @@ const targetStr = (t, type, s) => (type === 'cardio'
 // set prefills.
 function resolveEntry(machine, active) {
   const exercises = machine.exercises ?? [];
+  const grips = machine.grips ?? [];
   const exercise = exercises.includes(active.currentExercise) ? active.currentExercise : null;
   const pickPending = exercises.length > 0 && !exercise;
-  if (pickPending) return { exercises, exercise, pickPending, entry: null, last: null };
+  if (pickPending) return { exercises, grips, exercise, grip: null, pickPending, entry: null, last: null };
 
-  const last = lastEntryFor(machine.id, exercise);
-  let entry = entryFor(active, machine.id, exercise);
+  // The grip: chosen on this screen (null = deliberately none), else the
+  // first open slot here that names one, else the grip last trained here —
+  // whichever the machine still offers. Resolved once, then it is a choice.
+  let grip = null;
+  if (grips.length) {
+    if ('currentGrip' in active) {
+      grip = grips.includes(active.currentGrip) ? active.currentGrip : null;
+    } else {
+      const last = lastGripFor(machine.id, exercise);
+      grip = active.plan.find((p) => p.machineId === machine.id && (p.exercise ?? null) === exercise
+        && grips.includes(p.grip) && !slotDone(active, p))?.grip
+        ?? (grips.includes(last) ? last : null);
+      active.currentGrip = grip;
+    }
+  }
+
+  const last = lastEntryFor(machine.id, exercise, grip);
+  let entry = entryFor(active, machine.id, exercise, grip);
   if (!entry) {
-    entry = newEntry(machine, exercise);
+    entry = newEntry(machine, exercise, [], grip);
     machine.settingsFields.forEach((f) => { entry.settings[f] = last?.settings?.[f] ?? ''; });
     active.entries.push(entry);
     saveLog(active);
@@ -1287,7 +1328,7 @@ function resolveEntry(machine, active) {
     if (machine.bodyweight) entry.bodyweight = true; else delete entry.bodyweight;
     saveLog(active);
   }
-  return { exercises, exercise, pickPending, entry, last };
+  return { exercises, grips, exercise, grip, pickPending, entry, last };
 }
 
 // `reveal` names a selector to scroll back into view once the markup is
@@ -1301,19 +1342,19 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     return;
   }
 
-  const { exercises, exercise, pickPending, entry, last } = resolveEntry(machine, active);
+  const { exercises, grips, exercise, grip, pickPending, entry, last } = resolveEntry(machine, active);
 
   const machineSlots = active.plan.filter((p) => p.machineId === machine.id);
   if (!machineSlots.length) { // free workouts grow the plan
     active.plan.push({ machineId: machine.id, exercise: null });
     saveLog(active);
-  } else if (exercise && !machineSlots.some((p) => !p.exercise)
-    && !machineSlots.some((p) => p.exercise === exercise)) {
-    // a fresh exercise at a machine whose slots are exercise-scoped gets
-    // its own slot (after its siblings) so the overview and "Next:" see
-    // it; a whole-machine slot already aggregates it otherwise
+  } else if (!pickPending && !machineSlots.some((p) => (!p.exercise || p.exercise === exercise)
+    && (p.grip == null || p.grip === grip))) {
+    // a fresh exercise or grip at a machine whose slots are scoped gets its
+    // own slot (after its siblings) so the overview and "Next:" see it; a
+    // broader slot already aggregates it otherwise
     const lastIdx = active.plan.findLastIndex((p) => p.machineId === machine.id);
-    active.plan.splice(lastIdx + 1, 0, { machineId: machine.id, exercise });
+    active.plan.splice(lastIdx + 1, 0, { machineId: machine.id, exercise, ...(grip ? { grip } : {}) });
     saveLog(active);
   }
 
@@ -1333,11 +1374,11 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   const today = new Date().getDay();
   const hints = insights(getWorkouts(), layout, s, { plans: getPlans() }).filter((it) =>
     it.machineId === machine.id && (it.kind === 'progress'
-      ? (it.exercise ?? null) === (exercise ?? null)
+      ? (it.exercise ?? null) === (exercise ?? null) && (it.grip ?? null) === grip
       : it.kind === 'busy' && it.weekday === today));
   // Plan target for this slot — dropped when its shape no longer matches
   // the machine's type (flag toggled since the plan was made).
-  const rawTarget = pickPending ? null : planTargetFor(active, machine.id, exercise);
+  const rawTarget = pickPending ? null : planTargetFor(active, machine.id, exercise, grip);
   const target = rawTarget
     && (cardio ? rawTarget.distance != null : rawTarget.reps != null) ? rawTarget : null;
   const def = pickPending ? null : nextSetDefaults(entry, lastSets, type, s, target);
@@ -1348,7 +1389,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // `??` throughout, so an explicit 0 (timer off) survives every level.
   const machineRest = () => machine.restSeconds ?? s.restSeconds;
   const restSeconds = active.restOverrides?.[machine.id] ?? machineRest();
-  const slotIdx = planSlotIndex(active, machine.id, exercise);
+  const slotIdx = planSlotIndex(active, machine.id, exercise, grip);
   const planPos = `${slotIdx + 1}/${active.plan.length}`;
   // one-tap flow state: which target set is up, and is the target met —
   // once it is, the Next button takes over as the primary action
@@ -1367,7 +1408,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
       : `${d.weight} ${s.unit} × ${d.reps}`);
   const logLabel = (d) =>
     `✓ Log set${setGoal && !targetDone ? ` ${setPos}/${setGoal}` : ''} — ${setLabel(d)}`;
-  const nextSlot = nextOpenSlot(active, layout, machine.id, exercise);
+  const nextSlot = nextOpenSlot(active, layout, machine.id, exercise, grip);
   const nextMachine = nextSlot?.machineId
     ? layout.machines.find((m) => m.id === nextSlot.machineId) : null;
   // an unbound next stop is still a next stop — it just asks which
@@ -1384,13 +1425,15 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // between machines constantly — one tap back beats an overview detour,
   // and this stays visible even at the superset end-game where every slot
   // is done and no Next button shows.
-  const otherMachines = new Map(); // machineId -> { at, exercise }
+  const otherMachines = new Map(); // machineId -> { at, exercise, grip }
   active.entries.forEach((e) => {
     if (e.machineId === machine.id) return;
     e.sets.forEach((st) => {
       if (typeof st.at !== 'number') return;
       const cur = otherMachines.get(e.machineId);
-      if (!cur || st.at > cur.at) otherMachines.set(e.machineId, { at: st.at, exercise: e.exercise ?? null });
+      if (!cur || st.at > cur.at) {
+        otherMachines.set(e.machineId, { at: st.at, exercise: e.exercise ?? null, grip: e.grip ?? null });
+      }
     });
   });
   const quickSwitch = [...otherMachines].map(([machineId, v]) => ({
@@ -1455,12 +1498,26 @@ function renderLog(root, layout, active, reveal = null, message = '') {
       <h2>Exercise</h2>
       <div class="chip-select" id="exercise-chips">
         ${exercises.map((x) => {
-    const done = (entryFor(active, machine.id, x)?.sets.length ?? 0) > 0;
+    // done in ANY grip — the grip row below says which
+    const done = active.entries.some((e) => e.machineId === machine.id
+      && (e.exercise ?? null) === x && e.sets.length);
     return `<button type="button" class="chip${x === exercise ? ' sel' : ''}${done ? ' done' : ''}"
           data-exercise="${esc(x)}">${esc(x)}</button>`;
   }).join('')}
       </div>
       ${pickPending ? '<p class="muted">Pick an exercise to start logging.</p>' : ''}
+    </section>` : ''}
+
+    ${!pickPending && grips.length ? `
+    <section class="card">
+      <h2>Grip</h2>
+      <div class="chip-select" id="grip-chips">
+        ${grips.map((g) => {
+    const done = (entryFor(active, machine.id, exercise, g)?.sets.length ?? 0) > 0;
+    return `<button type="button" class="chip${g === grip ? ' sel' : ''}${done ? ' done' : ''}"
+          data-grip="${esc(g)}">${esc(g)}</button>`;
+  }).join('')}
+      </div>
     </section>` : ''}
 
     ${pickPending ? '' : `
@@ -1520,7 +1577,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     ${nextMachine
     ? `<div class="next-row">
         <button id="next-machine" class="btn ${targetDone ? 'btn-primary' : 'btn-next'} btn-big">Next: #${esc(nextMachine.num)}
-          ${esc(nextMachine.label)}${nextSlot.exercise ? ` · ${esc(nextSlot.exercise)}` : ''} →</button>
+          ${esc(nextMachine.label)}${variantStr(nextSlot) ? ` · ${esc(variantStr(nextSlot))}` : ''} →</button>
         <button type="button" id="locate-next" class="btn btn-next btn-big locate-next"
           aria-label="Show the next machine on the map">📍</button>
       </div>
@@ -1538,10 +1595,22 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     const chip = e.target.closest('.chip');
     if (!chip) return;
     active.currentExercise = chip.dataset.exercise;
+    delete active.currentGrip; // resolved afresh for the new exercise
     saveLog(active);
     // through renderTrain, not renderLog: the exercise is part of the
     // screen key, and a key left stale here made the NEXT same-screen
     // render (the overlay's RIR) reset the scroll
+    renderTrain(root);
+  });
+
+  // A grip is part of what is lifted: switching it switches the entry (and
+  // with it the prefill). The chosen chip again means "no grip" — a choice
+  // too, kept as null so it is not re-resolved on the next render.
+  root.querySelector('#grip-chips')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    active.currentGrip = chip.dataset.grip === grip ? null : chip.dataset.grip;
+    saveLog(active);
     renderTrain(root);
   });
 
@@ -1670,7 +1739,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     : currentSlot && !slotDone(active, currentSlot)
       ? (setGoal ? `set ${setPos}/${setGoal} — ${setLabel(def)}` : setLabel(def))
       : nextMachine
-        ? `#${nextMachine.num} ${nextMachine.label}${nextSlot.exercise ? ` · ${nextSlot.exercise}` : ''}`
+        ? `#${nextMachine.num} ${nextMachine.label}${variantStr(nextSlot) ? ` · ${variantStr(nextSlot)}` : ''}`
         : nextUnbound?.name ?? '';
 
   // the steppers update the one-tap label live, so the button never lies
@@ -1705,7 +1774,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     if (!chip) return;
     const c = quickSwitch.find((x) => x.machineId === chip.dataset.machine);
     if (!c) return;
-    switchMachine(active, c.machineId, c.exercise ?? null);
+    switchMachine(active, c.machineId, c.exercise ?? null, { grip: c.grip });
     saveLog(active);
     renderTrain(root);
   });
@@ -1750,13 +1819,14 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // same move as a Next tap, just to the nearby machine instead — and the
   // skipped next machine goes on record as busy at this hour
   root.querySelector('#nearby-machine')?.addEventListener('click', () => {
-    switchMachine(active, nearby.slot.machineId, nearby.slot.exercise, { busy: nextSlot.machineId });
+    switchMachine(active, nearby.slot.machineId, nearby.slot.exercise,
+      { busy: nextSlot.machineId, ...slotGrip(nearby.slot) });
     saveLog(active);
     renderTrain(root);
   });
 
   root.querySelector('#next-machine')?.addEventListener('click', () => {
-    switchMachine(active, nextSlot.machineId, nextSlot.exercise);
+    switchMachine(active, nextSlot.machineId, nextSlot.exercise, slotGrip(nextSlot));
     saveLog(active);
     renderTrain(root);
   });

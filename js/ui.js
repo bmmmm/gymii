@@ -30,6 +30,11 @@ export const machineChain = (workout) =>
 export const fieldValue = (input) =>
   (input.value !== '' ? input.value : input.dataset?.prevValue ?? '');
 
+// "Triceps pushdown · Rope" — what was done at a machine, beyond the machine
+// itself: the exercise and the grip, whichever are set. RAW text: the
+// caller escapes it.
+export const variantStr = (x) => [x?.exercise, x?.grip].filter(Boolean).join(' · ');
+
 // One delegated handler powers every .stepper on the page:
 // <div class="stepper" data-step="2.5" data-min="0"><button class="step-down">−</button><input><button class="step-up">+</button></div>
 export function initSteppers() {

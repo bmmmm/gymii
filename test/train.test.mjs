@@ -1530,4 +1530,166 @@ const withPicker = (fn) => {
   store.saveLayout(before);
 }
 
+// --- grips on the log screen ---
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Grip gym');
+  g.machines.push(
+    { id: 'ct', num: 9, label: 'Cable tower', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
+      exercises: ['Pushdown', 'Face pull'], grips: ['Rope', 'V-bar'] },
+    { id: 'm1', num: 1, label: 'Chest press', x: 6, y: 0, w: 4, h: 3, settingsFields: [] });
+  store.saveLayout(g);
+  const done = (exercise, grip, weight) => ({ machineId: 'ct', num: 9, label: 'Cable tower', exercise,
+    ...(grip ? { grip } : {}), settings: {}, sets: [{ reps: 12, weight }] });
+  store.saveWorkouts([
+    { id: 'gw1', startedAt: 1000, entries: [done('Pushdown', 'Rope', 25), done('Pushdown', 'V-bar', 35)] },
+    { id: 'gw2', startedAt: 2000, entries: [done('Pushdown', 'V-bar', 37.5)] },
+  ]);
+  const chips = () => root.innerHTML.match(/id="grip-chips"[\s\S]*?<\/div>/)?.[0] ?? '';
+  const selected = () => /class="chip sel[^"]*"\s+data-grip="([^"]+)"/.exec(chips())?.[1] ?? null;
+  const start = (plan) => {
+    store.saveActive({ v: 2, id: 'w-grip', startedAt: Date.now(), plan,
+      currentMachineId: 'ct', currentExercise: 'Pushdown', entries: [] });
+    byId.clear();
+    renderTrain(root);
+  };
+
+  // no plan grip: the last one trained, with its own prefill
+  start([{ machineId: 'ct', exercise: 'Pushdown' }]);
+  assert.equal(selected(), 'V-bar', 'the grip defaults to the one last trained');
+  assert.equal(stepper(root.innerHTML, 'set-weight'), '37.5', 'and prefills from that grip');
+  // a plan slot naming a grip beats the habit
+  start([{ machineId: 'ct', exercise: 'Pushdown', grip: 'Rope' }]);
+  assert.equal(selected(), 'Rope', 'the plan slot\'s grip wins');
+  assert.equal(stepper(root.innerHTML, 'set-weight'), '25', 'with the rope\'s own prefill');
+
+  // switching the grip switches the entry
+  start([{ machineId: 'ct', exercise: 'Pushdown' }]);
+  byId.get('#set-weight').value = '40';
+  byId.get('#set-reps').value = '10';
+  byId.get('#set-rest').value = '0';
+  byId.get('#log-set').listeners.click();
+  byId.get('#grip-chips').listeners.click({ target: { closest: () => ({ dataset: { grip: 'Rope' } }) } });
+  assert.equal(selected(), 'Rope', 'a chip tap picks the grip');
+  assert.equal(stepper(root.innerHTML, 'set-weight'), '25', 'and the prefill follows it');
+  byId.get('#set-weight').value = '27.5';
+  byId.get('#set-reps').value = '12';
+  byId.get('#log-set').listeners.click();
+  let a = store.getActive();
+  assert.deepEqual(a.entries.filter((e) => e.sets.length).map((e) => [e.grip, e.sets.length]),
+    [['V-bar', 1], ['Rope', 1]], 'two grips, two entries');
+  assert.ok(/class="chip done"\s+data-grip="V-bar"/.test(chips()), 'the grip already logged is marked done');
+  assert.equal(a.plan.length, 1, 'the gripless slot covers the rope — no slot is added');
+
+  // deselecting means "no grip", and stays so
+  byId.get('#grip-chips').listeners.click({ target: { closest: () => ({ dataset: { grip: 'Rope' } }) } });
+  assert.equal(selected(), null, 'the chosen chip again deselects');
+  assert.strictEqual(store.getActive().currentGrip, null, 'stored as a deliberate null');
+  byId.clear();
+  renderTrain(root);
+  assert.equal(selected(), null, 'and is not re-resolved on the next render');
+
+  // a wildcard slot counts both grips; two grip slots walk Next between them
+  start([{ machineId: 'ct', exercise: 'Pushdown', grip: 'Rope' }, { machineId: 'ct', exercise: 'Pushdown', grip: 'V-bar' },
+    { machineId: 'm1', exercise: null }]);
+  byId.get('#set-weight').value = '25';
+  byId.get('#set-reps').value = '12';
+  byId.get('#set-rest').value = '0';
+  byId.get('#log-set').listeners.click();
+  assert.ok(/id="next-machine"[^>]*>Next: #9\s+Cable tower · Pushdown · V-bar/.test(root.innerHTML),
+    'Next walks to the other grip at the same machine');
+  byId.get('#next-machine').listeners.click();
+  assert.equal(store.getActive().currentGrip, 'V-bar', 'and arrives with that grip');
+  assert.ok(root.innerHTML.includes('<span class="muted">2/3</span>'), 'at the V-bar slot, not the rope one');
+  // a grip the plan does not cover gets its own slot after its siblings
+  store.saveActive({ ...store.getActive(), currentGrip: null });
+  byId.clear();
+  renderTrain(root);
+  assert.deepEqual(store.getActive().plan.map((p) => `${p.machineId}:${p.grip ?? '-'}`),
+    ['ct:Rope', 'ct:V-bar', 'ct:-', 'm1:-'], 'an uncovered choice grows a slot after its siblings');
+  store.saveActive({ ...store.getActive(), plan: [{ machineId: 'ct', exercise: 'Pushdown', target: { sets: 2, reps: 12, weight: 25 } }],
+    currentGrip: 'V-bar' });
+  byId.clear();
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('set 2/2'), 'a gripless target counts the rope set and the V-bar set alike');
+
+  // Next hands its slot's grip over, even when another grip slot is open first
+  start([{ machineId: 'ct', exercise: 'Pushdown', grip: 'Rope' }, { machineId: 'm1', exercise: null },
+    { machineId: 'ct', exercise: 'Pushdown', grip: 'V-bar' }]);
+  a = store.getActive();
+  store.switchMachine(a, 'm1');
+  store.saveActive(a);
+  byId.clear();
+  renderTrain(root);
+  byId.get('#set-weight').value = '40';
+  byId.get('#set-reps').value = '10';
+  byId.get('#set-rest').value = '0';
+  byId.get('#log-set').listeners.click();
+  byId.get('#next-machine').listeners.click();
+  assert.equal(store.getActive().currentGrip, 'V-bar', 'Next lands on the V-bar it promised');
+  // switching machines leaves the grip unresolved again
+  a = store.getActive();
+  a.currentGrip = null;
+  store.switchMachine(a, 'm1');
+  assert.ok(!('currentGrip' in a), 'a machine switch without a grip forgets the old choice');
+  // a new exercise resolves its own grip
+  store.saveWorkouts([...store.getWorkouts(), { id: 'gw3', startedAt: 3000, entries: [done('Face pull', 'Rope', 15)] }]);
+  start([{ machineId: 'ct', exercise: 'Pushdown' }]);
+  byId.get('#grip-chips').listeners.click({ target: { closest: () => ({ dataset: { grip: 'V-bar' } }) } });
+  assert.strictEqual(store.getActive().currentGrip, null, 'no grip on the pushdown');
+  byId.get('#exercise-chips').listeners.click({ target: { closest: () => ({ dataset: { exercise: 'Face pull' } }) } });
+  assert.equal(store.getActive().currentGrip, 'Rope', 'the face pull takes its own last grip');
+
+  // the progress hint is about one grip: it shows at that grip only
+  {
+    const recent = (days, weight, reps) => ({ id: `gp${days}`, startedAt: Date.now() - days * 864e5,
+      entries: [{ ...done('Pushdown', 'Rope', weight), sets: [{ reps: 10, weight }, { reps, weight }] }] });
+    const keep = store.getWorkouts();
+    store.saveWorkouts([recent(9, 55, 10), recent(5, 57.5, 14), recent(1, 57.5, 14)]);
+    const at = (grip) => {
+      start([{ machineId: 'ct', exercise: 'Pushdown', grip }]);
+      return root.innerHTML.includes('Target beaten twice');
+    };
+    assert.ok(at('Rope'), 'the rope screen carries the rope\'s progress hint');
+    assert.ok(!at('V-bar'), 'the V-bar screen does not — it would name the wrong load');
+    store.saveWorkouts(keep);
+  }
+
+  // a gripless slot of this exercise is where any grip of it logs
+  start([{ machineId: 'ct', exercise: 'Face pull' }, { machineId: 'ct', exercise: 'Pushdown' }]);
+  assert.equal(selected(), 'V-bar');
+  assert.ok(root.innerHTML.includes('<span class="muted">2/2</span>'), 'the V-bar logs at the gripless pushdown slot');
+
+  // repeating a workout keeps both grips as two slots
+  startWorkoutFrom({ entries: [done('Pushdown', 'Rope', 25), done('Pushdown', 'V-bar', 35)] });
+  assert.deepEqual(store.getActive().plan.map((p) => p.grip), ['Rope', 'V-bar'], 'repeat keeps both grips');
+  startWorkoutFrom({ entries: [done('Pushdown', null, 25), done('Pushdown', 'Rope', 25)] });
+  assert.deepEqual(store.getActive().plan.map((p) => p.grip ?? null), ['Rope'],
+    'a gripless slot next to a narrower rope slot is dropped — it would count the rope twice');
+
+  // an unbound line naming a grip teaches it to the machine it binds to
+  store.clearActive();
+  const gp = store.planFromText('#12 Cable column: Pushdown [Rope] 3x12 25');
+  store.savePlan(gp);
+  startWorkoutFrom({ planId: gp.id, entries: gp.items });
+  byId.clear();
+  renderTrain(root);
+  root.querySelector('#bind-num').value = '12';
+  byId.get('#bind-go').listeners.click();
+  const m12 = store.getLayout().machines.find((m) => m.num === 12);
+  assert.deepEqual([m12.exercises, m12.grips], [['Pushdown'], ['Rope']], 'the new machine learns exercise and grip');
+  assert.equal(store.getActive().currentGrip, 'Rope', 'and the log screen opens on that grip');
+  assert.equal(store.getPlans().find((x) => x.id === gp.id).items[0].grip, 'Rope', 'the stored plan keeps it');
+
+  // a machine without grips shows no grip row
+  store.saveActive({ v: 2, id: 'w-nogrip', startedAt: Date.now(), plan: [{ machineId: 'm1', exercise: null }],
+    currentMachineId: 'm1', currentExercise: null, entries: [] });
+  byId.clear();
+  renderTrain(root);
+  assert.ok(!root.innerHTML.includes('id="grip-chips"'), 'no grips, no grip row');
+  store.clearActive();
+  store.saveWorkouts([]);
+  store.saveLayout(before);
+}
+
 console.log('train plan construction: all assertions passed');
