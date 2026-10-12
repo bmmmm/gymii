@@ -1506,7 +1506,10 @@ function renderLog(root, layout, active, reveal = null) {
     if (!chip) return;
     active.currentExercise = chip.dataset.exercise;
     saveLog(active);
-    renderLog(root, layout, active);
+    // through renderTrain, not renderLog: the exercise is part of the
+    // screen key, and a key left stale here made the NEXT same-screen
+    // render (the overlay's RIR) reset the scroll
+    renderTrain(root);
   });
 
   // Everything below the exercise picker only exists once an entry is
@@ -1584,12 +1587,22 @@ function renderLog(root, layout, active, reveal = null) {
 
   root.querySelector('#log-set')?.addEventListener('click', () => {
     const rest = readRest();
+    // A text field still focused when Log set is tapped never sees its
+    // `change` in Firefox — the re-render below detaches it before the
+    // blur. Take what it holds now.
+    root.querySelectorAll('.m-setting').forEach((inp) => {
+      entry.settings[inp.dataset.field] = inp.value.trim();
+    });
+    const locker = root.querySelector('#locker-num')?.value.trim();
+    if (locker) active.locker = locker;
     if (cardio) {
       entry.sets.push({ ...readCardio(), at: Date.now() });
     } else {
       entry.sets.push({ ...readStrength(), at: Date.now() });
     }
-    saveLog(active);
+    // a refused write must not leave the set behind in memory: the list
+    // does not re-render, so every further tap would stack another one
+    try { saveLog(active); } catch (e) { entry.sets.pop(); throw e; }
     // the set list just grew a row above the inputs — put them back under
     // the thumb, so the next set is one tap and not a scroll away
     renderLog(root, layout, active, '.next-set');

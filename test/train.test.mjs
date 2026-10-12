@@ -2,7 +2,7 @@
 // (machine, exercise) pair on repeat, dedupe, and fallbacks for machines
 // or exercises that no longer exist.
 // Run with: node test/train.test.mjs
-import './helpers/localstorage.mjs'; // FIRST: installs the stub
+import { failWritesAfter } from './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
@@ -1202,6 +1202,71 @@ assert.deepEqual(nextSetDefaults({ sets: [] }, { sets: [{ reps: 6, at: 1 }] }, '
   byId.get('#set-rest').value = '0';
   byId.get('#log-set').listeners.click();
   assert.equal(restLeft(store.getActive()), 0, 'a rest-0 set ends the running rest');
+  store.clearActive();
+  store.saveLayout(before);
+}
+
+// --- the Log set write path ---
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Write gym');
+  g.machines.push({ id: 'a', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: ['Seat'] });
+  g.machines.push({
+    id: 'db', num: 2, label: 'Dumbbells', x: 6, y: 0, w: 4, h: 3, settingsFields: [],
+    exercises: ['Biceps curls', 'Shoulder press'],
+  });
+  store.saveLayout(g);
+  store.saveActive({
+    v: 2, id: 'w-write', startedAt: Date.now() - 60000,
+    plan: [{ machineId: 'a', exercise: null }], currentMachineId: 'a', currentExercise: null, entries: [],
+  });
+  byId.clear();
+  renderTrain(root);
+  byId.get('#set-weight').value = '40';
+  byId.get('#set-reps').value = '8';
+  byId.get('#set-rest').value = '0';
+  // a refused write leaves no set behind in memory for the next tap to stack on
+  const log = byId.get('#log-set').listeners.click;
+  failWritesAfter(0);
+  assert.throws(log, /QuotaExceeded/, 'the refused write still announces itself');
+  failWritesAfter();
+  log();
+  assert.equal(store.getActive().entries[0].sets.length, 1, 'one tap after a refusal is one set, not two');
+
+  // a settings / locker field still focused when Log set is tapped (Firefox:
+  // no change event, the re-render detaches it) is taken over anyway
+  byId.clear();
+  renderTrain(root);
+  const seat = { dataset: { field: 'Seat' }, value: ' 4 ', addEventListener() {} };
+  const qsa = root.querySelectorAll;
+  root.querySelectorAll = (sel) => (sel === '.m-setting' ? [seat] : []);
+  byId.get('#locker-num').value = '117';
+  byId.get('#set-weight').value = '40';
+  byId.get('#set-reps').value = '8';
+  byId.get('#set-rest').value = '0';
+  byId.get('#log-set').listeners.click();
+  root.querySelectorAll = qsa;
+  const w = store.getActive();
+  assert.equal(w.entries[0].settings.Seat, '4', 'the typed setting is saved with the set');
+  assert.equal(w.locker, '117', 'and so is the typed locker');
+
+  // the exercise chip renders through renderTrain: its screen key is fresh,
+  // so a later same-screen render (the overlay's RIR) keeps the scroll
+  store.saveActive({
+    v: 2, id: 'w-chip', startedAt: Date.now(),
+    plan: [{ machineId: 'db', exercise: null }], currentMachineId: 'db', currentExercise: null, entries: [],
+  });
+  byId.clear();
+  renderTrain(root);
+  byId.get('#exercise-chips').listeners.click({ target: { closest: () => ({ dataset: { exercise: 'Biceps curls' } }) } });
+  root.scrollTop = 400;
+  byId.get('#set-weight').value = '10';
+  byId.get('#set-reps').value = '8';
+  byId.get('#set-rest').value = '0';
+  byId.get('#log-set').listeners.click();
+  renderTrain(root);
+  assert.equal(root.scrollTop, 400, 'picking an exercise does not leave a stale screen key behind');
+  root.scrollTop = 0;
   store.clearActive();
   store.saveLayout(before);
 }
