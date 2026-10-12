@@ -52,7 +52,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   machine moves none), absent rather than empty, and NEVER carry an `id`:
   sync's `canon()` sorts arrays whose items all have one before comparing,
   so a changed ORDER — the route itself — would look like no change.
-  `switchMachine(active, machineId, exercise, {busy, now})` is THE one way
+  `switchMachine(active, machineId, exercise, {busy, now, grip})` is THE one way
   to change the current machine (it closes the open visit and opens the
   next); `closeVisits(visits, now)` runs in `finishWorkout()`, closes the
   open one at the finish and drops tap-throughs under 15 s unless they carry
@@ -69,7 +69,16 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   routines by name when present). Machine type flags
   `cardio`/`bodyweight` are mutually exclusive and absent for strength;
   optional `machine.exercises: [string]` (deleted when emptied) splits a
-  machine into per-exercise entries — `lastEntryFor(machineId, exercise)`.
+  machine into per-exercise entries, and `machine.grips: [string]` (the
+  same lifecycle; `COMMON_GRIPS` seeds the editor's chips) into per-grip
+  ones — a rope and a V-bar carry different loads, so a grip is part of
+  what was lifted. A SERIES is the triple (machineId, exercise, grip):
+  `lastEntryFor(machineId, exercise, grip)` matches it strictly via stats.js's
+  `sameSeries` (absent = null, so every entry from before grips is the
+  gripless series and keeps its prefill), `lastGripFor(machineId,
+  exercise)` returns the grip last trained there, and `seriesKey()` is its
+  one string form (a JSON triple — History's chip and heatmap keys).
+  Readers write `m.grips ?? []`; `getLayout` heals nothing here.
   Other lazy migrations live in `getLayout()` (outline, meta).
   SYNC GROUNDWORK (docs/sync-protocol.md is the contract; js/merge.js the
   pure merge layer): every interactive write stamps `updatedAt`
@@ -89,7 +98,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   re-renders nothing), and saving it tombstones those machines on every
   device after the next merge. A tap that changes the layout reads it IN
   THE TAP — `ensureMachine(num, name, target)` (bind-or-create + save),
-  `addMachineVariant(id, { exercises })`, or `getLayout()` right there;
+  `addMachineVariant(id, { exercises, grips })`, or `getLayout()` right there;
   the gym editor's own undo copy is the one known holdout. `uid()` is crypto-random, 16
   chars; legacy 8-char ids stay valid, and ids deliberately carry no
   device marker (they travel into AI exports). Backups are `v: 2`
@@ -128,7 +137,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   lives INSIDE the layout, so template/backup/sync carry it for free (and
   merge.js needs no new structural field). Stored plans
   live under `gymii.<gid>.plans`: `{id, name, createdAt, days?, skippedOn?,
-  items:[{machineId?, name?, num?, exercise|null, target?}]}` with target
+  items:[{machineId?, name?, num?, exercise|null, grip?, target?}]}` with target
   `{sets,reps,weight}` or `{distance,seconds}`; `days` is getDay()-coded
   weekday ints (locker-style: dropped when emptied), today's plans sort
   first on the start screen; part of backups, wiped with the gym.
@@ -192,6 +201,23 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   backs the builder's Text view. `#2 Dumbbells: Biceps curls` names a
   movement AT a machine — only a marked num unlocks that reading, or
   "Day A: Leg press" would lose half its name to a false heading.
+  `#9 Cable tower: Triceps pushdown [Rope] 3x12 25` names the GRIP: the
+  first `[…]` is cut out before anything else (empty brackets name none).
+  Every other separator was rejected — `/` sits in real names ("Lat
+  pulldown / row"), `()` and "with" collide with the trailing weight, `·`
+  is not on a phone keyboard — which is why the gym editor strips `[` and
+  `]` from a typed grip. A bound item keeps a grip only if its machine
+  offers it; an unbound one keeps it (and its exercise part), and binding
+  teaches both to the machine (`bindItemTo` → `addMachineVariant`).
+  Everywhere on screen a variant reads `Exercise · Grip` (ui.js
+  `variantStr`, raw — the caller escapes).
+  Grips need no sync protocol bump: `cleanLayout`/`cleanWorkout`/`cleanPlan`
+  spread unknown fields and merge.js works on whole records, so an older
+  client stores and passes them on untouched — it only shows a machine's
+  grip series mixed (its prefill and charts ignore the grip), and its
+  plan Text view would drop a `[grip]` it cannot parse. A non-string grip
+  is repaired away on entry (entry and plan item), a machine whose
+  `grips` is not a string array is refused like a bad `exercises`.
   WRITE FAILURES: every write goes through the one `write()` (a refused
   `setItem` — quota gone, private mode — is a synchronous `DOMException`).
   It ANNOUNCES over `onWriteError(fn)` and RETHROWS; do not "fix" that by
@@ -457,9 +483,20 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   (busy) — full width, not inside the head's flex row, where the 44px ↗
   would squeeze the text — the rest overlay the rest hint, a plan row "· reorder?" when its
   builder has a route hint (`planListCard`). `active.plan` is a list of slots
-  `{machineId, exercise|null, target?}` (null = whole machine) — a repeat
-  plans one slot per (machine, exercise) pair so "Next:" walks every
-  exercise of a multi-exercise machine; overview hub, per-machine
+  `{machineId, exercise|null, grip?, target?}` (null = whole machine; no
+  grip = a WILDCARD that counts every grip, which is why old plans and
+  slots need no migration) — a repeat plans one slot per (machine,
+  exercise, grip) triple so "Next:" walks every exercise and grip, and a
+  slot strictly broader than a sibling is dropped (it would count the same
+  sets twice). The log screen's slot is the exact triple, else the
+  gripless slot of that exercise, else the machine's first. The grip on
+  screen is `active.currentGrip`: absent = unresolved (resolveEntry takes
+  the first open slot here that names a grip, else `lastGripFor`, as long
+  as the machine still offers it), null = deliberately none (the chosen
+  chip tapped again), dies with the workout via `finishWorkout`'s
+  allow-list. A grip the plan does not cover grows a slot after its
+  siblings, like a fresh exercise; a grip switch is a new entry with its
+  own prefill. Overview hub, per-machine
   `restSeconds` (changed mid-workout it lands on the WORKOUT, see the rest
   paragraph below), locker number, two-tap finish guard on TWO surfaces —
   the overview's Finish button and 🏁 in the machine header, because the
@@ -573,7 +610,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   plan via `active.planId` — asked once per exercise, not once per workout.
   `machine.cardio` flips the log screen to
   distance+time, `machine.bodyweight` to reps + extra weight; type flags
-  and `exercise` are SNAPSHOTTED onto the entry (like num/label) —
+  and `exercise` (and `grip`, `newEntry`'s 4th argument) are SNAPSHOTTED onto the entry (like num/label) —
   history/edit/chart/AI read the entry, never the live machine.
   Multi-exercise machines hold one entry per (machineId, exercise);
   `active.currentExercise` tracks the picked one and follows the slot on
@@ -663,7 +700,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   and the heatmap stay put (an edit draft open in the overview's week list
   does NOT survive a bar or tile tap — those rebuild the list). Module
   state surviving those re-renders: `screen`, `lastScreen`, `nameFilter`,
-  `muscleFilter`, `pickedMachine` (a `machineId exercise` key), `pickedT`,
+  `muscleFilter`, `pickedMachine` (a `seriesKey` — the JSON triple), `pickedT`,
   `pickedWeek`, `pathWorkoutId` (null = the latest, `'all'` = weighted),
   `hmMonth`, `hmMachineKey`, `machinesExpanded`; `focusWorkoutId` and
   `openEditId` are one-shot — `wireWorkoutList` consumes them on the render

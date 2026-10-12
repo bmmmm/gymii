@@ -127,3 +127,44 @@ test('closing the rest overlay after Back never paints Train under another tab',
   await expect(page.locator('#tabbar a.active')).toHaveAttribute('data-tab', 'history');
   await expect(page.locator('#view #log-set')).toHaveCount(0);
 });
+
+// Grips, end to end in a real browser: two grips on one exercise are two
+// entries, and History names both.
+test('a grip switch logs a second entry, and History names both grips', async ({ page }) => {
+  await seedDemoGym(page);
+  await page.locator('#hub-start').click();
+  await page.locator('.pick-num').fill('9');
+  await page.locator('.pick-go').click();
+  await page.locator('#exercise-chips .chip[data-exercise="Triceps pushdown"]').click();
+  const grip = (g) => page.locator(`#grip-chips .chip[data-grip="${g}"]`);
+  const pick = async (g) => {
+    if (!(await grip(g).getAttribute('class')).split(' ').includes('sel')) await grip(g).click();
+    await expect(grip(g)).toHaveClass(/\bsel\b/);
+  };
+  const logOne = async () => {
+    await page.locator('#log-set').click();
+    const overlay = page.locator('.overlay');
+    if (await overlay.count()) await overlay.click({ position: { x: 5, y: 5 } });
+    await expect(overlay).toHaveCount(0);
+  };
+  await pick('Rope');
+  await logOne();
+  await pick('V-bar');
+  await logOne();
+
+  const entries = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((k) => k.endsWith('.active'));
+    return JSON.parse(localStorage.getItem(key)).entries
+      .filter((e) => e.sets.length).map((e) => [e.exercise, e.grip, e.sets.length]);
+  });
+  expect(entries).toEqual([['Triceps pushdown', 'Rope', 1], ['Triceps pushdown', 'V-bar', 1]]);
+
+  await page.locator('#log-finish').click();
+  await page.locator('#log-finish').click();
+  await page.locator('#tabbar a[data-tab="history"]').click();
+  await page.locator('#open-workouts').click();
+  const latest = page.locator('#workout-list .workout').first();
+  await latest.click();
+  await expect(latest).toContainText('#9 Cable tower · Triceps pushdown · Rope');
+  await expect(latest).toContainText('#9 Cable tower · Triceps pushdown · V-bar');
+});

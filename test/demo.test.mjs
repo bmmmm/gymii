@@ -158,6 +158,18 @@ drawn.workouts.forEach((w) => {
   w.entries.forEach((e) => e.sets.forEach((st) => { delete st.at; delete st.rir; }));
 });
 LAT_FIXTURE.forEach((id) => { latSets(drawn, id).at(-1).reps = null; });
+// The grips (2026-10-13) came after these pins: strip exactly what they
+// added — the cable tower's lists, the pushdown entries, the plan item's
+// exercise and grip — and every other value must still be the old one.
+{
+  const ct = drawn.layout.machines.find((m) => m.id === 'cable-tower');
+  delete ct.exercises;
+  delete ct.grips;
+  drawn.workouts.forEach((w) => { w.entries = w.entries.filter((e) => e.machineId !== 'cable-tower'); });
+  const item = drawn.plans.find((p) => p.id === 'demo-plan-core').items.find((it) => it.machineId === 'cable-tower');
+  item.exercise = null;
+  delete item.grip;
+}
 assert.deepEqual({
   layout: digest(drawn.layout),
   plans: digest(drawn.plans),
@@ -188,6 +200,20 @@ assert.deepEqual({
   'demo-pull-w0': '0114d89b91b0de08',
 }, 'every value drawn before the live-log data existed is unchanged');
 
+// --- grips: the cable tower shows two series on one exercise ---
+{
+  const ct = layout.machines.find((m) => m.id === 'cable-tower');
+  assert.deepEqual(ct.grips, ['Rope', 'V-bar', 'Straight bar', 'Single handle'], 'the tower offers grips');
+  const grips = workouts.flatMap((w) => w.entries.filter((e) => e.machineId === 'cable-tower').map((e) => e.grip));
+  assert.ok(grips.includes('Rope') && grips.includes('V-bar') && grips.every(Boolean),
+    'its pushdowns alternate rope and V-bar, always with a grip');
+  assert.deepEqual(stats.machineSeries(workouts, 'cable-tower', 'Triceps pushdown', 'Rope').length
+    + stats.machineSeries(workouts, 'cable-tower', 'Triceps pushdown', 'V-bar').length, grips.length,
+  'two separate series that together hold every pushdown');
+  const item = plans.find((p) => p.id === 'demo-plan-core').items.find((it) => it.machineId === 'cable-tower');
+  assert.deepEqual([item.exercise, item.grip], ['Face pull', 'Rope'], 'a plan item names its grip');
+}
+
 // --- the insights the demo exists to show ---
 // rule 1: the last two pull days end the lat pulldown on target + 2 reps
 // with 2 in reserve at the plan's target weight
@@ -203,7 +229,9 @@ LAT_FIXTURE.forEach((id) => {
 // the demo must not nag (no plateau, no gap, no rest, no frequency)
 const worthALook = (data, now) => stats.insights(
   data.workouts, data.layout, KG, { now, plans: data.plans }).map((i) => [i.kind, i.machineId ?? i.muscle]);
-const SHOWN = [['progress', 'lat-pulldown'], ['busy', 'demo-pullup'], ['route', 'seated-row'], ['muscle-volume', 'Hamstrings']];
+// (the volume hint names the cable tower's "Full body" since its pushdowns
+// joined the push days — 3 sets a week, the lowest trained muscle)
+const SHOWN = [['progress', 'lat-pulldown'], ['busy', 'demo-pullup'], ['route', 'seated-row'], ['muscle-volume', 'Full body']];
 assert.deepEqual(worthALook({ layout, workouts, plans }, NOW), SHOWN,
   'the demo shows progress, busy, route and one volume hint');
 

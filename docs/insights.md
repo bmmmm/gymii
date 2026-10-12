@@ -11,8 +11,9 @@ test/stats.test.mjs pins every rule at its threshold and one step short of
 it.
 
 Every row carries `kind`, `text`, `score`, a `source` key into `SOURCES`
-and its target: `machineId` + `exercise` (progress, plateau — `null` for a
-whole-machine entry; the log screen and the Progress chart match on BOTH),
+and its target: `machineId` + `exercise` + `grip` (progress, plateau — `null`
+for a whole-machine or gripless entry; the log screen and the Progress chart
+match on ALL THREE, because a rope and a V-bar are separate progressions),
 `machineId` + `weekday` (busy), `machineId` + `workout` (route — the name
 those workouts go by most often, `null` when they have none), or `muscle`.
 The text names no subject: the screen it sits on does. `SOURCES.own` ("Your
@@ -22,10 +23,10 @@ own logged workouts") has `url: null`, so route and busy render no link.
 
 | kind | where | only when |
 |---|---|---|
-| progress | Train log screen, below the machine head (train.js `renderLog`) | the machine AND exercise on screen |
+| progress | Train log screen, below the machine head (train.js `renderLog`) | the machine, exercise AND grip on screen |
 | busy | Train log screen, below the machine head | the machine on screen, on `weekday` (today) |
 | rest | the rest overlay, under "Next:" (train.js `openRestOverlay`) | — |
-| plateau | History → Progress, `#chart-note` under the chart | the picked machine AND exercise |
+| plateau | History → Progress, `#chart-note` under the chart | the picked machine, exercise AND grip |
 | muscle-gap, muscle-volume | History → Muscles, a line under the muscle's row | — |
 | frequency | History → This week, between the tiles and the bars | — |
 | route | the plan builder, above the items in List view (plan.js); the plan's row on the start screen says "· reorder?" (train.js `planListCard`) | a plan named like `workout` |
@@ -55,7 +56,7 @@ treadmill tagged Calves is not a calf set).
 
 | # | kind | fires when | magnitude | text | source |
 |---|---|---|---|---|---|
-| 1 | progress | The latest session on a strength exercise is at most 20 days old, the last two sessions share the same top weight W, and in each one the target was beaten: the best reps at W are at least T + 2, or a set at W has reps ≥ T and `rir` ≥ 2. T = the target reps of the plan the latest session came from, else the first plan targeting that machine, else 12 | lowest reps at W minus T | "Target beaten twice — try 60 kg." The next load is W plus `settings.weightStep` (default 2.5); if that step is above 10 % of W: "Target beaten twice — add 1–2 reps first." | `acsm2009` |
+| 1 | progress | The latest session on a strength exercise is at most 20 days old, the last two sessions share the same top weight W, and in each one the target was beaten: the best reps at W are at least T + 2, or a set at W has reps ≥ T and `rir` ≥ 2. T = the target reps of the plan the latest session came from, else the first plan targeting that machine and exercise (a plan item with a grip counts for that grip only, one without for every grip), else 12. Each grip is its own series | lowest reps at W minus T | "Target beaten twice — try 60 kg." The next load is W plus `settings.weightStep` (default 2.5); if that step is above 10 % of W: "Target beaten twice — add 1–2 reps first." | `acsm2009` |
 | 2 | frequency | The first workout is at least 28 days old AND predates the oldest of the last four full weeks (a week the history only partly covers would read as a low week), and the mean number of strength days per week over the last four full weeks (the current week excluded) is below 2 | (2 − mean) × 4.5 | "Aim for 2 strength days a week — 1.5 over the last 4 weeks." | `who2020` |
 | 3 | muscle-gap | A muscle was last trained 10 to 41 days ago, and at least two workouts happened in the last 10 days (so it is not a holiday) | days since − 10 | "Train it this week — last trained 12 days ago." | `schoenfeld2016` |
 | 4 | muscle-volume | At least 28 days of history, at least 4 muscles with a non-zero 4-week mean (a tagged muscle nobody trains is untrained, not low volume — it is never named here), and the lowest 4-week mean of weekly sets is below half the median muscle's | scaled 0–9 by how far below half the median | "Add a set or two — 2 sets/week, your median muscle gets 9." | `schoenfeld2017` |

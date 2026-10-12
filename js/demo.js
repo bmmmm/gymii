@@ -54,7 +54,9 @@ const MACHINES = [
   ['leg-curl', 7, 'Leg curl', 18, 12, 5, 4, ['Seat', 'Ankle pad'], ['Hamstrings']],
   ['pec-deck', 8, 'Pec deck', 25, 12, 5, 4, ['Seat', 'Arm pads'], ['Chest']],
   ['cable-tower', 9, 'Cable tower', 4, 20, 5, 4, ['Pulley height'], ['Full body'],
-    { color: '#3f7fd1' }], // one of map's ITEM_COLORS
+    { color: '#3f7fd1', // one of map's ITEM_COLORS
+      exercises: ['Triceps pushdown', 'Face pull'],
+      grips: ['Rope', 'V-bar', 'Straight bar', 'Single handle'] }],
   ['abdominal-crunch', 10, 'Abdominal crunch', 11, 20, 5, 4, ['Seat'], ['Abs']],
   ['back-extension', 11, 'Back extension', 18, 20, 5, 4, ['Pad height'], ['Lower back', 'Glutes']],
   ['demo-treadmill', 12, 'Treadmill', 36, 23, 3, 6, ['Incline'], ['Quads', 'Calves'],
@@ -144,8 +146,8 @@ function strengthKg(id, weekIdx) {
 // The entry snapshot is store's newEntry (same shape the log screen writes);
 // only the settings come from this dataset's own snapshots. The sets carry
 // no `at` here — stampWorkout adds the live-log data to recent weeks only.
-function entryFor(layout, id, exercise, sets) {
-  const entry = newEntry(machineById(layout, id), exercise, sets);
+function entryFor(layout, id, exercise, sets, grip = null) {
+  const entry = newEntry(machineById(layout, id), exercise, sets, grip);
   entry.settings = { ...(SNAP_SETTINGS[id] ?? {}) };
   return entry;
 }
@@ -165,7 +167,18 @@ function pushEntries(layout, rng, weekIdx) {
       Array.from({ length: 3 }, () => ({ reps: 8 + Math.floor(rng() * 5), weight: 0 }))),
     entryFor(layout, 'demo-dumbbells', 'Lateral raises',
       strengthSets(rng, 8 + Math.floor(weekIdx / 3) * 2)),
+    // the grip alternates by week — two series on one exercise. LAST and
+    // without rng(): every draw above keeps its value, so the pinned demo
+    // numbers stay where they were
+    pushdown(layout, weekIdx),
   ];
+}
+
+function pushdown(layout, weekIdx) {
+  const rope = weekIdx % 2 === 0;
+  const kg = (rope ? 20 : 27.5) + 2.5 * Math.floor(weekIdx / 4);
+  return entryFor(layout, 'cable-tower', 'Triceps pushdown',
+    Array.from({ length: 3 }, () => ({ reps: 12, weight: kg })), rope ? 'Rope' : 'V-bar');
 }
 
 function pullEntries(layout, rng, weekIdx) {
@@ -380,7 +393,7 @@ function buildPlans(now) {
         { machineId: 'abdominal-crunch', exercise: null, target: target(3, 15, 30) },
         { machineId: 'back-extension', exercise: null, target: target(3, 12, 35) },
         { machineId: 'demo-treadmill', exercise: null, target: { distance: 3000, seconds: 1200 } },
-        { machineId: 'cable-tower', exercise: null, target: target(3, 12, 25) },
+        { machineId: 'cable-tower', exercise: 'Face pull', grip: 'Rope', target: target(3, 12, 25) },
       ],
     },
   ];

@@ -401,7 +401,7 @@ function renderSettingsView(root) {
       <h2>Gym</h2>
       <a class="btn" href="#gym">Open the gym</a>
       <p class="muted">Draw the floor plan, number the machines and edit their
-        muscles, settings and exercises.</p>
+        muscles, settings, exercises and grips.</p>
     </section>
 
     <!-- Singular above = the active gym's floor plan; plural here = every
