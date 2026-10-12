@@ -2,6 +2,7 @@ import {
   getLayout, saveLayout, newLayout, uid, importData, defaultOutline, exportGymTemplate,
   getSettings, saveSettings, usageByMachine, getActive, ownBrand, setGymBrand, matchBrand,
   MUSCLE_REGIONS, MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS, MACHINE_BRANDS, MAP_LAYERS, nextNum,
+  COMMON_GRIPS,
 } from './store.js';
 import { esc, download, twoTapConfirm, keepInView, preserveFocus } from './ui.js';
 import {
@@ -952,6 +953,7 @@ export function renderGym(root) {
       const custom = muscles.filter((m) => !MUSCLE_GROUPS.includes(m));
       const muscleGroups = [...MUSCLE_REGIONS, ...(custom.length ? [{ label: 'Other', muscles: custom }] : [])];
       const settingsOptions = [...new Set([...COMMON_SETTINGS, ...item.settingsFields])];
+      const gripOptions = [...new Set([...COMMON_GRIPS, ...(item.grips ?? [])])];
       const gymBrand = layout.meta?.brand || '';
       const own = ownBrand(layout, item); // '' when it follows the gym
       // the gym's brand is what "no own brand" means, so it is no option here
@@ -1026,6 +1028,13 @@ export function renderGym(root) {
             <div class="row">
               <input id="m-exercise-custom" type="text" enterkeyhint="done" placeholder="e.g. Biceps curls…">
               <button type="button" id="m-exercise-add" class="btn btn-inline">Add</button>
+            </div>
+          </div>
+          <div class="field-block"><span>Grips — attachments or hand positions it takes</span>
+            <div class="chip-select" id="m-grips">${chipRow(gripOptions, item.grips ?? [])}</div>
+            <div class="row">
+              <input id="m-grip-custom" type="text" enterkeyhint="done" placeholder="Other grip…">
+              <button type="button" id="m-grip-add" class="btn btn-inline">Add</button>
             </div>
           </div>
           <label class="field"><span>Doc link</span><input id="m-doc" type="text" inputmode="url"
@@ -1192,6 +1201,33 @@ export function renderGym(root) {
       props.querySelector('#m-exercise-add').addEventListener('click', addExercise);
       props.querySelector('#m-exercise-custom').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') addExercise();
+      });
+
+      // Grips toggle like the settings chips; the list is deleted when it
+      // empties, like exercises. A typed grip loses its brackets — "[…]"
+      // is how a plan line names the grip, so a name may not contain one.
+      const setGrips = (list) => {
+        if (list.length) item.grips = list;
+        else delete item.grips;
+        save();
+        renderProps();
+      };
+      props.querySelector('#m-grips').addEventListener('click', (e) => {
+        const chip = e.target.closest('.chip');
+        if (!chip) return;
+        setGrips(toggleIn(item.grips ?? [], chip.dataset.value));
+      });
+      const addGrip = () => {
+        const input = props.querySelector('#m-grip-custom');
+        const v = input.value.replace(/[[\]]/g, '').replace(/\s+/g, ' ').trim();
+        if (!v) return;
+        const list = item.grips ?? [];
+        setGrips(list.includes(v) ? list : [...list, v]);
+        keepInView(props, '#m-grip-custom', { focus: true });
+      };
+      props.querySelector('#m-grip-add').addEventListener('click', addGrip);
+      props.querySelector('#m-grip-custom').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') addGrip();
       });
 
       stageText('#m-doc', (v) => { item.docUrl = v; }, (v) => {

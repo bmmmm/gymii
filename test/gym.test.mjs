@@ -578,4 +578,27 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   assert.ok(!props.innerHTML.includes('is already'), 'its own number is never "taken"');
 }
 
+// --- grips: chips like the settings, custom grips lose their brackets ---
+{
+  const { root, props } = gymWithProps([mk('m1', 1, 10, 10)]);
+  fire(root.floor, 'pointerdown', { ...at(12, 11), target: onItem('m1') });
+  fire(root.floor, 'pointerup');
+  const grips = () => store.getLayout().machines.find((m) => m.id === 'm1').grips;
+  assert.ok(props.innerHTML.includes('id="m-grips"') && props.innerHTML.includes('data-value="Rope"'),
+    'the card offers the common grips');
+  last(props.querySelector('#m-grips'), 'click')(chipTap('Rope'));
+  last(props.querySelector('#m-grips'), 'click')(chipTap('V-bar'));
+  assert.deepEqual(grips(), ['Rope', 'V-bar'], 'a chip tap adds a grip');
+  props.querySelector('#m-grip-custom').value = ' [Wide]  bar ';
+  last(props.querySelector('#m-grip-add'), 'click')();
+  assert.deepEqual(grips(), ['Rope', 'V-bar', 'Wide bar'], 'a typed grip is added without brackets');
+  assert.ok(props.innerHTML.includes('data-value="Wide bar"'), 'and gets a chip of its own');
+  props.querySelector('#m-grip-custom').value = 'Rope';
+  last(props.querySelector('#m-grip-add'), 'click')();
+  assert.deepEqual(grips(), ['Rope', 'V-bar', 'Wide bar'], 'a grip already listed is not added twice');
+  ['Rope', 'V-bar', 'Wide bar'].forEach((g) => last(props.querySelector('#m-grips'), 'click')(chipTap(g)));
+  assert.equal('grips' in store.getLayout().machines.find((m) => m.id === 'm1'), false,
+    'an emptied list is deleted, not stored empty');
+}
+
 console.log('gym editor: all assertions passed');
