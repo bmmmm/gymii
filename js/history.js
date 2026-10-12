@@ -6,11 +6,11 @@ import {
 import {
   esc, fmtDate, fmtDay, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
   dateValue, timeValue, machineChain, keepInView, minsBetween, fmtDuration,
-  parseDuration, parseDistance, hintHtml,
+  parseDuration, parseDistance, hintHtml, variantStr,
 } from './ui.js';
 import { lineChart, barChart } from './chart.js';
 import {
-  machineSeries, weeklyBuckets, insights, workoutPath, transitionCounts,
+  machineSeries, weeklyBuckets, insights, workoutPath, transitionCounts, seriesKey, sameSeries,
 } from './stats.js';
 import { drawLayout } from './map.js';
 import { startWorkoutFrom } from './train.js';
@@ -115,15 +115,15 @@ function historyContext() {
   if (muscleFilter && !allMuscles.includes(muscleFilter)) muscleFilter = '';
   const workouts = muscleFilter ? workoutsWithMuscle(byName, layout, muscleFilter) : byName;
 
-  // Machines — and, at multi-exercise machines, each exercise — seen in
-  // history, labeled with their current name in the layout when still present.
-  // Keyed "machineId exercise": uid()s never contain spaces, so decoding
-  // splits on the FIRST space only (exercise names may contain more).
+  // Every series seen in history — a machine, and at multi-exercise or
+  // multi-grip machines each exercise and grip — labeled with its current
+  // name in the layout when still present. Keyed by stats.js's seriesKey
+  // (a JSON triple), decoded with JSON.parse.
   const machines = new Map();
   workouts.forEach((w) => w.entries.forEach((e) => {
-    const key = `${e.machineId} ${e.exercise ?? ''}`;
+    const key = seriesKey(e);
     machines.set(key, {
-      machineId: e.machineId, exercise: e.exercise ?? null, num: e.num, label: e.label,
+      machineId: e.machineId, exercise: e.exercise ?? null, grip: e.grip ?? null, num: e.num, label: e.label,
       last: Math.max(machines.get(key)?.last ?? -Infinity, w.startedAt),
     });
   }));
@@ -132,8 +132,9 @@ function historyContext() {
       if (val.machineId === m.id) machines.set(key, { ...val, num: m.num, label: m.label });
     });
   });
-  const byNum = (a, b) =>
-    a[1].num - b[1].num || (a[1].exercise ?? '').localeCompare(b[1].exercise ?? '');
+  const byNum = (a, b) => a[1].num - b[1].num
+    || (a[1].exercise ?? '').localeCompare(b[1].exercise ?? '')
+    || (a[1].grip ?? '').localeCompare(b[1].grip ?? '');
   const options = [...machines.entries()].sort(byNum); // the heatmap's <select>
   // the Progress chips: most recently trained first
   const recent = [...machines.entries()].sort((a, b) => b[1].last - a[1].last || byNum(a, b));
@@ -144,16 +145,17 @@ function historyContext() {
   return { all, named, byName, workouts, s, unit: s.unit, layout, allMuscles, options, recent, hints };
 }
 
-const optionHtml = ([key, m]) => `<option value="${esc(key)}">#${esc(m.num)} ${esc(m.label)}${
-  m.exercise ? ` · ${esc(m.exercise)}` : ''}</option>`;
+const optionHtml = ([key, m]) => `<option value="${esc(key)}">${esc(machineName(m))}</option>`;
 const decodeKey = (value) => {
   if (!value) return null; // '' = the heatmap's "All machines"
-  const i = value.indexOf(' ');
-  if (i === -1) return { machineId: value, exercise: null }; // defensive: bare id
-  return { machineId: value.slice(0, i), exercise: value.slice(i + 1) || null };
+  try {
+    const [machineId, exercise, grip] = JSON.parse(value);
+    return { machineId, exercise, grip };
+  } catch {
+    return null; // defensive: never a key of ours
+  }
 };
-const entryMatches = (e, sel) =>
-  e.machineId === sel.machineId && (e.exercise ?? null) === sel.exercise;
+const entryMatches = sameSeries;
 
 // The overview: a sequence of cards, rendered in this order. Each is
 // { html(ctx) -> markup, wire(root, ctx) }; a new card is one entry here.
@@ -388,7 +390,7 @@ function domainFor(range, points, now = Date.now()) {
 // else the most recently trained.
 const shownKey = (recent) =>
   (recent.some(([k]) => k === pickedMachine) ? pickedMachine : recent[0]?.[0] ?? null);
-const machineName = (m) => `#${m.num} ${m.label}${m.exercise ? ` · ${m.exercise}` : ''}`;
+const machineName = (m) => `#${m.num} ${m.label}${variantStr(m) ? ` · ${variantStr(m)}` : ''}`;
 
 // The first CHIP_LIMIT by last use, plus the shown one wherever it ranks.
 function machineChipsHtml(recent) {
@@ -443,7 +445,7 @@ const progressCard = {
       // this chart
       noteEl.innerHTML = hints.filter((it) => it.kind === 'plateau' && entryMatches(it, sel))
         .map((it) => hintHtml(it)).join('');
-      const series = machineSeries(workouts, sel.machineId, sel.exercise);
+      const series = machineSeries(workouts, sel.machineId, sel.exercise, sel.grip);
       if (!series.length) { // an entry without sets: nothing to plot
         chartTitle.textContent = 'Progress';
         lineChart(chartEl, []);
@@ -845,6 +847,19 @@ function wireWorkoutList(root, list, items, s, layout) {
       return;
     }
 
+    const gripChip = e.target.closest('.entry-grip');
+    if (gripChip && editDraft) {
+      const ei = +gripChip.dataset.ei;
+      const entry = editDraft.entries[ei];
+      // the chosen chip again = no grip, unless a gripless twin exists
+      const next = entry.grip === gripChip.dataset.grip ? null : gripChip.dataset.grip;
+      if (gripTaken(editDraft, ei, next)) return;
+      if (next) entry.grip = next;
+      else delete entry.grip;
+      renderList();
+      return;
+    }
+
     const nameChip = e.target.closest('.edit-name-chips .chip');
     if (nameChip && editDraft) {
       editDraft.name = editDraft.name === nameChip.dataset.name ? '' : nameChip.dataset.name;
@@ -908,7 +923,7 @@ const setCount = (w) => w.entries.reduce((n, e) => n + e.sets.length, 0);
 const minsOf = (w) => // finishedAt can be absent in imported data
   minsBetween(w.startedAt, w.finishedAt ?? w.startedAt);
 
-const entryTitle = (e) => `#${esc(e.num)} ${esc(e.label)}${e.exercise ? ` · ${esc(e.exercise)}` : ''}`;
+const entryTitle = (e) => `#${esc(e.num)} ${esc(e.label)}${variantStr(e) ? ` · ${esc(variantStr(e))}` : ''}`;
 
 function workoutHtml(w, s, open = false) {
   const sets = setCount(w);
@@ -983,6 +998,22 @@ function wirePastLog(root, s) {
   });
 }
 
+// The grip of a logged entry, fixable afterwards — at a machine that offers
+// grips. A grip another entry of this workout already holds for the same
+// exercise is disabled: a series reads ONE entry per workout, so two would
+// silently drop one of them from the chart.
+const gripTaken = (w, ei, grip) => w.entries.some((x, xi) => xi !== ei
+  && sameSeries(x, { ...w.entries[ei], grip }));
+function gripChips(w, e, ei, layout) {
+  const grips = layout?.machines.find((m) => m.id === e.machineId)?.grips ?? [];
+  if (!grips.length) return '';
+  return `<div class="chip-select entry-grips">${grips.map((g) => {
+    const sel = e.grip === g;
+    return `<button type="button" class="chip sm entry-grip${sel ? ' sel' : ''}" data-ei="${ei}"
+      data-grip="${esc(g)}"${!sel && gripTaken(w, ei, g) ? ' disabled' : ''}>${esc(g)}</button>`;
+  }).join('')}</div>`;
+}
+
 function editWorkoutHtml(w, s, layout) {
   const sets = setCount(w);
   const du = distUnit(s);
@@ -1008,6 +1039,7 @@ function editWorkoutHtml(w, s, layout) {
         <div class="spread"><div>${entryTitle(e)}</div>
           <button class="x entry-del" data-ei="${ei}"
             aria-label="Remove ${esc(e.label)} from this workout">✕</button></div>
+        ${gripChips(w, e, ei, layout)}
         ${e.sets.map((st, si) => `
           <div class="set-row">
             <span>Set ${si + 1}</span>

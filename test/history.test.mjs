@@ -8,6 +8,8 @@ import { mem } from './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
+// a Progress chip / heatmap key: stats.js's seriesKey, the (machine, exercise, grip) triple
+const K = (machineId, exercise = null, grip = null) => JSON.stringify([machineId, exercise, grip]);
 const { fmtDay: fmtDayOf } = await import(new URL('../js/ui.js', import.meta.url).href);
 const { renderHistory } = await import(new URL('../js/history.js', import.meta.url).href);
 
@@ -126,7 +128,7 @@ const chips = (html = root.innerHTML) => [...html.matchAll(/data-key="[^"]*"[^>]
   .map((m) => m[1].trim());
 assert.deepEqual(chips(), ['#14 Leg press', '#3 Lat pulldown'],
   'unfiltered, every trained machine is a chip — the most recently trained first');
-assert.ok(/class="chip sel"\s+data-key="m1 "/.test(root.innerHTML),
+assert.equal(root.innerHTML.match(/class="chip sel"\s+data-key="([^"]*)"/)?.[1]?.replaceAll('&quot;', '"'), K('m1'),
   'with nothing picked, the most recent machine is on show');
 
 // Two screens. The overview analyses; the Workouts screen holds what you
@@ -183,10 +185,10 @@ const chartEl = () => root.querySelector('#chart');
 const pickEl = () => root.querySelector('#chart-pick');
 const machineChips = () => root.querySelector('#machine-chips');
 const tapMachine = (key) => machineChips().listeners.click(clickOn('.chip', { key }));
-const selKey = (html) => html.match(/class="chip sel"\s+data-key="([^"]*)"/)?.[1];
+const selKey = (html) => html.match(/class="chip sel"\s+data-key="([^"]*)"/)?.[1]?.replaceAll('&quot;', '"');
 
-tapMachine('m2 ');
-assert.equal(selKey(machineChips().innerHTML), 'm2 ', 'a chip tap selects that machine');
+tapMachine(K('m2'));
+assert.equal(selKey(machineChips().innerHTML), K('m2'), 'a chip tap selects that machine');
 assert.ok(/aria-label="Progress: #3 Lat pulldown — top set weight \(kg\) over time"/.test(chartEl().innerHTML),
   'and the chart redraws for it, named in its label');
 assert.ok(pickEl().innerHTML.includes('45×12'), 'the newest workout shows under the chart');
@@ -195,7 +197,7 @@ assert.ok(pickEl().innerHTML.includes('45×12'), 'the newest workout shows under
 // chart's left edge picks the oldest (80). The pick rewrites #chart-pick and
 // NOTHING else — re-rendering an ancestor mid-gesture would strand the
 // chart's handlers on a dead node.
-tapMachine('m1 ');
+tapMachine(K('m1'));
 assert.ok(pickEl().innerHTML.includes('85×10') && pickEl().innerHTML.includes('e1RM'),
   'the newest point is shown, with its e1RM');
 assert.ok(chartEl().innerHTML.includes('c-line alt'), 'strength draws the dashed e1RM series');
@@ -213,12 +215,12 @@ render();
 assert.ok(pickEl().innerHTML.includes('80×10'), 'the picked point survives a re-render');
 enter();
 assert.ok(pickEl().innerHTML.includes('85×10'), 'a tab tap goes back to the newest point');
-tapMachine('m2 '); // not the most recent one, or the default would pass this
+tapMachine(K('m2')); // not the most recent one, or the default would pass this
 enter();
-assert.equal(selKey(root.innerHTML), 'm2 ', 'but keeps the picked machine');
+assert.equal(selKey(root.innerHTML), K('m2'), 'but keeps the picked machine');
 
 // "Open workout ›" lands on the Workouts screen with that workout open
-tapMachine('m1 ');
+tapMachine(K('m1'));
 chartEl().getBoundingClientRect = () => ({ left: 0, width: 520 });
 chartEl().onpointerdown({ clientX: 0, pointerId: 1 });
 chartEl().onpointerup({ clientX: 0 });
@@ -243,12 +245,12 @@ assert.ok(/class="chip sel" data-range="4w"/.test(root.innerHTML), 'the range su
 root.querySelector('#range-chips').listeners.click(clickOn('.chip', { range: 'all' }));
 
 // the picked machine survives the save that re-renders everything
-tapMachine('m2 ');
+tapMachine(K('m2'));
 openWorkouts();
 root.querySelector('#workout-list').listeners.click(clickOn('.edit-w', { wid: 'w2' }));
 root.querySelector('#workout-list').listeners.click(clickOn('.edit-save'));
 backToOverview();
-assert.equal(selKey(root.innerHTML), 'm2 ', 'a save keeps the picked machine');
+assert.equal(selKey(root.innerHTML), K('m2'), 'a save keeps the picked machine');
 
 // --- the editor: add a set, add a machine, move the date ---
 
@@ -262,7 +264,7 @@ const pickedMonth = hmTitle();
 assert.notEqual(pickedMonth, thisMonth, 'the heatmap steps back a month');
 // so is its machine filter
 const hmSel = root.querySelector('#hm-machine');
-hmSel.value = 'm1 ';
+hmSel.value = K('m1');
 hmSel.listeners.change();
 list().listeners.click(clickOn('.edit-w', { wid: 'w1' }));
 assert.ok(list().innerHTML.includes('edit-save'), 'the card switches to edit mode');
@@ -290,7 +292,7 @@ assert.ok(onWorkouts(), 'a save stays on the Workouts screen');
 assert.equal(hmTitle(), pickedMonth, 'and keeps the heatmap month');
 // the save replaced the <select> node (innerHTML), so a fresh stub must get the value back
 render();
-assert.equal(root.querySelector('#hm-machine').value, 'm1 ', 'and the heatmap machine filter');
+assert.equal(root.querySelector('#hm-machine').value, K('m1'), 'and the heatmap machine filter');
 
 const saved = store.getWorkouts().find((w) => w.id === 'w1');
 assert.equal(saved.entries.length, 2, 'the added machine survives the save');
@@ -500,7 +502,7 @@ assert.deepEqual(chips(), [9, 8, 7, 6, 5, 4, 3, 2].map((i) => `#${20 + i} Machin
 assert.ok(root.innerHTML.includes('+2 more'), 'the rest sit behind "+N more"');
 machineChips().listeners.click(clickOn('.chip', { more: '1' }));
 assert.equal(chips(machineChips().innerHTML).length, 10, '"+N more" shows them all');
-tapMachine('x0 ');
+tapMachine(K('x0'));
 enter();
 assert.deepEqual(chips().slice(-1), ['#20 Machine 0'],
   'collapsed again, the picked machine stays visible behind the eight');
@@ -627,12 +629,12 @@ assert.ok(!hint('Target beaten twice') && !hint('Usually busy'),
 assert.equal(root.querySelector('#chart-note').innerHTML, '',
   'the plateau hint is not on show for the newest machine (Chest press, no exercise)');
 assert.equal(root.innerHTML.split('class="hint muscle-hint"').length - 1, 1, 'one muscle hint: Quads only');
-tapMachine('m3 Incline');
-assert.equal(selKey(machineChips().innerHTML), 'm3 Incline');
+tapMachine(K('m3', 'Incline'));
+assert.equal(selKey(machineChips().innerHTML), K('m3', 'Incline'));
 assert.ok(root.querySelector('#chart-note').innerHTML.includes('No new best in 6 workouts (76 kg e1RM) — vary reps or load.'),
   'the plateau hint sits under the chart of exactly that exercise');
 assert.ok(root.querySelector('#chart-note').innerHTML.includes('href="https://pmc.ncbi.nlm.nih.gov/articles/PMC11435939/"'));
-tapMachine('m3 ');
+tapMachine(K('m3'));
 assert.equal(root.querySelector('#chart-note').innerHTML, '', 'the same machine, another exercise: no note');
 
 // nothing to say, nothing shown: under three workouts no rule runs
@@ -710,5 +712,41 @@ localStorage.removeItem(layoutKey);
 render();
 assert.ok(!/<h2>Walking paths/.test(root.innerHTML), 'no layout, no path card');
 mem.set(layoutKey, savedLayout);
+
+// --- grips: one Progress chip per grip, and the editor fixes a grip ---
+{
+  const g = store.newLayout('Grip history gym');
+  g.machines.push({ id: 'ct', num: 9, label: 'Cable tower', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
+    exercises: ['Pushdown'], grips: ['Rope', 'V-bar'] });
+  store.saveLayout(g);
+  const e = (grip, weight) => ({ machineId: 'ct', num: 9, label: 'Cable tower', exercise: 'Pushdown',
+    ...(grip ? { grip } : {}), settings: {}, sets: [{ reps: 12, weight }] });
+  const t = Date.now();
+  store.saveWorkouts([
+    { id: 'gh1', startedAt: t - 3 * 864e5, finishedAt: t - 3 * 864e5 + 3600e3, entries: [e('Rope', 20), e('V-bar', 30)] },
+    { id: 'gh2', startedAt: t - 864e5, finishedAt: t - 864e5 + 3600e3, entries: [e('Rope', 22.5)] },
+  ]);
+  enter();
+  assert.deepEqual(chips().sort(), ['#9 Cable tower · Pushdown · Rope', '#9 Cable tower · Pushdown · V-bar'],
+    'one chip per grip — their numbers never mix');
+  tapMachine(K('ct', 'Pushdown', 'V-bar'));
+  assert.ok(pickEl().innerHTML.includes('30×12'), 'the V-bar chart shows only the V-bar set');
+  assert.ok(/Progress: #9 Cable tower · Pushdown · V-bar/.test(chartEl().innerHTML), 'and names its grip');
+
+  openWorkouts();
+  list().listeners.click(clickOn('.edit-w', { wid: 'gh1' }));
+  const html = list().innerHTML;
+  assert.ok(/entry-grip sel" data-ei="0"\s+data-grip="Rope"/.test(html), 'the entry\'s grip is selected');
+  assert.ok(/data-ei="0"\s+data-grip="V-bar" disabled/.test(html),
+    'a grip another entry already holds is disabled — a series reads one entry per workout');
+  list().listeners.click(clickOn('.entry-grip', { ei: '0', grip: 'V-bar' }));
+  assert.equal(list().innerHTML.match(/entry-grip sel" data-ei="0"/g)?.length, 1, 'a disabled grip is never taken');
+  list().listeners.click(clickOn('.entry-grip', { ei: '0', grip: 'Rope' }));
+  list().listeners.click(clickOn('.edit-save'));
+  assert.equal('grip' in store.getWorkouts().find((w) => w.id === 'gh1').entries[0], false,
+    'the chosen chip again removes the grip, and Save stores it');
+  backToOverview();
+  store.saveWorkouts([]);
+}
 
 console.log('history: all assertions passed');
