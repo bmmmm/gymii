@@ -1011,6 +1011,29 @@ try {
 }
 store.saveWorkouts([]);
 
+// a slot skipped via "Busy?" stays open and comes back as Next at the end
+{
+  store.saveLayout(visitGym);
+  startWorkoutFrom({ entries: [entry('va'), entry('vb'), entry('vc'), entry('vd')] });
+  byId.clear();
+  renderTrain(root);
+  const logOne = () => {
+    byId.get('#set-weight').value = '40';
+    byId.get('#set-reps').value = '8';
+    byId.get('#set-rest').value = '0';
+    byId.get('#log-set').listeners.click();
+  };
+  logOne();
+  byId.get('#next-machine').listeners.click(); // → #2
+  logOne();
+  assert.ok(root.innerHTML.includes('Busy? #4'), '#3 is next, #4 is the escape hatch');
+  byId.get('#nearby-machine').listeners.click(); // #3 busy → #4
+  logOne();
+  assert.ok(/Next: #3\s+Leg press/.test(root.innerHTML), 'the skipped #3 is the last open stop: Next');
+  store.clearActive();
+  store.saveWorkouts([]);
+}
+
 
 // --- hints where the user acts: the log screen, the plan row, the builder ---
 // stats.js insights are not a card any more. Three "Pull day" workouts a
@@ -1437,6 +1460,29 @@ const withPicker = (fn) => {
   assert.ok(!('target' in store.getActive().plan[0]), 'the cardio target cannot stay on a strength machine');
   assert.ok(root.innerHTML.includes('Target dropped — #1 is not a cardio machine.'), 'and the screen says so');
 
+  // a "Looks like" / "Or pick from your gym" chip binds by its machine id —
+  // the plain stub's querySelectorAll hands out none, so this one does
+  fresh();
+  store.saveActive({
+    v: 2, id: 'w-pick', startedAt: Date.now(), plan: [{ machineId: null, name: 'Chest', exercise: null }],
+    binding: 0, currentMachineId: null, currentExercise: null, entries: [],
+  });
+  const pickChip = stubEl();
+  const qsa = root.querySelectorAll;
+  root.querySelectorAll = (sel) => (sel === '.bind-pick' ? [pickChip] : []);
+  try {
+    byId.clear();
+    renderTrain(root);
+  } finally { root.querySelectorAll = qsa; }
+  assert.ok(root.innerHTML.includes('class="chip bind-pick"\n    data-id="m1">#1 Chest press'), 'the likely machine is offered as a chip');
+  pickChip.dataset.id = 'nope';
+  pickChip.listeners.click();
+  assert.equal(store.getActive().plan[0].machineId, null, 'a chip naming no machine binds nothing');
+  pickChip.dataset.id = 'm1';
+  pickChip.listeners.click();
+  assert.equal(store.getActive().plan[0].machineId, 'm1', 'the tapped chip binds the slot to its machine');
+  assert.equal(store.getActive().currentMachineId, 'm1', 'and the log screen opens there');
+
   // two lines with one name write back into THEIR OWN item
   fresh();
   store.clearActive();
@@ -1683,6 +1729,21 @@ const withPicker = (fn) => {
   assert.equal(store.getActive().currentGrip, 'Rope', 'and the log screen opens on that grip');
   assert.equal(store.getPlans().find((x) => x.id === gp.id).items[0].grip, 'Rope', 'the stored plan keeps it');
 
+  // grips cleared from the machine: its gripped history still prefills
+  store.saveWorkouts([{ id: 'gw3', startedAt: 3000, entries: [done('Pushdown', 'Rope', 27.5)] }]);
+  const cleared = store.getLayout();
+  const ct = cleared.machines.find((m) => m.id === 'ct');
+  const keepGrips = ct.grips;
+  ct.grips = [];
+  store.saveLayout(cleared);
+  start([{ machineId: 'ct', exercise: 'Pushdown' }]);
+  assert.equal(stepper(root.innerHTML, 'set-weight'), '27.5', 'no grips left, no gripless entry: the rope value, not 20');
+  store.saveWorkouts([{ id: 'gw4', startedAt: 4000, entries: [done('Pushdown', 'Rope', 27.5), done('Pushdown', null, 30)] }]);
+  start([{ machineId: 'ct', exercise: 'Pushdown' }]);
+  assert.equal(stepper(root.innerHTML, 'set-weight'), '30', 'a gripless entry still wins');
+  ct.grips = keepGrips;
+  store.saveLayout(cleared);
+
   // a machine without grips shows no grip row
   store.saveActive({ v: 2, id: 'w-nogrip', startedAt: Date.now(), plan: [{ machineId: 'm1', exercise: null }],
     currentMachineId: 'm1', currentExercise: null, entries: [] });
@@ -1728,9 +1789,9 @@ const withPicker = (fn) => {
   store.saveActive(b);
   byId.clear();
   renderTrain(root);
-  // the price, accepted: two whole-machine slots are twins and both count
-  // these sets (6/6) — never fewer, which is what relabelling cost
-  assert.ok(root.innerHTML.includes('6/6 target sets'), 'the three sets still count — on both twins');
+  // two whole-machine slots are twins: they share the sets in plan order,
+  // so the three sets fill the first block only
+  assert.ok(root.innerHTML.includes('3/6 target sets'), 'the three sets count once, on the first twin');
   // a name differing only in case is the machine itself
   store.clearActive();
   const fresh = store.newLayout('Case gym');
@@ -1738,6 +1799,83 @@ const withPicker = (fn) => {
   const items = [{ machineId: 'm4', exercise: null }, { machineId: null, name: 'leg press', exercise: null }];
   assert.deepEqual(store.bindItemTo(items, 1, fresh.machines[0], 'leg press').exercises, [],
     'case alone makes no new exercise');
+  store.saveWorkouts([]);
+  store.saveLayout(before);
+}
+
+// --- twins: two blocks at one machine share their sets in plan order ---
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Twin gym');
+  g.machines.push({ id: 't14', num: 14, label: 'Leg press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] },
+    { id: 't15', num: 15, label: 'Calf raise', x: 6, y: 0, w: 4, h: 3, settingsFields: [] });
+  store.saveLayout(g);
+  store.clearActive();
+  store.saveWorkouts([]);
+  const p = store.planFromText('#14 Leg press 3x10 80\n#14 Leg press 3x6 100\n#15 Calf raise 3x15 60');
+  store.savePlan(p);
+  startWorkoutFrom({ planId: p.id, entries: p.items });
+  assert.equal(store.getActive().plan.length, 3, 'a restart keeps both twins: their targets differ');
+  const logSet = (w, r) => {
+    byId.get('#set-weight').value = w;
+    byId.get('#set-reps').value = r;
+    byId.get('#set-rest').value = '0';
+    byId.get('#log-set').listeners.click();
+  };
+  byId.clear();
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('3 × 10 @ 80 kg'), 'the first twin\'s target leads');
+  for (let k = 0; k < 2; k++) logSet('80', '10');
+  byId.clear();
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('Log set 3/3'), 'the third set of the first block is up');
+  logSet('80', '10');
+  byId.clear();
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('3 × 6 @ 100 kg'), 'after three sets the second twin\'s target takes over');
+  assert.ok(root.innerHTML.includes('Log set 1/3'), 'and counts from its own first set');
+  assert.ok(root.innerHTML.includes('2/3'), 'the plan position moves to the second twin');
+  assert.ok(/Next[^<]*Calf raise/.test(root.innerHTML), '"Next" is the stop after the second twin');
+  const a = store.getActive();
+  store.switchMachine(a, null);
+  store.saveActive(a);
+  byId.clear();
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('3/9 target sets'), 'the tally counts the three sets once: 3/9, not 6/9');
+  assert.ok(root.innerHTML.includes('✓ 3/3 sets'), 'the first twin row is done');
+  assert.equal((root.innerHTML.match(/>open</g) ?? []).length, 2, 'the second twin and the calf raise are still open');
+  // more sets than both blocks ask for: the last twin keeps the surplus
+  store.switchMachine(a, 't14');
+  store.saveActive(a);
+  byId.clear();
+  renderTrain(root);
+  for (let k = 0; k < 4; k++) logSet('100', '6');
+  const c = store.getActive();
+  store.switchMachine(c, null);
+  // twins without a target (bound on the floor): one set each
+  c.plan.push({ machineId: 't15', exercise: null }, { machineId: 't15', exercise: null });
+  c.plan.splice(2, 1);
+  store.saveActive(c);
+  byId.clear();
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('✓ 4/3 sets'), 'no set vanishes: the last twin shows the surplus');
+  store.switchMachine(c, 't15');
+  store.saveActive(c);
+  byId.clear();
+  renderTrain(root);
+  logSet('60', '15');
+  const d = store.getActive();
+  store.switchMachine(d, null);
+  store.saveActive(d);
+  byId.clear();
+  renderTrain(root);
+  assert.deepEqual([...root.innerHTML.matchAll(/class="plan-status[^"]*">([^<]*)</g)].map((m) => m[1]),
+    ['✓ 3/3 sets', '✓ 4/3 sets', '✓ 1 set', 'open'], 'a target-less twin takes one set, the next stays open');
+  // a past workout's entries repeated: the same triple without targets is one slot
+  store.clearActive();
+  startWorkoutFrom({ entries: [{ machineId: 't14', exercise: null }, { machineId: 't14', exercise: null }] });
+  assert.equal(store.getActive().plan.length, 1, 'an exact repeat still dedupes');
+  store.clearActive();
   store.saveWorkouts([]);
   store.saveLayout(before);
 }

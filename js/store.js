@@ -603,13 +603,21 @@ export function updateWorkout(patch) {
 
 // Most recent entry with at least one set for this machine — and, at
 // multi-exercise machines, for this exercise (null matches entries logged
-// without one). Returns null if nothing matches.
-export function lastEntryFor(machineId, exercise = null, grip = null) {
+// without one). Returns null if nothing matches. `anyGrip`: a machine whose
+// grips were all cleared still has its gripped history — with no gripless
+// entry, the newest entry of (machine, exercise) under any grip seeds it.
+export function lastEntryFor(machineId, exercise = null, grip = null, { anyGrip = false } = {}) {
   const sel = { machineId, exercise, grip };
   const workouts = getWorkouts();
   for (let i = workouts.length - 1; i >= 0; i--) {
-    const entry = workouts[i].entries.find((e) => sameSeries(e, sel));
-    if (entry && entry.sets.length) return entry;
+    const entry = workouts[i].entries.find((e) => sameSeries(e, sel) && e.sets.length);
+    if (entry) return entry;
+  }
+  if (!anyGrip || grip != null) return null;
+  for (let i = workouts.length - 1; i >= 0; i--) {
+    const entry = workouts[i].entries.find((e) => e.machineId === machineId
+      && (e.exercise ?? null) === (exercise ?? null) && e.sets.length);
+    if (entry) return entry;
   }
   return null;
 }
@@ -1385,8 +1393,10 @@ export function parsePlanLine(line, settings = getSettings()) {
   // "[Rope]" names the grip — cut out FIRST, before any other term: '/' sits
   // in real names ("Lat pulldown / row"), '()' and "with" collide with the
   // trailing weight, '·' is not on a phone keyboard. Empty brackets: none.
+  // The LAST group is the grip: a name from an AI file, a template or a sync
+  // may carry brackets of its own ("Curl [EZ] [Rope]").
   let grip = null;
-  const br = /\[([^[\]]*)\]/.exec(rest);
+  const br = [...rest.matchAll(/\[([^[\]]*)\]/g)].at(-1);
   if (br) {
     grip = br[1].trim() || null;
     rest = (rest.slice(0, br.index) + rest.slice(br.index + br[0].length)).replace(/\s+/g, ' ').trim();
@@ -1503,7 +1513,13 @@ export function planItemsFrom(rawItems, layout) {
     const cardio = machine ? !!machine.cardio : flat.distance != null || flat.seconds != null;
     const target = normalizeTarget(flat, cardio);
     if (machine) {
-      const exercise = machine.exercises?.includes(raw.exercise) ? raw.exercise : null;
+      // "Curl [EZ] 3x10" read "[EZ]" as the grip: if the machine knows no
+      // such grip but does know the bracketed exercise, the brackets were
+      // part of the name
+      const joined = raw.exercise != null && raw.grip != null ? `${raw.exercise} [${raw.grip}]` : null;
+      const nameBracket = !machine.grips?.includes(raw.grip) && !!machine.exercises?.includes(joined);
+      const ex = nameBracket ? joined : raw.exercise;
+      const exercise = machine.exercises?.includes(ex) ? ex : null;
       // a bound item keeps only a grip its machine offers
       const grip = machine.grips?.includes(raw.grip) ? raw.grip : null;
       return { machineId: machine.id, exercise, ...(grip ? { grip } : {}), ...(target ? { target } : {}) };

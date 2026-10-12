@@ -659,7 +659,8 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .set-row .x.armed { color: var(--danger); font-size: 14px; font-weight: 600; }
 
 .set-row .x,
-.plan-item-actions .x {
+.plan-item-actions .x,
+.entry-line .x {
   display: inline-flex;
   align-items: center;
   justify-content: center;

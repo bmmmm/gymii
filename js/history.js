@@ -763,12 +763,15 @@ function wireWorkoutList(root, list, items, s, layout) {
   openEditId = null;
   const focusId = focusWorkoutId; // "Open workout ›": opened on THIS render only
   focusWorkoutId = null;
+  // why a grip chip did nothing — { ei, text }, shown for ONE render
+  let gripMsg = null;
   const renderList = (openId = null) => {
     // reachable only by combining the name and muscle filters
     list.innerHTML = items.length ? items.slice().reverse()
-      .map((w) => (editDraft?.id === w.id ? editWorkoutHtml(editDraft, s, layout)
+      .map((w) => (editDraft?.id === w.id ? editWorkoutHtml(editDraft, s, layout, gripMsg)
         : workoutHtml(w, s, w.id === openId)))
       .join('') : '<p class="muted">No workouts match this filter.</p>';
+    gripMsg = null;
   };
   renderList(focusId);
   // its summary, not its middle: an open workout can be taller than the screen
@@ -853,7 +856,12 @@ function wireWorkoutList(root, list, items, s, layout) {
       const entry = editDraft.entries[ei];
       // the chosen chip again = no grip, unless a gripless twin exists
       const next = entry.grip === gripChip.dataset.grip ? null : gripChip.dataset.grip;
-      if (gripTaken(editDraft, ei, next)) return;
+      if (gripTaken(editDraft, ei, next)) {
+        gripMsg = { ei, text: `Another entry already logs ${entry.exercise ?? entry.label}${
+          next ? ` with ${next}` : ' without a grip'}` };
+        renderList();
+        return;
+      }
       if (next) entry.grip = next;
       else delete entry.grip;
       renderList();
@@ -1004,17 +1012,17 @@ function wirePastLog(root, s) {
 // silently drop one of them from the chart.
 const gripTaken = (w, ei, grip) => w.entries.some((x, xi) => xi !== ei
   && sameSeries(x, { ...w.entries[ei], grip }));
-function gripChips(w, e, ei, layout) {
+function gripChips(w, e, ei, layout, msg = null) {
   const grips = layout?.machines.find((m) => m.id === e.machineId)?.grips ?? [];
   if (!grips.length) return '';
   return `<div class="chip-select entry-grips">${grips.map((g) => {
     const sel = e.grip === g;
     return `<button type="button" class="chip sm entry-grip${sel ? ' sel' : ''}" data-ei="${ei}"
       data-grip="${esc(g)}"${!sel && gripTaken(w, ei, g) ? ' disabled' : ''}>${esc(g)}</button>`;
-  }).join('')}</div>`;
+  }).join('')}</div>${msg?.ei === ei ? `<p class="muted grip-msg" role="status">${esc(msg.text)}</p>` : ''}`;
 }
 
-function editWorkoutHtml(w, s, layout) {
+function editWorkoutHtml(w, s, layout, gripMsg = null) {
   const sets = setCount(w);
   const du = distUnit(s);
   const inWorkout = new Set(w.entries.map((e) => e.machineId));
@@ -1039,7 +1047,7 @@ function editWorkoutHtml(w, s, layout) {
         <div class="spread"><div>${entryTitle(e)}</div>
           <button class="x entry-del" data-ei="${ei}"
             aria-label="Remove ${esc(e.label)} from this workout">✕</button></div>
-        ${gripChips(w, e, ei, layout)}
+        ${gripChips(w, e, ei, layout, gripMsg)}
         ${e.sets.map((st, si) => `
           <div class="set-row">
             <span>Set ${si + 1}</span>

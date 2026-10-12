@@ -82,6 +82,8 @@ function planSeedFrom(workout, layout) {
 // One (machine, exercise, grip) triple — the identity of a slot or plan item.
 const sameSlot = (a, b) => a.machineId === b.machineId
   && (a.exercise ?? null) === (b.exercise ?? null) && (a.grip ?? null) === (b.grip ?? null);
+const sameTarget = (a, b) => ['sets', 'reps', 'weight', 'distance', 'seconds']
+  .every((k) => (a.target?.[k] ?? null) === (b.target?.[k] ?? null));
 // `b` counts everything `a` counts and more: a missing exercise or grip on
 // `b` is a wildcard. A broader slot next to a narrower sibling would count
 // the same sets twice.
@@ -182,7 +184,7 @@ export function startWorkoutFrom(source, firstMachineId = null) {
   // screen below this point assumes one, so it gets created empty here
   // (the gym does the same on first visit) and grows as slots bind.
   if (!layout) { layout = newLayout(); saveLayout(layout); }
-  // One plan slot per (machine, exercise) pair, deduped — the guided flow
+  // One plan slot per (machine, exercise, grip, target), deduped — the guided flow
   // then walks every exercise of a multi-exercise machine. An exercise the
   // machine no longer offers falls back to a whole-machine slot, and such
   // machine slots are dropped again when exercise slots for the same
@@ -215,8 +217,10 @@ export function startWorkoutFrom(source, firstMachineId = null) {
       };
     })
     .filter(Boolean);
+  // only an exact repeat goes: twins with different targets are two blocks
   const plan = pairs
-    .filter((p, i) => !p.machineId || pairs.findIndex((q) => q.machineId && sameSlot(q, p)) === i)
+    .filter((p, i) => !p.machineId
+      || pairs.findIndex((q) => q.machineId && sameSlot(q, p) && sameTarget(q, p)) === i)
     .filter((p) => !p.machineId || !pairs.some((q) => q.machineId && broaderThan(p, q)));
   if (firstMachineId && !plan.some((p) => p.machineId === firstMachineId)) {
     plan.push({ machineId: firstMachineId, exercise: null });
@@ -889,14 +893,30 @@ const slotEntries = (active, slot) =>
   active.entries.filter((e) => e.machineId === slot.machineId
     && (!slot.exercise || (e.exercise ?? null) === slot.exercise)
     && (slot.grip == null || (e.grip ?? null) === slot.grip));
-const slotSetCount = (active, slot) =>
-  slotEntries(active, slot).reduce((n, e) => n + e.sets.length, 0);
+// Twins — bound slots with the same triple ("#14 Leg press 3x10 80" plus
+// "#14 Leg press 3x6 100") — see the same entries, so they share the sets
+// in plan order: each takes up to its target's set count (one set without
+// a target), the last twin takes whatever is left. Counting every set on
+// every twin would tick both off after the first block.
+function twinShare(active, slot) {
+  const total = slotEntries(active, slot).reduce((n, e) => n + e.sets.length, 0);
+  const twins = slot.machineId ? active.plan.filter((p) => p.machineId && sameSlot(p, slot)) : [];
+  if (twins.length < 2 || !twins.includes(slot)) return total;
+  let left = total;
+  for (const [i, t] of twins.entries()) {
+    const take = i === twins.length - 1 ? left : Math.min(left, t.target?.sets || 1);
+    if (t === slot) return take;
+    left -= take;
+  }
+  return total;
+}
+const slotSetCount = twinShare;
 // Done means any set logged — or, when the slot carries a plan target,
 // the target's set count reached: the "Next" walk then keeps pulling the
 // workout back to machines with unfinished targets.
 const slotDone = (active, slot) => (slot.target?.sets
   ? slotSetCount(active, slot) >= slot.target.sets
-  : slotEntries(active, slot).some((e) => e.sets.length));
+  : slotSetCount(active, slot) > 0);
 
 // A bound slot whose machine was deleted in the gym is dead: it stays in
 // active.plan (an undo in the gym can bring the machine back), but neither
@@ -968,7 +988,7 @@ function renderOverview(root, layout, active, message = '') {
     }
     const num = machine?.num ?? entries[0].num;
     const label = machine?.label ?? entries[0].label;
-    const slotSets = entries.reduce((n, e) => n + e.sets.length, 0);
+    const slotSets = slotSetCount(active, slot);
     const done = slotDone(active, slot);
     const goal = slot.target?.sets;
     // with a target the status counts progress against it ("1/3 sets")
@@ -1233,11 +1253,17 @@ function nextOpenSlot(active, layout, afterId, afterExercise = null, afterGrip =
 // The plan index the logging screen is at: the exact (machine, exercise,
 // grip) slot when one exists, else the (machine, exercise) slot without a
 // grip (it counts every grip), else the machine's first slot (pick pending).
+// Among twins it is the first OPEN one, so the second block's target and
+// "Next" take over once the first block is done.
 function planSlotIndex(active, machineId, exercise = null, grip = null) {
   const here = { machineId, exercise, grip };
-  const exact = active.plan.findIndex((p) => sameSlot(p, here));
+  const firstOpen = (match) => {
+    const open = active.plan.findIndex((p) => match(p) && !slotDone(active, p));
+    return open !== -1 ? open : active.plan.findIndex(match);
+  };
+  const exact = firstOpen((p) => sameSlot(p, here));
   if (exact !== -1) return exact;
-  const anyGrip = active.plan.findIndex((p) => p.grip == null && sameSlot(p, { ...here, grip: null }));
+  const anyGrip = firstOpen((p) => p.grip == null && sameSlot(p, { ...here, grip: null }));
   return anyGrip !== -1 ? anyGrip
     : active.plan.findIndex((p) => p.machineId === machineId);
 }
@@ -1315,7 +1341,7 @@ function resolveEntry(machine, active) {
     }
   }
 
-  const last = lastEntryFor(machine.id, exercise, grip);
+  const last = lastEntryFor(machine.id, exercise, grip, { anyGrip: !grips.length });
   let entry = entryFor(active, machine.id, exercise, grip);
   if (!entry) {
     entry = newEntry(machine, exercise, [], grip);
@@ -2223,13 +2249,10 @@ function dismissRest() {
 
 // The overlay lives on body and outlives a route change: Browser Back
 // under it leaves #view showing another tab, and re-rendering Train into
-// it would paint the workout under that tab's pill. Mirrors app.js's
-// route(): every hash it does not know is the Train tab.
-const OTHER_TABS = ['gym', 'history', 'ai', 'settings'];
-function onTrainTab() {
-  const name = location.hash.replace('#', '');
-  return !OTHER_TABS.includes(name) && !name.startsWith('pair=');
-}
+// it would paint the workout under that tab's pill. The pill app.js's
+// route() marks active is exactly that question, asked of the one place
+// that answers it.
+const onTrainTab = () => document.querySelector('#tabbar a.active')?.dataset.tab === 'train';
 
 // Stop the machinery, leave the fact: used when a new rest replaces this
 // one, and when the workout ends under it.

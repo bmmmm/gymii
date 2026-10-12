@@ -25,8 +25,9 @@ ever sees ciphertext.
   machine.
 - 💪 **Train** — repeat a past workout in order, or roam by number, map tap or
   muscle. Last workout's numbers prefill every set. Cardio machines log
-  distance + time, bodyweight machines reps + extra weight, and free-weight
-  areas keep separate histories per named exercise. 📍 shows where the next
+  distance + time, bodyweight machines reps + extra weight, free-weight
+  areas keep separate histories per named exercise, and a cable tower one
+  per grip (rope, V-bar — `[Rope]` in a typed plan line). 📍 shows where the next
   machine stands, a busy one gets the closest open alternative, and a
   coverage row tracks which muscles you've hit today. Your locker number has a
   home too — noted at the start, out of the way once you're logging. 🏁 in
@@ -39,7 +40,8 @@ ever sees ciphertext.
   Edit as a list of steppers or as plain text, whichever is faster. Then just
   tick it off: today's plan is one tap on the start screen, every set is one tap
   ("✓ Log set 2/3 — 50 kg × 10"), and the workout keeps pulling you back to
-  unfinished targets. Your LLM can draft one too; paste it in for review.
+  unfinished targets. Two blocks at one machine (`3x10 80`, then `3x6 100`)
+  are ticked off one after the other. Your LLM can draft one too; paste it in for review.
 - 📅 **Weekdays, without the nagging** — tag a plan with the days you train
   and the start screen says what today is about: what's on, what you already
   did, or that it's a rest day and when the next one comes. A day that went

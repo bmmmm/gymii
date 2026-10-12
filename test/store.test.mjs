@@ -327,6 +327,15 @@ assert.deepEqual(store.lastEntryFor('db', 'Biceps curls').sets, [{ reps: 10, wei
 assert.strictEqual(store.lastEntryFor('db', 'Shoulder press'), null,
   'an exercise never trained at this machine has no last entry');
 assert.strictEqual(store.lastEntryFor('nope'), null, 'unknown machine: no last entry');
+// anyGrip: a machine whose grips were cleared falls back to gripped history
+store.saveWorkouts([{ id: 'g1', startedAt: 1000, entries: [
+  { ...dbEntry('Curl', [{ reps: 10, weight: 22.5 }]), grip: 'Rope' },
+] }]);
+assert.strictEqual(store.lastEntryFor('db', 'Curl'), null, 'strict: a gripped entry is no gripless one');
+assert.equal(store.lastEntryFor('db', 'Curl', null, { anyGrip: true }).sets[0].weight, 22.5,
+  'anyGrip: no gripless entry, the newest under any grip');
+assert.strictEqual(store.lastEntryFor('db', 'Curl', 'V-bar', { anyGrip: true }), null,
+  'anyGrip never widens a lookup that names a grip');
 store.saveWorkouts([]);
 
 // clearAll wipes every gymii key and self-heals into a fresh default layout

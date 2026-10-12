@@ -42,12 +42,10 @@ visits and ratings for its last four weeks.
   on the Workouts screen (both test-pinned; decide which one goes).
 - The path card's empty text blames back-logged sets even when only a name
   filter removed every stamped workout.
-- Pre-existing, now reachable from the overview: the editor's "remove
-  machine" ✕ (`.entry-del`) measures 26×21 — no spec opens an editor, so
-  `measure()` never sees it; a muscle-row tap re-renders without
-  `keepInView` and, with Muscles last on the page, the clamp moves a second
-  tap onto another row; after "Log it" the `#past-msg` notice ends up
-  off-screen.
+- Pre-existing, now reachable from the overview: a muscle-row tap
+  re-renders without `keepInView` and, with Muscles last on the page, the
+  clamp moves a second tap onto another row; after "Log it" the `#past-msg`
+  notice ends up off-screen.
 - `closeVisits` drops a visit under 15 s even when sets were logged during
   it (a burst-logger loses that machine from the route; stamped sets cannot
   fill in because visits win whenever any exist). A workout started before
@@ -201,7 +199,7 @@ on-demand only.
 
 ### On a real iPhone
 
-Six checks no emulator settles. All against
+Nine checks no emulator settles. All against
 <https://bmmmm.github.io/gymii/>, never `serve.py`: a service worker and
 "Add to Home Screen" need https, and points 2–4 put exactly those on the
 stand. An expectation that fails becomes an issue labelled `bug`.
@@ -247,6 +245,14 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   verified. Device A shows the QR, device B's camera app scans it.
   *Expect:* gymii opens with the pairing field prefilled. Needs the
   `gymii-sync` server running.
+- [ ] **Weight tapped, then Log set at once.** On the log screen tap the
+  weight field and immediately tap "✓ Log set". *Expect:* the value the
+  field showed is logged, not 0.
+- [ ] **A finish refused by full storage.** Hard to stage on purpose; if it
+  ever happens: *Expect:* the banner names the problem and the rest
+  countdown keeps running (proven in Chromium by `smoke/workout.spec.mjs`).
+- [ ] **A grip switch mid-set.** With the weight field focused, tap another
+  grip chip. *Expect:* the keyboard stays up.
 - [ ] **The issue forms, signed in.** The chooser
   (`/issues/new/choose`) should show four forms + two contact links with
   "Blank issue" as maintainers-only, and the template form must block

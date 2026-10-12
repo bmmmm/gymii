@@ -73,6 +73,74 @@ test('the rest keeps running after the overlay is closed', async ({ page }) => {
     .toBeLessThan(afterReload);
 });
 
+// D5: finishWorkout() writes history BEFORE it clears the active workout,
+// and finish() stops the rest only after both landed. A refused write must
+// therefore leave the workout — and its countdown — running, not frozen.
+test('a finish refused by full storage leaves the countdown running', async ({ page }) => {
+  await seedDemoGym(page);
+  await startWorkoutAt(page, 1);
+  await page.locator('#log-set').click();
+  await page.locator('.overlay').click({ position: { x: 5, y: 5 } });
+  const inline = page.locator('#rest-cd');
+  await expect(inline).toBeVisible();
+  await page.evaluate(() => {
+    Storage.prototype.setItem = function setItem() {
+      throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+    };
+  });
+  await page.locator('#log-finish').click();
+  await page.locator('#log-finish').click();
+  await expect(page.locator('#log-set'), 'the workout is still on').toBeVisible();
+  const before = toSeconds(await inline.textContent());
+  await page.waitForTimeout(2500);
+  expect(toSeconds(await inline.textContent()), 'and its countdown still ticks').toBeLessThan(before);
+});
+
+// "Reps left?" lives in the overlay only, which the Node suite never sees.
+test('a RIR chip in the rest overlay rates the set just logged', async ({ page }) => {
+  await seedDemoGym(page);
+  await startWorkoutAt(page, 1);
+  await page.locator('#log-set').click();
+  const chip = page.locator('.overlay #rir-opts .chip[data-rir="2"]');
+  const lastRir = () => page.evaluate(() => {
+    const key = Object.keys(localStorage).find((k) => k.endsWith('.active'));
+    return JSON.parse(localStorage.getItem(key)).entries.flatMap((e) => e.sets).at(-1).rir ?? null;
+  });
+  await chip.click();
+  await expect(chip).toHaveClass(/\bsel\b/);
+  expect(await lastRir()).toBe(2);
+  await expect(page.locator('.overlay'), 'a rating does not close the rest').toBeVisible();
+  await chip.click();
+  await expect(chip).not.toHaveClass(/\bsel\b/);
+  expect(await lastRir(), 'the same chip again clears it').toBeNull();
+});
+
+// Finishing mid-rest ends the rest with the workout: no countdown in the hub
+// and no tone at the old zero. A 3 s rest makes "the old zero" observable.
+test('finishing during a rest ends it: no timer and no tone in the hub', async ({ page }) => {
+  await seedDemoGym(page);
+  await startWorkoutAt(page, 1);
+  await page.evaluate(() => {
+    window.plays = [];
+    HTMLMediaElement.prototype.play = function play() {
+      window.plays.push(this.src);
+      return Promise.resolve();
+    };
+  });
+  await page.locator('#set-rest').fill('3');
+  await page.locator('#log-set').click();
+  await page.locator('.overlay').click({ position: { x: 5, y: 5 } });
+  await expect(page.locator('#rest-cd')).toBeVisible();
+  await page.locator('#log-finish').click();
+  await page.locator('#log-finish').click();
+  await expect(page.locator('#hub-start')).toBeVisible();
+  await expect(page.locator('#rest-cd')).toHaveCount(0);
+  const plays = await page.evaluate(() => window.plays.length);
+  await page.waitForTimeout(4000);
+  expect(await page.evaluate(() => window.plays.length), 'no tone where the rest would have ended').toBe(plays);
+  await expect(page.locator('.overlay')).toHaveCount(0);
+});
+
 const toSeconds = (text) => {
   const parts = text.trim().split(':').map(Number);
   return parts.reduce((total, part) => total * 60 + part, 0);

@@ -35,6 +35,20 @@ test('the Workouts screen holds 44px targets, 16px fields, no sideways scroll', 
   expect(tiny, 'fields iOS would zoom into on the Workouts screen').toEqual([]);
 });
 
+// No other spec opens the editor, so measure() never saw its controls —
+// the machine ✕ (.entry-del) sat at 26x21 unnoticed.
+test('the workout editor holds 44px targets, 16px fields, no sideways scroll', async ({ page }) => {
+  await page.locator('#open-workouts').click();
+  const first = page.locator('#workout-list details.workout').first();
+  await first.locator('summary').click();
+  await first.locator('.edit-w').click();
+  await expect(page.locator('#workout-list .entry-del').first()).toBeVisible();
+  expect(await page.evaluate(findOverflow), 'the editor overflows').toBeNull();
+  const { small, tiny } = await page.evaluate(measure);
+  expect(small, 'undersized touch targets in the workout editor').toEqual([]);
+  expect(tiny, 'fields iOS would zoom into in the workout editor').toEqual([]);
+});
+
 test('the walking-paths card draws the latest route', async ({ page }) => {
   await expect(page.locator('#path-chips .chip.sel')).toHaveText(/^[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2}$/);
   await expect(page.locator('#path-map .path-leg')).not.toHaveCount(0);

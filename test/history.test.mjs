@@ -745,6 +745,18 @@ mem.set(layoutKey, savedLayout);
   list().listeners.click(clickOn('.edit-save'));
   assert.equal('grip' in store.getWorkouts().find((w) => w.id === 'gh1').entries[0], false,
     'the chosen chip again removes the grip, and Save stores it');
+  // deselecting is blocked by a gripless twin: the screen says why, once
+  list().listeners.click(clickOn('.edit-w', { wid: 'gh1' }));
+  list().listeners.click(clickOn('.entry-grip', { ei: '1', grip: 'V-bar' }));
+  {
+    const h = list().innerHTML;
+    assert.equal(h.match(/Another entry already logs Pushdown without a grip/g)?.length, 1, 'a blocked deselect explains itself, once');
+    assert.ok(h.indexOf('Another entry already logs') > h.lastIndexOf('data-ei="1"\n      data-grip="V-bar"'),
+      'under that entry\'s chips, not the other one\'s');
+  }
+  list().listeners.click(clickOn('.set-add', { ei: '1' }));
+  assert.ok(!list().innerHTML.includes('Another entry already logs'), 'and the notice is gone after the next tap');
+  list().listeners.click(clickOn('.edit-cancel'));
   backToOverview();
   store.saveWorkouts([]);
 }

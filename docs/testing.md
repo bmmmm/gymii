@@ -92,11 +92,15 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   --kb drops on keyboard close and on return to the app), and the
   standalone/PWA safe-area padding scales correctly under a CDP-emulated notch inset,
   a rest overlay closed after Browser Back paints nothing of Train under
-  another tab's pill and a grip switch on the demo's cable tower logs a
-  second entry that History names (`workout.spec.mjs`),
+  another tab's pill, a grip switch on the demo's cable tower logs a
+  second entry that History names, a finish refused by a stubbed quota
+  error leaves the countdown ticking, a RIR chip in the overlay rates the
+  set just logged, and a finish mid-rest leaves no timer and no tone at the
+  old zero (`workout.spec.mjs`),
   and the History tab (`history.spec.mjs`, demo gym): a machine chip names
-  the chart, a bar tap opens that week, the Workouts screen passes the same
-  44px / 16px / no-overflow measures, and the path card draws a route.
+  the chart, a bar tap opens that week, the Workouts screen and the
+  workout editor pass the same 44px / 16px / no-overflow measures, and the
+  path card draws a route.
   A NEW browser spec goes in
   `smoke/` as `*.spec.mjs`, NEVER in `test/` — `testMatch` is pinned
   because Playwright's collector imports whatever it matches and would run

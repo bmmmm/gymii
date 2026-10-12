@@ -75,7 +75,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   what was lifted. A SERIES is the triple (machineId, exercise, grip):
   `lastEntryFor(machineId, exercise, grip)` matches it strictly via stats.js's
   `sameSeries` (absent = null, so every entry from before grips is the
-  gripless series and keeps its prefill), `lastGripFor(machineId,
+  gripless series and keeps its prefill) — with `{ anyGrip }` (passed by
+  the log screen and the builder's target seed when the machine has NO
+  grips left) a gripless lookup that finds nothing falls back to the
+  newest entry of (machine, exercise) under any grip, so clearing a
+  machine's grips does not reset its prefill to the default; `lastGripFor(machineId,
   exercise)` returns the grip last trained there, and `seriesKey()` is its
   one string form (a JSON triple — History's chip and heatmap keys).
   Readers write `m.grips ?? []`; `getLayout` heals nothing here.
@@ -174,7 +178,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   and the machine's whole-machine siblings take its label, unless the
   machine was already trained whole (`machineTrainedWhole`): relabelling
   would cut those sets off their slot and their prefill, so there the line
-  stays a whole-machine twin — or the two
+  stays a whole-machine twin (the twins share the sets, § js/train.js) — or the two
   would be one slot twice: Next pointing at itself, "✓ 3/3" on both rows,
   the second target gone on restart; unbound items keep their exercise
   part for this; an unbound slot carries `itemIdx` so the write-back hits
@@ -205,7 +209,12 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   movement AT a machine — only a marked num unlocks that reading, or
   "Day A: Leg press" would lose half its name to a false heading.
   `#9 Cable tower: Triceps pushdown [Rope] 3x12 25` names the GRIP: the
-  first `[…]` is cut out before anything else (empty brackets name none).
+  LAST `[…]` is cut out before anything else (empty brackets name none), so
+  a name that carries brackets of its own — from an AI file, a template or
+  a sync — keeps them (`Curl [EZ] [Rope]` = exercise `Curl [EZ]`, grip
+  `Rope`). A bound item whose machine knows no such grip but does know
+  `exercise [grip]` as an exercise gets that exercise back and no grip
+  (`Curl [EZ] 3x10`).
   Every other separator was rejected — `/` sits in real names ("Lat
   pulldown / row"), `()` and "with" collide with the trailing weight, `·`
   is not on a phone keyboard — which is why the gym editor strips `[` and
@@ -546,7 +555,14 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   newest set `at`). Slots started from a stored plan carry its target:
   the log header shows it, the first-set prefill uses it (real logged sets
   then outrank it), and `slotDone` counts sets against `target.sets`, so
-  "Next:" pulls the walk back to unfinished targets. A plan whose FIRST
+  "Next:" pulls the walk back to unfinished targets. TWINS — bound slots
+  with the same (machine, exercise, grip) triple, e.g. `#14 Leg press 3x10
+  80` plus `3x6 100` — see the same entries, so `twinShare` hands the sets
+  out in plan order: each twin takes up to its `target.sets` (one set
+  without a target), the last one keeps the surplus. `planSlotIndex` picks
+  the first OPEN twin, so the second block's target and "Next" take over
+  after the first block; `startWorkoutFrom` drops only exact repeats (same
+  triple AND same target), so both blocks survive a restart. A plan whose FIRST
   slot has no machine yet starts with `binding: 0` — the workout opens on
   "which machine is this?" rather than on an overview of rows to assign;
   starting at a machine from the picker (`firstMachineId`) overrules it,
@@ -675,7 +691,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   review); an active workout always outranks it. It runs WITHOUT a gym:
   unbound items get a `📍 Assign machine` prompt (number field prefilled
   from `item.num`, plus chips for the machines that exist), binding through
-  store's `bindOrCreateMachine`, and a one-line `Add an exercise` field
+  store's `bindOrCreateMachine` (a target the bind had to reset is said
+  once — `bindNotice`, cleared after the next render; the caller's `notice`
+  stays), and a one-line `Add an exercise` field
   parsing the same note grammar as the onboarding note. List/Text chips
   switch between the stepper list and the plain note
   (`planToText`/`parsePlanText`); every switch AND `persist()` go through
@@ -716,7 +734,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   values, `+ Set` (copies the previous one, minus its `at` and `rir` — it
   was neither logged live nor rated), `+ Machine` (snapshots num/label/type
   flags like the log screen), remove set or whole machine, date + time and
-  name chips. The date goes through store's `shiftWorkout`, so the start,
+  name chips. A grip chip whose change `gripTaken` refuses (a gripless twin
+  of the same exercise exists) says so once under that entry's chips
+  (`gripMsg`, cleared by the next render). The date goes through store's `shiftWorkout`, so the start,
   the finish, every set's `at` and every visit move together and the gaps
   between them (rest, time per machine) survive the edit. `Log a past
   workout` reads the same note grammar via `workoutFromText()` — a past
@@ -897,7 +917,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   skipped rest back (countdown and tone returned) and undid a +15s. A set
   logged with rest 0 ends a running rest, and `finish()` stops the timer
   only AFTER `finishWorkout` succeeded, so a refused write leaves it
-  running instead of frozen.
+  running instead of frozen (`smoke/workout.spec.mjs` proves both: a
+  stubbed quota error keeps `#rest-cd` ticking, a finish mid-rest leaves no
+  timer and no tone). Whether the overlay may re-render Train
+  (`onTrainTab`) is read off the tab pill `route()` marks active — after
+  Browser Back under the overlay that pill belongs to another tab.
   `restNextUp()` is what the overlay promises next, set by `renderLog`
   from the values it already has and keyed on `slotDone`, not `targetDone`.
   A rest CHANGED mid-workout goes to `active.restOverrides[machineId]`,

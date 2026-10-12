@@ -33,7 +33,8 @@ const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 // shape their note gave them).
 function targetDefaults(machine, exercise, grip, s) {
   if (!machine) return { sets: 3, reps: 10, weight: 20 };
-  const last = lastEntryFor(machine.id, exercise ?? null, grip ?? null);
+  const last = lastEntryFor(machine.id, exercise ?? null, grip ?? null,
+    { anyGrip: !machine.grips?.length });
   const typed = last
     && !!last.cardio === !!machine.cardio
     && !!last.bodyweight === !!machine.bodyweight ? last : null;
@@ -74,6 +75,9 @@ export function renderPlanBuilder(
     };
   let muscle = ''; // active muscle filter, '' = all
   let binding = null; // index of the item whose bind prompt is open
+  // what a bind just changed ("Target reset …") — said once, gone on the
+  // next render; the caller's `notice` is the caller's to keep
+  let bindNotice = '';
   // Two views of ONE plan: the list is precise (steppers, chips, binding),
   // the text is fast (reorder by moving a line, drop one by deleting it).
   // Switching either way goes through the parser/serialiser pair, so the
@@ -188,7 +192,7 @@ export function renderPlanBuilder(
     root.innerHTML = `
       <button type="button" id="plan-back" class="back-row">‹ Back</button>
       <h1>${stored ? 'Edit plan' : 'Plan workout'}</h1>
-      ${notice ? `<p class="notice" role="status">${esc(notice)}</p>` : ''}
+      ${[notice, bindNotice].filter(Boolean).map((n) => `<p class="notice" role="status">${esc(n)}</p>`).join('')}
       <section class="card">
         <h2>Name</h2>
         <div class="row">
@@ -264,6 +268,7 @@ export function renderPlanBuilder(
       ${stored ? '<button id="plan-delete" class="btn btn-danger">Delete plan</button>' : ''}
       <button id="plan-cancel" class="btn">Cancel</button>
       <p id="plan-msg" class="muted" role="status"></p>`;
+    bindNotice = '';
 
     // textarea content goes in via value, never innerHTML — user data can
     // never break out of the markup that way
@@ -354,7 +359,7 @@ export function renderPlanBuilder(
       // a machine of the other type needs a target of that shape — and the
       // swap is said, not slipped under the steppers
       if (!!machine.cardio !== (it.target?.distance != null)) {
-        if (it.target) notice = `Target reset — #${machine.num} is not a ${machine.cardio ? 'strength' : 'cardio'} machine.`;
+        if (it.target) bindNotice = `Target reset — #${machine.num} is not a ${machine.cardio ? 'strength' : 'cardio'} machine.`;
         it.target = targetDefaults(machine, it.exercise, it.grip, s);
       }
       binding = null;

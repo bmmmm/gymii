@@ -444,6 +444,24 @@ assert.deepEqual(store.parsePlanLine('#4 Row [ ] 3x10 40', s),
     'a back-logged note keeps a known grip on its entry, and only a known one');
   if (keep) store.saveLayout(keep);
 }
+// brackets inside a name (AI files, templates, sync): the LAST group is the grip
+{
+  const g = store.newLayout('Bracket gym');
+  g.machines.push({ id: 'cb', num: 3, label: 'Cable', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
+    exercises: ['Curl [EZ]'], grips: ['Rope'] });
+  assert.deepEqual(store.parsePlanLine('#3 Cable: Curl [EZ] [Rope] 3x10 20', s),
+    { name: 'Cable', num: 3, exercise: 'Curl [EZ]', grip: 'Rope', target: { sets: 3, reps: 10, weight: 20 } },
+    'the last bracket group is the grip, the first stays in the exercise');
+  const items = store.planItemsFrom(store.parsePlanText('#3 Cable: Curl [EZ] [Rope] 3x10 20\n#3 Cable: Curl [EZ] 3x10', s), g);
+  assert.deepEqual(items.map((it) => [it.exercise, it.grip ?? null]), [['Curl [EZ]', 'Rope'], ['Curl [EZ]', null]],
+    'with a grip and without: the bracketed exercise survives binding');
+  const text = store.planToText(items, g, s);
+  assert.equal(text, '#3 Cable: Curl [EZ] [Rope] 3x10 20\n#3 Cable: Curl [EZ] 3x10', 'written back as typed');
+  assert.deepEqual(store.planItemsFrom(store.parsePlanText(text, s), g), items, 'list → text → list holds');
+  g.machines[0].grips = ['EZ'];
+  assert.equal(store.planItemsFrom(store.parsePlanText('#3 Cable: Curl [EZ] 3x10', s), g)[0].grip, 'EZ',
+    'a real grip of that name still wins');
+}
 
 // --- name suggestions: derived from what was trained, not asked for ---
 
@@ -936,6 +954,8 @@ goToHub();
   // a cardio line assigned to a strength machine: the target swap is said
   tap('bind-pick', 2, { id: 'a1' });
   assert.ok(root.innerHTML.includes('Target reset — #1 is not a cardio machine.'), 'the reset target is announced');
+  tap('it-up', 1);
+  assert.ok(!root.innerHTML.includes('Target reset'), 'once: the next tap no longer carries it');
 }
 
 // --- the builder: grip chips on an item whose machine offers grips ---
@@ -966,6 +986,17 @@ goToHub();
   assert.ok(!/it-grip sel/.test(root.innerHTML), 'the same chip again means any grip');
   assert.ok(root.innerHTML.includes('id="t-weight-0" type="number" inputmode="decimal" value="40"'),
     'back to the gripless target');
+  // the machine's grips cleared since: its gripped history still seeds a target
+  store.saveWorkouts([{ id: 'bw2', startedAt: 1000, entries: [
+    { machineId: 'ct', num: 9, label: 'Cable tower', exercise: 'Pushdown', grip: 'Rope', settings: {}, sets: [{ reps: 15, weight: 22.5 }] },
+  ] }]);
+  g.machines[0].grips = [];
+  store.saveLayout(g);
+  byId.clear();
+  byId.set('#plan-text', null);
+  renderPlanBuilder(root, { seed: [{ machineId: 'ct', exercise: 'Pushdown' }] }, () => {});
+  assert.ok(root.innerHTML.includes('id="t-weight-0" type="number" inputmode="decimal" value="22.5"'),
+    'grips gone, no gripless entry: the rope history seeds the target, not 20');
   store.saveWorkouts([]);
 }
 
