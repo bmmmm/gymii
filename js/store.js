@@ -457,6 +457,62 @@ export function bindOrCreateMachine(layout, num, name, target = null) {
   return machine;
 }
 
+// The next free machine number: one past the highest, so a gap left by a
+// deleted machine is never silently re-used under another name.
+export const nextNum = (layout) =>
+  (layout?.machines ?? []).reduce((mx, m) => Math.max(mx, m.num), 0) + 1;
+
+// bindOrCreateMachine for a TAP: reads the layout from storage right here
+// and saves it right away. A screen's render-time layout is a delete
+// command once an ambient pull has landed under it — saveLayout tombstones
+// every id the given layout lacks, so a machine that synced in after the
+// render would die on both devices (and #9 would gain a second #9).
+export function ensureMachine(num, name, target = null) {
+  const layout = getLayout() ?? newLayout();
+  const machine = bindOrCreateMachine(layout, num, name, target);
+  saveLayout(layout);
+  return { layout, machine };
+}
+
+// Teaches a machine exercises it does not list yet — read in the tap like
+// ensureMachine, never through a render closure. Returns the fresh machine
+// (null when it is gone); saves only when something was actually added.
+export function addMachineVariant(machineId, { exercises = [] } = {}) {
+  const layout = getLayout();
+  const machine = layout?.machines.find((m) => m.id === machineId) ?? null;
+  if (!machine) return null;
+  const add = [...new Set(exercises)].filter((x) => x && !(machine.exercises ?? []).includes(x));
+  if (add.length) {
+    machine.exercises = [...(machine.exercises ?? []), ...add];
+    saveLayout(layout);
+  }
+  return machine;
+}
+
+// Binds items[i] (a workout slot or a plan item) to `machine`. A second
+// line on one machine is a second EXERCISE there, or the two would be one
+// slot twice over (Next pointing at itself, both rows "✓ 3/3" after three
+// sets, the second target lost on the next start): the item keeps its own
+// exercise part ("#2 Dumbbells: Curls"), else takes its name — and when the
+// machine had no exercises yet, its whole-machine siblings take the
+// machine's label. Returns the exercises the machine has to learn (via
+// addMachineVariant); writes nothing itself.
+export function bindItemTo(items, i, machine, name) {
+  const item = items[i];
+  const siblings = items.filter((p, j) => j !== i && p.machineId === machine.id);
+  const exercise = item.exercise ?? (siblings.length && name !== machine.label ? name : null);
+  item.machineId = machine.id;
+  if (!exercise) { item.exercise = item.exercise ?? null; return []; }
+  item.exercise = exercise;
+  const learn = [exercise];
+  if (!(machine.exercises ?? []).length) {
+    const whole = siblings.filter((p) => !p.exercise);
+    whole.forEach((p) => { p.exercise = machine.label; });
+    if (whole.length) learn.unshift(machine.label);
+  }
+  return learn;
+}
+
 export function newLayout(name = 'My layout') {
   const grid = { w: 60, h: 40 };
   return {
@@ -1386,8 +1442,12 @@ export function planItemsFrom(rawItems, layout) {
     }
     // neither a machine nor a name: nothing to train and nothing to bind
     if (!name) return null;
+    // the exercise part survives on an unbound item too ("#2 Dumbbells:
+    // Curls"): binding it makes it an exercise of that machine
+    const exercise = typeof raw.exercise === 'string' && raw.exercise.trim()
+      ? raw.exercise.trim() : null;
     return {
-      machineId: null, name, exercise: null,
+      machineId: null, name, exercise,
       ...(raw.num != null ? { num: raw.num } : {}),
       ...(target ? { target } : {}),
     };

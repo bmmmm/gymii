@@ -1361,4 +1361,173 @@ const withPicker = (fn) => {
   store.saveLayout(before);
 }
 
+// --- machines created or bound in a TAP read the layout in that tap ---
+{
+  const before = store.getLayout();
+  const fresh = () => {
+    const g = store.newLayout('Tap gym');
+    g.machines.push({ id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles: [] });
+    store.saveLayout(g);
+    store.saveTombstones({ machines: [] });
+  };
+  // a pull lands under the rendered screen (restoreLayout re-renders nothing)
+  const pull = () => {
+    const remote = store.getLayout();
+    remote.machines.push({ id: 'm9', num: 9, label: 'Rower', x: 10, y: 0, w: 4, h: 3,
+      settingsFields: [], muscles: [], updatedAt: Date.now() - 1000 });
+    store.restoreLayout(remote);
+  };
+  const alive = () => store.getLayout().machines.some((m) => m.id === 'm9')
+    && !store.getTombstones().machines.some((t) => t.id === 'm9');
+
+  // the picker's create-on-miss
+  fresh();
+  store.saveActive({
+    v: 2, id: 'w-tap', startedAt: Date.now(), plan: [{ machineId: 'm1', exercise: null }],
+    currentMachineId: null, currentExercise: null, entries: [],
+  });
+  byId.clear();
+  withPicker((picker) => {
+    renderTrain(root);
+    pull();
+    picker.parts.get('.pick-num').value = '22';
+    picker.parts.get('.pick-go').listeners.click();
+    picker.parts.get('.pick-err .pick-create').listeners.click();
+  });
+  assert.ok(alive(), 'creating #22 keeps the machine that synced in under the overview');
+  assert.ok(store.getLayout().machines.some((m) => m.num === 22), 'and #22 exists');
+  // …and a number that synced in IS that machine, never a second one
+  const back = store.getActive();
+  store.switchMachine(back, null);
+  store.saveActive(back);
+  byId.clear();
+  withPicker((picker) => {
+    renderTrain(root);
+    store.restoreLayout({ ...store.getLayout(), machines: [...store.getLayout().machines,
+      { id: 'm7', num: 7, label: 'Leg curl', x: 20, y: 0, w: 4, h: 3, settingsFields: [], muscles: [] }] });
+    picker.parts.get('.pick-num').value = '7';
+    picker.parts.get('.pick-go').listeners.click();
+  });
+  assert.equal(store.getLayout().machines.filter((m) => m.num === 7).length, 1, 'no second #7');
+
+  // the bind screen's "That's it"
+  fresh();
+  store.saveActive({
+    v: 2, id: 'w-bind', startedAt: Date.now(), plan: [{ machineId: null, name: 'Leg press', exercise: null }],
+    binding: 0, currentMachineId: null, currentExercise: null, entries: [],
+  });
+  byId.clear();
+  renderTrain(root);
+  pull();
+  root.querySelector('#bind-num').value = '14';
+  byId.get('#bind-go').listeners.click();
+  assert.ok(alive(), 'binding to a new #14 keeps the machine that synced in under the bind screen');
+
+  // a cardio target bound to a strength machine is dropped OUT LOUD
+  fresh();
+  store.saveActive({
+    v: 2, id: 'w-cardio', startedAt: Date.now(),
+    plan: [{ machineId: null, name: 'Bike', exercise: null, target: { distance: 0, seconds: 1200 } }],
+    binding: 0, currentMachineId: null, currentExercise: null, entries: [],
+  });
+  byId.clear();
+  renderTrain(root);
+  root.querySelector('#bind-num').value = '1';
+  byId.get('#bind-go').listeners.click();
+  assert.ok(!('target' in store.getActive().plan[0]), 'the cardio target cannot stay on a strength machine');
+  assert.ok(root.innerHTML.includes('Target dropped — #1 is not a cardio machine.'), 'and the screen says so');
+
+  // two lines with one name write back into THEIR OWN item
+  fresh();
+  store.clearActive();
+  const two = store.planFromText('Leg press 3x10 80\nLeg press 3x12 50');
+  store.savePlan(two);
+  startWorkoutFrom({ planId: two.id, entries: two.items });
+  for (const [i, num] of [[1, '15'], [0, '14']]) {
+    const a = store.getActive();
+    a.binding = i;
+    store.saveActive(a);
+    byId.clear();
+    renderTrain(root);
+    root.querySelector('#bind-num').value = num;
+    byId.get('#bind-go').listeners.click();
+  }
+  const numOf = (id) => store.getLayout().machines.find((m) => m.id === id).num;
+  assert.deepEqual(store.getPlans().find((p) => p.id === two.id).items.map((it) => [numOf(it.machineId), it.target.reps]),
+    [[14, 10], [15, 12]], 'each line keeps its own target on its own machine');
+
+  // two lines on ONE number are two exercises there — now and next time
+  for (const note of ['#14 Leg press 3x10 80\n#14 Calf raise 3x15 60',
+    '#2 Dumbbells: Biceps curls 3x10 12\n#2 Dumbbells: Shoulder press 3x8 14']) {
+    fresh();
+    store.clearActive();
+    const p = store.planFromText(note);
+    store.savePlan(p);
+    startWorkoutFrom({ planId: p.id, entries: p.items });
+    const num = note.slice(1, note.indexOf(' '));
+    for (const i of [0, 1]) {
+      const a = store.getActive();
+      a.binding = i;
+      store.saveActive(a);
+      byId.clear();
+      renderTrain(root);
+      root.querySelector('#bind-num').value = num;
+      byId.get('#bind-go').listeners.click();
+    }
+    const slots = store.getActive().plan;
+    assert.equal(new Set(slots.map((sl) => `${sl.machineId}|${sl.exercise}`)).size, 2, `${note}: two distinct slots`);
+    const machine = store.getLayout().machines.find((m) => m.id === slots[0].machineId);
+    assert.deepEqual(slots.map((sl) => sl.exercise), machine.exercises, `${note}: the machine offers both`);
+    store.clearActive();
+    startWorkoutFrom({ planId: p.id, entries: store.getPlans().find((x) => x.id === p.id).items });
+    assert.equal(store.getActive().plan.length, 2, `${note}: the next workout keeps both`);
+    assert.ok(store.getActive().plan.every((sl) => sl.target), `${note}: with their targets`);
+  }
+  store.clearActive();
+  // the same NAME twice on one number is one movement, not a new exercise
+  {
+    fresh();
+    const p = store.planFromText('#14 Leg press 3x10 80\n#14 Leg press 3x6 100');
+    store.savePlan(p);
+    startWorkoutFrom({ planId: p.id, entries: p.items });
+    for (const i of [0, 1]) {
+      const a = store.getActive();
+      a.binding = i;
+      store.saveActive(a);
+      byId.clear();
+      renderTrain(root);
+      root.querySelector('#bind-num').value = '14';
+      byId.get('#bind-go').listeners.click();
+    }
+    assert.equal(store.getLayout().machines.find((m) => m.num === 14).exercises, undefined,
+      'a machine named like the line learns no exercise of its own name');
+    store.clearActive();
+  }
+
+  // quick start numbers one past the highest, never length + 1 — here the
+  // pull lands while the empty gym's quick start is on screen
+  store.saveLayout(store.newLayout('QS gym'));
+  store.clearActive();
+  byId.clear();
+  goToStart();
+  renderTrain(root);
+  const qsStart = byId.get('#qs-start').listeners.click;
+  const qs = store.getLayout();
+  qs.machines.push({ id: 'q2', num: 2, label: 'Leg press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] },
+    { id: 'q3', num: 3, label: 'Chest press', x: 6, y: 0, w: 4, h: 3, settingsFields: [] });
+  store.restoreLayout(qs);
+  byId.get('#qs-label').value = 'Cable row';
+  qsStart();
+  assert.deepEqual(store.getLayout().machines.map((m) => m.num), [2, 3, 4], 'quick start adds #4, not a second #3');
+  // the backstop (a workout with sets is already running) says why it does nothing
+  const run = store.getActive();
+  run.entries.push({ machineId: run.currentMachineId, num: 4, label: 'Cable row', settings: {}, sets: [{ reps: 8, weight: 20 }] });
+  store.saveActive(run);
+  qsStart();
+  assert.ok(root.innerHTML.includes('A workout is already running — finish it first.'), 'the backstop speaks');
+  assert.equal(store.getLayout().machines.length, 3, 'and adds nothing');
+  store.clearActive();
+  store.saveLayout(before);
+}
+
 console.log('train plan construction: all assertions passed');

@@ -9,6 +9,7 @@ import { strict as assert } from 'node:assert';
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const { startWorkoutFrom, renderTrain, goToStart, goToPlans, goToHub } =
   await import(new URL('../js/train.js', import.meta.url).href);
+const { renderPlanBuilder } = await import(new URL('../js/plan.js', import.meta.url).href);
 
 const gym = store.newLayout('Plan test gym');
 gym.machines.push({
@@ -873,5 +874,38 @@ assert.ok(root.innerHTML.includes('<h1>Plans</h1>'),
 }
 store.savePlans([]);
 goToHub();
+
+// --- the builder's Assign reads the layout in the tap, and a second line
+// on one machine becomes a second exercise there ---
+{
+  const g = store.newLayout('Assign gym');
+  g.machines.push({ id: 'a1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles: [] });
+  store.saveLayout(g);
+  store.saveTombstones({ machines: [] });
+  const items = store.planItemsFrom(store.parsePlanText(
+    '#14 Leg press 3x10 80\n#14 Calf raise 3x15 60\nBike 20min'), null);
+  byId.clear();
+  byId.set('#plan-text', null); // the list view is on screen
+  renderPlanBuilder(root, { seed: items }, () => {});
+  const remote = store.getLayout();
+  remote.machines.push({ id: 'a9', num: 9, label: 'Rower', x: 10, y: 0, w: 4, h: 3,
+    settingsFields: [], muscles: [], updatedAt: Date.now() - 1000 });
+  store.restoreLayout(remote); // a pull lands under the open builder
+  const tap = (cls, i, extra = {}) => root.querySelector('#plan-items').listeners.click({
+    target: { closest: () => ({ classList: { contains: (c) => c === cls }, dataset: { i: String(i), ...extra } }) },
+  });
+  for (const i of [0, 1]) {
+    tap('it-bind', i);
+    root.querySelector('.bind-num').value = '14';
+    tap('bind-go', i);
+  }
+  assert.ok(store.getLayout().machines.some((m) => m.id === 'a9')
+    && !store.getTombstones().machines.some((t) => t.id === 'a9'), 'Assign keeps the machine that synced in');
+  const m14 = store.getLayout().machines.find((m) => m.num === 14);
+  assert.deepEqual(m14.exercises, ['Leg press', 'Calf raise'], 'two lines on #14 are two exercises there');
+  // a cardio line assigned to a strength machine: the target swap is said
+  tap('bind-pick', 2, { id: 'a1' });
+  assert.ok(root.innerHTML.includes('Target reset — #1 is not a cardio machine.'), 'the reset target is announced');
+}
 
 console.log('workout plans: all assertions passed');

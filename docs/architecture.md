@@ -83,7 +83,14 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   changed machines/shapes, tombstones vanished ids, one structural stamp
   for name/grid/meta/outline — the editor's mutate-then-save needs no change);
   bulk restore goes through `restoreLayout()` verbatim (imports, future sync
-  apply — re-diffing would forge stamps). `uid()` is crypto-random, 16
+  apply — re-diffing would forge stamps). Because of that diff, A RENDER
+  CLOSURE IS A DELETE COMMAND after an ambient pull: a screen's
+  render-time layout lacks whatever synced in since (`restoreLayout`
+  re-renders nothing), and saving it tombstones those machines on every
+  device after the next merge. A tap that changes the layout reads it IN
+  THE TAP — `ensureMachine(num, name, target)` (bind-or-create + save),
+  `addMachineVariant(id, { exercises })`, or `getLayout()` right there;
+  the gym editor's own undo copy is the one known holdout. `uid()` is crypto-random, 16
   chars; legacy 8-char ids stay valid, and ids deliberately carry no
   device marker (they travel into AI exports). Backups are `v: 2`
   (tombstones included, deletes stay dead across restore); v1 files import
@@ -150,8 +157,18 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   a copy: `bindOrCreateMachine(layout, num, name, target)` (an unknown num
   creates the machine under the item's own name, fallback `Machine ${num}`,
   and inherits `cardio: true` from a distance-shaped target; persists
-  nothing — callers keep their own saveLayout timing; used by train's
-  renderBind, the builder's bind and `workoutFromText`), `newEntry(machine,
+  nothing — callers keep their own saveLayout timing; used by
+  `workoutFromText` and, through `ensureMachine`, train's renderBind, the
+  picker's create-on-miss and the builder's bind), `bindItemTo(items, i,
+  machine, name)` (binds a slot or plan item; a SECOND line on one machine
+  becomes a second exercise there — its own exercise part, else its name,
+  and the machine's whole-machine siblings take its label — or the two
+  would be one slot twice: Next pointing at itself, "✓ 3/3" on both rows,
+  the second target gone on restart; unbound items keep their exercise
+  part for this; an unbound slot carries `itemIdx` so the write-back hits
+  ITS OWN plan item when two lines share a name), `nextNum(layout)` (one
+  past the highest — quick start used length + 1 and hit a synced
+  number; the gym editor refuses a taken number outright), `newEntry(machine,
   exercise, sets)` (THE entry snapshot shape incl. type flags; callers add
   settings prefills themselves) and `nameChipsFor(machineIds, layout,
   limit = 5)` (suggested + recent names, deduped — train/history pass one

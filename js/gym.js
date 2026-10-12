@@ -1,7 +1,7 @@
 import {
   getLayout, saveLayout, newLayout, uid, importData, defaultOutline, exportGymTemplate,
   getSettings, saveSettings, usageByMachine, getActive, ownBrand, setGymBrand, matchBrand,
-  MUSCLE_REGIONS, MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS, MACHINE_BRANDS, MAP_LAYERS,
+  MUSCLE_REGIONS, MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS, MACHINE_BRANDS, MAP_LAYERS, nextNum,
 } from './store.js';
 import { esc, download, twoTapConfirm, keepInView, preserveFocus } from './ui.js';
 import {
@@ -68,6 +68,12 @@ export function renderGym(root) {
   // the map and the card, so a round of "tap machine, fix it, back" never
   // re-expands it by hand. Dies with the editor like everything else here.
   let listOpen = false;
+  // One-shot hint for a refused machine number, shown on the next card render.
+  let numMsg = '';
+  let numMsgShown = false; // a stale hint goes with the next accepted number
+  const numTaken = (n, self) => layout.machines.some((m) => m !== self && m.num === n);
+  const takenMsg = (n, self) => `#${n} is already ${
+    layout.machines.find((m) => m !== self && m.num === n).label} — every number names one machine.`;
   // The machine card's brand picker is folded away behind "Different
   // brand?" — a gym has ONE brand of machines nearly everywhere, so the
   // row of nineteen chips earned its place on the gym, not on every
@@ -380,16 +386,12 @@ export function renderGym(root) {
   svg.addEventListener('pointerup', endDrag);
   svg.addEventListener('pointercancel', endDrag);
 
-  function nextNum() {
-    return layout.machines.reduce((mx, m) => Math.max(mx, m.num), 0) + 1;
-  }
-
   function addItem(kind, fixtureType = null) {
     const g = layout.grid;
     const off = ((layout.shapes.length + layout.machines.length) % 6); // cascade new items
     let item;
     if (kind === 'machine') {
-      const num = nextNum();
+      const num = nextNum(layout);
       const pos = freeSpot(layout, snap(g.w / 2 - 2 + off), snap(g.h / 2 - 1.5 + off), 4, 3);
       item = {
         id: uid(), num, label: `Machine ${num}`,
@@ -641,12 +643,23 @@ export function renderGym(root) {
       if (!m) return;
       const v = e.target.value;
       switch (e.target.dataset.field) {
-        case 'num':
-          m.num = Math.max(1, Math.round(parseFloat(v) || 1));
+        case 'num': {
+          const n = Math.max(1, Math.round(parseFloat(v) || 1));
+          // a number is a machine's identity in plans and on the map: a
+          // taken one is refused, the field shows the old one again
+          if (numTaken(n, m)) {
+            e.target.value = m.num;
+            numMsg = takenMsg(n, m);
+            renderProps();
+            return;
+          }
+          m.num = n;
           e.target.value = m.num;
           save();
           redraw();
+          if (numMsgShown) renderProps();
           return;
+        }
         case 'label':
           m.label = v.trim() || `Machine ${m.num}`;
           e.target.value = m.label;
@@ -729,6 +742,10 @@ export function renderGym(root) {
   }
 
   function renderPropsCard() {
+    const refused = numMsg;
+    numMsg = '';
+    numMsgShown = !!refused;
+    const refusedHtml = refused ? `<p class="notice" role="status">${esc(refused)}</p>` : '';
     if (selectedId === OUTLINE_ID) {
       const canDelete = selectedVertex !== null && layout.outline.length > 3;
       props.innerHTML = `
@@ -826,7 +843,7 @@ export function renderGym(root) {
           </div>
           <button id="edit-machines" class="btn">${listOpen
     ? 'Hide the list' : `Edit all machines (${layout.machines.length})`}</button>
-          ${listOpen ? machineListHtml() : ''}
+          ${listOpen ? refusedHtml + machineListHtml() : ''}
         </section>
         <section class="card">
           <h2>Location</h2>
@@ -960,6 +977,7 @@ export function renderGym(root) {
               <button type="button" class="step-up">+</button>
             </div>
           </label>
+          ${refusedHtml}
           <label class="field"><span>Label</span><input id="m-label" type="text" value="${esc(item.label)}"></label>
           <div class="field-block"><span>Brand</span>
             <p class="brand-line">${brandLine}
@@ -1019,10 +1037,18 @@ export function renderGym(root) {
         </section>`;
 
       props.querySelector('#m-num').addEventListener('change', (e) => {
-        item.num = Math.max(1, Math.round(parseFloat(e.target.value) || 1));
+        const n = Math.max(1, Math.round(parseFloat(e.target.value) || 1));
+        if (numTaken(n, item)) {
+          e.target.value = item.num;
+          numMsg = takenMsg(n, item);
+          renderProps();
+          return;
+        }
+        item.num = n;
         e.target.value = item.num;
         save();
         redraw();
+        if (numMsgShown) renderProps();
       });
       // Text fields commit on `change` — which only fires on blur or Enter,
       // while a chip tap right next to them re-renders the card. Staging

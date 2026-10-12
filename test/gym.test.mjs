@@ -446,6 +446,10 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   last(list, 'click')({ target: { closest: (sel) => (sel.startsWith('.chip') ? chipT : null) } });
   change('m1', 'num', '7');
   assert.equal(machineAt('m1').num, 7, 'the number is editable in the list');
+  change('m1', 'num', String(machineAt('m2').num));
+  assert.equal(machineAt('m1').num, 7, 'a number another machine has is refused');
+  assert.ok(props.innerHTML.includes(`#${machineAt('m2').num} is already ${machineAt('m2').label}`),
+    'and the card says whose it is');
 
   change('m1', 'muscle', 'Lats');
   assert.deepEqual(machineAt('m1').muscles, ['Chest', 'Lats'], 'the muscle dropdown adds one');
@@ -553,6 +557,25 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   fire(root.floor, 'pointerdown', { ...at(12, 11), target: onItem('m1') });
   fire(root.floor, 'pointerup');
   assert.ok(!props.innerHTML.includes('id="m-brand-search"'), 'reselecting the machine starts folded');
+}
+
+// --- the card refuses a machine number that is taken ---
+{
+  const { root, props } = gymWithProps([mk('m1', 1, 10, 10), { ...mk('m2', 2, 30, 10), label: 'Leg press' }]);
+  fire(root.floor, 'pointerdown', { ...at(12, 11), target: onItem('m1') });
+  fire(root.floor, 'pointerup');
+  const numEl = { value: '2' };
+  last(props.querySelector('#m-num'), 'change')({ target: numEl });
+  assert.equal(store.getLayout().machines.find((m) => m.id === 'm1').num, 1, 'the card keeps #1');
+  assert.equal(numEl.value, 1, 'the field shows the old number again');
+  assert.ok(props.innerHTML.includes('#2 is already Leg press'), 'and the card says whose it is');
+  numEl.value = '5';
+  last(props.querySelector('#m-num'), 'change')({ target: numEl });
+  assert.equal(store.getLayout().machines.find((m) => m.id === 'm1').num, 5, 'a free number goes through');
+  assert.ok(!props.innerHTML.includes('is already'), 'and the hint is gone');
+  numEl.value = '5';
+  last(props.querySelector('#m-num'), 'change')({ target: numEl });
+  assert.ok(!props.innerHTML.includes('is already'), 'its own number is never "taken"');
 }
 
 console.log('gym editor: all assertions passed');

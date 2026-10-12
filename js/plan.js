@@ -7,7 +7,7 @@
 // (a name and a target, no machine) and bind here or on the gym floor.
 
 import {
-  getLayout, saveLayout, newLayout, bindOrCreateMachine, getPlans, savePlan, deletePlan,
+  getLayout, ensureMachine, addMachineVariant, bindItemTo, getPlans, savePlan, deletePlan,
   lastEntryFor, getSettings, getWorkouts, usualWeekday, uid, distUnit,
   layoutMuscles, isUnbound,
   parsePlanText, planItemsFrom, planToText, nameChipsFor,
@@ -330,16 +330,24 @@ export function renderPlanBuilder(
       if (!it) return;
       let machine = machineId ? machineFor(machineId) : null;
       if (!machine && wantedNum > 0) {
-        layout = layout ?? newLayout();
-        machine = bindOrCreateMachine(layout, wantedNum, it.name, it.target);
-        saveLayout(layout);
+        // read and saved in this tap (ensureMachine) — the builder's own
+        // copy would tombstone a machine that synced in since it opened
+        ({ layout, machine } = ensureMachine(wantedNum, it.name, it.target));
       }
       if (!machine) return;
-      it.machineId = machine.id;
+      // a second line on one machine becomes a second exercise there
+      const learn = bindItemTo(draft.items, i, machine, it.name);
+      if (learn.length) {
+        addMachineVariant(machine.id, { exercises: learn });
+        layout = getLayout();
+        machine = machineFor(machine.id);
+      }
       delete it.name;
       delete it.num;
-      // a machine of the other type needs a target of that shape
+      // a machine of the other type needs a target of that shape — and the
+      // swap is said, not slipped under the steppers
       if (!!machine.cardio !== (it.target?.distance != null)) {
+        if (it.target) notice = `Target reset — #${machine.num} is not a ${machine.cardio ? 'strength' : 'cardio'} machine.`;
         it.target = targetDefaults(machine, it.exercise, s);
       }
       binding = null;

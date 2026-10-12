@@ -1,8 +1,8 @@
 import {
   getLayout, saveLayout, getSettings, saveSettings, getActive, saveActive, finishWorkout,
   lastEntryFor, getWorkouts, getPlans, savePlan, planFromText, uid,
-  usageByMachine, layoutMuscles, distUnit, newLayout, addMachine,
-  bindOrCreateMachine, newEntry, nameChipsFor, todayStatus, skipPlanDay, machineBrand,
+  usageByMachine, layoutMuscles, distUnit, newLayout, addMachine, nextNum,
+  ensureMachine, addMachineVariant, bindItemTo, newEntry, nameChipsFor, todayStatus, skipPlanDay, machineBrand,
   switchMachine, rateLastSet,
 } from './store.js';
 import { drawLayout, usagePayload, findMachineByNum } from './map.js';
@@ -133,8 +133,8 @@ export function renderTrain(root, message = '') {
     }
     // an unbound slot answers "which machine is this?" before it can log
     if (active.binding != null) renderBind(root, layout, active);
-    else if (active.currentMachineId) renderLog(root, layout, active);
-    else renderOverview(root, layout, active);
+    else if (active.currentMachineId) renderLog(root, layout, active, null, message);
+    else renderOverview(root, layout, active, message);
   } else if (builder) {
     // the second onClose arg is a plan to start right away (Save & start —
     // plan.js can't call startWorkoutFrom without an import cycle)
@@ -178,13 +178,16 @@ export function startWorkoutFrom(source, firstMachineId = null) {
   // machine and are deduped by nothing — two "Leg press" lines are two
   // real slots until each is bound.
   const pairs = (source?.entries ?? [])
-    .map((e) => {
+    .map((e, i) => {
       if (!e.machineId) {
         return e.name
           ? {
-            machineId: null, name: e.name, exercise: null,
+            machineId: null, name: e.name, exercise: e.exercise ?? null,
             ...(e.num != null ? { num: e.num } : {}),
             ...(e.target ? { target: e.target } : {}),
+            // which stored item this slot came from — two lines may share
+            // a name, and the binding is written back into THIS one
+            ...(source.planId ? { itemIdx: i } : {}),
           } : null;
       }
       const machine = layout.machines.find((m) => m.id === e.machineId);
@@ -632,9 +635,14 @@ function wireQuickStart(root) {
     const label = root.querySelector('#qs-label').value.trim();
     if (!label) return;
     // backstop: never clobber a workout that already has logged sets
-    if (getActive()?.entries.some((e) => e.sets.length)) return;
+    if (getActive()?.entries.some((e) => e.sets.length)) {
+      renderTrain(root, 'A workout is already running — finish it first.');
+      return;
+    }
     const layout = getLayout() ?? newLayout();
-    const machine = addMachine(layout, layout.machines.length + 1, label);
+    // one past the highest number: length + 1 landed on a number a synced
+    // machine already had
+    const machine = addMachine(layout, nextNum(layout), label);
     saveLayout(layout);
     startWorkoutFrom(null, machine.id);
     renderTrain(root);
@@ -773,9 +781,9 @@ function machinePicker(container, layout, onPick, { actionLabel = 'Open' } = {})
       err.innerHTML = `No machine #${num} yet — <button type="button"
         class="btn btn-inline pick-create">Create #${num} &amp; ${esc(actionLabel.toLowerCase())}</button>`;
       err.querySelector('.pick-create').addEventListener('click', () => {
-        const created = addMachine(layout, num, `Machine ${num}`);
-        saveLayout(layout);
-        onPick(created.id);
+        // the layout is read in THIS tap (ensureMachine): if #num synced in
+        // since the render, it is that machine, not a second #num
+        onPick(ensureMachine(num, `Machine ${num}`).machine.id);
       });
       return;
     }
@@ -891,7 +899,7 @@ function targetTally(active, layout) {
 // signal that both locker asks (overview card, log-screen row) key on.
 const workoutSetCount = (active) => active.entries.reduce((n, e) => n + e.sets.length, 0);
 
-function renderOverview(root, layout, active) {
+function renderOverview(root, layout, active, message = '') {
   const s = getSettings();
   const sets = workoutSetCount(active);
   const mins = minsBetween(active.startedAt, Date.now());
@@ -957,6 +965,7 @@ function renderOverview(root, layout, active) {
 
   root.innerHTML = `
     <h1>Workout</h1>
+    ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
     <p class="muted">${mins} min · ${plural(sets, 'set')} · ${workoutTotals(active, s)}${(() => {
     const tally = targetTally(active, layout);
     return tally.total ? ` · ${esc(`${tally.hit}/${tally.total}`)} target sets` : '';
@@ -1123,38 +1132,49 @@ function renderBind(root, layout, active) {
     <button id="bind-skip" class="btn">Skip for now</button>`;
 
   const bindSlot = (machine) => {
-    slot.machineId = machine.id;
+    const learn = bindItemTo(active.plan, i, machine, name);
+    const itemIdx = slot.itemIdx;
     delete slot.name;
     delete slot.num;
-    // a machine of the other type can't honour this target's shape
-    if (!!machine.cardio !== (slot.target?.distance != null)) delete slot.target;
+    delete slot.itemIdx;
+    // a machine of the other type can't honour this target's shape — said
+    // out loud, never dropped in silence
+    let message = '';
+    if (slot.target && !!machine.cardio !== (slot.target.distance != null)) {
+      message = `Target dropped — #${machine.num} is not a ${machine.cardio ? 'strength' : 'cardio'} machine.`;
+      delete slot.target;
+    }
     // write the binding back into the stored plan: asked once, not every
-    // workout (matched by name — the item this slot was built from)
+    // workout — into the very item this slot was built from (two lines may
+    // share a name), by name only when that item has moved on
     if (active.planId) {
       const plan = getPlans().find((p) => p.id === active.planId);
-      const item = plan?.items.find((it) => !it.machineId && it.name === name);
-      if (item) {
-        item.machineId = machine.id;
+      const own = plan?.items[itemIdx];
+      const at = own && !own.machineId && own.name === name ? itemIdx
+        : plan?.items.findIndex((it) => !it.machineId && it.name === name) ?? -1;
+      if (at !== -1) {
+        const item = plan.items[at];
+        learn.push(...bindItemTo(plan.items, at, machine, name));
         delete item.name;
         delete item.num;
-        if (!!machine.cardio !== (item.target?.distance != null)) delete item.target;
+        if (item.target && !!machine.cardio !== (item.target.distance != null)) delete item.target;
         savePlan(plan);
       }
     }
+    if (learn.length) addMachineVariant(machine.id, { exercises: learn });
     delete active.binding;
-    switchMachine(active, machine.id);
+    switchMachine(active, machine.id, slot.exercise ?? null);
     saveActive(active);
-    renderTrain(root);
+    renderTrain(root, message);
   };
 
   root.querySelector('#bind-go').addEventListener('click', () => {
     const wanted = Math.round(parseFloat(root.querySelector('#bind-num').value) || 0);
     if (wanted < 1) return;
     // an unknown number creates the machine under the item's own name,
-    // inheriting the target's type — see bindOrCreateMachine
-    const machine = bindOrCreateMachine(layout, wanted, name, slot.target);
-    saveLayout(layout);
-    bindSlot(machine);
+    // inheriting the target's type — see bindOrCreateMachine; the layout
+    // is read in this tap (ensureMachine), never the render's copy
+    bindSlot(ensureMachine(wanted, name, slot.target).machine);
   });
 
   root.querySelectorAll('.bind-pick').forEach((chip) => {
@@ -1272,7 +1292,7 @@ function resolveEntry(machine, active) {
 
 // `reveal` names a selector to scroll back into view once the markup is
 // rebuilt — passed by the actions that grow the set list above the inputs.
-function renderLog(root, layout, active, reveal = null) {
+function renderLog(root, layout, active, reveal = null, message = '') {
   const machine = layout.machines.find((m) => m.id === active.currentMachineId);
   if (!machine) { // machine was deleted in the gym mid-workout
     switchMachine(active, null);
@@ -1393,6 +1413,7 @@ function renderLog(root, layout, active, reveal = null) {
 
   root.innerHTML = `
     <button type="button" id="log-back" class="back-row">‹ Workout</button>
+    ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
     <div class="machine-head">
       <span class="machine-badge">${esc(machine.num)}</span>
       <div>
@@ -1591,7 +1612,15 @@ function renderLog(root, layout, active, reveal = null) {
     // change of the default reaches this machine too
     if (v === s.restSeconds) delete machine.restSeconds;
     else machine.restSeconds = v;
-    saveLayout(layout);
+    // onto the layout as it is NOW — the render's copy would tombstone a
+    // machine that synced in since
+    const fresh = getLayout();
+    const stored = fresh?.machines.find((m) => m.id === machine.id);
+    if (stored) {
+      if (machine.restSeconds == null) delete stored.restSeconds;
+      else stored.restSeconds = machine.restSeconds;
+      saveLayout(fresh);
+    }
     dropOverride();
     saveLog(active);
     restKeep.hidden = true;
