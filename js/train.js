@@ -1250,13 +1250,13 @@ function resolveEntry(machine, active) {
     entry = newEntry(machine, exercise);
     machine.settingsFields.forEach((f) => { entry.settings[f] = last?.settings?.[f] ?? ''; });
     active.entries.push(entry);
-    saveActive(active);
+    saveLog(active);
   } else if (!entry.sets.length
     && (!!entry.cardio !== !!machine.cardio || !!entry.bodyweight !== !!machine.bodyweight)) {
     // machine type was toggled in the gym before any set was logged
     if (machine.cardio) entry.cardio = true; else delete entry.cardio;
     if (machine.bodyweight) entry.bodyweight = true; else delete entry.bodyweight;
-    saveActive(active);
+    saveLog(active);
   }
   return { exercises, exercise, pickPending, entry, last };
 }
@@ -1267,7 +1267,7 @@ function renderLog(root, layout, active, reveal = null) {
   const machine = layout.machines.find((m) => m.id === active.currentMachineId);
   if (!machine) { // machine was deleted in the gym mid-workout
     switchMachine(active, null);
-    saveActive(active);
+    saveLog(active);
     renderTrain(root);
     return;
   }
@@ -1277,7 +1277,7 @@ function renderLog(root, layout, active, reveal = null) {
   const machineSlots = active.plan.filter((p) => p.machineId === machine.id);
   if (!machineSlots.length) { // free workouts grow the plan
     active.plan.push({ machineId: machine.id, exercise: null });
-    saveActive(active);
+    saveLog(active);
   } else if (exercise && !machineSlots.some((p) => !p.exercise)
     && !machineSlots.some((p) => p.exercise === exercise)) {
     // a fresh exercise at a machine whose slots are exercise-scoped gets
@@ -1285,7 +1285,7 @@ function renderLog(root, layout, active, reveal = null) {
     // it; a whole-machine slot already aggregates it otherwise
     const lastIdx = active.plan.findLastIndex((p) => p.machineId === machine.id);
     active.plan.splice(lastIdx + 1, 0, { machineId: machine.id, exercise });
-    saveActive(active);
+    saveLog(active);
   }
 
   const s = getSettings();
@@ -1505,7 +1505,7 @@ function renderLog(root, layout, active, reveal = null) {
     const chip = e.target.closest('.chip');
     if (!chip) return;
     active.currentExercise = chip.dataset.exercise;
-    saveActive(active);
+    saveLog(active);
     renderLog(root, layout, active);
   });
 
@@ -1514,7 +1514,7 @@ function renderLog(root, layout, active, reveal = null) {
   root.querySelectorAll('.m-setting').forEach((inp) => {
     inp.addEventListener('change', () => {
       entry.settings[inp.dataset.field] = inp.value.trim();
-      saveActive(active);
+      saveLog(active);
     });
   });
 
@@ -1526,7 +1526,7 @@ function renderLog(root, layout, active, reveal = null) {
     // the armed node would be replaced before the second tap finds it.
     if (!twoTapConfirm(btn, 'Delete?', '✕')) return;
     entry.sets.splice(parseInt(btn.dataset.i, 10), 1);
-    saveActive(active);
+    saveLog(active);
     renderLog(root, layout, active, '.next-set');
   });
 
@@ -1563,7 +1563,7 @@ function renderLog(root, layout, active, reveal = null) {
     e.target.value = v;
     if (v === machineRest()) dropOverride();
     else active.restOverrides = { ...active.restOverrides, [machine.id]: v };
-    saveActive(active);
+    saveLog(active);
     if (restKeep) {
       restKeep.textContent = `Keep ${v} s for #${machine.num}`;
       restKeep.hidden = v === machineRest();
@@ -1578,7 +1578,7 @@ function renderLog(root, layout, active, reveal = null) {
     else machine.restSeconds = v;
     saveLayout(layout);
     dropOverride();
-    saveActive(active);
+    saveLog(active);
     restKeep.hidden = true;
   });
 
@@ -1589,7 +1589,7 @@ function renderLog(root, layout, active, reveal = null) {
     } else {
       entry.sets.push({ ...readStrength(), at: Date.now() });
     }
-    saveActive(active);
+    saveLog(active);
     // the set list just grew a row above the inputs — put them back under
     // the thumb, so the next set is one tap and not a scroll away
     renderLog(root, layout, active, '.next-set');
@@ -1604,7 +1604,7 @@ function renderLog(root, layout, active, reveal = null) {
     const chip = e.target.closest('.chip');
     if (!chip) return;
     const set = rateLastSet(active, Number(chip.dataset.rir));
-    saveActive(active);
+    saveLog(active);
     paintRir(rirLog, set?.rir);
   });
 
@@ -1652,7 +1652,7 @@ function renderLog(root, layout, active, reveal = null) {
     const c = quickSwitch.find((x) => x.machineId === chip.dataset.machine);
     if (!c) return;
     switchMachine(active, c.machineId, c.exercise ?? null);
-    saveActive(active);
+    saveLog(active);
     renderTrain(root);
   });
 
@@ -1684,12 +1684,12 @@ function renderLog(root, layout, active, reveal = null) {
 
   root.querySelector('#locker-num')?.addEventListener('change', (e) => {
     active.locker = e.target.value.trim();
-    saveActive(active);
+    saveLog(active);
     renderLog(root, layout, active); // collapse the row right away — noted, done
   });
   root.querySelector('#locker-skip')?.addEventListener('click', () => {
     active.lockerDismissed = true;
-    saveActive(active);
+    saveLog(active);
     renderLog(root, layout, active);
   });
 
@@ -1697,25 +1697,25 @@ function renderLog(root, layout, active, reveal = null) {
   // skipped next machine goes on record as busy at this hour
   root.querySelector('#nearby-machine')?.addEventListener('click', () => {
     switchMachine(active, nearby.slot.machineId, nearby.slot.exercise, { busy: nextSlot.machineId });
-    saveActive(active);
+    saveLog(active);
     renderTrain(root);
   });
 
   root.querySelector('#next-machine')?.addEventListener('click', () => {
     switchMachine(active, nextSlot.machineId, nextSlot.exercise);
-    saveActive(active);
+    saveLog(active);
     renderTrain(root);
   });
 
   root.querySelector('#next-unbound')?.addEventListener('click', () => {
     active.binding = active.plan.indexOf(nextUnbound);
-    saveActive(active);
+    saveLog(active);
     renderTrain(root);
   });
 
   const toOverview = () => {
     switchMachine(active, null);
-    saveActive(active);
+    saveLog(active);
     renderTrain(root);
   };
   root.querySelector('#change-machine').addEventListener('click', toOverview);
@@ -1758,14 +1758,16 @@ const setsSummary = (sets, s, bodyweight = false) => {
 };
 
 function finish(root, active) {
-  // no ghost tone in the hub: the workout is over, so is its rest
+  // target tally must run BEFORE finishWorkout clears the active state
+  const { total: goalTotal, hit: goalHit } = targetTally(active);
+  const saved = finishWorkout(active);
+  // no ghost tone in the hub: the workout is over, so is its rest — only
+  // once it IS over: a refused write leaves the workout, and its countdown
+  // running, rather than frozen
   stopRest();
   // the hub is the resting point after the loop closes — not whatever
   // sub-screen the workout happened to start from
   screen = 'hub';
-  // target tally must run BEFORE finishWorkout clears the active state
-  const { total: goalTotal, hit: goalHit } = targetTally(active);
-  const saved = finishWorkout(active);
   // The first moment something exists that cannot be reconstructed — a floor
   // plan can be redrawn, a training session cannot. It is also a user
   // gesture, which is what Firefox's permission prompt requires; the same
@@ -1873,10 +1875,28 @@ export const restLeft = (active) => {
 
 export const restNextUp = () => nextUpLabel;
 
+// The rest deadline has ONE source: the stored workout. startRest writes
+// it; endRest (Skip, the tone) and adjustRest (±15s) change the STORE's
+// copy, because the overlay outlives the screen that opened it. A log
+// screen's own `active` is a render-time object — saved back as it is, it
+// would resurrect a deadline Skip already ended, or undo a +15s. So every
+// save from the log screen goes through here and takes the deadline over
+// from the store first; startRest stays its only direct writer.
+function saveLog(active) {
+  const stored = getActive();
+  if (stored?.id === active.id) {
+    if (stored.restUntil) active.restUntil = stored.restUntil;
+    else delete active.restUntil;
+  }
+  saveActive(active);
+}
+
 // Log a set → rest. Called inside the tap that logged it, which is what
 // lets primeAudio() bless the audio element for the tone at zero.
 function startRest(secs, root, active) {
-  if (!secs) return; // 0 = rest timer off
+  // 0 = rest timer off — and a set logged with no rest ends a running one,
+  // or its old countdown would keep going and still sound
+  if (!secs) { if (restLeft(active)) endRest(); return; }
   // Prime silently while the tap that logged the set is still the gesture —
   // the sound itself only plays when the countdown reaches zero.
   primeAudio();

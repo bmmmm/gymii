@@ -832,6 +832,15 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   inline row BY ID rather than re-rendering, so a half-typed field
   survives. `ensureRestTicking()` picks a live deadline up after a reload
   (no overlay, and the tone may be blocked without a gesture).
+  `restUntil` has ONE writer on the log screen's side: `startRest`. Skip,
+  the tone and ±15s change the STORE's copy (the overlay outlives the
+  screen that opened it), so every other save from the log screen goes
+  through `saveLog(active)`, which takes the deadline over from the store
+  first — a plain `saveActive` of the screen's render-time object wrote a
+  skipped rest back (countdown and tone returned) and undid a +15s. A set
+  logged with rest 0 ends a running rest, and `finish()` stops the timer
+  only AFTER `finishWorkout` succeeded, so a refused write leaves it
+  running instead of frozen.
   `restNextUp()` is what the overlay promises next, set by `renderLog`
   from the values it already has and keyed on `slotDone`, not `targetDone`.
   A rest CHANGED mid-workout goes to `active.restOverrides[machineId]`,

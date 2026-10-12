@@ -1159,4 +1159,51 @@ assert.deepEqual(nextSetDefaults({ sets: [{ reps: 8 }] }, null, 'strength', { un
 assert.deepEqual(nextSetDefaults({ sets: [] }, { sets: [{ reps: 6, at: 1 }] }, 'strength', { unit: 'kg' }),
   { reps: 6, weight: 0 }, 'the last workout\'s weightless first set too');
 
+// --- the rest deadline has one source: the store (saveLog) ---
+// endRest/adjustRest change the STORE's copy; a log screen saving its own
+// render-time `active` used to write the old deadline back.
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Deadline gym');
+  g.machines.push({ id: 'a', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
+  g.machines.push({ id: 'b', num: 2, label: 'Row', x: 6, y: 0, w: 4, h: 3, settingsFields: [] });
+  store.saveLayout(g);
+  store.saveActive({
+    v: 2, id: 'w-deadline', startedAt: Date.now() - 60000,
+    plan: [{ machineId: 'a', exercise: null }, { machineId: 'b', exercise: null }],
+    currentMachineId: 'a', currentExercise: null, entries: [],
+  });
+  byId.clear();
+  renderTrain(root);
+  byId.get('#set-weight').value = '40';
+  byId.get('#set-reps').value = '8';
+  byId.get('#set-rest').value = '90';
+  byId.get('#log-set').listeners.click();
+  assert.ok(restLeft(store.getActive()) > 80, 'the set starts a rest');
+  const staleNext = byId.get('#next-machine').listeners.click; // the screen under the overlay
+  renderTrain(root);
+  byId.get('#rest-skip').listeners.click(); // the overlay's Skip = endRest on the store copy
+  staleNext();
+  assert.ok(!('restUntil' in store.getActive()), 'a later save of the old screen keeps the rest skipped');
+  assert.ok(!root.innerHTML.includes('id="rest-inline"'), 'and no countdown comes back on the next screen');
+
+  // +15s on the store copy survives any later save of the same screen
+  const now = Date.now();
+  store.saveActive({ ...store.getActive(), currentMachineId: 'a', restUntil: now + 60000 });
+  byId.clear();
+  renderTrain(root);
+  byId.get('#rest-plus').listeners.click();
+  byId.get('#set-rest').listeners.change({ target: { value: '90', dataset: {} } });
+  assert.ok(restLeft(store.getActive()) > 70, 'a rest-field change no longer undoes +15s');
+
+  // a set logged with rest 0 ends a rest that is still running
+  byId.get('#set-weight').value = '40';
+  byId.get('#set-reps').value = '8';
+  byId.get('#set-rest').value = '0';
+  byId.get('#log-set').listeners.click();
+  assert.equal(restLeft(store.getActive()), 0, 'a rest-0 set ends the running rest');
+  store.clearActive();
+  store.saveLayout(before);
+}
+
 console.log('train plan construction: all assertions passed');
