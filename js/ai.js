@@ -9,7 +9,7 @@ import {
 import { openPlanBuilder } from './train.js';
 import { twoTapConfirm, plural, dateValue } from './ui.js';
 
-const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; an "exercise" field names one movement at a multi-exercise machine like a free-weight area; a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis, and null there means the set has no timestamp; a fourth element, when present, is RIR, reps in reserve, 0–3, 3 = three or more; absent = not rated).
+const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; an "exercise" field names one movement at a multi-exercise machine like a free-weight area; a "grip" field names the attachment or grip it was done with (a rope and a V-bar on one cable tower are separate progressions — never mix their numbers); a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis, and null there means the set has no timestamp; a fourth element, when present, is RIR, reps in reserve, 0–3, 3 = three or more; absent = not rated).
 
 Analyze my progress: trends per machine, plateaus, and muscle-group imbalances. Then suggest concrete targets for my next workout — weight × reps per machine — and one or two practical tips.
 
@@ -19,7 +19,7 @@ If you propose changes to my gym or machines, reply with a valid gymii gym-templ
 
 If I ask you to PLAN a workout (e.g. "plan me a chest & shoulders workout", possibly excluding some machines), pick suitable machines via their muscles field and reply with a gymii workout-plan JSON I can paste back:
 {"app":"gymii","kind":"workout-plan","name":"<short name>","items":[{"num":<machine num>,"sets":3,"reps":10,"weight":50}]}
-Use each machine's num exactly as listed, weights in my unit derived from my history (a slight progression where it looks earned), add "exercise" only for a movement at a multi-exercise machine, and use {"num":…,"distance":…,"seconds":…} for cardio machines. An optional top-level "days":[1,4] tags weekdays (0 = Sunday).
+Use each machine's num exactly as listed, weights in my unit derived from my history (a slight progression where it looks earned), add "exercise" only for a movement at a multi-exercise machine, add "grip" only with a value from that machine's "grips" list, and use {"num":…,"distance":…,"seconds":…} for cardio machines. An optional top-level "days":[1,4] tags weekdays (0 = Sunday).
 For a movement my gym has no machine for, give {"name":"<exercise name>","sets":3,"reps":10,"weight":50} instead of a num — gymii keeps it and asks me which machine it is at the gym.
 My saved plans, when present, are included as "plans" in that same shape. If I ask you to revise one, reply with the full revised plan and KEEP its "id" — that lets gymii update the plan in place (it asks me before replacing). Omit "id" for a brand-new plan.`;
 
@@ -169,6 +169,7 @@ export function buildAiExport() {
         ...(m.cardio ? { cardio: true } : {}),
         ...(m.bodyweight ? { bodyweight: true } : {}),
         ...(m.exercises?.length ? { exercises: m.exercises } : {}),
+        ...(m.grips?.length ? { grips: m.grips } : {}),
         settings: m.settingsFields,
         muscles: m.muscles?.length ? m.muscles : undefined,
         doc: m.docUrl || undefined,
@@ -187,6 +188,7 @@ export function buildAiExport() {
           return {
             ...(m ? { num: m.num } : { name: it.name, ...(it.num ? { num: it.num } : {}) }),
             ...(it.exercise ? { exercise: it.exercise } : {}),
+            ...(it.grip ? { grip: it.grip } : {}),
             ...(it.target ?? {}),
           };
         }).filter(Boolean),
@@ -198,6 +200,7 @@ export function buildAiExport() {
         machine: e.label,
         num: e.num,
         ...(e.exercise ? { exercise: e.exercise } : {}),
+        ...(e.grip ? { grip: e.grip } : {}),
         ...(e.cardio ? { cardio: true } : {}),
         ...(e.bodyweight ? { bodyweight: true } : {}),
         ...(Object.keys(e.settings || {}).some((k) => String(e.settings[k]).trim() !== '')

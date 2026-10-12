@@ -57,6 +57,27 @@ assert.deepEqual(p.items[1], { name: 'Face pulls', num: 12, sets: 3, reps: 15, w
   'unbound items keep their name and num hint');
 assert.deepEqual(p.items[2], { num: 9, distance: 3000, seconds: 900 },
   'cardio targets keep their own shape');
+{
+  // grips travel: the machine's list, a plan item's and a logged entry's
+  const g = store.getLayout();
+  g.machines[0].grips = ['Rope', 'V-bar'];
+  store.saveLayout(g);
+  const plans = store.getPlans();
+  plans[0].items[0].grip = 'Rope';
+  store.savePlans(plans);
+  store.saveWorkouts([{ id: 'wg', startedAt: 1000, entries: [{ machineId: 'm1', num: 1, label: 'Chest press',
+    grip: 'V-bar', settings: {}, sets: [{ reps: 10, weight: 40 }] }] }]);
+  const ex = JSON.parse(buildAiExport());
+  assert.deepEqual(ex.gym.machines[0].grips, ['Rope', 'V-bar'], 'a machine exports its grips');
+  assert.ok(!('grips' in ex.gym.machines[1]), 'and none where it has none');
+  assert.equal(ex.plans[0].items[0].grip, 'Rope', 'a plan item its grip');
+  assert.equal(ex.workouts[0].entries[0].grip, 'V-bar', 'a logged entry its grip');
+  delete g.machines[0].grips;
+  store.saveLayout(g);
+  delete plans[0].items[0].grip;
+  store.savePlans(plans);
+  store.saveWorkouts([]);
+}
 assert.ok(!('createdAt' in p) && !('machineId' in p.items[0]),
   'internal fields stay internal');
 

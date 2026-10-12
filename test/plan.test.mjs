@@ -415,6 +415,36 @@ assert.equal(store.parsePlanLine('Bench 3x10 100lb', s).target.weight, 45.5,
 assert.equal(store.parsePlanText('Leg press 3x10 80\n\nDay B:\nTreadmill 20min', s).length, 2,
   'parsePlanText drops blanks and headings');
 
+// --- the grip: "[Rope]", cut out before anything else ---
+assert.deepEqual(store.parsePlanLine('#9 Cable tower: Triceps pushdown [Rope] 3x12 25', s),
+  { name: 'Cable tower', num: 9, exercise: 'Triceps pushdown', grip: 'Rope', target: { sets: 3, reps: 12, weight: 25 } },
+  'machine, exercise, grip and target in one line');
+assert.deepEqual(store.parsePlanLine('#9 Cable tower [Rope] 3x12', s),
+  { name: 'Cable tower', num: 9, grip: 'Rope', target: { sets: 3, reps: 12, weight: 0 } }, 'a grip without an exercise');
+assert.deepEqual(store.parsePlanLine('Lat pulldown / row 3x10 50', s),
+  { name: 'Lat pulldown / row', target: { sets: 3, reps: 10, weight: 50 } }, 'a slash stays part of the name');
+assert.deepEqual(store.parsePlanLine('#4 Row [ ] 3x10 40', s),
+  { name: 'Row', num: 4, target: { sets: 3, reps: 10, weight: 40 } }, 'empty brackets name no grip');
+{
+  const g = store.newLayout('Grip gym');
+  g.machines.push({ id: 'ct', num: 9, label: 'Cable tower', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
+    exercises: ['Triceps pushdown'], grips: ['Rope', 'V-bar'] });
+  const note = '#9 Cable tower: Triceps pushdown [Rope] 3x12 25\n#9 Cable tower: Triceps pushdown [Chain] 3x10 30\nFace pull [Rope] 3x15 15';
+  const items = store.planItemsFrom(store.parsePlanText(note, s), g);
+  assert.equal(items[0].grip, 'Rope', 'a grip the machine offers binds with it');
+  assert.equal('grip' in items[1], false, 'an unknown grip falls away on a bound item');
+  assert.equal(items[2].grip, 'Rope', 'an unbound item keeps its grip for the binding');
+  const text = store.planToText(items, g, s);
+  assert.equal(text.split('\n')[0], '#9 Cable tower: Triceps pushdown [Rope] 3x12 25', 'the grip is written back');
+  assert.deepEqual(store.planItemsFrom(store.parsePlanText(text, s), g), items, 'text → list → text holds');
+  const keep = store.getLayout();
+  store.saveLayout(g);
+  const { workout } = store.workoutFromText('#9 Cable tower: Triceps pushdown [Rope] 3x12 25\n#9 Cable tower: Triceps pushdown [Chain] 3x10 30', 1000, s);
+  assert.deepEqual(workout.entries.map((e) => e.grip ?? null), ['Rope', null],
+    'a back-logged note keeps a known grip on its entry, and only a known one');
+  if (keep) store.saveLayout(keep);
+}
+
 // --- name suggestions: derived from what was trained, not asked for ---
 
 const nameGym = store.newLayout('Naming gym');

@@ -1360,6 +1360,16 @@ export function parsePlanLine(line, settings = getSettings()) {
   let rest = String(line).trim();
   if (!rest || /:$/.test(rest)) return null;
 
+  // "[Rope]" names the grip — cut out FIRST, before any other term: '/' sits
+  // in real names ("Lat pulldown / row"), '()' and "with" collide with the
+  // trailing weight, '·' is not on a phone keyboard. Empty brackets: none.
+  let grip = null;
+  const br = /\[([^[\]]*)\]/.exec(rest);
+  if (br) {
+    grip = br[1].trim() || null;
+    rest = (rest.slice(0, br.index) + rest.slice(br.index + br[0].length)).replace(/\s+/g, ' ').trim();
+  }
+
   let target = null;
   const sr = SETS_REPS.exec(rest);
   if (sr) {
@@ -1413,6 +1423,7 @@ export function parsePlanLine(line, settings = getSettings()) {
     name,
     ...(machineNum ? { num: machineNum } : {}),
     ...(exercise ? { exercise } : {}),
+    ...(grip ? { grip } : {}),
     ...(target ? { target } : {}),
   };
 }
@@ -1471,7 +1482,9 @@ export function planItemsFrom(rawItems, layout) {
     const target = normalizeTarget(flat, cardio);
     if (machine) {
       const exercise = machine.exercises?.includes(raw.exercise) ? raw.exercise : null;
-      return { machineId: machine.id, exercise, ...(target ? { target } : {}) };
+      // a bound item keeps only a grip its machine offers
+      const grip = machine.grips?.includes(raw.grip) ? raw.grip : null;
+      return { machineId: machine.id, exercise, ...(grip ? { grip } : {}), ...(target ? { target } : {}) };
     }
     // neither a machine nor a name: nothing to train and nothing to bind
     if (!name) return null;
@@ -1479,8 +1492,11 @@ export function planItemsFrom(rawItems, layout) {
     // Curls"): binding it makes it an exercise of that machine
     const exercise = typeof raw.exercise === 'string' && raw.exercise.trim()
       ? raw.exercise.trim() : null;
+    // …and so does its grip: binding teaches it to the machine
+    const grip = typeof raw.grip === 'string' && raw.grip.trim() ? raw.grip.trim() : null;
     return {
       machineId: null, name, exercise,
+      ...(grip ? { grip } : {}),
       ...(raw.num != null ? { num: raw.num } : {}),
       ...(target ? { target } : {}),
     };
@@ -1500,7 +1516,8 @@ export function planToText(items, layout, settings = getSettings()) {
     if (!machine && !isUnbound(it)) return null; // machine deleted since
     const num = machine?.num ?? it.num ?? null;
     const label = machine ? machine.label : it.name;
-    const head = `${num ? `#${num} ` : ''}${label}${it.exercise ? `: ${it.exercise}` : ''}`;
+    const head = `${num ? `#${num} ` : ''}${label}${it.exercise ? `: ${it.exercise}` : ''}${
+      it.grip ? ` [${it.grip}]` : ''}`;
     const t = it.target;
     if (!t) return head;
     if (t.distance != null) {
@@ -1554,7 +1571,8 @@ export function workoutFromText(text, startedAt, settings = getSettings()) {
       const count = t?.sets ?? 1;
       for (let i = 0; i < count; i++) sets.push({ reps: t?.reps ?? 10, weight: t?.weight ?? 0 });
     }
-    entries.push(newEntry(machine, resolved.exercise, sets));
+    entries.push(newEntry(machine, resolved.exercise, sets,
+      machine.grips?.includes(item.grip) ? item.grip : null));
   });
   if (!entries.length) {
     throw new Error('No line named a machine gymii knows — put a #number in front of one');
