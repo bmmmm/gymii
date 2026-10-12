@@ -871,10 +871,16 @@ const slotDone = (active, slot) => (slot.target?.sets
   ? slotSetCount(active, slot) >= slot.target.sets
   : slotEntries(active, slot).some((e) => e.sets.length));
 
+// A bound slot whose machine was deleted in the gym is dead: it stays in
+// active.plan (an undo in the gym can bring the machine back), but neither
+// the Next walk nor the target tally counts it — read-time, never pruned.
+const slotLive = (layout, slot) =>
+  !slot.machineId || (layout?.machines ?? []).some((m) => m.id === slot.machineId);
+
 // Target progress across the whole plan — the overview line and the
 // finish message share it. total 0 = no targeted slots.
-function targetTally(active) {
-  const goals = active.plan.filter((p) => p.target?.sets);
+function targetTally(active, layout) {
+  const goals = active.plan.filter((p) => p.target?.sets && slotLive(layout, p));
   return {
     total: goals.reduce((n, p) => n + p.target.sets, 0),
     hit: goals.reduce((n, p) => n + Math.min(slotSetCount(active, p), p.target.sets), 0),
@@ -952,7 +958,7 @@ function renderOverview(root, layout, active) {
   root.innerHTML = `
     <h1>Workout</h1>
     <p class="muted">${mins} min · ${plural(sets, 'set')} · ${workoutTotals(active, s)}${(() => {
-    const tally = targetTally(active);
+    const tally = targetTally(active, layout);
     return tally.total ? ` · ${esc(`${tally.hit}/${tally.total}`)} target sets` : '';
   })()}</p>
     ${lockerLeads ? `
@@ -1040,7 +1046,10 @@ function renderOverview(root, layout, active) {
     if (!active.plan.some((p) => p.machineId === machineId)) {
       active.plan.push({ machineId, exercise: null });
     }
-    switchMachine(active, machineId);
+    // straight to the machine's first OPEN exercise slot: without one the
+    // multi-exercise pick screen named another machine as "Next"
+    switchMachine(active, machineId, active.plan.find((p) => p.machineId === machineId
+      && !slotDone(active, p))?.exercise ?? null);
     saveActive(active);
     renderTrain(root);
   }, { actionLabel: 'Add' });
@@ -1173,10 +1182,10 @@ function renderBind(root, layout, active) {
 // Next unfinished plan slot after the current one, wrapping around so a
 // skipped (busy) machine comes up again at the end. Another exercise at
 // the SAME machine is a valid next stop — only the current slot is out.
-function nextOpenSlot(active, afterId, afterExercise = null) {
+function nextOpenSlot(active, layout, afterId, afterExercise = null) {
   const idx = planSlotIndex(active, afterId, afterExercise);
   const order = [...active.plan.slice(idx + 1), ...active.plan.slice(0, Math.max(idx, 0))];
-  return order.find((slot) => !slotDone(active, slot)) ?? null;
+  return order.find((slot) => slotLive(layout, slot) && !slotDone(active, slot)) ?? null;
 }
 
 // The plan index the logging screen is at: the exact (machine, exercise)
@@ -1338,14 +1347,17 @@ function renderLog(root, layout, active, reveal = null) {
       : `${d.weight} ${s.unit} × ${d.reps}`);
   const logLabel = (d) =>
     `✓ Log set${setGoal && !targetDone ? ` ${setPos}/${setGoal}` : ''} — ${setLabel(d)}`;
-  const nextSlot = nextOpenSlot(active, machine.id, exercise);
+  const nextSlot = nextOpenSlot(active, layout, machine.id, exercise);
   const nextMachine = nextSlot?.machineId
     ? layout.machines.find((m) => m.id === nextSlot.machineId) : null;
   // an unbound next stop is still a next stop — it just asks which
   // machine it is before it can log anything
   const nextUnbound = !nextMachine && nextSlot?.name ? nextSlot : null;
-  // offered only when it differs from the plan's next (excludeMachineId)
-  const nearby = nextMachine ? nearbyAlternative(active, layout, machine, nextMachine.id) : null;
+  // offered only when it differs from the plan's next (excludeMachineId) —
+  // and never when the next stop is THIS machine: "busy" would be a lie,
+  // and it would land in the record as busy: <this machine>
+  const nearby = nextMachine && nextMachine.id !== machine.id
+    ? nearbyAlternative(active, layout, machine, nextMachine.id) : null;
 
   // Quick-switch: the OTHER machines most recently trained this workout,
   // ranked by their newest `at`-stamped set. Superset workouts swing
@@ -1474,7 +1486,7 @@ function renderLog(root, layout, active, reveal = null) {
           <button type="button" id="rest-skip" class="chip">Skip</button>
         </div>` : ''}
         ${rirHere ? `<div class="rest-opts" id="rir-log">${rirChips(rated.set.rir)}</div>` : ''}
-        <button id="log-set" class="btn ${targetDone && nextMachine ? '' : 'btn-primary '}btn-big">${esc(logLabel(def))}</button>
+        <button id="log-set" class="btn ${targetDone && (nextMachine || nextUnbound) ? '' : 'btn-primary '}btn-big">${esc(logLabel(def))}</button>
       </div>
     </section>`}
 
@@ -1772,7 +1784,7 @@ const setsSummary = (sets, s, bodyweight = false) => {
 
 function finish(root, active) {
   // target tally must run BEFORE finishWorkout clears the active state
-  const { total: goalTotal, hit: goalHit } = targetTally(active);
+  const { total: goalTotal, hit: goalHit } = targetTally(active, getLayout());
   const saved = finishWorkout(active);
   // no ghost tone in the hub: the workout is over, so is its rest — only
   // once it IS over: a refused write leaves the workout, and its countdown

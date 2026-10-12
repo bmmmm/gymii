@@ -247,6 +247,26 @@ assert.ok(!root.innerHTML.includes('btn btn-primary btn-big">✓ Log set'),
   'the log button steps back once the target is met');
 store.clearActive();
 
+// the same once the next stop is an UNBOUND plan line: one primary, never two
+store.saveActive({
+  v: 2, id: 'w-next-unbound', startedAt: 1755000000000,
+  plan: [
+    { machineId: 'm1', exercise: null, target: { sets: 1, reps: 10, weight: 50 } },
+    { machineId: null, name: 'Leg press' },
+  ],
+  currentMachineId: 'm1', currentExercise: null,
+  entries: [{
+    machineId: 'm1', num: 1, label: 'Chest press', settings: {},
+    sets: [{ reps: 10, weight: 50, at: 1755000001000 }],
+  }],
+});
+byId.clear();
+renderTrain(root);
+assert.ok(/id="next-unbound" class="btn btn-primary/.test(root.innerHTML), 'the unbound Next is the primary');
+assert.ok(!root.innerHTML.includes('btn btn-primary btn-big">✓ Log set'),
+  'and the log button steps back for it too');
+store.clearActive();
+
 // --- start screen: a named plan owns its routine (no duplicate repeat row) ---
 
 store.saveWorkouts([

@@ -1271,4 +1271,94 @@ assert.deepEqual(nextSetDefaults({ sets: [] }, { sets: [{ reps: 6, at: 1 }] }, '
   store.saveLayout(before);
 }
 
+// A #picker whose inner parts are reachable: machinePicker wires .pick-num /
+// .pick-go / .pick-err inside its container, which the plain stub hands
+// out fresh (and so unreachable) on every call.
+const pickerStub = () => {
+  const parts = new Map();
+  const el = stubEl();
+  el.querySelector = (sel) => {
+    if (!parts.has(sel)) parts.set(sel, stubEl());
+    const part = parts.get(sel);
+    if (sel === '.pick-err') part.querySelector = (q) => el.querySelector(`.pick-err ${q}`);
+    return part;
+  };
+  el.parts = parts;
+  return el;
+};
+const withPicker = (fn) => {
+  const picker = pickerStub();
+  const qs = root.querySelector;
+  root.querySelector = (sel) => (sel === '#picker' ? picker : qs.call(root, sel));
+  try { fn(picker); } finally { root.querySelector = qs; }
+  return picker;
+};
+
+// --- slots & Next ---
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Slot gym');
+  g.machines.push(
+    { id: 'a', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] },
+    { id: 'b', num: 2, label: 'Lat pulldown', x: 6, y: 0, w: 4, h: 3, settingsFields: [] },
+    { id: 'c', num: 3, label: 'Leg press', x: 12, y: 0, w: 4, h: 3, settingsFields: [] },
+    { id: 'db', num: 4, label: 'Dumbbells', x: 18, y: 0, w: 4, h: 3, settingsFields: [],
+      exercises: ['Biceps curls', 'Shoulder press'] });
+  store.saveLayout(g);
+  const set = () => ({ reps: 10, weight: 40, at: Date.now() });
+  // a machine deleted in the gym leaves its slot dead: Next skips it, the
+  // tally stops counting it, and the plan keeps it for an undo
+  store.saveActive({
+    v: 2, id: 'w-dead', startedAt: Date.now() - 60000,
+    plan: [{ machineId: 'a', exercise: null },
+      { machineId: 'b', exercise: null, target: { sets: 3, reps: 10, weight: 40 } },
+      { machineId: 'c', exercise: null, target: { sets: 1, reps: 10, weight: 40 } }],
+    currentMachineId: 'a', currentExercise: null,
+    entries: [{ machineId: 'a', num: 1, label: 'Chest press', settings: {}, sets: [set()] }],
+  });
+  store.saveLayout({ ...g, machines: g.machines.filter((m) => m.id !== 'b') });
+  byId.clear();
+  renderTrain(root);
+  assert.ok(/id="next-machine"[^>]*>Next: #3/.test(root.innerHTML), 'Next skips the deleted machine\'s slot');
+  assert.ok(store.getActive().plan.some((p) => p.machineId === 'b'), 'and the plan still holds it');
+  const a = store.getActive();
+  store.switchMachine(a, null);
+  store.saveActive(a);
+  byId.clear();
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('0/1 target sets'), 'the tally counts only live slots');
+  store.saveLayout(g);
+
+  // the next stop is the SAME machine: no "Busy?" — it would record busy: <here>
+  store.saveActive({
+    v: 2, id: 'w-same', startedAt: Date.now(),
+    plan: [{ machineId: 'db', exercise: 'Biceps curls' }, { machineId: 'db', exercise: 'Shoulder press' },
+      { machineId: 'c', exercise: null }],
+    currentMachineId: 'db', currentExercise: 'Biceps curls',
+    entries: [{ machineId: 'db', num: 4, label: 'Dumbbells', exercise: 'Biceps curls', settings: {}, sets: [set()] }],
+  });
+  byId.clear();
+  renderTrain(root);
+  assert.ok(/Next: #4\s+Dumbbells · Shoulder press/.test(root.innerHTML), 'next is the sibling exercise');
+  assert.ok(!root.innerHTML.includes('id="nearby-machine"'), 'and no Busy? is offered for it');
+
+  // Add on the overview lands on the machine's first OPEN exercise slot
+  store.saveActive({
+    v: 2, id: 'w-add', startedAt: Date.now(),
+    plan: [{ machineId: 'db', exercise: 'Shoulder press' }, { machineId: 'db', exercise: 'Biceps curls' },
+      { machineId: 'a', exercise: null }],
+    currentMachineId: null, currentExercise: null,
+    entries: [{ machineId: 'db', num: 4, label: 'Dumbbells', exercise: 'Shoulder press', settings: {}, sets: [set()] }],
+  });
+  byId.clear();
+  withPicker((picker) => {
+    renderTrain(root);
+    picker.parts.get('.pick-num').value = '4';
+    picker.parts.get('.pick-go').listeners.click();
+  });
+  assert.equal(store.getActive().currentExercise, 'Biceps curls', 'Add opens the open exercise, not the pick screen');
+  store.clearActive();
+  store.saveLayout(before);
+}
+
 console.log('train plan construction: all assertions passed');
