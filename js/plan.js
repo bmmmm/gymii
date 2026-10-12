@@ -15,7 +15,7 @@ import {
 import { drawLayout } from './map.js';
 import {
   esc, twoTapConfirm, stepperField, plural, keepInView, fmtDuration, parseDuration, parseDistance,
-  hintHtml,
+  hintHtml, variantStr,
 } from './ui.js';
 import { insights } from './stats.js';
 
@@ -31,9 +31,9 @@ const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 // machine null = an unbound item: no history to seed from, so the target
 // falls back to the plain strength default (cardio unbound items keep the
 // shape their note gave them).
-function targetDefaults(machine, exercise, s) {
+function targetDefaults(machine, exercise, grip, s) {
   if (!machine) return { sets: 3, reps: 10, weight: 20 };
-  const last = lastEntryFor(machine.id, exercise ?? null);
+  const last = lastEntryFor(machine.id, exercise ?? null, grip ?? null);
   const typed = last
     && !!last.cardio === !!machine.cardio
     && !!last.bodyweight === !!machine.bodyweight ? last : null;
@@ -127,7 +127,8 @@ export function renderPlanBuilder(
     return `<div class="plan-item${m ? '' : ' unbound'}">
       <div class="plan-item-head">
         <span class="machine-badge sm">${m ? esc(m.num) : '?'}</span>
-        <span class="plan-label">${esc(label)}</span>
+        <span class="plan-label">${esc(label)}${!m && variantStr(it)
+    ? ` <span class="muted">· ${esc(variantStr(it))}</span>` : ''}</span>
         <span class="plan-item-actions">
           <button type="button" class="x it-up" data-i="${i}" aria-label="Move ${esc(label)} up">↑</button>
           <button type="button" class="x it-down" data-i="${i}" aria-label="Move ${esc(label)} down">↓</button>
@@ -140,6 +141,11 @@ export function renderPlanBuilder(
       <div class="chip-select">
         ${m.exercises.map((x) => `<button type="button" class="chip it-exercise${it.exercise === x ? ' sel' : ''}"
           data-i="${i}" data-exercise="${esc(x)}">${esc(x)}</button>`).join('')}
+      </div>` : ''}
+      ${m?.grips?.length ? `
+      <div class="chip-select">
+        ${m.grips.map((g) => `<button type="button" class="chip it-grip${it.grip === g ? ' sel' : ''}"
+          data-i="${i}" data-grip="${esc(g)}">${esc(g)}</button>`).join('')}
       </div>` : ''}
       <div class="plan-targets">
         ${cardio ? `
@@ -157,7 +163,7 @@ export function renderPlanBuilder(
     // imported, pasted and typed items may arrive target-less — give them
     // one so the steppers always have something to edit
     draft.items.forEach((it) => {
-      if (!it.target) it.target = targetDefaults(machineFor(it.machineId), it.exercise, s);
+      if (!it.target) it.target = targetDefaults(machineFor(it.machineId), it.exercise, it.grip, s);
     });
     const machines = layout?.machines ?? [];
     const allMuscles = layout ? layoutMuscles(layout) : [];
@@ -317,7 +323,7 @@ export function renderPlanBuilder(
       if (inPlan.has(id)) {
         draft.items = draft.items.filter((it) => it.machineId !== id);
       } else {
-        draft.items.push({ machineId: id, exercise: null, target: targetDefaults(machineFor(id), null, s) });
+        draft.items.push({ machineId: id, exercise: null, target: targetDefaults(machineFor(id), null, null, s) });
       }
       render();
     };
@@ -348,7 +354,7 @@ export function renderPlanBuilder(
       // swap is said, not slipped under the steppers
       if (!!machine.cardio !== (it.target?.distance != null)) {
         if (it.target) notice = `Target reset — #${machine.num} is not a ${machine.cardio ? 'strength' : 'cardio'} machine.`;
-        it.target = targetDefaults(machine, it.exercise, s);
+        it.target = targetDefaults(machine, it.exercise, it.grip, s);
       }
       binding = null;
       render();
@@ -356,7 +362,7 @@ export function renderPlanBuilder(
 
     root.querySelector('#plan-items')?.addEventListener('click', (e) => {
       const btn = e.target.closest(
-        '.it-remove, .it-up, .it-down, .it-exercise, .it-bind, .bind-go, .bind-pick, .bind-cancel');
+        '.it-remove, .it-up, .it-down, .it-exercise, .it-grip, .it-bind, .bind-go, .bind-pick, .bind-cancel');
       if (!btn) return;
       if (btn.classList.contains('bind-cancel')) { binding = null; render(); return; }
       const i = parseInt(btn.dataset.i, 10);
@@ -378,13 +384,20 @@ export function renderPlanBuilder(
         const j = i + (btn.classList.contains('it-up') ? -1 : 1);
         if (j < 0 || j >= draft.items.length) return;
         [draft.items[i], draft.items[j]] = [draft.items[j], draft.items[i]];
+      } else if (btn.classList.contains('it-grip')) {
+        // grip chip: the same toggle — no grip means any grip
+        const g = btn.dataset.grip;
+        if (it.grip === g) delete it.grip;
+        else it.grip = g;
+        const m = machineFor(it.machineId);
+        if (m) it.target = targetDefaults(m, it.exercise, it.grip, s);
       } else {
         // exercise chip: toggle between a scoped and a whole-machine slot,
         // reseeding the target — weights differ per exercise
         const x = btn.dataset.exercise;
         it.exercise = it.exercise === x ? null : x;
         const m = machineFor(it.machineId);
-        if (m) it.target = targetDefaults(m, it.exercise, s);
+        if (m) it.target = targetDefaults(m, it.exercise, it.grip, s);
       }
       render();
     });

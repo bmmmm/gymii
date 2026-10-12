@@ -938,4 +938,35 @@ goToHub();
   assert.ok(root.innerHTML.includes('Target reset — #1 is not a cardio machine.'), 'the reset target is announced');
 }
 
+// --- the builder: grip chips on an item whose machine offers grips ---
+{
+  const g = store.newLayout('Grip builder gym');
+  g.machines.push({ id: 'ct', num: 9, label: 'Cable tower', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
+    exercises: ['Pushdown'], grips: ['Rope', 'V-bar'] });
+  store.saveLayout(g);
+  store.saveWorkouts([{ id: 'bw1', startedAt: 1000, entries: [
+    { machineId: 'ct', num: 9, label: 'Cable tower', exercise: 'Pushdown', grip: 'Rope', settings: {}, sets: [{ reps: 15, weight: 22.5 }] },
+    { machineId: 'ct', num: 9, label: 'Cable tower', exercise: 'Pushdown', settings: {}, sets: [{ reps: 8, weight: 40 }] },
+  ] }]);
+  const seed = [{ machineId: 'ct', exercise: 'Pushdown', target: { sets: 3, reps: 8, weight: 40 } },
+    { machineId: null, name: 'Cable row', exercise: null, grip: 'V-bar', target: { sets: 3, reps: 10, weight: 50 } }];
+  byId.clear();
+  byId.set('#plan-text', null);
+  renderPlanBuilder(root, { seed }, () => {});
+  assert.ok(/class="chip it-grip"\s+data-i="0" data-grip="Rope"/.test(root.innerHTML), 'the item offers its machine\'s grips');
+  assert.ok(root.innerHTML.includes('Cable row <span class="muted">· V-bar</span>'), 'an unbound item shows its grip');
+  const tap = (cls, i, extra = {}) => root.querySelector('#plan-items').listeners.click({
+    target: { closest: () => ({ classList: { contains: (c) => c === cls }, dataset: { i: String(i), ...extra } }) },
+  });
+  tap('it-grip', 0, { grip: 'Rope' });
+  assert.ok(/class="chip it-grip sel"\s+data-i="0" data-grip="Rope"/.test(root.innerHTML), 'a tap picks the grip');
+  assert.ok(root.innerHTML.includes('id="t-weight-0" type="number" inputmode="decimal" value="22.5"'),
+    'and reseeds the target from that grip\'s history');
+  tap('it-grip', 0, { grip: 'Rope' });
+  assert.ok(!/it-grip sel/.test(root.innerHTML), 'the same chip again means any grip');
+  assert.ok(root.innerHTML.includes('id="t-weight-0" type="number" inputmode="decimal" value="40"'),
+    'back to the gripless target');
+  store.saveWorkouts([]);
+}
+
 console.log('workout plans: all assertions passed');
