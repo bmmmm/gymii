@@ -138,15 +138,24 @@ const topSet = (sets) => sets.reduce((a, st) => ((st.weight || 0) > (a.weight ||
 const topCardio = (sets) => sets.reduce((a, st) => ((st.distance || 0) > (a.distance || 0)
   || ((st.distance || 0) === (a.distance || 0) && (st.seconds || 0) < (a.seconds || 0)) ? st : a));
 
+// A SERIES is one (machine, exercise, grip) triple: a rope and a V-bar on
+// the same cable tower carry different loads, so their numbers never mix.
+// A missing exercise or grip is null — old entries without a grip are the
+// gripless series, and match it. seriesKey is the one string form (History
+// keys its chips on it); sameSeries compares an entry with a selection.
+export const seriesKey = (x) => JSON.stringify([x.machineId, x.exercise ?? null, x.grip ?? null]);
+export const sameSeries = (e, sel) => e.machineId === sel.machineId
+  && (e.exercise ?? null) === (sel.exercise ?? null) && (e.grip ?? null) === (sel.grip ?? null);
+
 // [{w, e, kind}] ascending: the first entry with sets per workout matching
-// (machineId, exercise) — exercise null matches entries without one — kept
+// (machineId, exercise, grip) — null matches entries without one — kept
 // only when it has the NEWEST entry's kind (a machine's type can be toggled
 // over time; history.js's chart plots the latest shape the same way).
-function seriesEntries(workouts, machineId, exercise = null) {
-  const ex = exercise ?? null;
+function seriesEntries(workouts, machineId, exercise = null, grip = null) {
+  const sel = { machineId, exercise, grip };
   const rel = byStart(workouts)
     .map((w) => ({
-      w, e: w.entries.find((e) => e.machineId === machineId && (e.exercise ?? null) === ex && e.sets.length),
+      w, e: w.entries.find((e) => sameSeries(e, sel) && e.sets.length),
     }))
     .filter((x) => x.e);
   if (!rel.length) return [];
@@ -157,8 +166,8 @@ function seriesEntries(workouts, machineId, exercise = null) {
 // One point per workout for a machine's progress chart. `volume` is
 // reps × weight (cardio: total distance); `e1rm` the best valid estimate
 // across the sets, strength only; `rir` the top set's rating when it has one.
-export function machineSeries(workouts, machineId, exercise = null) {
-  return seriesEntries(workouts, machineId, exercise).map(({ w, e, kind }) => {
+export function machineSeries(workouts, machineId, exercise = null, grip = null) {
+  return seriesEntries(workouts, machineId, exercise, grip).map(({ w, e, kind }) => {
     if (kind === 'cardio') {
       const top = topCardio(e.sets);
       return {
@@ -374,22 +383,23 @@ const insight = (kind, magnitude, fields) => ({
 // one that was deleted since, and a hint about it has no screen to sit on.
 const inLayout = (layout, machineId) => !!layout?.machines?.find((x) => x.id === machineId);
 
-// Every (machineId, exercise) pair trained.
+// Every series (machineId, exercise, grip) trained.
 function trainedPairs(workouts) {
   const pairs = new Map();
   workouts.forEach((w) => w.entries.forEach((e) => {
     if (!e.sets.length) return;
-    const key = `${e.machineId} ${e.exercise ?? ''}`;
-    pairs.set(key, { machineId: e.machineId, exercise: e.exercise ?? null });
+    pairs.set(seriesKey(e), { machineId: e.machineId, exercise: e.exercise ?? null, grip: e.grip ?? null });
   }));
   return [...pairs.values()];
 }
 
 // The plan's target reps for this machine: the plan the latest session came
-// from first, else the first plan that targets it.
-function targetReps(plans, machineId, exercise, planId) {
+// from first, else the first plan that targets it. A plan item without a
+// grip targets every grip of its exercise.
+function targetReps(plans, machineId, exercise, planId, grip = null) {
   const item = (p) => p.items?.find((it) => it.machineId === machineId
-    && (it.exercise ?? null) === exercise && it.target?.reps > 0);
+    && (it.exercise ?? null) === exercise && (it.grip == null || it.grip === grip)
+    && it.target?.reps > 0);
   const own = plans.find((p) => p.id === planId);
   const hit = (own && item(own)) || plans.map(item).find(Boolean);
   return hit ? hit.target.reps : null;
@@ -402,8 +412,8 @@ const RECENT_DAYS = 21;
 function progressRule(ws, settings, plans, now) {
   const unit = settings?.unit ?? 'kg';
   const step = settings?.weightStep ?? 2.5;
-  return trainedPairs(ws).flatMap(({ machineId, exercise }) => {
-    const series = seriesEntries(ws, machineId, exercise);
+  return trainedPairs(ws).flatMap(({ machineId, exercise, grip }) => {
+    const series = seriesEntries(ws, machineId, exercise, grip);
     if (series.length < 2 || series[0].kind !== 'strength') return [];
     const [p, q] = series.slice(-2);
     // a machine not trained in three weeks is not "due" for more load —
@@ -411,7 +421,7 @@ function progressRule(ws, settings, plans, now) {
     if (daysBetween(q.w.startedAt, now) >= RECENT_DAYS) return [];
     const W = topSet(q.e.sets).weight;
     if (!(W > 0) || topSet(p.e.sets).weight !== W) return [];
-    const T = targetReps(plans, machineId, exercise, q.w.planId) ?? 12;
+    const T = targetReps(plans, machineId, exercise, q.w.planId, grip) ?? 12;
     const repsAt = (e) => Math.max(...e.sets.filter((st) => st.weight === W).map((st) => st.reps || 0));
     const beaten = (e) => repsAt(e) >= T + 2
       || e.sets.some((st) => st.weight === W && st.reps >= T && st.rir >= 2);
@@ -423,6 +433,7 @@ function progressRule(ws, settings, plans, now) {
       source: 'acsm2009',
       machineId,
       exercise,
+      grip,
     })];
   });
 }
@@ -572,8 +583,8 @@ function busyRule(ws, layout, now) {
 // is still being trained.
 function plateauRule(ws, settings, now) {
   const unit = settings?.unit ?? 'kg';
-  return trainedPairs(ws).flatMap(({ machineId, exercise }) => {
-    const pts = machineSeries(ws, machineId, exercise).filter((p) => p.kind === 'strength' && p.e1rm != null);
+  return trainedPairs(ws).flatMap(({ machineId, exercise, grip }) => {
+    const pts = machineSeries(ws, machineId, exercise, grip).filter((p) => p.kind === 'strength' && p.e1rm != null);
     if (pts.length < 8) return [];
     const best = Math.max(...pts.slice(0, -6).map((p) => p.e1rm));
     if (Math.max(...pts.slice(-6).map((p) => p.e1rm)) > best) return [];
@@ -584,13 +595,14 @@ function plateauRule(ws, settings, now) {
       source: 'pmc11435939',
       machineId,
       exercise,
+      grip,
     })];
   });
 }
 
 // Every observation that fires, as a one-line instruction (`text`, raw —
 // the UI escapes) with its `source` key and its target (`machineId` +
-// `exercise`, `muscle`, `workout` name, `weekday`), ordered by kind weight
+// `exercise` + `grip`, `muscle`, `workout` name, `weekday`), ordered by kind weight
 // plus a 0–9 magnitude, ties on the text. No cap and no one-per-machine
 // pick: each screen shows only the rows about the thing on it, so a cap
 // would silence the third machine. Nothing with fewer than three workouts.

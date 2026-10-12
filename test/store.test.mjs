@@ -900,4 +900,31 @@ store.shiftWorkout(movedBare, -5);
 assert.deepEqual(movedBare, { id: 'wn', startedAt: -5, entries: [] },
   'a workout without finishedAt or visits gains neither');
 
+// --- grips: the prefill runs per (machine, exercise, grip) ---
+{
+  const before = store.getWorkouts();
+  store.saveWorkouts([
+    { id: 'g1', startedAt: 1000, entries: [
+      { machineId: 'ct', num: 9, label: 'Cable tower', exercise: 'Pushdown', settings: {}, sets: [{ reps: 12, weight: 20 }] },
+      { machineId: 'ct', num: 9, label: 'Cable tower', exercise: 'Pushdown', grip: 'Rope', settings: {}, sets: [{ reps: 12, weight: 25 }] },
+    ] },
+    { id: 'g2', startedAt: 2000, entries: [
+      { machineId: 'ct', num: 9, label: 'Cable tower', exercise: 'Pushdown', grip: 'V-bar', settings: {}, sets: [{ reps: 10, weight: 35 }] },
+    ] },
+  ]);
+  assert.equal(store.lastEntryFor('ct', 'Pushdown', 'Rope').sets[0].weight, 25, 'the rope prefills from the rope');
+  assert.equal(store.lastEntryFor('ct', 'Pushdown', 'V-bar').sets[0].weight, 35, 'the V-bar from the V-bar');
+  assert.equal(store.lastEntryFor('ct', 'Pushdown').sets[0].weight, 20,
+    'no grip prefills from a gripless entry — old data keeps its prefill');
+  assert.strictEqual(store.lastEntryFor('ct', 'Pushdown', 'Single handle'), null, 'a grip never trained has none');
+  assert.equal(store.lastGripFor('ct', 'Pushdown'), 'V-bar', 'the last grip trained, whichever it was');
+  assert.strictEqual(store.lastGripFor('ct', 'Face pull'), null, 'nothing trained: null');
+  assert.equal(store.newEntry({ id: 'ct', num: 9, label: 'Cable tower', settingsFields: [] }, 'Pushdown', [], 'Rope').grip,
+    'Rope', 'newEntry snapshots the grip');
+  assert.equal('grip' in store.newEntry({ id: 'ct', num: 9, label: 'Cable tower', settingsFields: [] }, 'Pushdown'), false,
+    'and leaves it out when there is none');
+  assert.ok(store.COMMON_GRIPS.includes('Rope') && store.COMMON_GRIPS.includes('V-bar'));
+  store.saveWorkouts(before);
+}
+
 console.log('store roundtrip: all assertions passed');

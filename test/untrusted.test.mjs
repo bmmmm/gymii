@@ -59,6 +59,8 @@ assert.equal(store.importData(template(layoutOf())), 'gym-template', 'a clean te
   ['machine h', (l) => { l.machines[0].h = `3${X}`; }],
   ['machine rot', (l) => { l.machines[0].rot = `90${X}`; }],
   ['machine restSeconds', (l) => { l.machines[0].restSeconds = `60${X}`; }],
+  ['machine grips (no array)', (l) => { l.machines[0].grips = X; }],
+  ['machine grips (no strings)', (l) => { l.machines[0].grips = [1]; }],
   ['shape id', (l) => { l.shapes[0].id += X; }],
   ['shape color', (l) => { l.shapes[0].color = `red${X}`; }],
   ['shape w', (l) => { l.shapes[0].w = `4${X}`; }],
@@ -100,6 +102,20 @@ store.importData(backup({ workouts: [workoutOf()] }));
   assert.deepEqual(entry.sets, [{ reps: 12 }, { seconds: 600 }],
     'set numbers: a stringified one survives as a number, markup is dropped');
 }
+{
+  const w = workoutOf();
+  w.id = 'w-grip';
+  w.entries.push({ ...workoutOf().entries[0], grip: { x: 1 } }, { ...workoutOf().entries[0], grip: 'Rope' });
+  store.importData(backup({ workouts: [w] }));
+  const [, odd, rope] = store.getWorkouts().find((x) => x.id === 'w-grip').entries;
+  assert.equal('grip' in odd, false, 'a grip that is no string is dropped, the entry kept');
+  assert.equal(rope.grip, 'Rope', 'a string grip stays');
+}
+{
+  const l = layoutOf();
+  l.machines[0].grips = ['Rope', 'V-bar'];
+  assert.equal(store.importData(template(l)), 'gym-template', 'a machine with string grips imports');
+}
 
 // --- 1d. backup plans: a bad id drops the plan, bad numbers are repaired ---
 store.importData(backup({
@@ -107,7 +123,7 @@ store.importData(backup({
     {
       id: 'p-ok',
       name: 'Ok',
-      items: [{ machineId: null, name: 'Row', num: `3${X}`, target: { sets: '3', reps: 10, weight: X } }],
+      items: [{ machineId: null, name: 'Row', num: `3${X}`, grip: {}, target: { sets: '3', reps: 10, weight: X } }],
     },
     { id: `p${X}`, name: 'Bad id', items: [] },
     { id: 'p-bad-item', name: 'Bad item', items: [{ machineId: `m1${X}` }] },
@@ -117,7 +133,7 @@ store.importData(backup({
 assert.deepEqual(store.getPlans().map((p) => p.id), ['p-ok'], 'plans with bad ids are dropped');
 assert.deepEqual(store.getPlans()[0].items[0],
   { machineId: null, name: 'Row', target: { sets: 3, reps: 10 } },
-  'plan item numbers: num dropped, target repaired');
+  'plan item numbers: num dropped, target repaired, a grip that is no string dropped');
 
 // --- 1e. backup settings: a bad field keeps the device's own value ---
 store.saveSettings({ ...store.getSettings(), unit: 'kg', restSeconds: 90, weightStep: 2.5 });

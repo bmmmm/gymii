@@ -1,6 +1,8 @@
 // All localStorage access lives here. Keys are versioned via a `v` field
 // inside each object so future schema migrations have something to check.
 
+import { sameSeries } from './stats.js'; // stats.js imports nothing: no cycle
+
 const KEYS = {
   gyms: 'gymii.gyms',
   settings: 'gymii.settings',
@@ -356,6 +358,14 @@ export const COMMON_SETTINGS = [
   'Foot plate',
 ];
 
+// Grips a machine can offer (machine.grips, chips in the gym editor). A
+// grip is part of what was lifted — a rope and a V-bar on one cable tower
+// carry different loads — so prefill and charts run per grip.
+export const COMMON_GRIPS = [
+  'Rope', 'V-bar', 'Straight bar', 'EZ bar', 'Single handle',
+  'Wide grip', 'Close grip', 'Neutral grip', 'Underhand',
+];
+
 // --- layout template ---
 
 export function getLayout() {
@@ -576,12 +586,24 @@ export function updateWorkout(patch) {
 // Most recent entry with at least one set for this machine — and, at
 // multi-exercise machines, for this exercise (null matches entries logged
 // without one). Returns null if nothing matches.
-export function lastEntryFor(machineId, exercise = null) {
+export function lastEntryFor(machineId, exercise = null, grip = null) {
+  const sel = { machineId, exercise, grip };
   const workouts = getWorkouts();
   for (let i = workouts.length - 1; i >= 0; i--) {
-    const entry = workouts[i].entries.find(
-      (e) => e.machineId === machineId && (e.exercise ?? null) === exercise);
+    const entry = workouts[i].entries.find((e) => sameSeries(e, sel));
     if (entry && entry.sets.length) return entry;
+  }
+  return null;
+}
+
+// The grip last trained at (machine, exercise), whatever it was — the log
+// screen's default when no plan slot names one. null when none was.
+export function lastGripFor(machineId, exercise = null) {
+  const workouts = getWorkouts();
+  for (let i = workouts.length - 1; i >= 0; i--) {
+    const entry = workouts[i].entries.find((e) => e.machineId === machineId
+      && (e.exercise ?? null) === (exercise ?? null) && e.sets.length);
+    if (entry) return entry.grip ?? null;
   }
   return null;
 }
@@ -593,7 +615,7 @@ export function lastEntryFor(machineId, exercise = null) {
 // true (strength carries neither). `settings` starts empty: what belongs in
 // it depends on the caller (the log screen prefills from the last workout,
 // the demo data from its own snapshots).
-export function newEntry(machine, exercise = null, sets = []) {
+export function newEntry(machine, exercise = null, sets = [], grip = null) {
   return {
     machineId: machine.id,
     num: machine.num,
@@ -601,6 +623,7 @@ export function newEntry(machine, exercise = null, sets = []) {
     ...(machine.cardio ? { cardio: true } : {}),
     ...(machine.bodyweight ? { bodyweight: true } : {}),
     ...(exercise ? { exercise } : {}),
+    ...(grip ? { grip } : {}),
     settings: {},
     sets,
   };
@@ -1198,6 +1221,14 @@ const SET_NUMBERS = ['reps', 'weight', 'distance', 'seconds'];
 // an old export survives — or is dropped; every consumer guards absence.
 // Only numbers and numeric strings count: Number('') or Number(true) would
 // invent a 0 or a 1.
+// A text field that is not a string is repaired away, not refused — a
+// grip is a label, and the record around it is still worth keeping.
+function stringOrDrop(o, key) {
+  if (o[key] == null || typeof o[key] === 'string') return o;
+  const { [key]: _, ...rest } = o;
+  return rest;
+}
+
 function numFields(o, keys) {
   const out = { ...o };
   keys.forEach((k) => {
@@ -1213,7 +1244,9 @@ function numFields(o, keys) {
 const isValidMachine = (m) => !!m && isSafeId(m.id) && Number.isFinite(m.num)
   && isPlaced(m) && finiteOrAbsent(m, ['restSeconds']) && isColor(m.color)
   && (m.exercises === undefined
-    || (Array.isArray(m.exercises) && m.exercises.every((x) => typeof x === 'string')));
+    || (Array.isArray(m.exercises) && m.exercises.every((x) => typeof x === 'string')))
+  && (m.grips === undefined
+    || (Array.isArray(m.grips) && m.grips.every((x) => typeof x === 'string')));
 const isValidShape = (s) => !!s && isSafeId(s.id) && isPlaced(s) && isColor(s.color);
 const hasValidFrame = (layout) => !!layout.grid
   && Number.isFinite(layout.grid.w) && Number.isFinite(layout.grid.h)
@@ -1254,7 +1287,7 @@ export function cleanWorkout(w) {
   if (!w || !isSafeId(w.id) || !Array.isArray(w.entries)) return null;
   const entries = w.entries.map((e) => (e && (e.machineId == null || isSafeId(e.machineId))
     && Array.isArray(e.sets)
-    ? { ...numFields(e, ['num']), sets: e.sets.map((st) => numFields(st, SET_NUMBERS)) }
+    ? { ...stringOrDrop(numFields(e, ['num']), 'grip'), sets: e.sets.map((st) => numFields(st, SET_NUMBERS)) }
     : null));
   return entries.includes(null) ? null : { ...w, entries };
 }
@@ -1266,7 +1299,7 @@ export function cleanPlan(p) {
   return {
     ...p,
     items: p.items.map((it) => ({
-      ...numFields(it, ['num']),
+      ...stringOrDrop(numFields(it, ['num']), 'grip'),
       ...(it.target ? { target: numFields(it.target, ['sets', ...SET_NUMBERS]) } : {}),
     })),
   };

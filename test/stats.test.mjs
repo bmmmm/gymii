@@ -514,4 +514,52 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   }
 }
 
+// --- grips: one series per (machine, exercise, grip) ---
+{
+  const rope = { exercise: 'Pushdown', grip: 'Rope' };
+  const vbar = { exercise: 'Pushdown', grip: 'V-bar' };
+  const ws = [
+    W(day(9), [E('m2', [S(12, 20)], rope), E('m2', [S(10, 30)], vbar)]),
+    W(day(5), [E('m2', [S(12, 22.5)], rope)]),
+    W(day(1), [E('m2', [S(10, 32.5)], vbar), E('m2', [S(8, 40)], { exercise: 'Pushdown' })]),
+  ];
+  assert.deepEqual(stats.machineSeries(ws, 'm2', 'Pushdown', 'Rope').map((p) => p.top.weight), [20, 22.5],
+    'the rope series holds only rope sets');
+  assert.deepEqual(stats.machineSeries(ws, 'm2', 'Pushdown', 'V-bar').map((p) => p.top.weight), [30, 32.5],
+    'the V-bar series only V-bar sets');
+  assert.deepEqual(stats.machineSeries(ws, 'm2', 'Pushdown').map((p) => p.top.weight), [40],
+    'a gripless series is the entries without a grip — old data reads as it did');
+  assert.equal(stats.seriesKey({ machineId: 'm2', exercise: 'Pushdown', grip: 'Rope' }), '["m2","Pushdown","Rope"]');
+  assert.equal(stats.seriesKey({ machineId: 'm2' }), '["m2",null,null]', 'absent parts are null');
+  const sel = { machineId: 'm2', exercise: 'Pushdown', grip: 'Rope' };
+  assert.ok(stats.sameSeries({ machineId: 'm2', exercise: 'Pushdown', grip: 'Rope' }, sel));
+  assert.ok(!stats.sameSeries({ machineId: 'm3', exercise: 'Pushdown', grip: 'Rope' }, sel), 'machine differs');
+  assert.ok(!stats.sameSeries({ machineId: 'm2', exercise: 'Kickback', grip: 'Rope' }, sel), 'exercise differs');
+  assert.ok(!stats.sameSeries({ machineId: 'm2', exercise: 'Pushdown', grip: 'V-bar' }, sel), 'grip differs');
+  assert.ok(!stats.sameSeries({ machineId: 'm2', exercise: 'Pushdown' }, sel), 'no grip is not Rope');
+  assert.ok(stats.sameSeries({ machineId: 'm2' }, { machineId: 'm2', exercise: null, grip: null }),
+    'absent and null are one');
+
+  // the progress hint is about ONE grip, and says which
+  const prog = [
+    W(day(9), [E('m2', [S(10, 55)], rope)]),
+    W(day(5), [E('m2', [S(10, 57.5), S(14, 57.5)], rope), E('m2', [S(14, 57.5)], vbar)]),
+    W(day(1), [E('m2', [S(10, 57.5), S(14, 57.5)], rope)]),
+  ];
+  const hits = stats.insights(prog, null, KG, { now: NOW }).filter((i) => i.kind === 'progress');
+  assert.deepEqual(hits.map((h) => h.grip), ['Rope'], 'one hint, on the rope series — the V-bar was beaten once');
+  const plan = [{ id: 'p', name: 'Arms', items: [
+    { machineId: 'm2', exercise: 'Pushdown', grip: 'V-bar', target: { sets: 3, reps: 15, weight: 57.5 } }] }];
+  assert.equal(stats.insights(prog, null, KG, { now: NOW, plans: plan }).filter((i) => i.kind === 'progress').length, 1,
+    'a plan target for the V-bar does not raise the rope\'s bar');
+  const anyGrip = [{ id: 'p', name: 'Arms', items: [
+    { machineId: 'm2', exercise: 'Pushdown', target: { sets: 3, reps: 15, weight: 57.5 } }] }];
+  assert.equal(stats.insights(prog, null, KG, { now: NOW, plans: anyGrip }).filter((i) => i.kind === 'progress').length, 0,
+    'a gripless plan item targets every grip: 14 reps no longer beat 15');
+  const ropePlan = [{ id: 'p', name: 'Arms', items: [
+    { machineId: 'm2', exercise: 'Pushdown', grip: 'Rope', target: { sets: 3, reps: 15, weight: 57.5 } }] }];
+  assert.equal(stats.insights(prog, null, KG, { now: NOW, plans: ropePlan }).filter((i) => i.kind === 'progress').length, 0,
+    'a rope plan item sets the rope\'s target');
+}
+
 console.log('stats.test.mjs: all passed');
