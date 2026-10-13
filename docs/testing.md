@@ -80,7 +80,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
 - Browser smoke tests: `pnpm install` once, then `pnpm exec playwright
   install chromium` once (~170 MB, deliberately NOT an install script —
   Playwright is kept off `onlyBuiltDependencies`), then `pnpm run smoke`.
-  Nine scenarios in `smoke/*.spec.mjs`: the app boots at all (js/app.js is
+  The scenarios in `smoke/*.spec.mjs`: the app boots at all (js/app.js is
   loaded by no Node test and `static-checks` does not resolve imports), a
   logged set survives a reload, the rest keeps running inline after the
   overlay closes and across a reload, no route scrolls sideways at 320px,
@@ -100,7 +100,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   and the History tab (`history.spec.mjs`, demo gym): a machine chip names
   the chart, a bar tap opens that week, the Workouts screen and the
   workout editor pass the same 44px / 16px / no-overflow measures, and the
-  path card draws a route.
+  path card draws a route; and the Gym's folded parts (`gym.spec.mjs`,
+  320px): the machine list editor and the machine card's brand fold-out
+  pass them too.
   A NEW browser spec goes in
   `smoke/` as `*.spec.mjs`, NEVER in `test/` — `testMatch` is pinned
   because Playwright's collector imports whatever it matches and would run

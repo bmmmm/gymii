@@ -451,12 +451,42 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   assert.ok(props.innerHTML.includes(`#${machineAt('m2').num} is already ${machineAt('m2').label}`),
     'and the card says whose it is');
 
+  const focused = [];
+  const select = props.querySelector('#ml-muscle-m1');
+  select.focus = () => focused.push('select');
   change('m1', 'muscle', 'Lats');
   assert.deepEqual(machineAt('m1').muscles, ['Chest', 'Lats'], 'the muscle dropdown adds one');
   assert.ok(props.innerHTML.includes('data-muscle="Lats"'), 'and the row re-renders with its chip');
+  assert.deepEqual(focused.splice(0), ['select'], 'the re-rendered row\'s select keeps the focus, not <body>');
+  // the chips the re-rendered row holds after a removal: Lats moves into Chest's place
+  const latsChip = { focus: (o) => focused.push(['Lats', o]) };
+  let rowChips = [latsChip];
+  props.querySelector('.mrow[data-id="m1"]').querySelectorAll = (sel) => (sel === '.chip[data-muscle]' ? rowChips : []);
   const chip = { dataset: { muscle: 'Chest' }, closest: (sel) => (sel === '.mrow' ? row('m1') : null) };
   last(list, 'click')({ target: { closest: (sel) => (sel.startsWith('.chip') ? chip : null) } });
   assert.deepEqual(machineAt('m1').muscles, ['Lats'], 'tapping a chip removes that muscle');
+  assert.deepEqual(focused.splice(0), [['Lats', { preventScroll: true }]], 'the focus moves to the chip that took its place');
+  rowChips = [];
+  const lats = { dataset: { muscle: 'Lats' }, closest: (sel) => (sel === '.mrow' ? row('m1') : null) };
+  last(list, 'click')({ target: { closest: (sel) => (sel.startsWith('.chip') ? lats : null) } });
+  assert.deepEqual(focused.splice(0), ['select'], 'no chip left in the row: the select takes it');
+  change('m1', 'muscle', 'Lats');
+  focused.length = 0;
+
+  // the model is a column of the list too — absent, never empty
+  assert.ok(props.innerHTML.includes('id="ml-model-m1" class="mrow-model" type="text" data-field="model"'),
+    'every row has a model field');
+  const modelEl = { closest: (sel) => (sel === '.mrow' ? row('m1') : null), dataset: { field: 'model' }, value: 'XR' };
+  last(list, 'input')({ target: modelEl });
+  change('m1', 'muscle', 'Traps'); // a re-render from another control, mid-word
+  assert.ok(props.innerHTML.includes('value="XR" placeholder="Model (optional)"'), 'a half-typed model survives a re-render');
+  change('m1', 'model', '  XR-5 ');
+  assert.equal(machineAt('m1').model, 'XR-5', 'the model is saved trimmed');
+  change('m1', 'model', '   ');
+  assert.equal('model' in machineAt('m1'), false, 'an emptied model is removed, never stored empty');
+  const traps = { dataset: { muscle: 'Traps' }, closest: (sel) => (sel === '.mrow' ? row('m1') : null) };
+  last(list, 'click')({ target: { closest: (sel) => (sel.startsWith('.chip') ? traps : null) } });
+  focused.length = 0;
 
   // "Other…" in the brand dropdown reveals the row's own text field — no
   // save and no re-render until the text is set
@@ -513,6 +543,27 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   assert.ok(html.includes('id="m-brand-search"') && html.includes('id="m-brands"'),
     'the link folds out the search field and the chips');
   assert.ok(!html.includes('data-value="Technogym"'), 'the gym\'s own brand is not among the alternatives');
+  // the search filters the chips IN PLACE (no re-render per keystroke) —
+  // the plain stub's querySelectorAll hands out none, so this one does
+  {
+    const chipEls = ['Cybex', 'Life Fitness', 'Panatta'].map((value) => ({ dataset: { value }, hidden: false }));
+    const qsa = props.querySelectorAll;
+    props.querySelectorAll = (sel) => (sel === '#m-brands .chip' ? chipEls : []);
+    const search = props.querySelector('#m-brand-search');
+    const setBtn = props.querySelector('#m-brand-set');
+    const typeIn = (v) => { search.value = v; last(search, 'input')(); };
+    typeIn('  fit');
+    assert.deepEqual(chipEls.map((c) => c.hidden), [true, false, true], 'only chips containing the text stay, any case');
+    assert.equal(setBtn.hidden, false, 'no chip IS the text: "Set" offers it');
+    assert.equal(setBtn.textContent, 'Set "fit"');
+    typeIn('CYBEX');
+    assert.deepEqual(chipEls.map((c) => c.hidden), [false, true, true]);
+    assert.equal(setBtn.hidden, true, 'an exact chip needs no Set button');
+    typeIn('');
+    assert.deepEqual(chipEls.map((c) => c.hidden), [false, false, false], 'an empty search shows them all');
+    assert.equal(setBtn.hidden, true, 'and offers nothing to set');
+    props.querySelectorAll = qsa;
+  }
   last(props.querySelector('#m-brands'), 'click')(chipTap('Cybex'));
   assert.equal(machineAt('m1').brand, 'Cybex', 'a chip sets the machine\'s own brand');
   html = props.innerHTML;

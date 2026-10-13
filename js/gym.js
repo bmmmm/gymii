@@ -607,6 +607,8 @@ export function renderGym(root) {
             placeholder="Other brand…" aria-label="Other brand" value="${esc(other || '')}">
           <button type="button" class="btn btn-inline mrow-other-set">Set</button>
         </div>
+        <input id="ml-model-${esc(m.id)}" class="mrow-model" type="text" data-field="model"
+          value="${esc(m.model || '')}" placeholder="Model (optional)" aria-label="Model">
         <div class="mrow-muscles">
           ${muscles.map((mu) => `<button type="button" class="chip sm sel" data-muscle="${esc(mu)}"
             aria-label="Remove ${esc(mu)}">${esc(mu)} ✕</button>`).join('')}
@@ -637,6 +639,7 @@ export function renderGym(root) {
       const m = rowMachine(e.target);
       if (!m) return;
       if (e.target.dataset.field === 'label') m.label = e.target.value;
+      if (e.target.dataset.field === 'model') m.model = e.target.value;
       if (e.target.dataset.field === 'other') otherText.set(m.id, e.target.value);
     });
     list.addEventListener('change', (e) => {
@@ -667,6 +670,15 @@ export function renderGym(root) {
           save();
           redraw();
           return;
+        case 'model': {
+          // absent, never empty — the card's rule (optionalText)
+          const t = v.trim();
+          if (t) m.model = t;
+          else delete m.model;
+          e.target.value = t;
+          save();
+          return;
+        }
         case 'type':
           // the two flags are mutually exclusive; absent = strength, and a
           // flag is deleted (never set false) to keep exports clean
@@ -697,8 +709,10 @@ export function renderGym(root) {
           m.muscles = [...(m.muscles || []), v];
           save();
           renderProps();
-          // the chip row above the select grew — keep the select under the thumb
-          keepInView(props, `#ml-muscle-${cssId(m.id)}`);
+          // the chip row above the select grew — keep the select under the
+          // thumb, and the focus on it: the row was re-rendered, and a
+          // keyboard or screen-reader user would land on <body>
+          keepInView(props, `#ml-muscle-${cssId(m.id)}`, { focus: true });
           return;
         default:
       }
@@ -721,10 +735,16 @@ export function renderGym(root) {
       if (chip) {
         const m = rowMachine(chip);
         if (!m) return;
+        const at = (m.muscles || []).indexOf(chip.dataset.muscle);
         m.muscles = (m.muscles || []).filter((x) => x !== chip.dataset.muscle);
         save();
         renderProps();
-        keepInView(props, `#ml-muscle-${cssId(m.id)}`);
+        // focus goes to the chip that moved into its place, else the select
+        // of the same row — never back to <body>
+        const next = props.querySelector(`.mrow[data-id="${cssId(m.id)}"]`)
+          ?.querySelectorAll('.chip[data-muscle]')[at];
+        keepInView(props, `#ml-muscle-${cssId(m.id)}`, { focus: !next });
+        next?.focus?.({ preventScroll: true });
         return;
       }
       if (e.target.closest('.mrow-other-set')) setOther(e.target);

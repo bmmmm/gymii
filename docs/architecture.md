@@ -472,13 +472,17 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   the pick list; "Other…" reveals the row's own text field without a
   re-render, so the select keeps showing it, and the text typed there is
   staged in `otherText` (id → text) so a re-render from another row renders
-  it back into ITS row, still open), assigned muscles as removable chips
+  it back into ITS row, still open), a `model` field (staged on `input`,
+  saved trimmed on `change`, absent when empty — the card's rule),
+  assigned muscles as removable chips
   plus an add-`<select>` whose `<optgroup>`s are the regions (a region with
   nothing left to pick is no header). Four delegated listeners on
   `#machine-list` (input/change/click/keydown) instead of one per control,
   because a muscle change re-renders the whole list — followed by
   `keepInView` on that row's muscle select, which the grown chip row above
-  would otherwise push down; the label is staged on `input` like the
+  would otherwise push down, and by a FOCUS that would otherwise drop to
+  `<body>`: after an add the select keeps it, after a removal the chip that
+  moved into its place (else the select); the label is staged on `input` like the
   card's. Same flag/brand invariants as the card (flags deleted, never
   false), same `save()` — undo covers it. The
   Location card holds `meta.postcode` and an `#gym-osm` search link built by
