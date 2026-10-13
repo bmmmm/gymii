@@ -261,7 +261,9 @@ select, textarea { font-size: max(16px, 1em); }
 
 input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 
-.field input[type="text"] { flex: 1; max-width: 62%; }
+/* direct children only: a text input INSIDE a stepper (Settings' #weight-step)
+   is sized by .stepper input, not by this label-row rule */
+.field > input[type="text"] { flex: 1; max-width: 62%; }
 .field > span { flex-shrink: 0; }
 
 .row > .field { flex-direction: column; align-items: stretch; gap: 6px; margin: 0; }
