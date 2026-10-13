@@ -842,4 +842,26 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   assert.equal(machineAt('pulled')?.label, 'Synced in', 'and still keeps the one that synced in');
 }
 
+// --- an EDIT after another writer: save() takes the stored layout in first ---
+// save() used to write the editor's render-time copy whole, so the first
+// edit after a sync pull tombstoned the machine that pull brought in.
+{
+  const { root, props } = gymWithProps([mk('s1', 1, 10, 10), mk('s2', 2, 30, 10)]);
+  fire(root.floor, 'pointerdown', { ...at(12, 11), target: onItem('s1') });
+  fire(root.floor, 'pointerup');
+  store.addMachineVariant('s1', { grips: ['Rope'] }); // Train, on the machine being edited
+  const pulled = store.getLayout();
+  pulled.machines.push({ ...mk('pulled2', 3, 40, 10), label: 'Synced in' });
+  pulled.machines.find((m) => m.id === 's1').bodyweight = false; // the same key, set elsewhere
+  store.restoreLayout(pulled);
+  last(props.querySelector('#m-bodyweight'), 'click')(); // the edit
+  assert.equal(machineAt('pulled2')?.label, 'Synced in', 'the machine a pull brought in survives the edit');
+  assert.equal(store.getTombstones().machines.some((t) => t.id === 'pulled2'), false, 'and is not tombstoned');
+  assert.deepEqual([machineAt('s1').bodyweight, machineAt('s1').grips], [true, ['Rope']],
+    'the edited machine keeps the grip taught to it since; on the key both set, the edit wins');
+  root.querySelector('#undo').listeners.click[0]();
+  assert.deepEqual(['bodyweight' in machineAt('s1'), machineAt('s1').grips, machineAt('pulled2')?.label],
+    [false, ['Rope'], 'Synced in'], 'undo takes back the edit alone');
+}
+
 console.log('gym editor: all assertions passed');

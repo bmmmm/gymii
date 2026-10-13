@@ -113,6 +113,23 @@ function applySide(target, changes, side) {
   });
 }
 
+// Another writer's changes minus what `mine` changed: a part only it
+// touched comes whole; a part both touched keeps only its other keys (a
+// part one side deleted or added whole is this edit's call).
+function foreignOnly(theirs, mine) {
+  const key = (c) => (c.field ? `f:${c.field}` : `${c.coll}:${c.id}`);
+  const own = new Map(mine.map((c) => [key(c), c]));
+  return theirs.flatMap((c) => {
+    const m = own.get(key(c));
+    if (!m) return [c];
+    if (![c.before, c.after, m.before, m.after].every(isRecord)) return [];
+    const mineKeys = new Set(Object.keys({ ...m.before, ...m.after })
+      .filter((k) => !same(m.before[k], m.after[k])));
+    const pick = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !mineKeys.has(k)));
+    return [{ ...c, before: pick(c.before), after: pick(c.after) }];
+  });
+}
+
 export function focusMachine(id) {
   pendingFocus = id;
 }
@@ -257,6 +274,15 @@ export function renderGym(root) {
     staged.forEach(({ m, field, text }) => MACHINE_TEXT[field](m, text.trim()));
     const changes = layoutDiff(lastSaved, layout);
     if (!changes.length) return; // no write, and no undo step that does nothing
+    // `layout` is this editor's render-time copy: what another writer
+    // stored since (an ambient sync pull, Train teaching a grip) is taken
+    // in first, or saveLayout would tombstone its machines and revert its
+    // keys. This edit's own keys win; the undo entry stays this edit alone.
+    const stored = getLayout();
+    if (stored && !same(stored, lastSaved)) {
+      applySide(layout, foreignOnly(layoutDiff(lastSaved, stored), changes), 'after');
+      redraw();
+    }
     saveLayout(layout);
     lastSaved = clone(layout);
     history.length = hIndex; // editing kills the redo branch
