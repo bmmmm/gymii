@@ -428,22 +428,33 @@ export function applyTheme(settings) {
 // of its nearest [id] ancestor plus its data-* attributes, and the control
 // that took its place gets the focus back — without scrolling: where the
 // screen sits is keepInView's business.
+// A control that VANISHES in its own click ("+N more", "All muscles") has no
+// successor by data-*: the stand-in is then the control at its old position
+// among its row's focusable controls (clamped to the last) — after "+N more"
+// that is the first chip it revealed, after "All muscles" the list's first row.
 // A value made safe inside a double-quoted CSS attribute selector — quotes,
 // backslashes AND newlines (a raw newline ends the string and querySelector
 // throws). CSS.escape where the browser has it; Node's tests have no CSS.
 export const cssStr = (v) => (typeof CSS !== 'undefined' && CSS.escape
   ? CSS.escape(String(v)) : String(v).replace(/["\\]/g, '\\$&').replace(/\n/g, '\\a '));
 
+const CONTROLS = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])';
+
 export function keepFocus(root, render) {
   if (typeof document === 'undefined') return render();
   const el = document.activeElement;
   const box = el && root?.contains?.(el) ? el.parentElement?.closest?.('[id]') : null;
   const data = box ? Object.entries(el.dataset ?? {}) : [];
+  const at = data.length ? [...(box.querySelectorAll?.(CONTROLS) ?? [])].indexOf(el) : -1;
   render();
   if (!box?.id || !data.length) return;
   const attr = (k) => k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
-  const next = root.querySelector?.(`#${box.id} ${data
+  let next = root.querySelector?.(`#${box.id} ${data
     .map(([k, v]) => `[data-${attr(k)}="${cssStr(v)}"]`).join('')}`);
+  if (!next && at >= 0) {
+    const row = [...(root.querySelector?.(`#${box.id}`)?.querySelectorAll?.(CONTROLS) ?? [])];
+    next = row[Math.min(at, row.length - 1)];
+  }
   if (next && next !== el) next.focus?.({ preventScroll: true });
 }
 

@@ -878,4 +878,168 @@ mem.set(layoutKey, savedLayout);
   store.saveWorkouts([]);
 }
 
+// --- keepFocus: every control that redraws its own container hands the focus on ---
+// ui.test.mjs pins the helper; this pins the seven CALL SITES (name chips,
+// muscle rows, week tiles, machine chips, assist chips, range chips, path
+// chips) — a site that loses its keepFocus() drops a keyboard user to <body>.
+// The stub DOM has no focus: `document.activeElement` is a made-up control
+// whose nearest [id] ancestor is the container, and the stub root answers the
+// successor lookup (`#box [data-…]`) and records the focus() call. What it
+// cannot prove — that a real browser keeps the caret on the new node — is the
+// browser check in docs/testing.md's list, not this file's.
+{
+  const { cssStr } = await import(new URL('../js/ui.js', import.meta.url).href);
+  const g = store.newLayout('Keep focus gym');
+  g.machines.push(
+    { id: 'ax', num: 17, label: 'Assisted pull-up', x: 0, y: 0, w: 4, h: 3, settingsFields: [], assisted: true, muscles: ['Back'] },
+    { id: 'bx', num: 18, label: 'Chest press', x: 8, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Chest'] },
+  );
+  store.saveLayout(g);
+  store.saveSettings({ ...store.getSettings(), historyRange: 'all', historyAssistView: 'assist', historyMetric: 'sets' });
+  const t = Date.now();
+  const ax = (weight, reps) => ({ machineId: 'ax', num: 17, label: 'Assisted pull-up', assisted: true, settings: {}, sets: [{ reps, weight }] });
+  store.saveWorkouts([
+    { id: 'kf1', name: 'Chest day', startedAt: t - 3 * 864e5, finishedAt: t - 3 * 864e5 + 3600e3,
+      entries: [entry('bx', 18, 'Chest press', [{ reps: 10, weight: 50 }])] },
+    { id: 'kf2', name: 'Pull day', startedAt: t - 864e5, finishedAt: t - 864e5 + 3600e3,
+      entries: [ax(30, 8), entry('bx', 18, 'Chest press', [{ reps: 10, weight: 55 }])],
+      visits: [{ machineId: 'ax', in: t - 864e5, out: t - 864e5 + 900e3 },
+        { machineId: 'bx', in: t - 864e5 + 960e3, out: t - 864e5 + 1800e3 }] },
+  ]);
+  enter();
+  tapMachine(K('ax'));
+  const attrOf = (k) => k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+  const allHtml = () => root.innerHTML + [...byId.values()].map((el) => el.innerHTML).join('');
+
+  // Taps the control `dataset` inside #boxId (fire = the click), with the
+  // focus on it; the lookup answers `exact` (a successor) or null (it is gone).
+  const tapFocused = (boxId, dataset, fire, { gone = null } = {}) => {
+    const asked = [];
+    const focused = [];
+    const active = { dataset, parentElement: { closest: (sel) => (sel === '[id]' ? { id: boxId } : null) } };
+    const successor = { focus: (o) => focused.push(o) };
+    const lookup = root.querySelector;
+    root.contains = (el) => el === active;
+    root.querySelector = function (sel) {
+      if (/^#[\w-]+ \[data-/.test(sel)) { asked.push(sel); return gone ? null : successor; }
+      if (gone && asked.length && sel === `#${boxId}`) return gone.box(); // only keepFocus's own re-lookup
+      return lookup.call(this, sel);
+    };
+    if (gone) active.parentElement.closest = () => ({ id: boxId,
+      querySelectorAll: () => gone.before.map((_, i) => (i === gone.at ? active : {})) });
+    globalThis.document = { activeElement: active };
+    try { fire(); } finally {
+      delete globalThis.document;
+      root.querySelector = lookup;
+      delete root.contains;
+    }
+    return { asked, focused };
+  };
+  const expectKept = (boxId, dataset, fire, what) => {
+    const { asked, focused } = tapFocused(boxId, dataset, fire);
+    assert.deepEqual(asked, [`#${boxId} ${Object.entries(dataset)
+      .map(([k, v]) => `[data-${attrOf(k)}="${cssStr(v)}"]`).join('')}`],
+    `${what}: the successor is looked up in its own container by its data-* attributes`);
+    assert.deepEqual(focused, [{ preventScroll: true }], `${what}: and gets the focus, without a scroll`);
+    // the lookup must be satisfiable by the markup the render really wrote
+    assert.ok(allHtml().includes(`id="${boxId}"`), `${what}: the container carries id="${boxId}"`);
+    Object.entries(dataset).forEach(([k, v]) => assert.ok(
+      allHtml().replaceAll('&quot;', '"').includes(`data-${attrOf(k)}="${v}"`),
+      `${what}: the redraw wrote a control with data-${attrOf(k)}="${v}"`));
+  };
+
+  // 1. workout-name chips (renderHistory)
+  expectKept('name-filter', { name: 'Pull day' },
+    () => root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: 'Pull day' })),
+    'name chip');
+  assert.equal(root.querySelector('#name-filter') && /class="chip sel"\s+data-name="Pull day"/.test(root.innerHTML), true,
+    'name chip: the tap really filtered (the focus assertion is not on a no-op)');
+  root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: '' }));
+
+  // 2. muscle rows (renderHistory)
+  expectKept('muscle-list', { muscle: 'Back' },
+    () => root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Back' })),
+    'muscle row');
+  assert.ok(root.innerHTML.includes('All muscles'), 'muscle row: the tap really filtered');
+
+  // 3. week tiles (drawWeek)
+  expectKept('week-tiles', { metric: 'volume' },
+    () => root.querySelector('#week-tiles').listeners.click(clickOn('.tile', { metric: 'volume' })),
+    'week tile');
+  assert.equal(store.getSettings().historyMetric, 'volume', 'week tile: the tap really switched the metric');
+
+  // 4. machine chips (drawProgress)
+  expectKept('machine-chips', { key: K('bx') },
+    () => tapMachine(K('bx')), 'machine chip');
+  assert.equal(selKey(machineChips().innerHTML), K('bx'), 'machine chip: the tap really picked it');
+  tapMachine(K('ax'));
+
+  // 5. assist chips (drawProgress)
+  expectKept('assist-chips', { view: 'reps' },
+    () => root.querySelector('#assist-chips').listeners.click(clickOn('.chip', { view: 'reps' })),
+    'assist chip');
+  assert.equal(store.getSettings().historyAssistView, 'reps', 'assist chip: the tap really switched the view');
+
+  // 6. range chips (drawProgress)
+  expectKept('range-chips', { range: '4w' },
+    () => root.querySelector('#range-chips').listeners.click(clickOn('.chip', { range: '4w' })),
+    'range chip');
+  assert.equal(store.getSettings().historyRange, '4w', 'range chip: the tap really switched the range');
+
+  // 7. walking-path chips (drawPath)
+  expectKept('path-chips', { wid: 'kf2' },
+    () => root.querySelector('#path-chips').listeners.click(clickOn('.chip', { wid: 'kf2' })),
+    'path chip');
+  assert.ok(/class="chip sel"\s+data-wid="kf2"/.test(allHtml()), 'path chip: the tap really picked the route');
+
+  // A control that vanishes in its own tap: the focus lands on the control at
+  // its old position. Both are driven with the lookup answering "gone", the
+  // way a real browser answers once the node is no longer in the markup.
+  const buttonsOf = (html) => html.match(/<button\b[\s\S]*?<\/button>/g) ?? [];
+  const textOf = (b) => b.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const stand = (boxId, dataset, before, at, fire, afterHtml) => {
+    let landed = null;
+    const after = [];
+    const { focused } = tapFocused(boxId, dataset, fire, {
+      gone: { before, at, box: () => ({ querySelectorAll: () => { after.length = 0;
+        buttonsOf(afterHtml()).forEach((b, i) => after.push({ focus: () => { landed = textOf(b); } })); return after; } }) },
+    });
+    return { at: landed, focused };
+  };
+
+  // "+N more" (machine chips): ten machines, two behind it
+  store.saveLayout((() => {
+    const l = store.newLayout('Keep focus ten');
+    for (let i = 0; i < 10; i++) l.machines.push({ id: `x${i}`, num: 20 + i, label: `Machine ${i}`, x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
+    return l;
+  })());
+  store.saveWorkouts(Array.from({ length: 10 }, (_, i) => ({
+    id: `kx${i}`, startedAt: Date.UTC(2026, 6, 1 + i, 10), finishedAt: Date.UTC(2026, 6, 1 + i, 11),
+    entries: [entry(`x${i}`, 20 + i, `Machine ${i}`, [{ reps: 10, weight: 20 + i }])],
+  })));
+  enter();
+  const before = buttonsOf(machineChips().innerHTML);
+  assert.equal(textOf(before.at(-1)), '+2 more', '"+N more": it is the last control of its row');
+  const more = stand('machine-chips', { more: '1' }, before, before.length - 1,
+    () => machineChips().listeners.click(clickOn('.chip', { more: '1' })),
+    () => byId.get('#machine-chips').innerHTML); // not via root.querySelector: the probe answers that
+  assert.ok(!machineChips().innerHTML.includes('data-more'), '"+N more": the tap removed the control itself');
+  assert.equal(more.at, '#21 Machine 1', '"+N more": the focus lands on the first chip it revealed');
+
+  // "All muscles": first row of the list, goes away with the filter
+  store.saveLayout(g);
+  store.saveWorkouts([
+    { id: 'kf1', startedAt: Date.now() - 864e5, finishedAt: Date.now() - 864e5 + 3600e3,
+      entries: [entry('bx', 18, 'Chest press', [{ reps: 10, weight: 50 }])] }]);
+  enter();
+  root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Chest' }));
+  const muscleHtml = () => { const h = root.innerHTML; const i = h.indexOf('id="muscle-list"'); return h.slice(i, h.indexOf('</section>', i)); };
+  assert.equal(textOf(buttonsOf(muscleHtml())[0]), 'All muscles', '"All muscles": the first control of its list');
+  const all = stand('muscle-list', { muscle: '' }, buttonsOf(muscleHtml()), 0,
+    () => root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: '' })), muscleHtml);
+  assert.ok(!muscleHtml().includes('All muscles'), '"All muscles": the tap removed the control itself');
+  assert.ok(all.at?.startsWith('Chest'), '"All muscles": the focus lands on the list\'s first row');
+  store.saveWorkouts([]);
+}
+
 console.log('history: all assertions passed');
