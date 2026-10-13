@@ -131,11 +131,24 @@ store.saveWorkouts([{
     { machineId: 'gone', in: t0 + 1500400, out: t0 + 1600000, busy: 'tm' },
   ],
 }]);
-assert.deepEqual(JSON.parse(buildAiExport()).workouts[0].visits, [[4, 0, 600], [9, 600, 1500, 4]],
-  'nums from the entry snapshot, else the layout; seconds since the start; busy as a num; a deleted machine drops out');
+assert.deepEqual(JSON.parse(buildAiExport()).workouts[0].visits, [[1, 0, 600], [9, 600, 1500, 1]],
+  'nums are the layout\'s current ones; seconds since the start; busy as a num; a machine neither knows drops out');
 assert.match(JSON.parse(buildAiExport()).note, /visits are \[num, seconds in, seconds out, busy num\?\]/,
   'the note explains the shape');
 assert.match(DEFAULT_PROMPT, /"visits"[^.]*\[num, seconds in, seconds out\]/, 'the prompt teaches visits too');
+
+// --- compact: valid JSON, tuples and small objects on one line, far fewer lines ---
+{
+  const sets = Array.from({ length: 5 }, (_, i) => ({ reps: 10 + i, weight: 40, at: t0 + 60000 * (i + 1), rir: 2 }));
+  store.saveWorkouts(Array.from({ length: 6 }, (_, i) => ({ id: `c${i}`, startedAt: t0 + i * 86400000, finishedAt: t0 + i * 86400000 + 1000,
+    entries: [{ machineId: 'm1', num: 1, label: 'Chest press', settings: { Seat: '3' }, sets }] })));
+  const raw = buildAiExport();
+  assert.deepEqual(JSON.parse(raw), JSON.parse(JSON.stringify(JSON.parse(raw))), 'still valid JSON');
+  assert.ok(raw.split('\n').length < 80, `compact output stays short (${raw.split('\n').length} lines)`);
+  assert.ok(raw.includes('"sets":[[40,10,60,2],[40,11,120,2]'), 'a set list sits on one line');
+  assert.equal(JSON.parse(raw).workouts.length, 6);
+  store.saveWorkouts([]);
+}
 
 // --- assisted machines: the flag and the goal travel, the prompt says what weight means there ---
 {
@@ -160,6 +173,32 @@ assert.match(DEFAULT_PROMPT, /"visits"[^.]*\[num, seconds in, seconds out\]/, 't
   assert.match(ex.note, /assisted:true entries log the ASSISTANCE/, 'the note says what the weight is');
   assert.match(DEFAULT_PROMPT, /assisted:true[^;]*ASSISTANCE — less is stronger/, 'and so does the prompt');
   store.saveWorkouts([]);
+  store.saveLayout(keepLayout);
+}
+// --- one num space: a renumbered or renamed machine is named by the layout's CURRENT num/label ---
+{
+  const keepLayout = store.getLayout();
+  const g = store.getLayout();
+  g.machines.find((m) => m.id === 'm1').num = 5; // renumbered since the workout (it was 4)
+  g.machines.find((m) => m.id === 'm1').label = 'Bench press'; // and renamed
+  store.saveLayout(g);
+  store.saveWorkouts([{ id: 'rn', startedAt: t0, finishedAt: t0 + 3600000,
+    entries: [
+      { machineId: 'm1', num: 4, label: 'Chest press', settings: {}, sets: [{ reps: 10, weight: 40 }] },
+      { machineId: 'dead', num: 7, label: 'Old fly', settings: {}, sets: [{ reps: 12, weight: 20 }] },
+    ],
+    visits: [
+      { machineId: 'm1', in: t0, out: t0 + 60000 },
+      { machineId: 'dead', in: t0 + 60000, out: t0 + 120000, busy: 'm1' },
+      { machineId: 'dead2', in: t0 + 120000, out: t0 + 180000 },
+    ] }]);
+  const w = JSON.parse(buildAiExport()).workouts[0];
+  assert.deepEqual(w.entries.map((e) => [e.num, e.machine]), [[5, 'Bench press'], [7, 'Old fly']],
+    'an entry of an existing machine takes its current num and label; a deleted machine keeps its snapshot');
+  assert.deepEqual(w.visits, [[5, 0, 60], [7, 60, 120, 5]],
+    'visits and their busy marks use the current num too; a deleted machine falls back to the entry snapshot');
+  assert.equal(store.getWorkouts()[0].entries[0].num, 4, 'stored data is untouched — only the export is');
+  assert.match(JSON.parse(buildAiExport()).note, /current num/, 'the note says which num space it is');
   store.saveLayout(keepLayout);
 }
 // a busy mark naming a machine nobody knows keeps the visit, minus the mark
