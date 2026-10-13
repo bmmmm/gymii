@@ -175,10 +175,10 @@ function seriesEntries(workouts, machineId, exercise = null, grip = null) {
 }
 
 // --- walking distance on the floor (wall-aware, user decision 2026-10-13) ---
-// A* over the grid's whole-unit points, 8 neighbours. Blocked: a point
-// outside the floor outline (a layout without one is open floor), strictly
-// inside a solid item (machines and free-standing fixtures) other than the
-// two machines the walk starts and ends AT, on the seam where two solid
+// A Dijkstra flood over the grid's whole-unit points, 8 neighbours. Blocked:
+// a point outside the floor outline (a layout without one is open floor),
+// strictly inside a solid item (machines and free-standing fixtures) other
+// than the machine the walk starts AT, on the seam where two solid
 // items touch (flush machines are a barrier, not a corridor), and on an
 // interior wall — except where a door or entrance stands in it (map.js
 // draws the gap; snapDoorToWall puts the door's width along the wall). A
@@ -186,8 +186,10 @@ function seriesEntries(workouts, machineId, exercise = null, grip = null) {
 // same way. Returns the length in grid units, or null when no way exists.
 // The floor is rasterised ONCE per geometry onto a half-unit grid (points
 // and step midpoints alike), so a walk costs lookups, not item scans.
-// Only the recommender reads it: the walking-path card keeps its straight
-// legs (user decision).
+// The recommender and "Busy?" read it; the walking-path card keeps its
+// straight legs (user decision). A grid the editor could never make
+// (`walkableGrid`: not 1…400 units a side — only a file can carry one) has
+// no floor to walk: every walk is null and "Busy?" falls back to centres.
 const WALL_FIXTURES = new Set(['entrance', 'door', 'window']);
 const inPolygon = (x, y, poly) => {
   let c = false;
@@ -238,6 +240,8 @@ function wallSegments(layout) {
 // The floor rasterised at half units: for every point (2x, 2y) the solids
 // it lies strictly inside and on whose boundary it lies — at most two of
 // each kept, which is all the blocking test needs.
+export const walkableGrid = (layout) => [layout?.grid?.w, layout?.grid?.h]
+  .every((v) => finite(v) && v >= 1 && v <= 400);
 function walkFloor(layout) {
   const W = Math.round(layout.grid?.w ?? 0);
   const H = Math.round(layout.grid?.h ?? 0);
@@ -309,9 +313,10 @@ function floorOf(layout) {
 // free point on or next to its box — where you stand to use it — plus the
 // straight step from there to its centre. Stops as soon as every target is
 // answered; an unreachable one leaves its null. → Map(id → length | null).
-export function walksFrom(layout, from, targets) {
+export function walksFrom(layout, from, rawTargets) {
+  const targets = [...new Map(rawTargets.map((t) => [t.id, t])).values()]; // one flood answers each id once
   const out = new Map(targets.map((t) => [t.id, null]));
-  if (!layout?.grid || !from || ![from.x, from.y, from.w, from.h].every(finite)) return out;
+  if (!walkableGrid(layout) || !from || ![from.x, from.y, from.w, from.h].every(finite)) return out;
   const { W, H, CW, solids, walls, inA, inB, edgeA, edgeB, edgeC, offFloor, anyBlock, nearWall } = floorOf(layout);
   const own = solids.findIndex((it) => it.id === from.id);
   const other = (v) => v !== -1 && v !== own;
@@ -324,6 +329,26 @@ export function walksFrom(layout, from, targets) {
       || (other(edgeA[c]) + other(edgeB[c]) + other(edgeC[c])) >= 2;
   };
   const key = (x, y) => y * (W + 1) + x;
+  // A ring point counts only if the straight step from it to the target's
+  // centre is clear — no wall crossed, nothing off the floor or inside
+  // another solid on the way (read off the raster every half unit): a
+  // machine flush against a wall or behind a mirror is not "reached" from
+  // the other side.
+  const clearStep = (px, py, t, cx, cy) => {
+    if (walls.some(([a, b]) => crosses({ x: px, y: py }, { x: cx, y: cy }, a, b))) return false;
+    const tk = solids.findIndex((it) => it.id === t.id);
+    const steps = Math.max(1, Math.ceil(Math.hypot(cx - px, cy - py) * 2));
+    for (let s = 1; s < steps; s++) {
+      const i = Math.round(2 * (px + ((cx - px) * s) / steps));
+      const j = Math.round(2 * (py + ((cy - py) * s) / steps));
+      if (i < 0 || j < 0 || i > 2 * W || j > 2 * H) continue;
+      const c = j * CW + i;
+      if (!anyBlock[c]) continue;
+      if (offFloor[c] === 1) return false;
+      if ([inA[c], inB[c]].some((v) => v !== -1 && v !== own && v !== tk)) return false;
+    }
+    return true;
+  };
   // every target's ring: the points on or one step outside its box
   const goals = new Map();
   let open = 0;
@@ -336,7 +361,7 @@ export function walksFrom(layout, from, targets) {
       for (let x = Math.max(0, Math.floor(t.x) - 1); x <= Math.min(W, Math.ceil(t.x + t.w) + 1); x++) {
         const inside = x > t.x && x < t.x + t.w && y > t.y && y < t.y + t.h;
         const near = x >= t.x - 1 && x <= t.x + t.w + 1 && y >= t.y - 1 && y <= t.y + t.h + 1;
-        if (inside || !near) continue;
+        if (inside || !near || !clearStep(x, y, t, cx, cy)) continue;
         const k = key(x, y);
         if (!goals.has(k)) goals.set(k, []);
         goals.get(k).push([t.id, Math.hypot(cx - x, cy - y)]);
@@ -438,7 +463,6 @@ export function walksCached(layout, from, targets) {
   }
   return new Map(targets.map((t) => [t.id, walkMemo.walks.get(pairKey(from, t))]));
 }
-export const walkCached = (layout, from, to) => walksCached(layout, from, [to]).get(to.id);
 
 const musclesOf = (m) => [...(m?.muscles ?? []), ...(m?.secondaryMuscles ?? [])];
 export function closerStop({ layout, from, next, candidates = [], busyNow = new Set(), recentMuscles = musclesOf(from) }) {

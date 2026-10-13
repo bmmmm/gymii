@@ -259,7 +259,7 @@ renderTrain(root);
 assert.ok(!root.innerHTML.includes('quick-switch'), 'no quick-switch block when other-machine sets lack at');
 
 // --- nearby alternative (busy-machine escape hatch) ---
-// the closest OTHER machine with an open slot, by center distance; the
+// the closest OTHER machine with an open slot, by the walk (centres without a floor grid); the
 // current machine and the plan's next are excluded, done slots don't count
 gym.machines.push({ id: 'far', num: 4, label: 'Far press', x: 50, y: 30, w: 4, h: 3, settingsFields: [] });
 gym.machines.push({ id: 'near', num: 5, label: 'Near fly', x: 0, y: 6, w: 4, h: 3, settingsFields: [] });
@@ -2121,6 +2121,47 @@ const withPicker = (fn) => {
     'a machine "Busy?" skipped in this workout is not recommended');
   assert.ok(!at(slots('k1', 'k2', 'k3', 'k4'), { entries: [{ machineId: 'k4', num: 4, label: 'Row', settings: {},
     sets: [{ reps: 10, weight: 40 }] }] }).includes('Closer: #4'), 'nor one already done');
+  store.clearActive();
+  store.saveLayout(before);
+}
+
+// --- Busy? walks the floor too; the Closer line names the exercise; a bad grid never crashes ---
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Wall gym');
+  g.machines.push({ id: 'w1', num: 1, label: 'Chest press', x: 2, y: 2, w: 4, h: 3, settingsFields: [], muscles: ['Chest'] },
+    { id: 'w2', num: 2, label: 'Far rower', x: 50, y: 2, w: 4, h: 3, settingsFields: [], muscles: ['Lats'] },
+    { id: 'w3', num: 3, label: 'Behind the wall', x: 11, y: 2, w: 4, h: 3, settingsFields: [], muscles: ['Quads'] },
+    { id: 'w4', num: 4, label: 'Dumbbell rack', x: 2, y: 12, w: 4, h: 3, settingsFields: [], muscles: ['Biceps'],
+      exercises: ['Biceps curls'] });
+  g.shapes.push({ id: 'wall', kind: 'line', x: 8.5, y: 0, w: 0, h: 10 });
+  store.saveLayout(g);
+  store.saveWorkouts([]);
+  const active = { v: 2, id: 'w-wall', startedAt: Date.now(), currentMachineId: 'w1', currentExercise: null, entries: [],
+    plan: [{ machineId: 'w1', exercise: null }, { machineId: 'w2', exercise: null }, { machineId: 'w3', exercise: null },
+      { machineId: 'w4', exercise: 'Biceps curls' }] };
+  const alt = nearbyAlternative(active, store.getLayout(), store.getLayout().machines[0], 'w2');
+  assert.equal(alt.machine.id, 'w4', '"Busy?": the rack down the aisle, not the machine 5 units away behind a wall');
+  store.saveActive(active);
+  byId.clear();
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('Busy? #4'), 'the screen offers the rack');
+  // the wall gone: "Busy?" takes the near one, and "Closer:" names the rack's exercise
+  const open = store.getLayout();
+  open.shapes = [];
+  open.machines[2].muscles = ['Chest']; // and the recovery malus makes the rack the better stop
+  store.saveLayout(open);
+  byId.clear();
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('Busy? #3'), 'without the wall the near machine is "Busy?"');
+  assert.ok(root.innerHTML.includes('Closer: #4 Dumbbell rack · Biceps curls'), 'the line names the exercise too');
+  // a negative grid (only a file can carry one): centres, never a crash
+  const bad = store.getLayout();
+  bad.grid = { w: -40, h: 30 };
+  store.saveLayout(bad);
+  byId.clear();
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('Busy?'), 'a grid that is no floor: "Busy?" falls back to centres');
   store.clearActive();
   store.saveLayout(before);
 }

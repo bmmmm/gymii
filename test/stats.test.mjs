@@ -694,6 +694,40 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   assert.ok(stats.walkLength(floor([a, b], [offGrid]), a, b) > open + 2, 'a wall between the grid points is no gap');
   const slanted = { id: 'w3', kind: 'line', x: 10.3, y: 0, w: 0.5, h: 8 }; // crosses steps between the half-grid points
   assert.ok(stats.walkLength(floor([a, b], [slanted]), a, b) > open + 2, 'a slanted wall is walked around too');
+  // a machine flush against a wall is not reached from the wall's other side
+  {
+    const two = (shapes) => ({ grid: { w: 20, h: 20 }, outline: [], shapes,
+      machines: [box('F', 5, 6), box('T', 5, 10)] }); // F above the partition y=10, T flush below it
+    const partition = { id: 'p', kind: 'line', x: 0, y: 10, w: 20, h: 0 };
+    const F = box('F', 5, 6);
+    const T = box('T', 5, 10);
+    assert.equal(stats.walkLength(two([partition]), F, T), null, 'no door anywhere: unreachable, not "4 away"');
+    const farDoor = { id: 'fd', kind: 'fixture', fixture: 'door', x: 16.8, y: 9.4, w: 2.4, h: 1.2 };
+    const viaDoor = stats.walkLength(two([partition, farDoor]), F, T);
+    assert.ok(viaDoor > 15, `through the door at the far end: the long way (${viaDoor?.toFixed(1)})`);
+    const mirror = { id: 'mi', kind: 'fixture', fixture: 'mirror', x: 3, y: 8.5, w: 6, h: 1 };
+    const shortcut = stats.walkLength({ grid: { w: 20, h: 20 }, outline: [], shapes: [mirror],
+      machines: [box('F', 5, 6), box('T', 5, 9.5)] }, F, { ...T, y: 9.5 });
+    assert.ok(shortcut > 5, `a mirror flush against it is walked around (${shortcut?.toFixed(1)})`);
+    // the two checks of the last step, one at a time: a wall between the
+    // half-grid points, and a solid too thin to block the ring point itself
+    const offGridWall = { id: 'p2', kind: 'line', x: -1, y: 10.2, w: 22, h: 0 }; // past both edges: no way round its ends
+    const T2 = { ...T, y: 10.2 };
+    assert.equal(stats.walkLength({ grid: { w: 20, h: 20 }, outline: [], shapes: [offGridWall], machines: [F, T2] }, F, T2),
+      null, 'a wall off the half grid: not reached through it');
+    const thin = { id: 'th', kind: 'fixture', fixture: 'mirror', x: 3, y: 9.25, w: 6, h: 0.5 };
+    const around = stats.walkLength({ grid: { w: 20, h: 20 }, outline: [], shapes: [thin], machines: [F, T] }, F, T);
+    assert.ok(around > 5, `a thin mirror in front of it: reached from the side (${around?.toFixed(1)})`);
+    // the outline is no wall segment: a slit of it between the two is read off the raster
+    const slit = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 },
+      { x: 0, y: 9.6 }, { x: 15, y: 9.6 }, { x: 15, y: 9.4 }, { x: 0, y: 9.4 }];
+    const roundSlit = stats.walkLength({ grid: { w: 20, h: 20 }, outline: slit, shapes: [], machines: [F, T] }, F, T);
+    assert.ok(roundSlit > 15, `a slit of the outline in front of it: walked round its end (${roundSlit?.toFixed(1)})`);
+  }
+  // a grid only a file could carry is no floor to walk — never a crash
+  assert.equal(stats.walkLength({ grid: { w: -40, h: 30 }, outline: [], shapes: [], machines: [a, b] }, a, b), null,
+    'a negative grid: no walk');
+  assert.equal(stats.walkableGrid({ grid: { w: 4000, h: 30 } }), false, 'nor a huge one');
   const room = [{ x: 0, y: 0 }, { x: 12, y: 0 }, { x: 12, y: 10 }, { x: 0, y: 10 }];
   assert.equal(stats.walkLength(floor([a, b], [], room), a, b), null, 'a machine outside the outline: unreachable');
   // machines placed flush (the editor allows edge-to-edge) are a barrier, not a corridor
@@ -760,13 +794,27 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   assert.equal(stats.closerStop({ layout, from: here, next: here, candidates: [slot(near)] }), null, 'Next is here: nothing to say');
   assert.deepEqual([0.1, 0.2, 0.3, 0.5, 0.6].map(stats.walkSaving),
     ['a fraction of the walk', 'a quarter of the walk', 'a third of the walk', 'half the walk', '40 % less walk']);
-  // a far stop over the line never silences a near one under it
-  const farSame = box('y', 10, 2, ['Chest']);
-  const nearOk = box('z', 12, 6);
-  const mono = { ...layout, machines: [here, next, farSame, nearOk] };
-  assert.equal(stats.closerStop({ layout: mono, from: here, next, candidates: [slot(nearOk)] })?.machine.id, 'z');
-  assert.equal(stats.closerStop({ layout: mono, from: here, next, candidates: [slot(farSame), slot(nearOk)] })?.machine.id, 'z',
-    'adding a candidate never takes the answer away');
+  // a stop over the 70 % line never silences one under it, however it ranks
+  {
+    const n20 = box('n', 20, 4); // Next, 20 away
+    const x13 = box('x', 13, 4, ['Chest']); // 13 away: under the line (14), with the recovery malus
+    const y15 = box('w', 15, 7); // ~15 away: over the line, first in the plan, no malus
+    const L3 = { grid: { w: 40, h: 12 }, outline: [], shapes: [], machines: [here, n20, x13, y15] };
+    assert.equal(stats.closerStop({ layout: L3, from: here, next: n20, candidates: [slot(x13)] })?.machine.id, 'x');
+    assert.equal(stats.closerStop({ layout: L3, from: here, next: n20, candidates: [slot(y15), slot(x13)] })?.machine.id, 'x',
+      'adding a candidate over the line never takes the answer away');
+  }
+  // the recovery malus reads the secondary muscles of the machine just left
+  {
+    const chest = { ...box('a2', 0, 4, ['Chest']), secondaryMuscles: ['Triceps'] };
+    const push = box('t', 6, 4, ['Triceps']);
+    const legs = box('l', 6, 1, ['Quads']); // a step further
+    const L4 = { ...layout, machines: [chest, next, push, legs] };
+    assert.equal(stats.closerStop({ layout: L4, from: chest, next, candidates: [slot(legs), slot(push)] }).machine.id, 'l',
+      'the triceps worked as a secondary muscle a minute ago: the pushdown waits');
+    assert.equal(stats.closerStop({ layout: L4, from: chest, next, candidates: [slot(legs), slot(push)], recentMuscles: [] })
+      .machine.id, 't', 'without the malus the nearer pushdown would win');
+  }
 }
 
 console.log('stats.test.mjs: all passed');

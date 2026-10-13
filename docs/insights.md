@@ -91,15 +91,19 @@ window — and not marked busy in this workout) it scores each by its WALK
 (stats.js `walksFrom`: one Dijkstra flood over the floor's whole grid points
 — the outline, interior walls, machines and free-standing fixtures block;
 two items touching are a barrier, not a corridor; a door or entrance in an
-interior wall opens it; a stop is reached on or next to its box) × 1.25 if
+interior wall opens it; a stop is reached on or next to its box, from a
+point whose straight step to its centre crosses no wall, no slit of the
+outline and no other solid; a grid outside 1–400 units is no floor and
+falls back to straight lines) × 1.25 if
 it trains a muscle (primary or secondary) of the machine just left, + 0.5
 per place in the plan. Only stops whose walk is at most 70 % of the walk to
 Next compete (so a far one never silences a near one); the best one is said
 — "Closer: #7 Leg curl — half the walk." — unless "Busy?" already offers
 that very machine. Measured on the demo gym (node, M-series): a machine
-switch floods once for all 17 stops, median 1.05 ms, max 3.1 ms; the floor
-is rasterised once per geometry (7.2 ms incl. the first flood); 200 × 200
-with 60 machines: 18 ms per switch. Meters are out on purpose, so the
+switch floods once for all 17 stops — the same flood answers "Busy?" —
+median 1.16 ms, max 5.0 ms; the floor is rasterised once per geometry
+(8.5 ms incl. the first flood); 200 × 200 with 60 machines: 26 ms first,
+20 ms per switch after. Meters are out on purpose, so the
 saving is said relatively.
 
 Estimated 1RM is Epley, `w × (1 + reps / 30)`, only for a real load and 1 to

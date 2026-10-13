@@ -17,7 +17,7 @@ import {
   variantStr, entryKind,
 } from './ui.js';
 import { ensurePersisted } from './persist.js';
-import { insights, sameSeries, assistGoalAt, closerStop, walkSaving, walkCached } from './stats.js';
+import { insights, sameSeries, assistGoalAt, closerStop, walkSaving, walksCached, walkableGrid } from './stats.js';
 
 // Active workout shape:
 //   { v: 2, id, startedAt, plan: [{machineId, exercise|null, target?}…],
@@ -1370,14 +1370,16 @@ export function nearbyAlternative(active, layout, machine, excludeMachineId = nu
   const center = (m) => [m.x + m.w / 2, m.y + m.h / 2];
   const [fx, fy] = center(machine);
   // the WALK, around walls and machines, like the "Closer:" line beside it
-  // (stats.js walkCached) — straight-line only where there is no floor grid;
-  // a machine no way leads to is no alternative
+  // — one flood for every machine at once (stats.js walksCached), which the
+  // Closer line then reads from the memo; straight-line only where the grid
+  // is no floor to walk (walkableGrid); a machine no way leads to is none
+  const walks = walkableGrid(layout) ? walksCached(layout, machine, layout.machines) : null;
   const dist = (m) => {
-    if (!layout.grid) {
+    if (!walks) {
       const [cx, cy] = center(m);
       return Math.hypot(cx - fx, cy - fy);
     }
-    return walkCached(layout, machine, m);
+    return walks.get(m.id);
   };
   const seen = new Set();
   let best = null;
