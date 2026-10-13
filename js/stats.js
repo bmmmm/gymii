@@ -412,14 +412,20 @@ export function walksFrom(layout, from, targets) {
   // into the other room from there; a machine flush against the rim rounds
   // onto the rim, one in a corner of the outline past it. Then the walk
   // starts from every free point of its ring, each at its straight step
-  // from the centre: a machine is left the way it is reached.
+  // from the centre: a machine is left the way it is reached. With a good
+  // centre the ring points a wall separates from the true centre start too:
+  // a machine cut by a partition is reached from both rooms, so it is left
+  // into both (walk(A, B) and walk(B, A) agree on reachability); every other
+  // ring point is left through the centre, so no other walk changes.
   const fx = from.x + from.w / 2;
   const fy = from.y + from.h / 2;
   const sx = Math.round(fx);
   const sy = Math.round(fy);
   const free = (x, y) => x >= 0 && y >= 0 && x <= W && y <= H && !blocked(2 * x, 2 * y);
-  const seeds = free(sx, sy) && !walls.some(([a, b]) => crosses({ x: fx, y: fy }, { x: sx, y: sy }, a, b))
-    ? [[0, sx, sy]] : ring(from).filter(([x, y]) => free(x, y)).map(([x, y, d]) => [d, x, y]);
+  const cut = (x, y) => walls.some(([a, b]) => crosses({ x, y }, { x: fx, y: fy }, a, b));
+  const centre = free(sx, sy) && !cut(sx, sy);
+  const seeds = ring(from).filter(([x, y]) => free(x, y) && (!centre || cut(x, y))).map(([x, y, d]) => [d, x, y]);
+  if (centre) seeds.push([0, sx, sy]);
   if (!open.size || !seeds.length) return out;
   floods += 1;
   const answered = new Set();

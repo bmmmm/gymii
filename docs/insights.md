@@ -101,7 +101,8 @@ flood distance the shortest step counts, never the heap's order; the walk
 starts at the machine's rounded centre where that point is on the floor
 with no wall to the true centre, else from its ring the same way (a thin
 machine flush against a partition never starts ON it, one reaching past the
-outline is left from the floor — a machine is left the way it is reached);
+outline is left from the floor, one cut by a partition is left into both
+rooms — a machine is left the way it is reached);
 a grid
 outside 1–400 units is no floor, so no line at all, while "Busy?" falls
 back to straight lines) × 1.25 if

@@ -978,7 +978,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   take the shortest step to the centre; the walk starts at the rounded
   centre only where that point is on the floor with no wall to the true
   centre, else from the machine's ring the same way, so no walk joins two
-  rooms through a partition; `walkableGrid` keeps the grid to 1–400 units,
+  rooms through a partition — and with a good centre also from the ring
+  points a wall separates from the true centre, so a machine cut by a
+  partition is left into both rooms as it is reached from both (walk(A, B)
+  and walk(B, A) agree on reachability; a fuzz of 34 456 editor-shaped pairs
+  had 1 133 one-sided before, 0 after; no other walk changes); `walkableGrid` keeps the grid to 1–400 units,
   else no walk; `floodCount` and `floodSettled` let the tests pin one flood
   per log screen and its early stop; the
   floor is rasterised once per geometry on a half-unit grid, walks are

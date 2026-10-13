@@ -876,6 +876,16 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     const edge = box('E', 5, 19, 2, 1); // flush against the grid's edge: rounds onto the rim
     const rim = { grid: { w: 20, h: 20 }, outline: [], shapes: [], machines: [F, edge] };
     assert.equal(stats.walkLength(rim, edge, F), stats.walkLength(rim, F, edge), 'a machine on the rim walks the same both ways');
+    // a machine a doorless partition cuts through is reached from both rooms,
+    // so it is left into both — not only into its centre's room
+    const wallX = { id: 'x', kind: 'line', x: 10, y: -1, w: 0, h: 22 };
+    const M = box('M', 7.5, 8, 3, 2); // centre (9, 9): left of the wall, the box half a unit past it
+    const Lm = box('Lm', 2, 8);
+    const Rm = box('Rm', 15, 8);
+    const cut = { grid: { w: 20, h: 20 }, outline: [], shapes: [wallX], machines: [M, Lm, Rm] };
+    const legs = [[M, Lm], [Lm, M], [M, Rm], [Rm, M]].map(([a, b]) => stats.walkLength(cut, a, b));
+    assert.ok(legs.every((d) => d != null), `a cut machine walks to and from both rooms (${legs.map((d) => d?.toFixed(2))})`);
+    assert.equal(stats.walkLength(cut, Lm, Rm), null, 'the rooms themselves stay apart');
   }
   // …and a fuzz against an exact rule: a doorless partition past both edges
   // splits the floor in two rooms, so no walk joins machines on different
