@@ -318,6 +318,8 @@ ui.keepInView(viewRoot, '#missing'); // a selector that renders nothing must not
 ui.keepInView({}, '#there'); // nor a root without querySelector
 
 // --- keepFocus: a chip row that redraws itself keeps keyboard focus ---
+assert.equal(ui.cssStr('Push "A"\\\nday'), 'Push \\"A\\"\\\\\\a day',
+  'cssStr escapes quotes, backslashes and a newline (raw, it would end the selector string)');
 {
   const asked = [];
   const focused = [];

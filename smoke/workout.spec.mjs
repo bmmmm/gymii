@@ -179,6 +179,8 @@ test('the rest overlay carries the rest hint with its 44px ↗', async ({ page }
   await expect(hint.locator('a')).toHaveAttribute('href', /PMC11349676/);
   // the ↗ opens the study in a new tab — the rest screen stays (the
   // backdrop's close skips `button, a`)
+  // the study answers locally: the deploy gate must not wait on NCBI
+  await page.context().route('https://pmc.ncbi.nlm.nih.gov/**', (r) => r.fulfill({ body: '' }));
   const [study] = await Promise.all([page.waitForEvent('popup'), hint.locator('a').click()]);
   await study.close();
   await expect(page.locator('.overlay'), 'tapping the ↗ is no backdrop tap').toBeVisible();

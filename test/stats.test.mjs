@@ -490,6 +490,8 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   const first = stats.insights(trio, LAYOUT, KG, { now: NOW });
   assert.strictEqual(stats.insights(copy(trio), copy(LAYOUT), { ...KG }, { now: NOW + 3600e3 }), first,
     'same workouts, layout, settings, plans and day: the remembered answer');
+  assert.ok(Object.isFrozen(first) && first.every(Object.isFrozen),
+    'and frozen: one caller sorting or editing it in place cannot corrupt the next one\'s');
   // …and every input it reads makes a fresh one
   const fresh = [
     ['a new workout', () => stats.insights([...trio, W(day(0), [E('m1', [S(5, 20)])])], LAYOUT, KG, { now: NOW })],

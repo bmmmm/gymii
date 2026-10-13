@@ -614,16 +614,18 @@ function plateauRule(ws, settings, now) {
 // and weight step, the plans and the DAY of `now` (every rule counts whole
 // days). Callers re-read storage on every render, so a reference would
 // never repeat; the serialised input does, and comparing it costs a
-// fraction of the rules (measured: 435 workouts, 4.3 ms warm per call vs
-// 0.9 ms to serialise). One entry is enough: the screens that ask twice in
-// a row (log screen, then the rest overlay) ask the same question.
+// fraction of the rules (measured: 435 workouts, 4.1 ms warm per call vs
+// 0.85 ms on a hit). One entry is enough: the screens that ask twice in a
+// row (log screen, then the rest overlay) ask the same question. The answer
+// is FROZEN — every caller gets the same objects, so a caller that sorted
+// or edited them in place would corrupt the next one's; it throws instead.
 let memo = null;
 export function insights(workouts, layout, settings, { now = Date.now(), plans = [] } = {}) {
   if (workouts.length < 3) return [];
   const key = [startOfDay(now).getTime(), settings?.unit, settings?.weightStep,
     JSON.stringify(layout ?? null), JSON.stringify(plans), JSON.stringify(workouts)].join('|');
   if (memo?.key === key) return memo.value;
-  const value = rules(workouts, layout, settings, now, plans);
+  const value = Object.freeze(rules(workouts, layout, settings, now, plans).map(Object.freeze));
   memo = { key, value };
   return value;
 }

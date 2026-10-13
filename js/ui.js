@@ -403,6 +403,12 @@ export function preserveFocus(root, render) {
 // of its nearest [id] ancestor plus its data-* attributes, and the control
 // that took its place gets the focus back — without scrolling: where the
 // screen sits is keepInView's business.
+// A value made safe inside a double-quoted CSS attribute selector — quotes,
+// backslashes AND newlines (a raw newline ends the string and querySelector
+// throws). CSS.escape where the browser has it; Node's tests have no CSS.
+export const cssStr = (v) => (typeof CSS !== 'undefined' && CSS.escape
+  ? CSS.escape(String(v)) : String(v).replace(/["\\]/g, '\\$&').replace(/\n/g, '\\a '));
+
 export function keepFocus(root, render) {
   if (typeof document === 'undefined') return render();
   const el = document.activeElement;
@@ -411,9 +417,8 @@ export function keepFocus(root, render) {
   render();
   if (!box?.id || !data.length) return;
   const attr = (k) => k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
-  const quoted = (v) => String(v).replace(/["\\]/g, '\\$&');
   const next = root.querySelector?.(`#${box.id} ${data
-    .map(([k, v]) => `[data-${attr(k)}="${quoted(v)}"]`).join('')}`);
+    .map(([k, v]) => `[data-${attr(k)}="${cssStr(v)}"]`).join('')}`);
   if (next && next !== el) next.focus?.({ preventScroll: true });
 }
 

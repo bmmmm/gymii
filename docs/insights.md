@@ -24,7 +24,7 @@ own logged workouts") has `url: null`, so route and busy render no link.
 | kind | where | only when |
 |---|---|---|
 | progress | Train log screen, below the machine head (train.js `renderLog`) | the machine, exercise AND grip on screen |
-| busy | Train log screen, below the machine head | the machine on screen, on `weekday` (today), from an hour before `h0` to an hour after `h1` |
+| busy | Train log screen, below the machine head | the machine on screen, on `weekday` (today), from an hour before `h0` to an hour after the window ends (`h1` is its end hour: "18–19 h" shows 17:00–19:59) |
 | rest | the rest overlay, under "Next:" (train.js `openRestOverlay`) | — |
 | plateau | History → Progress, `#chart-note` under the chart | the picked machine, exercise AND grip |
 | muscle-gap, muscle-volume | History → Muscles, a line under the muscle's row | — |

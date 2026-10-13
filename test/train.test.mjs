@@ -1108,7 +1108,7 @@ try {
     hintsNow = new Date(2026, 9, 12, h, m).getTime();
     return logAt('m1', null).includes('Usually busy');
   };
-  assert.deepEqual([busyAt(9, 0), busyAt(16, 59), busyAt(17, 0), busyAt(20, 59), busyAt(21, 0)],
+  assert.deepEqual([busyAt(9, 0), busyAt(16, 59), busyAt(17, 0), busyAt(19, 59), busyAt(20, 0)],
     [false, false, true, true, false], 'Monday morning hears nothing of the Monday-evening crowd');
   hintsNow = new Date(2026, 9, 12, 18, 30).getTime();
   assert.ok(!logAt('m1', null).includes('Target beaten'), 'no progress at #1: 10 × 40 is under target');

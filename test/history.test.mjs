@@ -762,6 +762,21 @@ render();
 assert.ok(/class="chip sel" data-wid="all"/.test(pathChips()), 'the picked route survives a re-render');
 enter();
 assert.ok(/class="chip sel"\s+data-wid="ps2"/.test(pathChips()), 'a tab tap goes back to the latest');
+// the name keeps its routes, the MUSCLE takes them away: the text says so
+{
+  const keepLayout = store.getLayout();
+  store.saveLayout({ ...keepLayout, machines: [...keepLayout.machines,
+    { id: 'm9', num: 9, label: 'Calf raise', x: 40, y: 2, w: 4, h: 3, settingsFields: [], muscles: ['Calves'] }] });
+  store.saveWorkouts(store.getWorkouts().map((w) => (w.id === 'ps2' || w.id === 'bare' ? { ...w, name: 'Live' } : w)));
+  render();
+  root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: 'Live' }));
+  root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Calves' }));
+  assert.ok(root.innerHTML.includes('<p class="muted">No live-logged workout trained this muscle.</p>'),
+    'a name with routes is not blamed for what the muscle filter hid');
+  root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Calves' }));
+  root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: '' }));
+  store.saveLayout(keepLayout);
+}
 
 // a gym without a layout has no floor to draw on
 const layoutKey = [...mem.keys()].find((k) => /^gymii\.[^.]+\.layout$/.test(k));

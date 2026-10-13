@@ -89,7 +89,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   SYNC GROUNDWORK (docs/sync-protocol.md is the contract; js/merge.js the
   pure merge layer): every interactive write stamps `updatedAt`
   (`savePlan`, `updateWorkout`, `finishWorkout`, `workoutFromText`,
-  `saveSettings`, `createGym`/`renameGym`); absence means epoch 0
+  `saveSettings` — only when a `USER_SETTINGS` field changed, a device-local
+  key keeps the stamp it had — `createGym`/`renameGym`); absence means epoch 0
   and is MEANINGFUL (legacy loses any merge), so there is deliberately no
   heal-on-read for it. Deletes leave tombstones — sidecar
   `gymii.<gid>.tombstones` (`{v, workouts, plans, machines, shapes}` via
@@ -406,7 +407,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `<marker>` (`url(#id)` collides when two maps share a page) — the
   arrowhead is a plain polygon. In path mode machines drop custom colours,
   as in usage mode, and those off the path dim. It imports `esc` from ui.js and the
-  placement geometry from store.js (which imports only stats.js) — keep it
+  placement geometry from store.js (which imports only the import-free
+  stats.js and merge.js) — keep it
   free of gym/train/plan imports so the cycle cannot reappear. Every id
   interpolated into an attribute goes through `esc()`, and so do colors
   and machine numbers; geometry is drawn from a `Number()` copy

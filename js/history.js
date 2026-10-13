@@ -6,7 +6,7 @@ import {
 import {
   esc, fmtDate, fmtDay, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
   dateValue, timeValue, machineChain, keepInView, minsBetween, fmtDuration,
-  parseDuration, parseDistance, hintHtml, variantStr, fieldValue, keepFocus, fmtMetric,
+  parseDuration, parseDistance, hintHtml, variantStr, fieldValue, keepFocus, fmtMetric, cssStr,
 } from './ui.js';
 import { lineChart, barChart } from './chart.js';
 import {
@@ -260,7 +260,7 @@ const muscleCard = {
       keepFocus(root, () => renderHistory(root));
       // Muscles is the last card: the view shrinks or grows above the row,
       // and the clamp would put the next tap on another row
-      keepInView(root, `.muscle-row[data-muscle="${m.replace(/["\\]/g, '\\$&')}"]`);
+      keepInView(root, `.muscle-row[data-muscle="${cssStr(m)}"]`);
     });
   },
 };
@@ -550,10 +550,12 @@ const PATH_EMPTY = 'Shows the route you walked through the gym, machine by machi
 const pathsOf = (ctx) => (ctx.paths ??= ctx.layout
   ? ctx.workouts.map((w) => ({ w, p: workoutPath(w, ctx.layout) })).filter((x) => x.p) : []);
 // No route to draw: blame the filter when it is the filter — the sets were
-// logged live, just not under this name (or muscle).
+// logged live, just not under this name (or with this muscle). The name is
+// to blame only when the name-filtered list has no route either.
 const pathEmpty = (ctx) => {
-  if (!(nameFilter || muscleFilter) || !ctx.all.some((w) => workoutPath(w, ctx.layout))) return PATH_EMPTY;
-  return nameFilter ? 'No live-logged workout under this name.'
+  const routed = (ws) => ws.some((w) => workoutPath(w, ctx.layout));
+  if (!(nameFilter || muscleFilter) || !routed(ctx.all)) return PATH_EMPTY;
+  return nameFilter && !routed(ctx.byName) ? 'No live-logged workout under this name.'
     : 'No live-logged workout trained this muscle.';
 };
 const routeLen = (p) => p.legs.reduce((n, l) => n + l.len, 0);
