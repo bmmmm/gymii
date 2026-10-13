@@ -268,3 +268,7 @@ raster's tolerances (wall ends, slits, 1-unit lanes) are accepted.
   (docs/architecture.md § stats.js). A symmetric arrival changes about
   10 % of all walks (flush neighbours walk around their seam instead of
   through it) and loses a few walks. Ship that, or keep the asymmetry?
+- **Gym editor, two fingers on the card** (reviewer P2, 2026-10-13n). The
+  deferred card refresh ends with the first pointerup of a gesture, not
+  per pointer: lifting one of two fingers lets the re-render land while
+  the other finger's tap is still to come — that tap is lost once. Rare.
