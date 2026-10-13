@@ -2195,6 +2195,11 @@ const withPicker = (fn) => {
     byId.clear();
     row.listeners.click();
   };
+  toOverview();
+  const labels = [...root.innerHTML.matchAll(/class="plan-label">([\s\S]*?)<\/span>\s*<span class="plan-status/g)]
+    .map((m) => m[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim());
+  assert.deepEqual(labels, ['Leg press · 3 × 10 @ 80 kg', 'Calf raise', 'Leg press · 3 × 6 @ 100 kg', 'Hack squat'],
+    'twin rows name their targets — the rows would read alike otherwise; a single block stays plain');
   tapRow(2);
   const heavy = (h) => h.includes('Target: 3 × 6 @ 100 kg') && h.includes('<span class="muted">3/4</span>');
   assert.ok(heavy(root.innerHTML), 'the heavy row opens the heavy block — its target, its plan position');

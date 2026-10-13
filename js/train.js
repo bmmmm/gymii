@@ -1115,10 +1115,15 @@ function renderOverview(root, layout, active, message = '') {
     // with a target the status counts progress against it ("1/3 sets")
     const status = !slotSets && !done ? 'open'
       : `${done ? '✓ ' : ''}${slotSets}${goal ? `/${goal}` : ''} set${(goal ?? slotSets) === 1 ? '' : 's'}`;
+    // twins read alike by name: their targets tell the rows apart, so the
+    // heavy block can be the one tapped first
+    const twin = slot.target && machine
+      && active.plan.some((p, j) => j !== i && sameSlot(p, slot) && p.target);
+    const sub = [variantStr(slot), twin ? targetStr(slot.target, entryKind(machine), s) : ''].filter(Boolean).join(' · ');
     return `<button class="plan-row" data-i="${i}" ${machine ? '' : 'disabled'}>
       <span class="machine-badge sm">${esc(num)}</span>
-      <span class="plan-label">${esc(label)}${variantStr(slot)
-        ? ` <span class="muted">· ${esc(variantStr(slot))}</span>` : ''}</span>
+      <span class="plan-label">${esc(label)}${sub
+        ? ` <span class="muted">· ${esc(sub)}</span>` : ''}</span>
       <span class="plan-status${done ? ' done' : ''}">${esc(status)}</span>
     </button>`;
   }).join('');

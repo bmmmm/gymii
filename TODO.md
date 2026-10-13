@@ -157,7 +157,7 @@ on-demand only.
 
 ### On a real iPhone
 
-Ten checks no emulator settles. All against
+Fifteen checks no emulator settles. All against
 <https://bmmmm.github.io/gymii/>, never `serve.py`: a service worker and
 "Add to Home Screen" need https, and points 2–4 put exactly those on the
 stand. An expectation that fails becomes an issue labelled `bug`.
@@ -215,6 +215,24 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   any picker or keyboard.
 - [ ] **A grip switch mid-set.** With the weight field focused, tap another
   grip chip. *Expect:* the keyboard stays up.
+- [ ] **"+ Grip" on a machine with no grips.** On the log screen tap
+  "+ Grip", pick a common grip (or type one), log a set, switch to another
+  machine and back. *Expect:* the grip is selected, taught to the machine,
+  and still there.
+- [ ] **Twin rows.** Start a plan with `#14 Leg press 3x10 80` and
+  `#14 Leg press 3x6 100`; on the overview tap the second Leg press block.
+  *Expect:* "Target: 3 × 6 @ 100 kg" and "Log set 1/3 — 100 kg × 6",
+  still so after a reload; after 3 sets the screen moves to the 3x10 80
+  block.
+- [ ] **Keyboard focus after "+N more" / "All muscles".** In History, Tab
+  to either (hardware keyboard) and press Enter. *Expect:* the focus ring
+  sits on the first revealed chip / the list's first row, not the page top.
+- [ ] **Gym editor: label field, then a chip, no blur.** Type a label with
+  a trailing space, tap a muscle chip straight away. *Expect:* the trimmed
+  label is saved, never an empty one.
+- [ ] **True black from the home screen.** With True black on, launch the
+  Home Screen app. *Expect:* black from the first frame, no dark-grey flash
+  before the app paints.
 - [ ] **The issue forms, signed in.** The chooser
   (`/issues/new/choose`) should show four forms + two contact links with
   "Blank issue" as maintainers-only, and the template form must block
@@ -223,79 +241,36 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   the chooser is login-gated) — it needs real clicks, then close the
   test issue.
 
-### Still open
+### Closed (user decision 2026-10-13)
 
-- **Unbound items and the muscle filter.** An exercise with no machine has
-  no muscles either, so it is invisible to the builder's muscle chips and
-  contributes nothing to name suggestions until it binds. Fine as-is; only
-  worth revisiting if plans commonly stay unbound for long.
-- **Template browser filters.** Country/city already render per entry; a
-  filter row (chips, like History's) only earns its place once the library
-  holds enough templates that scanning the list stops working.
+Unbound items and the muscle filter: fine as is. Template browser filters:
+the library holds one template.
 
 ### Review leftovers of the 2026-10-13 round (reviewer P2s, built on request)
 
-- **Twins.** A tap on a twin's overview row loses WHICH twin was meant
-  (`switchMachine` carries only the triple; `planSlotIndex` takes the first
-  open one), so the heavy block cannot go first. Binding a line that becomes
-  the EARLIER twin re-deals sets already logged ("3/3" → "✓ 2/2" + "1/3").
-  Two identical blocks (same target) stay one slot — on purpose.
-- **Brackets.** An UNBOUND item with a bracketed exercise (`Curl [EZ]`) does
-  not survive List → Text → List (only bound items can ask the machine).
-- **Placement.** `.field input[type="text"]` (max-width 62 %) now also
-  matches Settings' `#weight-step` — probably invisible, not compared in a
-  browser. `freeSpot` (store.js) steps by 1, map.js's `SNAP = 1` — coupled
-  by a comment only.
-- **Hints.** A busy window touching midnight (`h1 = 24`, `h0 = 0`) never
-  shows its hour on the neighbouring weekday. `keepFocus` loses the focus
-  when the tapped control itself disappears ("+N more", "All muscles").
-  Untested: `planListCard`'s name guard and the six `keepFocus` call sites
-  in history.js (only ui.test pins the helper).
-- **Staged fields.** Label, model and the card's `stageText` fields can
-  save `''` or untrimmed text when another control's `save()` runs before
-  their `change` (iOS does not blur on a chip tap) — one shared fix.
-- **AI export.** After a renumbering, entries and visits carry snapshot
-  nums while `gym.machines` and plans carry the current ones; one num space
-  (the layout's, by `machineId`, while the machine exists) is a product
-  decision. The pretty-printed export (`JSON.stringify(…, null, 1)`) puts
-  every number on its own line — compact tuples would save about two thirds.
-- **True black.** The first paint still uses the default dark colours
-  (app.js is a deferred module; the manifest splash is fixed) — a tiny
-  classic script in `<head>` would fix it (SHELL + CACHE). 🎲 weighs a
-  machine without muscle tags as 0 while any tagged muscle is open, and its
-  map highlight stays when another number is typed.
-- **Assisted.** The endurance plateau compares reps at the least assist
-  across different assist steps. `assistGoal` is per machine while charts
-  and hints are per series (a machine with pull-up AND dip shares one goal —
-  decided). It travels in exported gym templates like `restSeconds`. A file
-  machine flagged both bodyweight and assisted is not refused (display
-  follows `entryKind`).
-- **Muscles.** The demo gym has no `secondaryMuscles`, so the new UI is not
-  visible there. The list chip says its state in `aria-label` and again in
-  `aria-pressed`.
-- **Gym editor.** The undo copy is the same stale-layout class the
-  2026-10-12 audit fixed elsewhere (`saveLayout` from a render-time copy).
+Decided: `assistGoal` is per machine (a machine with pull-up AND dip shares
+one goal) and travels in exported gym templates like `restSeconds`. Metres
+and kcal stay out ("relations are enough", user 2026-10-13). A machine cut
+by a wall is reached from its floor side.
+
+- **Twins.** Next / Busy? still pass only the triple, so a Next pointing at
+  the later twin opens the first open twin. Two identical blocks (same
+  target) stay one slot — on purpose.
+- **Grips.** A typed grip in the gym EDITOR is deduplicated by exact match
+  only (the log screen's "+ Grip" matches case-insensitively).
+- **Hints.** Busy marks on either side of midnight fall into different
+  weekday groups and never cluster.
 - **Routing.** The floor is rasterised at half units, so geometry off that
   grid can leak or close: a wall ending exactly on the grid's edge is
   passed round its end, a slit of the outline thinner than half a unit is
   no slit, and a machine reachable only through a 1-unit lane can read
-  unreachable (the ring step aims at its centre and rounds onto a wall's
-  end or a neighbour — 0.18 % of editor-shaped pairs in a fuzz). The
-  sampling density (every half unit) is a tolerance of that raster, not a
-  rule: once per unit decides about 2–4 % of pairs differently. A target
-  listed twice is counted once (by id) — not pinned by a test. The rim
-  counts as a wall, so a passage of the outline exactly 1 unit wide is
-  closed (as a 1-unit gap between interior walls already was). A walk is
-  the first ring point the flood reaches plus its straight step, so ties
-  on the flood distance break by heap order (the demo's lat pulldown →
-  assisted pull-up moved 37.73 → 37.18 that way); the least `d + rest`
-  among tied points would be stable. An outline door within half a unit of a
-  partition's end opens the partition. A start machine outside the outline
-  is walled in (Busy? then offers nothing). The start is the machine's
-  rounded centre: a 1-deep machine from a file, flush above or left of a
-  partition, starts ON it and walks through — A→B and B→A can differ.
-  **Decision for the user:** the ring step is checked only a quarter unit
-  into the target's box, so a machine cut by a wall is reached from its
-  floor side — and one the editor pushed a whole unit through a partition
-  is reached from the other room too ("4.5 away"). Checking to the centre
-  instead turns both into "unreachable".
+  unreachable (0.18 % of editor-shaped pairs in a fuzz). The sampling
+  density (every half unit) is a tolerance of that raster, not a rule: once
+  per unit decides about 2–4 % of pairs differently. The rim counts as a
+  wall, so a passage of the outline exactly 1 unit wide is closed. An
+  outline door within half a unit of a partition's end opens the partition.
+  A machine cut by a partition is reached from both rooms but left only
+  into its centre's room (104 one-way pairs in the editor fuzz); starting
+  from both rooms would mirror the wall decision. A machine entirely
+  outside the outline gets no walk, so Busy? offers nothing from it — a
+  product question for train.js.

@@ -44,7 +44,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   import, binding, targets), `history` (the two screens and the
   entry reset, name filter, week card, hints, progress chips/range/pick,
   walking paths, muscle card + filter, heatmap state, full editor,
-  back-logging), `map` (the shared renderer: px-sized touch
+  back-logging, the seven `keepFocus` call sites over a made-up
+  `document.activeElement`), `map` (the shared renderer: px-sized touch
   targets, viewBox clamping, wall/door geometry, the usage ramp, collision
   and placement, the walking-path overlay, and ids escaped into attributes), `chart` (tick math, the time axis, both
   charts' markup and the tap/scrub/keyboard selection over a stub container
@@ -53,9 +54,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   its threshold and one step short; it imports the localStorage stub FIRST
   only because its DST pin compares its `startOfDay` copy with store.js's),
   `ui` (the shared
-  helpers, incl. the four DOM-facing ones over hand-made stubs — the file
+  helpers, `keepFocus`'s positional stand-in, incl. the four DOM-facing ones over hand-made stubs — the file
   runs under Pacific/Auckland, where local-vs-UTC actually differs),
-  `gym` (editor wiring and drag integration),
+  `gym` (editor wiring, drag integration, staged text vs. another control's save, undo/redo and `save()` against another writer),
   `demo` (generator determinism, entry invariants, weekday plan states,
   unit conversion, load-replaces-gym), `ai` (export plans section,
   paste-back new-vs-replace flow), `templates` (the community-library
@@ -64,7 +65,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   hostile values seeded straight into storage rendering escaped in every
   view — the sync half is sync.test.mjs block 19), `sw` (the real
   `sw.js` run in a `node:vm` sandbox: method/origin gate, cache writes,
-  offline fallback, and the stalled-network timeout — the sandbox owns
+  offline fallback, the head script that must agree with `applyTheme` (`js/theme-boot.js`), and the stalled-network timeout — the sandbox owns
   `setTimeout`, so 2.5 s are proven in microseconds). Modules import
   fine in Node as long as none touches the DOM at top level; the stub DOM
   hands back EVERY selector, rendered or not, so a test must drive view
@@ -101,7 +102,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   the chart, a bar tap opens that week, the Workouts screen and the
   workout editor pass the same 44px / 16px / no-overflow measures, and the
   path card draws a route; the True black theme (`layout.spec.mjs`: the
-  chip flips `html[data-theme]`, survives a reload, every route still
+  chip flips `html[data-theme]`, survives a reload, is on `<html>` with
+  app.js aborted — the first paint — every route still
   passes the measures), the picker's 🎲 (fills the number, starts
   nothing) and an assisted log screen (the demo's #17: "Assist", 44px Goal
   chips, a tap says the goal on the machine); and the Gym's folded parts (`gym.spec.mjs`,

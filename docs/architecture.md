@@ -56,9 +56,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   machine moves none), absent rather than empty, and NEVER carry an `id`:
   sync's `canon()` sorts arrays whose items all have one before comparing,
   so a changed ORDER — the route itself — would look like no change.
-  `switchMachine(active, machineId, exercise, {busy, now, grip})` is THE one way
+  `switchMachine(active, machineId, exercise, {busy, now, grip, slot})` is THE one way
   to change the current machine (it closes the open visit and opens the
-  next); `closeVisits(visits, now, entries)` runs in `finishWorkout()`, closes the
+  next; `slot` = the plan index of the very block meant, kept as
+  `active.chosenSlot` and dropped by any switch without one); `closeVisits(visits, now, entries)` runs in `finishWorkout()`, closes the
   open one at the finish and drops tap-throughs under 15 s unless they carry
   `busy` or a set stamped at that machine inside them (a burst-logger's
   stop stays in the route; the demo calls it without entries); `rateLastSet(active, rir)` rates the newest `at`-stamped non-cardio
@@ -82,7 +83,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   layout read in the tap — absent means "not said", and stats.js
   `assistGoal()` observes it instead. A file whose machine carries a
   non-boolean `assisted` or an unknown `assistGoal` is refused like a bad
-  `grips`; an entry's non-true `assisted` is dropped;
+  `grips`; one flagged `bodyweight` AND `assisted` is healed to bodyweight
+  (`healKind`) on sync (`cleanLayout`), template and backup import; an entry's non-true `assisted` is dropped;
   optional `machine.exercises: [string]` (deleted when emptied) splits a
   machine into per-exercise entries, `machine.secondaryMuscles: [string]`
   (the same lifecycle — absent when empty; older clients ignore it) holds
@@ -125,7 +127,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   device after the next merge. A tap that changes the layout reads it IN
   THE TAP — `ensureMachine(num, name, target)` (bind-or-create + save),
   `addMachineVariant(id, { exercises, grips })`, or `getLayout()` right there;
-  the gym editor's own undo copy is the one known holdout. `uid()` is crypto-random, 16
+  the gym editor's `save()` and its undo/redo both read the stored layout IN
+  THE TAP (`foreignOnly`/`applySide`, gym.js). `uid()` is crypto-random, 16
   chars; legacy 8-char ids stay valid, and ids deliberately carry no
   device marker (they travel into AI exports). Backups are `v: 2`
   (tombstones included, deletes stay dead across restore); v1 files import
@@ -234,7 +237,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   LAST `[…]` is cut out before anything else (empty brackets name none), so
   a name that carries brackets of its own — from an AI file, a template or
   a sync — keeps them (`Curl [EZ] [Rope]` = exercise `Curl [EZ]`, grip
-  `Rope`). A bound item whose machine knows no such grip but does know
+  `Rope`). `planToText()` writes empty brackets after a bracketed name that
+  has no grip, so an unbound `Curl [EZ]` survives List → Text → List (the
+  LAST `[…]` is the grip, and `[]` names none). A bound item whose machine knows no such grip but does know
   `exercise [grip]` as an exercise gets that exercise back and no grip
   (`Curl [EZ] 3x10`).
   Every other separator was rejected — `/` sits in real names ("Lat
@@ -383,7 +388,14 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   default dark theme. Device-local — not in merge.js's `USER_SETTINGS`, so
   it neither syncs nor moves the settings stamp. Chart and map colors were
   re-validated against #0a0a0a and #000 (same single deutan WARN as on
-  #171c22, covered by numbers and labels).
+  #171c22, covered by numbers and labels). The FIRST paint is covered by
+  `js/theme-boot.js`, a classic (non-module) script loaded synchronously in
+  `<head>` before the stylesheet: for `settings.theme === "black"` it stamps
+  `html[data-theme="black"]` and paints `meta[name=theme-color]` `#000000`
+  before the deferred app.js runs; any other value, corrupt JSON or blocked
+  storage does nothing (never throws). It repeats ONE decision of
+  `applyTheme`, which stays the owner; `test/sw.test.mjs` pins that both
+  agree, so a new theme value must change both.
 - `js/ui.js` — shared helpers; owns the keyboard. `initFocusCentering()`
   (wired once in app.js) centres every focused field in the VISIBLE band
   once `visualViewport` settles — a field-to-field hop fires no resize, so
@@ -423,7 +435,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   takes it back (gym.js owns the gesture). Also exports `findMachineByNum`, the collision helpers
   (`fits`, plus `overlapsSolid`/`freeSpot`/`WALL_SNAPPED` re-exported from
   store.js, which owns the placement geometry because its `addMachine`
-  places machines too), `snapDoorToWall`, `FIXTURES`, `ITEM_COLORS`. Its `path` and `pathWeights` opts draw the
+  places machines too; `snap()` rounds to store.js's exported `SNAP`, the
+  same constant `freeSpot` steps by, so a placed item lands where a drag
+  would), `snapDoorToWall`, `FIXTURES`, `ITEM_COLORS`. Its `path` and `pathWeights` opts draw the
   walking-path overlay (view-only: the editor ignores them) — one line plus
   arrowhead polygon per leg from stats.js's `workoutPath`, or, with
   `pathWeights` (a `transitionCounts` map), one leg per transition whose
@@ -468,9 +482,18 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   The Layer chips (`layerRow`/`wireLayerRow`, shared by the zone and
   wall/furniture cards) write `item.z` — deleted when Normal, so exports stay
   clean. Machines and wall-snapped fixtures deliberately have no layer row.
-  The machine card's text fields stage every keystroke
-  into the item on `input` and only `save()` on `change`, because a chip tap
-  re-renders the card and would otherwise eat a half-typed name.
+  The machine's text fields (the card's label, model and doc link; the
+  list's label and model) stage every keystroke in `staged`
+  (`${id}:${field}` → text), NOT in the machine, and commit on `change`
+  through one table, `MACHINE_TEXT` (trimmed; an empty label falls back to
+  "Machine N"; the model is absent when empty). A re-render prints the
+  staged text back as typed, because a chip tap re-renders the card and iOS
+  does not blur the field on it. `save()` commits every staged field first,
+  so whichever control saves, a field is persisted exactly as its own
+  `change` would write it, never `''` or untrimmed; the later `change` then
+  changes nothing and records no undo step. Undo/redo drop staged text. A
+  field abandoned without a blur keeps its raw text until its next `change`
+  or an undo.
   BRAND: the Layout view's Machines card owns the `MACHINE_BRANDS` chips +
   free text (`#gym-brands`, writes through store's `setGymBrand`; typed
   text goes through `matchBrand`; a hint line counts the brands machines
@@ -499,11 +522,13 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   the pick list; "Other…" reveals the row's own text field without a
   re-render, so the select keeps showing it, and the text typed there is
   staged in `otherText` (id → text) so a re-render from another row renders
-  it back into ITS row, still open), a `model` field (staged on `input`,
-  saved trimmed on `change`, absent when empty — the card's rule),
+  it back into ITS row, still open), a `model` field (staged like the
+  card's fields, `MACHINE_TEXT`),
   its muscles as chips in ONE fixed order (the pick list's, `rowMuscles`)
-  that a tap cycles primary → secondary ("½ ✕") → removed, so the chip
-  stays under the thumb for its second tap,
+  that a tap cycles primary → secondary ("½ ✕") → removed, named by the
+  muscle alone (`aria-label`; `aria-pressed` says the state once — true =
+  primary, mixed = secondary), so the chip stays under the thumb for its
+  second tap,
   plus an add-`<select>` (adding a muscle as primary drops it from the
   secondary list) whose `<optgroup>`s are the regions (a region with
   nothing left to pick is no header). Four delegated listeners on
@@ -516,8 +541,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   — by a FOCUS that would otherwise fall to `<body>`: after an add the
   select keeps it, after a tap the chip of the same muscle while it is
   still on the row, else the chip that moved into its place (else the
-  select); the label is staged on `input` like the
-  card's. Same flag/brand invariants as the card (flags deleted, never
+  select); the label is staged like the card's. Same flag/brand invariants as the card (flags deleted, never
   false), same `save()` — undo covers it. The
   Location card holds `meta.postcode` and an `#gym-osm` search link built by
   `osmUrl()` (exported for the tests) — the card is NOT re-rendered on a
@@ -532,11 +556,25 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   stale id. While a workout is active the header shows a "← Back to your
   workout" link, whichever way the Gym was reached; without one it
   shows a plain "‹ Train" back row to the hub instead. Undo/redo =
-  snapshot history via the local `save()` wrapper — every mutation must
-  go through `save()`, never `saveLayout()` directly.
+  one entry per completed edit via the local `save()` wrapper — every
+  mutation must go through `save()`, never `saveLayout()` directly. An
+  entry is what the edit CHANGED (`layoutDiff`: each machine and shape by
+  id, each of name/grid/meta/outline), never a snapshot. `save()` first
+  takes in what another writer stored since the editor's render (a sync
+  pull, Train teaching a grip: `getLayout()` in the tap,
+  `foreignOnly(layoutDiff(lastSaved, stored), changes)` applied with
+  `applySide`), so the first edit after a pull no longer tombstones a
+  machine the pull brought in; the edit's own keys win and its undo entry
+  stays its own. Undo and redo read the stored layout IN THE TAP too and
+  write only their parts, objects key by key (`applySide`): a machine
+  another writer added since survives, a key it changed survives unless the
+  edit changed that key, a machine it deleted stays deleted, and an undone
+  delete comes back at its old index. A save that changes nothing writes
+  nothing and records no step.
 - `js/train.js` — guided workout; under the log screen's machine head sit
   the hints for THIS machine and exercise (progress) and this weekday
-  (busy) — full width, not inside the head's flex row, where the 44px ↗
+  (busy, via stats.js `inBusyWindow` — an hour either side of the window,
+  reaching across midnight into the next weekday) — full width, not inside the head's flex row, where the 44px ↗
   would squeeze the text — the rest overlay the rest hint, a plan row "· reorder?" when its
   builder has a route hint (`planListCard`). `active.plan` is a list of slots
   `{machineId, exercise|null, grip?, target?}` (null = whole machine; no
@@ -610,13 +648,27 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   then outrank it), and `slotDone` counts sets against `target.sets`, so
   "Next:" pulls the walk back to unfinished targets. TWINS — bound slots
   with the same (machine, exercise, grip) triple, e.g. `#14 Leg press 3x10
-  80` plus `3x6 100` — see the same entries, so `twinShare` hands the sets
-  out in plan order: each twin takes up to its `target.sets` (one set
-  without a target), the last one keeps the surplus. `planSlotIndex` picks
-  the first OPEN twin (all done: the last one), so the second block's
-  target takes over after the first block — and its first set is
-  prefilled from that target, not from the previous block's last set in
-  the shared entry. `nextOpenSlot` skips twins of the slot on screen, so
+  80` plus `3x6 100` — see the same entries. Each logged set belongs to the
+  slot on screen when it was logged: the log button records the set's `at`
+  in `slot.logged` on every log, because a later bind can make any slot a
+  twin. `twinShare` counts those claims first (one set per stamp) and deals
+  only unclaimed sets in plan order (workouts started before the claims,
+  sets without `at`): each twin fills up to its `target.sets` (one set
+  without a target), the last one takes the surplus. So the heavy block may
+  go first, and binding a line that becomes the earlier twin takes none of
+  the sets already logged. `planSlotIndex` honours `active.chosenSlot`
+  while that block is open or every twin is done; a done chosen block
+  yields to the first open twin, because Next never offers a twin of the
+  screen it is on. Otherwise it is the first OPEN twin (all done: the last
+  one), so the second block's target takes over after the first — and its
+  first set is prefilled from that target, not from the previous block's
+  last set in the shared entry. A twin's overview row names its target
+  ("Leg press · 3 × 6 @ 100 kg"), or two rows would read alike and the
+  heavy one could not be told apart. `active.chosenSlot` is the plan index an
+  overview row or a bind passes through `switchMachine`'s `slot` option;
+  any other switch forgets it, and it dies with the workout via
+  `finishWorkout`'s allow-list. Next / Busy? still pass only the triple, so
+  a Next pointing at the later twin opens the first open twin. `nextOpenSlot` skips twins of the slot on screen, so
   "Next" and "Busy?" point past the machine you stand at;
   `startWorkoutFrom` drops only exact repeats (same triple AND same
   target), so both blocks survive a restart. A plan whose FIRST
@@ -654,10 +706,13 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   Its 🎲 chip (`surpriseMachine(layout, active, { rand })`, exported for the
   tests) only SUGGESTS: it fills the number field, highlights the machine
   on the map and says which of its muscles are still open — the start
-  stays a tap on the action button. The draw: machines not trained yet
+  stays a tap on the action button; typing a different number clears the
+  highlight and the 🎲 line (the handler redraws only the SVG). The draw: machines not trained yet
   TODAY (this workout plus the workouts finished today), narrowed to the
   picker's muscle filter while that leaves one, weighted by their open
-  muscles (`trainedMuscles`, shared with the coverage chips); nearness to the last machine (else the entrance,
+  muscles (`trainedMuscles`, shared with the coverage chips; a machine
+  without primary muscle tags counts as ONE open muscle — never starved to 0
+  while tagged muscles are open, never above a machine known to work two); nearness to the last machine (else the entrance,
   else the floor's middle) adds under one muscle's weight, so it only tips
   the odds between equals; with every muscle trained it is a plain random
   pick among the untrained machines.
@@ -743,7 +798,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   nothing and has no link (own data). Meters are out on purpose (no `layout.meta.scale`), so the
   saving is relative.
   WALKING ROUTE: every change of the current machine goes through store's
-  `switchMachine` — nine call sites: workout start (first machine), the
+  `switchMachine` — nine call sites (the plan-slot tap and a bind pass `slot`): workout start (first machine), the
   plan-slot tap, the machine picker, binding an unbound slot, a machine
   deleted mid-workout (→ null), the quick-switch chips, Busy?, Next, and the
   back-to-overview tap (→ null). A bare `active.currentMachineId = …` would
@@ -815,7 +870,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   (`wireWorkoutList(…, { readOnly: true })` neither renders nor consumes an
   editor). A tile, chip or muscle row that redraws its own container goes
   through ui.js's `keepFocus`, so keyboard focus lands on the control's
-  successor instead of `<body>`; a muscle-row tap also `keepInView`s the
+  successor instead of `<body>` (a control that vanishes in its own tap —
+  "+N more", "All muscles" — has no successor by `data-*`: `keepFocus` then
+  hands the focus to the control at its old position in the container,
+  clamped to the last, i.e. the first revealed chip or the list's first
+  row); a muscle-row tap also `keepInView`s the
   row (Muscles is the last card, the view resizes above it), and "Log it"
   brings a `#past-msg` about skipped lines back on screen. The selected
   bar and its tile share ui.js's `fmtMetric` ("2:29 h", "3,873 kg"). The
@@ -909,8 +968,14 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   interior wall opens it, a target is reached on or next to its box from a
   point whose straight step towards its centre crosses — up to a quarter
   unit into the box, the machine itself is no obstacle — no wall, outline
-  slit or other solid; `walkableGrid` keeps the grid to 1–400 units, else
-  no walk; `floodCount` lets the tests pin one flood per log screen; the
+  slit or other solid (user decision: a machine cut by a wall stays
+  reachable from its floor side); ring points tied on the flood distance
+  take the shortest step to the centre; the walk starts at the rounded
+  centre only where that point is on the floor with no wall to the true
+  centre, else from the machine's ring the same way, so no walk joins two
+  rooms through a partition; `walkableGrid` keeps the grid to 1–400 units,
+  else no walk; `floodCount` and `floodSettled` let the tests pin one flood
+  per log screen and its early stop; the
   floor is rasterised once per geometry on a half-unit grid, walks are
   memoised per floor and pair (`walksCached`); null when no way exists; the
   walking-path card keeps its straight legs, user decision) with the
@@ -965,16 +1030,30 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   (one carries `busy`) and `rir` on strength sets — so the insight rules
   and the walking paths have something to show; older weeks stay bare (no
   `at`, no visits), which keeps the "older sets lack `at`" paths exercised.
+  Five machines carry `secondaryMuscles` (chest press: Shoulders; seated row:
+  Biceps; leg press: Hamstrings; pull-up bar: Upper back; dip station:
+  Shoulders), only muscles the demo already trains as primaries, so the
+  secondary UI shows there; `test/demo.test.mjs` strips them before the old
+  layout digest pin.
 - `js/ai.js` — copy prompt+data / paste-import. Deliberately NO AI API.
   Export set tuples are `[w, r]`, gain a third element (seconds offset from
   the workout's startedAt) when the set has `at`, and a fourth, `rir`, when a
   strength or bodyweight set was rated: `[w, r, sec|null, rir]` — `null`
   holds the third slot for a rated set without `at`; cardio never carries
   `rir`. A workout with `visits` exports them as `[num, inSec, outSec,
-  busyNum?]` (nums from the entry snapshot, else the layout; a machine
-  neither knows is dropped, an unknown busy mark only loses its slot;
+  busyNum?]` (one num space: every num and label in the export — entries,
+  visits and their busy marks — is the layout machine's CURRENT one, looked
+  up by `machineId` (`machineName()`), so a renumbering or rename never
+  leaves two numbers for one machine; only a machine deleted since falls
+  back to the num and label the entry or visit was logged under, a visit
+  neither layout nor entries know is dropped, an unknown busy mark only
+  loses its slot; stored data is never rewritten, only the export;
   `visits` that is no list of objects — backups and sync pass it on
-  unchecked — exports as none; absent rather than empty). The prompt and the export `note` teach all of it.
+  unchecked — exports as none; absent rather than empty). The prompt and the export `note` teach all of it. The output is compact JSON
+  (`compactJson`, WIDTH 160): whatever fits in 160 columns stays on one line,
+  larger containers break one child per line (demo export 38.5k chars / 3300
+  lines → 17.8k / 305); it is still plain JSON, `JSON.parse` reads it
+  unchanged.
   Saved plans ride along in the export (same wire shape the prompt
   teaches for answers, plus their `id`) — measured at ~5% of a demo-sized
   export, omitted entirely when no plans exist. Pasting a `workout-plan`
@@ -1001,6 +1080,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `shell-list` job goes red on a forgotten one, and the `CACHE` constant is
   bumped IN THE SAME COMMIT as any SHELL edit — the precache is filled once
   per cache name, so a new entry under the old name never gets fetched.
+  `js/theme-boot.js` (the first-paint theme script, see app.js) is in SHELL
+  too.
   The service worker deliberately imports nothing: a module worker
   (`register(..., { type: 'module' })`) fails on Safari < 16.4, so
   `js/version.js` is duplicated into SHELL as a plain path rather than
