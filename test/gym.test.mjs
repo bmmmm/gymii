@@ -719,6 +719,15 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   props.querySelector('#m-grip-custom').value = 'Rope';
   last(props.querySelector('#m-grip-add'), 'click')();
   assert.deepEqual(grips(), ['Rope', 'V-bar', 'Wide bar'], 'a grip already listed is not added twice');
+  props.querySelector('#m-grip-custom').value = 'rope';
+  last(props.querySelector('#m-grip-add'), 'click')();
+  props.querySelector('#m-grip-custom').value = 'WIDE BAR';
+  last(props.querySelector('#m-grip-add'), 'click')();
+  assert.deepEqual(grips(), ['Rope', 'V-bar', 'Wide bar'], 'nor in another case — "rope" is the Rope listed');
+  last(props.querySelector('#m-grips'), 'click')(chipTap('Rope'));
+  props.querySelector('#m-grip-custom').value = 'rope';
+  last(props.querySelector('#m-grip-add'), 'click')();
+  assert.deepEqual(grips(), ['V-bar', 'Wide bar', 'Rope'], 'a typed common grip takes its common spelling');
   ['Rope', 'V-bar', 'Wide bar'].forEach((g) => last(props.querySelector('#m-grips'), 'click')(chipTap(g)));
   assert.equal('grips' in store.getLayout().machines.find((m) => m.id === 'm1'), false,
     'an emptied list is deleted, not stored empty');

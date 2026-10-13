@@ -1415,9 +1415,11 @@ export function renderGym(root) {
       });
       const addGrip = () => {
         const input = props.querySelector('#m-grip-custom');
-        const v = input.value.replace(/[[\]]/g, '').replace(/\s+/g, ' ').trim();
-        if (!v) return;
+        const typed = input.value.replace(/[[\]]/g, '').replace(/\s+/g, ' ').trim();
+        if (!typed) return;
         const list = item.grips ?? [];
+        // "rope" is the Rope already listed or offered, not a second grip (train.js takeGrip)
+        const v = [...list, ...COMMON_GRIPS].find((x) => x.toLowerCase() === typed.toLowerCase()) ?? typed;
         setGrips(list.includes(v) ? list : [...list, v]);
         keepInView(props, '#m-grip-custom', { focus: true });
       };
