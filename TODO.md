@@ -259,7 +259,12 @@ raster's tolerances (wall ends, slits, 1-unit lanes) are accepted.
 
 ### Review leftovers of 2026-10-13m (reviewer P2s, built on request)
 
-- **Routing, diagonal walls.** With a diagonal partition a few pairs still
-  walk one way only (about 0.2 % in the review fuzz), and a cut ring point
-  on the zero-width seam between the start and a flush neighbour can seed
-  a walk that no walk the other way reaches. Axis-aligned floors: none.
+- **Routing, one-sided pairs (decision).** Two tolerance bugs fixed on
+  2026-10-13 (a rounding rest at a wall's end, a raster sample on it); what
+  is left is structural: a walk leaves through the start's own body but
+  arrives by a straight step, so a seam point with a flush neighbour or a
+  corner three machines share is left and not reached — 0.2–0.4 % of pairs
+  with a diagonal partition and flush machines, 0.04–0.2 % axis-aligned
+  (docs/architecture.md § stats.js). A symmetric arrival changes about
+  10 % of all walks (flush neighbours walk around their seam instead of
+  through it) and loses a few walks. Ship that, or keep the asymmetry?

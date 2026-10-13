@@ -894,6 +894,18 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     const slope = { grid: { w: 20, h: 20 }, outline: [], shapes: [diag], machines: [On, Bo] };
     const both = [stats.walkLength(slope, On, Bo), stats.walkLength(slope, Bo, On)];
     assert.ok(both.every((d) => d != null), `a centre on a wall walks both ways (${both})`);
+    // a straight step that touches a wall's END exactly: the ring point
+    // (19, 8) steps to Ed's centre through (18.5, 7.5), where a diagonal
+    // partition ends on Ed's bottom edge — no crossing (a rounding rest of
+    // 1e-15 said it was one), and the half-unit sample that rounds onto the
+    // wall's end is no wall (walls are checked exactly, by `crosses`).
+    // Before, Ed was left past the wall's end but never reached past it.
+    const stub = { id: 's', kind: 'line', x: -0.5, y: 10.5, w: 19, h: -3 };
+    const Ed = box('Ed', 16, 6, 3.5, 1.5); // centre (17.75, 6.75)
+    const Lo = box('Lo', 0.5, 13.6, 1.2, 1.1); // the other side of the partition
+    const graze = { grid: { w: 20, h: 17 }, outline: [], shapes: [stub], machines: [Ed, Lo] };
+    const pastEnd = [stats.walkLength(graze, Ed, Lo), stats.walkLength(graze, Lo, Ed)];
+    assert.ok(pastEnd.every((d) => d != null), `a machine at a wall's end is reached and left past it (${pastEnd.map((d) => d?.toFixed(2))})`);
   }
   // …and a fuzz against an exact rule: a doorless partition past both edges
   // splits the floor in two rooms, so no walk joins machines on different

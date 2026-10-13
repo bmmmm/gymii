@@ -993,10 +993,23 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   into both rooms as it is reached from both. Measured on editor-shaped
   floors with axis-aligned partitions and doors: 1 133 of 34 456 pairs
   walked one way only before, 0 after; walks from a machine no wall enters
-  are unchanged, one a wall stub enters can get shorter. Diagonal walls
-  still leave a few one-sided pairs (about 0.2 %, review fuzz), and a cut
-  ring point on the seam between the start and a flush neighbour can seed
-  a walk no other walk reaches; `walkableGrid` keeps the grid to 1–400
+  are unchanged, one a wall stub enters can get shorter. `crosses` is
+  strict with onSegment's 1e-9 tolerance (a step through a wall's END
+  touches it, and a rounding rest of 1e-15 once made that a crossing), and
+  the straight step reads walls from `crosses` alone, not from the raster
+  (a half-unit sample rounding onto a wall's end blocked a machine that
+  was left past that end) — measured against the build before on
+  editor-shaped floors with flush pairs and wall stubs with doors
+  (3 × 11 250 pairs): 0.5–0.8 % of walks shorter, none lost, one-sided
+  pairs 11→4, 30→24, 11→4. What is left one-sided is structural: a walk
+  LEAVES through the start's own body (its edges and seam points are free
+  for it) but ARRIVES by a straight step, so a seam point with a flush
+  neighbour or the corner three machines share can be left and not reached
+  — 0.2–0.4 % of pairs with a diagonal partition and flush machines, a
+  tenth of that axis-aligned; a symmetric arrival (no goal inside the
+  start, or the start's own edges counting as seams) changes about 10 % of
+  all walks and loses some, so it stays a decision (TODO.md);
+  `walkableGrid` keeps the grid to 1–400
   units, else no walk; `floodCount` and `floodSettled` let the tests pin one flood
   per log screen and its early stop; the
   floor is rasterised once per geometry on a half-unit grid, walks are

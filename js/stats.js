@@ -205,9 +205,12 @@ const inPolygon = (x, y, poly) => {
 const onSegment = (p, a, b) => Math.abs((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) < 1e-9
   && p.x >= Math.min(a.x, b.x) - 1e-9 && p.x <= Math.max(a.x, b.x) + 1e-9
   && p.y >= Math.min(a.y, b.y) - 1e-9 && p.y <= Math.max(a.y, b.y) + 1e-9;
+// strict on both sides, with onSegment's tolerance: a step through a wall's
+// END touches it (no crossing), and a rounding rest of 1e-15 must not say
+// otherwise — it did, and a machine at a wall's end was reached one way only
 const crosses = (p1, p2, p3, p4) => {
   const d = (a, b, c) => (c.x - a.x) * (b.y - a.y) - (b.x - a.x) * (c.y - a.y);
-  return d(p3, p4, p1) * d(p3, p4, p2) < 0 && d(p1, p2, p3) * d(p1, p2, p4) < 0;
+  return d(p3, p4, p1) * d(p3, p4, p2) < -1e-9 && d(p1, p2, p3) * d(p1, p2, p4) < -1e-9;
 };
 // The interior walls as segments, each cut open where a door or entrance
 // stands on it (its centre within half a unit of the wall).
@@ -280,11 +283,13 @@ function walkFloor(layout) {
   const ring = outline ?? [{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: H }, { x: 0, y: H }];
   const rim = ring.map((a, k) => [a, ring[(k + 1) % ring.length]]);
   const offFloor = new Uint8Array(n);
+  const onWall = new Uint8Array(n); // the interior-wall part of offFloor alone
   for (let j = 0; j <= 2 * H; j++) {
     for (let i = 0; i <= 2 * W; i++) {
       const p = { x: i / 2, y: j / 2 };
-      if ((outline && !inPolygon(p.x + 1e-6, p.y + 1e-6, outline))
-        || walls.some(([a, b]) => onSegment(p, a, b)) || rim.some(([a, b]) => onSegment(p, a, b))) {
+      if (walls.some(([a, b]) => onSegment(p, a, b))) onWall[j * CW + i] = 1;
+      if (onWall[j * CW + i] || (outline && !inPolygon(p.x + 1e-6, p.y + 1e-6, outline))
+        || rim.some(([a, b]) => onSegment(p, a, b))) {
         offFloor[j * CW + i] = 1;
       }
     }
@@ -304,7 +309,7 @@ function walkFloor(layout) {
       }
     }
   });
-  return { W, H, CW, solids, walls, inA, inB, edgeA, edgeB, edgeC, offFloor, anyBlock, nearWall };
+  return { W, H, CW, solids, walls, inA, inB, edgeA, edgeB, edgeC, offFloor, onWall, anyBlock, nearWall };
 }
 let floorMemo = { key: null, floor: null };
 // how many floods ran — the tests pin one per log screen (a flood per stop
@@ -333,7 +338,7 @@ function floorOf(layout) {
 export function walksFrom(layout, from, targets) {
   const out = new Map(targets.map((t) => [t.id, null]));
   if (!walkableGrid(layout) || !from || ![from.x, from.y, from.w, from.h].every(finite)) return out;
-  const { W, H, CW, solids, walls, inA, inB, edgeA, edgeB, edgeC, offFloor, anyBlock, nearWall } = floorOf(layout);
+  const { W, H, CW, solids, walls, inA, inB, edgeA, edgeB, edgeC, offFloor, onWall, anyBlock, nearWall } = floorOf(layout);
   const own = solids.findIndex((it) => it.id === from.id);
   const other = (v) => v !== -1 && v !== own;
   // a half-grid point is blocked off the floor, strictly inside another
@@ -349,7 +354,9 @@ export function walksFrom(layout, from, targets) {
   // target's centre is clear up to a quarter unit into the target's box —
   // no wall crossed, nothing off the floor or inside another solid on the
   // way (read off the raster every half unit): a machine flush against a
-  // wall or behind a mirror is not "reached" from the other side. What lies
+  // wall or behind a mirror is not "reached" from the other side. Walls by
+  // `crosses` alone (a half-unit sample that rounds onto a wall's END is no
+  // wall; the flood's steps keep their midpoint rule). What lies
   // deeper is the machine itself — a wall drawn through it or a centre past
   // the outline blocks nothing (user decision 2026-10-13: a machine cut by a
   // wall stays reachable from its floor side, and one the editor pushed a
@@ -372,7 +379,7 @@ export function walksFrom(layout, from, targets) {
       if (i < 0 || j < 0 || i > 2 * W || j > 2 * H) break;
       const c = j * CW + i;
       if (!anyBlock[c]) continue;
-      if (offFloor[c] === 1) return false;
+      if (offFloor[c] === 1 && !onWall[c]) return false;
       if ([inA[c], inB[c]].some((v) => v !== -1 && v !== own && v !== tk)) return false;
     }
     return true;
@@ -417,9 +424,11 @@ export function walksFrom(layout, from, targets) {
   // a wall separates from the true centre start too: a machine cut by a
   // partition is reached from both rooms, so it is left into both. Walks
   // from a machine no wall enters are unchanged; one a wall stub enters can
-  // get shorter. Measured on editor floors: no one-sided pair left with
-  // axis-aligned walls; diagonal walls and seams with flush neighbours still
-  // leave a few (docs/architecture.md § stats.js).
+  // get shorter. What is left one-sided is structural: a walk LEAVES
+  // through the start's own body (its edges and seam points are free for
+  // it) but ARRIVES by a straight step, so a seam point with a flush
+  // neighbour or a corner three machines share can be left and not reached
+  // (measured in docs/architecture.md § stats.js).
   const fx = from.x + from.w / 2;
   const fy = from.y + from.h / 2;
   const sx = Math.round(fx);
