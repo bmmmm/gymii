@@ -456,8 +456,17 @@ assert.deepEqual(store.parsePlanLine('#4 Row [ ] 3x10 40', s),
   assert.deepEqual(items.map((it) => [it.exercise, it.grip ?? null]), [['Curl [EZ]', 'Rope'], ['Curl [EZ]', null]],
     'with a grip and without: the bracketed exercise survives binding');
   const text = store.planToText(items, g, s);
-  assert.equal(text, '#3 Cable: Curl [EZ] [Rope] 3x10 20\n#3 Cable: Curl [EZ] 3x10', 'written back as typed');
+  assert.equal(text, '#3 Cable: Curl [EZ] [Rope] 3x10 20\n#3 Cable: Curl [EZ] [] 3x10',
+    'written back with empty brackets where no grip follows a bracketed name');
   assert.deepEqual(store.planItemsFrom(store.parsePlanText(text, s), g), items, 'list → text → list holds');
+  // an UNBOUND item has no machine to ask what the brackets were
+  const loose = store.planItemsFrom(store.parsePlanText('Curl [EZ] []\n#12 Bench: Press [Smith] [] 3x8 60\nRow [Rope]', s), null);
+  assert.deepEqual(loose.map((it) => [it.name, it.exercise, it.grip ?? null]),
+    [['Curl [EZ]', null, null], ['Bench', 'Press [Smith]', null], ['Row', null, 'Rope']], 'empty brackets name no grip');
+  const looseText = store.planToText(loose, null, s);
+  assert.equal(looseText, 'Curl [EZ] []\n#12 Bench: Press [Smith] [] 3x8 60\nRow [Rope]', 'and are written back');
+  assert.deepEqual(store.planItemsFrom(store.parsePlanText(looseText, s), null), loose,
+    'list → text → list holds for unbound items too');
   g.machines[0].grips = ['EZ'];
   assert.equal(store.planItemsFrom(store.parsePlanText('#3 Cable: Curl [EZ] 3x10', s), g)[0].grip, 'EZ',
     'a real grip of that name still wins');

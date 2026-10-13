@@ -6,7 +6,7 @@
 // placement geometry lives in store.js, whose addMachine places machines
 // too (quick start, the picker's create-on-miss) — one rule, two callers.
 import { esc } from './ui.js';
-import { WALL_SNAPPED, overlapsSolid, isSolid } from './store.js';
+import { WALL_SNAPPED, overlapsSolid, isSolid, SNAP } from './store.js';
 
 export { WALL_SNAPPED, overlapsSolid, freeSpot } from './store.js';
 
@@ -69,7 +69,6 @@ export function snapDoorToWall(layout, door) {
   door.rot = best.angle;
 }
 
-const SNAP = 1;
 export const snap = (v) => Math.round(v / SNAP) * SNAP;
 export const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 

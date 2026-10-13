@@ -125,6 +125,14 @@ store.importData(backup({ workouts: [workoutOf()] }));
   l.machines[0].secondaryMuscles = ['Biceps'];
   assert.equal(store.importData(template(l)), 'gym-template', 'string secondary muscles import');
   assert.deepEqual(store.getLayout().machines[0].secondaryMuscles, ['Biceps'], 'and travel with the template');
+  l.machines[0].bodyweight = true; // both flags: the editor never writes that
+  assert.equal(store.importData(template(l)), 'gym-template', 'a machine flagged bodyweight AND assisted imports');
+  const both = store.getLayout().machines[0];
+  assert.deepEqual([both.bodyweight, 'assisted' in both], [true, false],
+    'as what every screen shows it as (entryKind): bodyweight');
+  assert.equal('assisted' in store.cleanLayout(l).machines[0], false, 'a sync pull heals it the same way');
+  assert.equal(store.importData(backup({ gym: l })), 'backup', 'so does a backup');
+  assert.equal('assisted' in store.getLayout().machines[0], false, 'with the same result');
 }
 {
   const w = workoutOf();

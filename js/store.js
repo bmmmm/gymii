@@ -452,8 +452,12 @@ export function overlapsSolid(layout, item, x, y, w, h) {
     && x < m.x + m.w && x + w > m.x && y < m.y + m.h && y + h > m.y);
 }
 
+// The editor's snapping step, in grid units — map.js's snap() rounds to it
+// and freeSpot steps by it, so a placed item lands where a drag would.
+export const SNAP = 1;
+
 // Placement for a new solid item: the preferred position if free, else
-// the nearest non-overlapping spot (whole grid units, map.js's SNAP) so new
+// the nearest non-overlapping spot (whole SNAP steps) so new
 // items line up next to existing ones. A packed floor overlaps rather than
 // refusing to add — but never on the exact spot of another solid item,
 // where one would hide the other: the preferred spot if that is clear of
@@ -464,8 +468,8 @@ export function freeSpot(layout, x, y, w, h) {
   const taken = (sx, sy) => solids.some((m) => m.x === sx && m.y === sy);
   let best = null;
   let loose = taken(x, y) ? null : { x, y, d: 0 };
-  for (let sy = 0; sy + h <= layout.grid.h; sy += 1) {
-    for (let sx = 0; sx + w <= layout.grid.w; sx += 1) {
+  for (let sy = 0; sy + h <= layout.grid.h; sy += SNAP) {
+    for (let sx = 0; sx + w <= layout.grid.w; sx += SNAP) {
       const d = (sx - x) ** 2 + (sy - y) ** 2;
       if (!overlapsSolid(layout, null, sx, sy, w, h)) {
         if (!best || d < best.d) best = { x: sx, y: sy, d };
@@ -1412,11 +1416,21 @@ function isValidLayout(layout) {
 // fresh layout's on a device that has none yet. Dropping the frame instead
 // would leave a gridless layout that is never written — and the next push
 // would empty the server's copy of every good machine with it.
+// A file flagging a machine bodyweight AND assisted (the editor never
+// does) keeps what every screen already shows it as: bodyweight (entryKind).
+function healKind(m) {
+  if (!(m.bodyweight && m.assisted)) return m;
+  const healed = { ...m };
+  delete healed.assisted;
+  return healed;
+}
+const healKinds = (layout) => ({ ...layout, machines: layout.machines.map(healKind) });
+
 export function cleanLayout(layout, local = null) {
   if (!layout || typeof layout !== 'object') return null;
   const out = {
     ...layout,
-    machines: (Array.isArray(layout.machines) ? layout.machines : []).filter(isValidMachine),
+    machines: (Array.isArray(layout.machines) ? layout.machines : []).filter(isValidMachine).map(healKind),
     shapes: (Array.isArray(layout.shapes) ? layout.shapes : []).filter(isValidShape),
   };
   if (!hasValidFrame(out)) {
@@ -1676,8 +1690,11 @@ export function planToText(items, layout, settings = getSettings()) {
     if (!machine && !isUnbound(it)) return null; // machine deleted since
     const num = machine?.num ?? it.num ?? null;
     const label = machine ? machine.label : it.name;
-    const head = `${num ? `#${num} ` : ''}${label}${it.exercise ? `: ${it.exercise}` : ''}${
-      it.grip ? ` [${it.grip}]` : ''}`;
+    // the LAST "[…]" is read back as the grip, so a name carrying brackets
+    // of its own ("Curl [EZ]") and no grip gets empty ones: "[]" names none
+    const named = `${label}${it.exercise ? `: ${it.exercise}` : ''}`;
+    const head = `${num ? `#${num} ` : ''}${named}${
+      it.grip ? ` [${it.grip}]` : /\[[^[\]]*\]/.test(named) ? ' []' : ''}`;
     const t = it.target;
     if (!t) return head;
     if (t.distance != null) {
@@ -1780,7 +1797,7 @@ export function importData(data) {
   if (data.kind === 'gym-template') {
     if (!isValidLayout(data.gym)) throw new Error('Invalid gym template');
     // bulk restore, not an interactive edit: no re-diffing, no re-stamping
-    restoreLayout(data.gym);
+    restoreLayout(healKinds(data.gym));
     return 'gym-template';
   }
   if (data.kind === 'backup') {
@@ -1792,7 +1809,7 @@ export function importData(data) {
     if ((data.gym != null && !isValidLayout(data.gym)) || !workouts || workouts.includes(null)) {
       throw new Error('Invalid backup');
     }
-    if (data.gym != null) restoreLayout(data.gym);
+    if (data.gym != null) restoreLayout(healKinds(data.gym));
     saveWorkouts(workouts);
     if (Array.isArray(data.plans)) {
       savePlans(data.plans.map(cleanPlan).filter(Boolean));
