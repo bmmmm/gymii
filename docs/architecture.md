@@ -480,9 +480,12 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `#machine-list` (input/change/click/keydown) instead of one per control,
   because a muscle change re-renders the whole list — followed by
   `keepInView` on that row's muscle select, which the grown chip row above
-  would otherwise push down, and by a FOCUS that would otherwise drop to
-  `<body>`: after an add the select keeps it, after a removal the chip that
-  moved into its place (else the select); the label is staged on `input` like the
+  would otherwise push down, and — only when the control HAD the focus (a
+  keyboard or screen-reader user; a phone tap never focuses a chip, and a
+  programmatic focus there could pop the picker or drop a typing keyboard)
+  — by a FOCUS that would otherwise fall to `<body>`: after an add the
+  select keeps it, after a removal the chip that moved into its place (else
+  the select); the label is staged on `input` like the
   card's. Same flag/brand invariants as the card (flags deleted, never
   false), same `save()` — undo covers it. The
   Location card holds `meta.postcode` and an `#gym-osm` search link built by

@@ -160,7 +160,7 @@ on-demand only.
 
 ### On a real iPhone
 
-Nine checks no emulator settles. All against
+Ten checks no emulator settles. All against
 <https://bmmmm.github.io/gymii/>, never `serve.py`: a service worker and
 "Add to Home Screen" need https, and points 2–4 put exactly those on the
 stand. An expectation that fails becomes an issue labelled `bug`.
@@ -212,6 +212,10 @@ stand. An expectation that fails becomes an issue labelled `bug`.
 - [ ] **A finish refused by full storage.** Hard to stage on purpose; if it
   ever happens: *Expect:* the banner names the problem and the rest
   countdown keeps running (proven in Chromium by `smoke/workout.spec.mjs`).
+- [ ] **Gym list editor, "+ Muscle".** Open Edit all machines, pick a muscle
+  from a row's "+ Muscle", then tap a muscle chip's ✕. *Expect:* the picker
+  closes once and does not reopen; the ✕ removes the muscle without popping
+  any picker or keyboard.
 - [ ] **A grip switch mid-set.** With the weight field focused, tap another
   grip chip. *Expect:* the keyboard stays up.
 - [ ] **The issue forms, signed in.** The chooser

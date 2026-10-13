@@ -21,6 +21,9 @@ test('the machine list editor holds 44px targets, 16px fields, no sideways scrol
   await page.locator('#edit-machines').click();
   await expect(page.locator('#machine-list .mrow')).not.toHaveCount(0);
   await expect(page.locator('#machine-list .mrow-model').first()).toBeVisible();
+  // a row's own "Other…" brand field and its Set button count too
+  await page.locator('#machine-list .mrow').first().locator('select[data-field="brand"]').selectOption('__other');
+  await expect(page.locator('#machine-list .mrow-other').first()).toBeVisible();
   await holdsTheRules(page, 'the list editor');
 });
 

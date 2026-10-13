@@ -454,22 +454,40 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   const focused = [];
   const select = props.querySelector('#ml-muscle-m1');
   select.focus = () => focused.push('select');
-  change('m1', 'muscle', 'Lats');
+  // focus is handed on only when the control had it (a keyboard user) —
+  // never on a phone tap, where it could pop the picker or drop a keyboard
+  const addLats = { closest: (sel) => (sel === '.mrow' ? row('m1') : null), dataset: { field: 'muscle' }, value: 'Lats' };
+  globalThis.document = { activeElement: addLats };
+  last(list, 'change')({ target: addLats });
   assert.deepEqual(machineAt('m1').muscles, ['Chest', 'Lats'], 'the muscle dropdown adds one');
   assert.ok(props.innerHTML.includes('data-muscle="Lats"'), 'and the row re-renders with its chip');
   assert.deepEqual(focused.splice(0), ['select'], 'the re-rendered row\'s select keeps the focus, not <body>');
-  // the chips the re-rendered row holds after a removal: Lats moves into Chest's place
-  const latsChip = { focus: (o) => focused.push(['Lats', o]) };
-  let rowChips = [latsChip];
+  // the chips the re-rendered row holds after a removal: the next one moves into the removed one's place
+  const chipEl = (name) => ({ focus: (o) => focused.push([name, o]) });
+  let rowChips = [chipEl('Chest'), chipEl('Traps')];
   props.querySelector('.mrow[data-id="m1"]').querySelectorAll = (sel) => (sel === '.chip[data-muscle]' ? rowChips : []);
-  const chip = { dataset: { muscle: 'Chest' }, closest: (sel) => (sel === '.mrow' ? row('m1') : null) };
-  last(list, 'click')({ target: { closest: (sel) => (sel.startsWith('.chip') ? chip : null) } });
-  assert.deepEqual(machineAt('m1').muscles, ['Lats'], 'tapping a chip removes that muscle');
-  assert.deepEqual(focused.splice(0), [['Lats', { preventScroll: true }]], 'the focus moves to the chip that took its place');
+  const tapChip = (muscle, { keyboard = true } = {}) => {
+    const chip = { dataset: { muscle }, closest: (sel) => (sel === '.mrow' ? row('m1') : null) };
+    globalThis.document = { activeElement: keyboard ? chip : {} };
+    last(list, 'click')({ target: { closest: (sel) => (sel.startsWith('.chip') ? chip : null) } });
+  };
+  change('m1', 'muscle', 'Traps'); // Chest, Lats, Traps
+  focused.length = 0;
+  tapChip('Lats'); // the middle one: Traps moves into its place (index 1)
+  assert.deepEqual(machineAt('m1').muscles, ['Chest', 'Traps'], 'tapping a chip removes that muscle');
+  assert.deepEqual(focused.splice(0), [['Traps', { preventScroll: true }]], 'the focus moves to the chip that took its place');
+  rowChips = [chipEl('Chest')];
+  tapChip('Traps'); // the last one: nothing moves into index 1
+  assert.deepEqual(focused.splice(0), ['select'], 'no chip in its place: the row\'s select takes it');
   rowChips = [];
-  const lats = { dataset: { muscle: 'Lats' }, closest: (sel) => (sel === '.mrow' ? row('m1') : null) };
-  last(list, 'click')({ target: { closest: (sel) => (sel.startsWith('.chip') ? lats : null) } });
-  assert.deepEqual(focused.splice(0), ['select'], 'no chip left in the row: the select takes it');
+  tapChip('Chest', { keyboard: false });
+  assert.deepEqual(machineAt('m1').muscles, [], 'a tap removes it all the same');
+  assert.deepEqual(focused.splice(0), [], 'but a tap that never focused the chip moves no focus');
+  const tapAdd = { closest: (sel) => (sel === '.mrow' ? row('m1') : null), dataset: { field: 'muscle' }, value: 'Chest' };
+  globalThis.document = { activeElement: {} };
+  last(list, 'change')({ target: tapAdd });
+  assert.deepEqual(focused.splice(0), [], 'nor does a pick from a picker that no longer holds the focus');
+  delete globalThis.document;
   change('m1', 'muscle', 'Lats');
   focused.length = 0;
 
@@ -480,8 +498,10 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   last(list, 'input')({ target: modelEl });
   change('m1', 'muscle', 'Traps'); // a re-render from another control, mid-word
   assert.ok(props.innerHTML.includes('value="XR" placeholder="Model (optional)"'), 'a half-typed model survives a re-render');
-  change('m1', 'model', '  XR-5 ');
+  const modelChange = { closest: (sel) => (sel === '.mrow' ? row('m1') : null), dataset: { field: 'model' }, value: '  XR-5 ' };
+  last(list, 'change')({ target: modelChange });
   assert.equal(machineAt('m1').model, 'XR-5', 'the model is saved trimmed');
+  assert.equal(modelChange.value, 'XR-5', 'and the field shows it trimmed');
   change('m1', 'model', '   ');
   assert.equal('model' in machineAt('m1'), false, 'an emptied model is removed, never stored empty');
   const traps = { dataset: { muscle: 'Traps' }, closest: (sel) => (sel === '.mrow' ? row('m1') : null) };

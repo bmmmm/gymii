@@ -568,6 +568,12 @@ export function renderGym(root) {
   // logic tests' Node, where the selector is never resolved anyway
   const cssId = (id) => (typeof CSS === 'undefined' ? id : CSS.escape(id));
   const machineType = (m) => (m.cardio ? 'cardio' : m.bodyweight ? 'bodyweight' : '');
+  // Focus is handed on only when the control HAD it — a keyboard or screen-
+  // reader user, whom a re-render would drop onto <body>. A tap on a phone
+  // never focuses a chip (iOS), and a programmatic focus there could pop
+  // the "+ Muscle" picker nobody asked for, or close the keyboard of a
+  // field still being typed in.
+  const hadFocus = (el) => typeof document !== 'undefined' && document.activeElement === el;
   const option = (value, label, selected) =>
     `<option value="${esc(value)}"${selected ? ' selected' : ''}>${esc(label)}</option>`;
 
@@ -704,16 +710,17 @@ export function renderGym(root) {
           save();
           return;
         }
-        case 'muscle':
+        case 'muscle': {
           if (!v) return;
+          const focused = hadFocus(e.target);
           m.muscles = [...(m.muscles || []), v];
           save();
           renderProps();
           // the chip row above the select grew — keep the select under the
-          // thumb, and the focus on it: the row was re-rendered, and a
-          // keyboard or screen-reader user would land on <body>
-          keepInView(props, `#ml-muscle-${cssId(m.id)}`, { focus: true });
+          // thumb, and its focus on it (the row was re-rendered)
+          keepInView(props, `#ml-muscle-${cssId(m.id)}`, { focus: focused });
           return;
+        }
         default:
       }
     });
@@ -736,14 +743,15 @@ export function renderGym(root) {
         const m = rowMachine(chip);
         if (!m) return;
         const at = (m.muscles || []).indexOf(chip.dataset.muscle);
+        const focused = hadFocus(chip);
         m.muscles = (m.muscles || []).filter((x) => x !== chip.dataset.muscle);
         save();
         renderProps();
-        // focus goes to the chip that moved into its place, else the select
-        // of the same row — never back to <body>
-        const next = props.querySelector(`.mrow[data-id="${cssId(m.id)}"]`)
-          ?.querySelectorAll('.chip[data-muscle]')[at];
-        keepInView(props, `#ml-muscle-${cssId(m.id)}`, { focus: !next });
+        // a focused chip hands its focus to the chip that moved into its
+        // place, else to the select of the same row — never to <body>
+        const next = focused ? props.querySelector(`.mrow[data-id="${cssId(m.id)}"]`)
+          ?.querySelectorAll('.chip[data-muscle]')[at] : null;
+        keepInView(props, `#ml-muscle-${cssId(m.id)}`, { focus: focused && !next });
         next?.focus?.({ preventScroll: true });
         return;
       }
