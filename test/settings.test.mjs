@@ -148,6 +148,18 @@ store.setActiveGym(realId);
 renderSettings(root);
 assert.ok(root.innerHTML.includes('<h2>Sync</h2>'), 'a real gym gets the card');
 
+// Display: True black is a device-local chip — saved, never stamped
+{
+  assert.ok(/id="theme-chips"[\s\S]*?class="chip sel"\s+data-theme="dark"/.test(root.innerHTML), 'Dark is the default');
+  const stamp = store.getSettings().updatedAt;
+  byId.get('#theme-chips').listeners.click({ target: { closest: () => ({ dataset: { theme: 'black' } }) } });
+  assert.equal(store.getSettings().theme, 'black', 'a tap picks True black');
+  assert.equal(store.getSettings().updatedAt, stamp, 'device-local: the shared settings stamp does not move');
+  assert.ok(/class="chip sel"\s+data-theme="black" aria-pressed="true">True black/.test(root.innerHTML), 'and the chip shows it');
+  byId.get('#theme-chips').listeners.click({ target: { closest: () => ({ dataset: { theme: 'dark' } }) } });
+  assert.equal(store.getSettings().theme, 'dark');
+}
+
 // the weight step is a decimal text field: type=number turned "2,5" into 25
 {
   assert.ok(/id="weight-step" type="text" inputmode="decimal"[^>]*data-kind="decimal"/.test(root.innerHTML),

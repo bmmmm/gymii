@@ -27,7 +27,9 @@ ever sees ciphertext.
   muscle. Last workout's numbers prefill every set. Cardio machines log
   distance + time, bodyweight machines reps + extra weight, free-weight
   areas keep separate histories per named exercise, and a cable tower one
-  per grip (rope, V-bar — `[Rope]` in a typed plan line). 📍 shows where the next
+  per grip (rope, V-bar — `[Rope]` in a typed plan line). Stuck for what's
+  next? 🎲 in the picker suggests a machine for a muscle you haven't hit
+  today — it only fills in the number, you still decide. 📍 shows where the next
   machine stands, a busy one gets the closest open alternative, and a
   coverage row tracks which muscles you've hit today. Your locker number has a
   home too — noted at the start, out of the way once you're logging. 🏁 in
@@ -74,7 +76,8 @@ ever sees ciphertext.
   under "Last:" at the machine, under a muscle, under the chart, in the
   plan; they always read all of your training.
 - 🏨 **Gyms & units** — home gym, hotel gym, whatever. kg or lbs, switched
-  in one go.
+  in one go. A True black display on this device, for OLED screens and dark
+  gyms.
 - 📦 **Templates** — export your gym as JSON, import someone else's. Want to
   poke around first? Settings → "Load test data" fills a separate Demo gym
   with eight weeks of history and three plans — your own gyms stay untouched.

@@ -12,6 +12,20 @@
   color-scheme: dark;
 }
 
+/* True black (Settings → Display, `settings.theme`, device-local): an OLED
+   screen switches black pixels off — night training, battery. Chart and map
+   colors pass the dataviz checks against #0a0a0a and #000 exactly as they do
+   against #171c22 (re-run 2026-10-13: same single deutan WARN, covered by
+   the numbers and labels every item carries). */
+:root[data-theme="black"] {
+  --bg: #000;
+  --surface: #0a0a0a;
+  --surface-2: #161a1f;
+  --border: #23292f;
+}
+:root[data-theme="black"] .overlay { background: rgba(0, 0, 0, 0.96); }
+:root[data-theme="black"] .overlay.dim { background: #000; }
+
 * { box-sizing: border-box; }
 
 html, body { margin: 0; height: 100%; }

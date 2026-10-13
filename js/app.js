@@ -3,9 +3,9 @@ import { renderGym } from './gym.js';
 import { renderHistory } from './history.js';
 import { renderAi } from './ai.js';
 import { renderSettings, setPendingPairCode } from './settings.js';
-import { initSteppers, initNumericOverwrite, initFocusCentering } from './ui.js';
+import { initSteppers, initNumericOverwrite, initFocusCentering, applyTheme } from './ui.js';
 import { initAmbientSync, syncHealth, onSyncActivity } from './sync.js';
-import { onWriteError } from './store.js';
+import { onWriteError, getSettings } from './store.js';
 
 const routes = {
   train: renderTrain,
@@ -66,6 +66,7 @@ function route() {
   updateSyncBadge();
 }
 
+applyTheme(getSettings()); // before the first render, so nothing flashes in the other theme
 initSteppers();
 initNumericOverwrite();
 // Every focused field lands centred above the keyboard, with its context

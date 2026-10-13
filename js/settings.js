@@ -5,7 +5,7 @@ import {
 } from './store.js';
 import {
   download, esc, twoTapConfirm, keepInView, preserveFocus, fmtDate, fmtTime, fmtAgo,
-  TIMER_SOUNDS, playTimerSound, parseDistance, fieldValue,
+  TIMER_SOUNDS, playTimerSound, parseDistance, fieldValue, THEMES, themeOf, applyTheme,
 } from './ui.js';
 import { loadDemoData } from './demo.js';
 import {
@@ -399,6 +399,16 @@ function renderSettingsView(root) {
     </section>
 
     <section class="card">
+      <h2>Display</h2>
+      <div class="chip-select" id="theme-chips">
+        ${THEMES.map(([v, label]) => `<button type="button" class="chip${themeOf(s) === v ? ' sel' : ''}"
+          data-theme="${v}" aria-pressed="${themeOf(s) === v}">${label}</button>`).join('')}
+      </div>
+      <p class="muted">True black turns an OLED screen's pixels off — darker at
+        night, easier on the battery. This device only.</p>
+    </section>
+
+    <section class="card">
       <h2>Gym</h2>
       <a class="btn" href="#gym">Open the gym</a>
       <p class="muted">Draw the floor plan, number the machines and edit their
@@ -502,6 +512,15 @@ function renderSettingsView(root) {
     const chip = e.target.closest('.chip');
     if (!chip) return;
     saveSettings({ ...getSettings(), keepAwake: chip.dataset.awake });
+    renderSettings(root);
+  });
+
+  root.querySelector('#theme-chips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    // device-local: saveSettings leaves the shared stamp alone (no USER_SETTINGS field)
+    saveSettings({ ...getSettings(), theme: chip.dataset.theme });
+    applyTheme(getSettings());
     renderSettings(root);
   });
 

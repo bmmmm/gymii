@@ -317,6 +317,22 @@ assert.equal(seen.focused, 1, 'focus only when asked for');
 ui.keepInView(viewRoot, '#missing'); // a selector that renders nothing must not throw
 ui.keepInView({}, '#there'); // nor a root without querySelector
 
+// --- applyTheme: html[data-theme] and the browser chrome's colour ---
+{
+  const meta = { content: '#0f1216', setAttribute(k, v) { this[k] = v; } };
+  document.documentElement = { dataset: {} };
+  document.querySelector = (sel) => (sel === 'meta[name="theme-color"]' ? meta : null);
+  ui.applyTheme({ theme: 'black' });
+  assert.equal(document.documentElement.dataset.theme, 'black', 'True black marks the root');
+  assert.equal(meta.content, '#000000', 'and paints the browser chrome black');
+  ui.applyTheme({ theme: '"><script>' });
+  assert.equal('theme' in document.documentElement.dataset, false, 'anything else is the default dark theme');
+  assert.equal(meta.content, '#0f1216');
+  assert.equal(ui.themeOf({}), 'dark');
+  delete document.documentElement;
+  delete document.querySelector;
+}
+
 // --- keepFocus: a chip row that redraws itself keeps keyboard focus ---
 assert.equal(ui.cssStr('Push "A"\\\nday'), 'Push \\"A\\"\\\\\\a day',
   'cssStr escapes quotes, backslashes and a newline (raw, it would end the selector string)');

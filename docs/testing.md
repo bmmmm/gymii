@@ -100,7 +100,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   and the History tab (`history.spec.mjs`, demo gym): a machine chip names
   the chart, a bar tap opens that week, the Workouts screen and the
   workout editor pass the same 44px / 16px / no-overflow measures, and the
-  path card draws a route; and the Gym's folded parts (`gym.spec.mjs`,
+  path card draws a route; the True black theme (`layout.spec.mjs`: the
+  chip flips `html[data-theme]`, survives a reload, every route still
+  passes the measures) and the picker's 🎲 (fills the number, starts
+  nothing); and the Gym's folded parts (`gym.spec.mjs`,
   320px): the machine list editor and the machine card's brand fold-out
   pass them too.
   A NEW browser spec goes in

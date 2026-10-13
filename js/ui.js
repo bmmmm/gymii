@@ -397,6 +397,21 @@ export function preserveFocus(root, render) {
   try { next.setSelectionRange(keep.start, keep.end); } catch { /* not selectable */ }
 }
 
+// --- display theme ---
+// `settings.theme` is device-local (NOT in merge.js's USER_SETTINGS): an
+// OLED phone and a laptop want different things. Anything but 'black' is
+// the default dark theme, so a crafted value can only ever fall back.
+export const THEMES = [['dark', 'Dark'], ['black', 'True black']];
+export const themeOf = (settings) => (settings?.theme === 'black' ? 'black' : 'dark');
+const THEME_COLOR = { dark: '#0f1216', black: '#000000' };
+export function applyTheme(settings) {
+  if (typeof document === 'undefined') return;
+  const theme = themeOf(settings);
+  if (theme === 'dark') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLOR[theme]);
+}
+
 // A chip row or tile grid that redraws itself on its own click drops
 // keyboard focus to <body> — touch never notices, a keyboard user starts
 // over at the top of the page. The focused control is remembered by the id

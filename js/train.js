@@ -736,7 +736,49 @@ function renderOnboarding(root, message) {
 // The map is collapsed by default (settings.pickerMap) — number and muscle
 // are the picker's primary inputs, the map is the on-demand answer to
 // "where?", not the main navigation surface.
-function machinePicker(container, layout, onPick, { actionLabel = 'Open' } = {}) {
+// Muscles of every machine with ≥1 set this workout, read live from the
+// layout (entries don't snapshot muscles; deleted machines contribute
+// none). The overview's coverage chips and the 🎲 pick share it.
+function trainedMuscles(active, layout) {
+  return new Set((active?.entries ?? [])
+    .filter((e) => e.sets.length)
+    .flatMap((e) => layout.machines.find((m) => m.id === e.machineId)?.muscles ?? []));
+}
+
+// 🎲 "Surprise me": a machine not trained yet this workout, drawn at random
+// with each candidate weighted by how many of its muscles are still open
+// today; nearness to where you stand (the last machine, else the entrance,
+// else the floor's middle — centres as in nearbyAlternative) adds less
+// than one open muscle, so it only tips the odds between equals. With every
+// muscle trained (or none tagged) it is a plain random pick among the
+// machines not trained today. `rand` is injectable so tests replay a draw.
+// It only SUGGESTS — the caller never starts anything with it.
+export function surpriseMachine(layout, active = null, { rand = Math.random } = {}) {
+  const center = (m) => [m.x + m.w / 2, m.y + m.h / 2];
+  const done = new Set((active?.entries ?? []).filter((e) => e.sets.length).map((e) => e.machineId));
+  const pool = layout.machines.filter((m) => !done.has(m.id));
+  const candidates = (pool.length ? pool : layout.machines).slice().sort((a, b) => a.num - b.num);
+  if (!candidates.length) return null;
+  const trained = trainedMuscles(active, layout);
+  const open = (m) => (m.muscles ?? []).filter((mu) => !trained.has(mu)).length;
+  const lastId = active?.currentMachineId ?? active?.visits?.at(-1)?.machineId;
+  const here = layout.machines.find((m) => m.id === lastId);
+  const door = layout.shapes?.find((s) => s.kind === 'fixture' && s.fixture === 'entrance');
+  const [fx, fy] = here ? center(here) : door ? center(door) : [layout.grid.w / 2, layout.grid.h / 2];
+  const dist = (m) => Math.hypot(center(m)[0] - fx, center(m)[1] - fy);
+  const far = Math.max(...candidates.map(dist), 1);
+  const anyOpen = candidates.some((m) => open(m) > 0);
+  const weight = (m) => (!anyOpen ? 1 : open(m) ? open(m) + 0.5 * (1 - dist(m) / far) : 0);
+  const weights = candidates.map(weight);
+  let r = rand() * weights.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < candidates.length; i++) {
+    r -= weights[i];
+    if (r < 0 && weights[i] > 0) return candidates[i];
+  }
+  return candidates.findLast((m, i) => weights[i] > 0);
+}
+
+function machinePicker(container, layout, onPick, { actionLabel = 'Open', active = null } = {}) {
   const allMuscles = layoutMuscles(layout);
 
   container.innerHTML = `
@@ -752,6 +794,7 @@ function machinePicker(container, layout, onPick, { actionLabel = 'Open' } = {})
     <div class="pick-chips"></div>` : ''}
     <div class="map-wrap"><svg xmlns="http://www.w3.org/2000/svg"></svg></div>
     <div class="map-mode pick-mode">
+      <button type="button" class="chip pick-surprise" aria-label="Surprise me: suggest a machine">🎲</button>
       <button type="button" class="chip map-toggle">🗺 Map</button>
       <button type="button" class="chip" data-mode="custom">Colors</button>
       <button type="button" class="chip" data-mode="usage">Usage</button>
@@ -759,9 +802,12 @@ function machinePicker(container, layout, onPick, { actionLabel = 'Open' } = {})
     <p class="pick-err muted">Enter a machine number — or pick by muscle or map.</p>`;
 
   const svg = container.querySelector('svg');
+  // the 🎲 suggestion, highlighted on the map until the next pick
+  let suggestedId = null;
   // drawn lazily on first expand — most picks go via number or muscle
   const drawMap = () => drawLayout(svg, layout, {
     usage: getSettings().mapColors === 'usage' ? usagePayload(usageByMachine()) : null,
+    ...(suggestedId ? { highlightId: suggestedId } : {}),
   });
 
   const modeBar = container.querySelector('.pick-mode');
@@ -842,6 +888,20 @@ function machinePicker(container, layout, onPick, { actionLabel = 'Open' } = {})
   chips?.addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (chip) onPick(chip.dataset.id);
+  });
+
+  // 🎲 fills the number and points at the machine; the start stays a tap
+  // on the action button — a suggestion, never a decision
+  modeBar.querySelector('.pick-surprise').addEventListener('click', () => {
+    const m = surpriseMachine(layout, active);
+    if (!m) return;
+    suggestedId = m.id;
+    input.value = String(m.num);
+    const trained = trainedMuscles(active, layout);
+    const openNow = (m.muscles ?? []).filter((mu) => !trained.has(mu));
+    err.textContent = `🎲 #${m.num} ${m.label}${openNow.length ? ` — ${openNow.join(', ')} still open today` : ''}. `
+      + `Tap ${actionLabel} to go.`;
+    if (svg.childElementCount) { drawMap(); applyMuscleFilter(); }
   });
 
   modeBar.addEventListener('click', (e) => {
@@ -951,9 +1011,7 @@ function renderOverview(root, layout, active, message = '') {
   // deleted machines contribute none). The chips double as navigation —
   // tapping one drives the picker's muscle filter below.
   const allMuscles = layoutMuscles(layout);
-  const trained = new Set(active.entries
-    .filter((e) => e.sets.length)
-    .flatMap((e) => layout.machines.find((m) => m.id === e.machineId)?.muscles ?? []));
+  const trained = trainedMuscles(active, layout);
 
   // Name suggestions: what was actually trained (one id per logged set,
   // so the dominant region wins) plus the names already in use. Offered as
@@ -1103,7 +1161,7 @@ function renderOverview(root, layout, active, message = '') {
     switchMachine(active, machineId, open?.exercise ?? null, slotGrip(open));
     saveActive(active);
     renderTrain(root);
-  }, { actionLabel: 'Add' });
+  }, { actionLabel: 'Add', active });
 
   root.querySelector('#muscle-coverage')?.addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');

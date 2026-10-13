@@ -8,7 +8,7 @@ import { strict as assert } from 'node:assert';
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const {
   startWorkoutFrom, renderTrain, nearbyAlternative, nextSetDefaults, dimDelaySeconds,
-  screenKey, goToHub, goToStart, goToPlans, restLeft, restNextUp,
+  screenKey, goToHub, goToStart, goToPlans, restLeft, restNextUp, surpriseMachine,
 } = await import(new URL('../js/train.js', import.meta.url).href);
 
 const gym = store.newLayout('Test gym');
@@ -1396,6 +1396,61 @@ const withPicker = (fn) => {
   });
   assert.equal(store.getActive().currentExercise, 'Biceps curls', 'Add opens the open exercise, not the pick screen');
   store.clearActive();
+  store.saveLayout(before);
+}
+
+// --- 🎲 Surprise me: weighted toward muscles still open, nearness tips equals ---
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Dice gym');
+  const mm = (id, num, x, muscles) => ({ id, num, label: `M${num}`, x, y: 0, w: 4, h: 3, settingsFields: [], muscles });
+  g.machines.push(mm('d1', 1, 0, ['Chest']), mm('d2', 2, 6, ['Quads']), mm('d3', 3, 50, ['Triceps', 'Chest']),
+    mm('d4', 4, 10, ['Chest']));
+  store.saveLayout(g);
+  const done = { entries: [{ machineId: 'd4', sets: [{ reps: 10, weight: 40 }] }], currentMachineId: 'd4' };
+  // a sweep of evenly spaced draws stands in for many taps
+  const tally = (active) => {
+    const n = {};
+    for (let i = 0; i < 1000; i++) {
+      const m = surpriseMachine(g, active, { rand: () => (i + 0.5) / 1000 });
+      n[m.num] = (n[m.num] ?? 0) + 1;
+    }
+    return n;
+  };
+  const t = tally(done);
+  assert.equal(t[1] ?? 0, 0, 'a machine whose muscles are all trained today is never suggested while others are open');
+  assert.equal(t[4] ?? 0, 0, 'nor the machine just trained');
+  assert.ok(t[2] > t[3], `equal open muscles (Quads vs Triceps): the nearer #2 is likelier — ${JSON.stringify(t)}`);
+  assert.ok(t[3] > 0, 'the far one still comes up: it is a draw, not a ranking');
+  // two open muscles outweigh one, whatever the distance
+  const all = tally({ entries: [], currentMachineId: 'd2' });
+  assert.ok(all[3] > all[2] && all[3] > all[1], `#3 trains two open muscles: ${JSON.stringify(all)}`);
+  // everything trained: a plain random pick among the machines not trained today
+  const trainedAll = { entries: ['d1', 'd2', 'd3'].map((machineId) => ({ machineId, sets: [{ reps: 1, weight: 1 }] })) };
+  assert.deepEqual(tally(trainedAll), { 4: 1000 }, 'all muscles trained: the one machine left');
+  const none = tally(null);
+  assert.ok(Object.keys(none).length === 4, `no workout yet: every machine can come up — ${JSON.stringify(none)}`);
+  // the chip only suggests: it fills the number and says why, it never starts
+  store.clearActive();
+  goToStart();
+  byId.clear();
+  let picked = 0;
+  const surprise = stubEl();
+  withPicker((picker) => {
+    const mode = picker.querySelector('.pick-mode');
+    const qs = mode.querySelector;
+    mode.querySelector = (sel) => (sel === '.pick-surprise' ? surprise : qs.call(mode, sel));
+    renderTrain(root);
+    const realRand = Math.random;
+    Math.random = () => 0;
+    try { surprise.listeners.click(); } finally { Math.random = realRand; }
+    assert.equal(picker.parts.get('.pick-num').value, '1', 'the draw fills the number field (#1 trains Chest, open)');
+    assert.ok(picker.parts.get('.pick-err').textContent.startsWith('🎲 #1 M1 — Chest still open today.'),
+      'and the line says what it trains that is still open');
+    picked = store.getActive() ? 1 : 0;
+  });
+  assert.equal(picked, 0, 'no workout was started — a suggestion, never a decision');
+  goToHub();
   store.saveLayout(before);
 }
 

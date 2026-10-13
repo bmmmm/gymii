@@ -42,3 +42,46 @@ test('the logging screen holds the same rules', async ({ page }) => {
   expect(small, 'undersized touch targets on the log screen').toEqual([]);
   expect(tiny, 'fields iOS would zoom into on the log screen').toEqual([]);
 });
+
+// True black (Settings → Display): the chip flips html[data-theme], the
+// choice survives a reload (device-local setting, applied before the first
+// render), and every route keeps the same layout rules in it.
+test('True black switches the theme and every route still holds the rules', async ({ page }) => {
+  await page.setViewportSize(NARROW);
+  await seedDemoGym(page);
+  await page.goto('/#settings');
+  await page.locator('#theme-chips .chip[data-theme="black"]').click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'black');
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(0, 0, 0)');
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'black');
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#000000');
+  for (const route of ROUTES) {
+    await page.goto(`/#${route}`);
+    await expect(page.locator('#view h1, #view .tile')).not.toHaveCount(0);
+    expect(await page.evaluate(findOverflow), `route #${route} overflows in True black`).toBeNull();
+    const { small, tiny } = await page.evaluate(measure);
+    expect(small, `undersized touch targets on #${route} in True black`).toEqual([]);
+    expect(tiny, `fields iOS would zoom into on #${route} in True black`).toEqual([]);
+  }
+  await page.goto('/#settings');
+  await page.locator('#theme-chips .chip[data-theme="dark"]').click();
+  await expect(page.locator('html')).not.toHaveAttribute('data-theme', 'black');
+});
+
+// 🎲 in the machine picker: a 44px chip that fills the number and says
+// why — and starts nothing (the start stays the action button's job).
+test('the picker\'s 🎲 suggests a machine and starts nothing', async ({ page }) => {
+  await page.setViewportSize(NARROW);
+  await seedDemoGym(page);
+  await page.locator('#hub-start').click();
+  await page.locator('.pick-surprise').click();
+  await expect(page.locator('.pick-num')).toHaveValue(/^\d+$/);
+  await expect(page.locator('.pick-err')).toHaveText(/^🎲 #\d+ /);
+  expect(await page.evaluate(() => Object.keys(localStorage).some((k) => k.endsWith('.active')
+    && localStorage.getItem(k) !== 'null')), 'no workout was started').toBe(false);
+  expect(await page.evaluate(findOverflow), 'the start screen overflows').toBeNull();
+  const { small, tiny } = await page.evaluate(measure);
+  expect(small, 'undersized touch targets on the start screen').toEqual([]);
+  expect(tiny, 'fields iOS would zoom into on the start screen').toEqual([]);
+});

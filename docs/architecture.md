@@ -358,7 +358,15 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   Settings and the Train hub's Gym tile. Don't re-add the tab. The
   tabbar shows an emoji icon over each label with a Material-style pill
   behind the active tab's icon — pure CSS off the existing `.active`
-  toggle, no router logic involved.
+  toggle, no router logic involved. Before the first render it calls ui.js's
+  `applyTheme(getSettings())`: `settings.theme === 'black'` (Settings →
+  Display, "True black") stamps `html[data-theme="black"]`, whose CSS block
+  only redefines `--bg`/`--surface`/`--surface-2`/`--border` (plus a black
+  rest overlay) and paints `meta[name=theme-color]`; anything else is the
+  default dark theme. Device-local — not in merge.js's `USER_SETTINGS`, so
+  it neither syncs nor moves the settings stamp. Chart and map colors were
+  re-validated against #0a0a0a and #000 (same single deutan WARN as on
+  #171c22, covered by numbers and labels).
 - `js/ui.js` — shared helpers; owns the keyboard. `initFocusCentering()`
   (wired once in app.js) centres every focused field in the VISIBLE band
   once `visualViewport` settles — a field-to-field hop fires no resize, so
@@ -613,6 +621,15 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   button says "Start training", because outside a workout a pick starts
   one; the same `machinePicker` renders "Add" on the overview via its
   `actionLabel` option, where a pick only appends to the running workout.
+  Its 🎲 chip (`surpriseMachine(layout, active, { rand })`, exported for the
+  tests) only SUGGESTS: it fills the number field, highlights the machine
+  on the map and says which of its muscles are still open — the start
+  stays a tap on the action button. The draw: machines not trained yet this
+  workout, weighted by their open muscles (`trainedMuscles`, shared with
+  the coverage chips); nearness to the last machine (else the entrance,
+  else the floor's middle) adds under one muscle's weight, so it only tips
+  the odds between equals; with every muscle trained it is a plain random
+  pick among the untrained machines.
   Below the picker comes ONE stated sentence about today (`statusLine()`
   over `todayStatus()`): what is on, what was missed (with an inline
   "Skip this week"), that today's plan is already done, or that it is a
