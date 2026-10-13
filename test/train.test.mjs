@@ -2091,4 +2091,29 @@ const withPicker = (fn) => {
   store.saveLayout(before);
 }
 
+// --- the recommender: one line under Next when an open stop is much closer ---
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Closer gym');
+  g.machines.push({ id: 'k1', num: 1, label: 'Chest press', x: 2, y: 2, w: 4, h: 3, settingsFields: [], muscles: ['Chest'] },
+    { id: 'k2', num: 2, label: 'Far rower', x: 50, y: 2, w: 4, h: 3, settingsFields: [], muscles: ['Lats'] },
+    { id: 'k3', num: 3, label: 'Leg curl', x: 10, y: 2, w: 4, h: 3, settingsFields: [], muscles: ['Hamstrings'] });
+  store.saveLayout(g);
+  store.saveWorkouts([]);
+  const at = (plan) => {
+    store.saveActive({ v: 2, id: 'w-closer', startedAt: Date.now(), plan, currentMachineId: 'k1', currentExercise: null, entries: [] });
+    byId.clear();
+    renderTrain(root);
+    return root.innerHTML;
+  };
+  const h = at([{ machineId: 'k1', exercise: null }, { machineId: 'k2', exercise: null }, { machineId: 'k3', exercise: null }]);
+  assert.ok(/Next: #2\s+Far rower/.test(h), 'Next stays the plan\'s next');
+  assert.ok(h.includes('<p class="hint next-hint"><span>Closer: #3 Leg curl — a quarter of the walk.</span></p>'),
+    'and one line names the closer open stop — own data, no link');
+  assert.ok(!at([{ machineId: 'k1', exercise: null }, { machineId: 'k3', exercise: null }, { machineId: 'k2', exercise: null }])
+    .includes('Closer:'), 'Next IS the close one: nothing to say');
+  store.clearActive();
+  store.saveLayout(before);
+}
+
 console.log('train plan construction: all assertions passed');

@@ -675,4 +675,73 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   assert.equal(find(weeks(4), 'muscle-volume', { layout: L5 }), undefined, 'four are 2: exactly half, quiet');
 }
 
+// --- walkLength: A* on the floor, around walls and machines ---
+{
+  const box = (id, x, y, w = 2, h = 2) => ({ id, num: 1, label: id, x, y, w, h, settingsFields: [] });
+  const floor = (machines, shapes = [], outline = []) => ({ grid: { w: 20, h: 10 }, outline, machines, shapes });
+  const a = box('a', 1, 4);
+  const b = box('b', 15, 4);
+  const open = stats.walkLength(floor([a, b]), a, b);
+  assert.equal(open, 14, 'open floor: the straight line, centre to centre');
+  const wall = { id: 'w', kind: 'line', x: 10, y: 0, w: 0, h: 8 };
+  const around = stats.walkLength(floor([a, b], [wall]), a, b);
+  assert.ok(around > open + 2, `a wall in between is walked around (${around.toFixed(1)} > 14)`);
+  const block = box('c', 6, -1, 2, 12); // a machine across the whole floor
+  assert.equal(stats.walkLength(floor([a, b, block]), a, b), null, 'no way through: null');
+  const thin = box('t', 6, -1, 1, 12); // one unit thin: every node beside it is free, the step across is not
+  assert.equal(stats.walkLength(floor([a, b, thin]), a, b), null, 'no stepping through a thin machine');
+  const offGrid = { id: 'w2', kind: 'line', x: 10.5, y: 0, w: 0, h: 8 }; // between the grid points
+  assert.ok(stats.walkLength(floor([a, b], [offGrid]), a, b) > open + 2, 'a wall between the grid points is no gap');
+  const room = [{ x: 0, y: 0 }, { x: 12, y: 0 }, { x: 12, y: 10 }, { x: 0, y: 10 }];
+  assert.equal(stats.walkLength(floor([a, b], [], room), a, b), null, 'a machine outside the outline: unreachable');
+  const lockers = { id: 'l', kind: 'fixture', fixture: 'locker', x: 6, y: 3, w: 2, h: 4 };
+  assert.ok(stats.walkLength(floor([a, b], [lockers]), a, b) > open, 'a solid fixture in the way costs a detour');
+  const door = { id: 'd', kind: 'fixture', fixture: 'door', x: 6, y: 3, w: 2, h: 4 };
+  assert.equal(stats.walkLength(floor([a, b], [door]), a, b), open, 'a wall piece (door) blocks nothing');
+}
+
+// --- closerStop: the recommender under "Next" ---
+{
+  const box = (id, x, y, muscles = []) => ({ id, num: id.charCodeAt(0) - 96, label: id.toUpperCase(), x, y, w: 2, h: 2,
+    settingsFields: [], muscles });
+  const here = box('a', 0, 4, ['Chest']);
+  const next = box('n', 30, 4); // 30 away
+  const near = box('c', 6, 4); // 6 away: a fifth of the walk
+  const layout = { grid: { w: 40, h: 10 }, outline: [], shapes: [], machines: [here, next, near] };
+  const slot = (m) => ({ machine: m, slot: { machineId: m.id } });
+  const r = stats.closerStop({ layout, from: here, next, candidates: [slot(next), slot(near)] });
+  // (the walk to Next goes AROUND c, which stands in the straight line: 6 of ~30.8)
+  assert.ok(r?.machine.id === 'c' && r.ratio > 0.19 && r.ratio < 0.2, `the near open stop, about a fifth of the walk (${r?.ratio})`);
+  assert.equal(stats.walkSaving(r.ratio), 'a quarter of the walk');
+  // walks are memoised per floor geometry: a machine moved since is walked anew
+  const moved = { ...layout, machines: [here, next, { ...near, x: 28 }] };
+  assert.equal(stats.closerStop({ layout: moved, from: here, next, candidates: [slot(next), slot(moved.machines[2])] }), null,
+    'c moved next to Next: no longer closer');
+  assert.equal(stats.closerStop({ layout, from: here, next, candidates: [slot(next), slot(near)], busyNow: new Set(['c']) }),
+    null, 'usually busy now: not offered');
+  // the threshold: at most 70 % of the walk to Next
+  const at = (x) => {
+    const m = box('c', x, 4);
+    return stats.closerStop({ layout: { ...layout, machines: [here, next, m] }, from: here, next, candidates: [slot(m)] });
+  };
+  assert.ok(at(21), '21 of 30 (70 %): said');
+  assert.equal(at(22), null, '22 of 30: less than 30 % saved, quiet');
+  // recovery: the same muscle as the machine just left costs 25 %
+  const same = box('s', 6, 4, ['Chest']);
+  const other = box('o', 5, 6, ['Lats']); // 5.8 away, +0.5 for its later place in the plan
+  const two = { ...layout, machines: [here, next, same, other] };
+  assert.equal(stats.closerStop({ layout: two, from: here, next, candidates: [slot(same), slot(other)],
+    recentMuscles: ['Chest'] }).machine.id, 'o', 'the chest again right after the chest press loses to the lats one step further');
+  assert.equal(stats.closerStop({ layout: two, from: here, next, candidates: [slot(same), slot(other)] }).machine.id, 's',
+    'without the recovery malus the nearer one wins');
+  // plan order: equal walks, the earlier stop
+  const p1 = box('p', 6, 2);
+  const p2 = box('q', 6, 6);
+  const even = { ...layout, machines: [here, next, p1, p2] };
+  assert.equal(stats.closerStop({ layout: even, from: here, next, candidates: [slot(p2), slot(p1)] }).machine.id, 'q',
+    'equal walks: the one first in the plan');
+  assert.equal(stats.closerStop({ layout, from: here, next: here, candidates: [slot(near)] }), null, 'Next is here: nothing to say');
+  assert.deepEqual([0.3, 0.5, 0.6].map(stats.walkSaving), ['a third of the walk', 'half the walk', '40 % less walk']);
+}
+
 console.log('stats.test.mjs: all passed');

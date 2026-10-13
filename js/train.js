@@ -17,7 +17,7 @@ import {
   variantStr, entryKind,
 } from './ui.js';
 import { ensurePersisted } from './persist.js';
-import { insights, sameSeries, assistGoalAt } from './stats.js';
+import { insights, sameSeries, assistGoalAt, closerStop, walkSaving } from './stats.js';
 
 // Active workout shape:
 //   { v: 2, id, startedAt, plan: [{machineId, exercise|null, target?}…],
@@ -1507,7 +1507,8 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // says nothing about Monday morning). Date.now, so a test can pin the clock.
   const here = new Date(Date.now());
   const hour = here.getHours();
-  const hints = insights(getWorkouts(), layout, s, { plans: getPlans() }).filter((it) =>
+  const allHints = insights(getWorkouts(), layout, s, { plans: getPlans() });
+  const hints = allHints.filter((it) =>
     it.machineId === machine.id && (it.kind === 'progress'
       ? (it.exercise ?? null) === (exercise ?? null) && (it.grip ?? null) === grip
       : it.kind === 'busy' && it.weekday === here.getDay()
@@ -1562,6 +1563,23 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // and it would land in the record as busy: <this machine>
   const nearby = nextMachine && nextMachine.id !== machine.id
     ? nearbyAlternative(active, layout, machine, nextMachine.id) : null;
+  // A closer open stop than "Next" (stats.js closerStop, wall-aware): one
+  // line under the Next row, never instead of it. Busy-now machines (rule 7
+  // at this weekday and hour) are left out; a muscle of THIS machine costs
+  // a little extra (recovery).
+  const closer = nextMachine && nextMachine.id !== machine.id ? (() => {
+    const seen = new Set();
+    const candidates = active.plan.flatMap((slot) => {
+      if (!slot.machineId || seen.has(slot.machineId) || !slotLive(layout, slot) || slotDone(active, slot)) return [];
+      seen.add(slot.machineId);
+      const m = layout.machines.find((x) => x.id === slot.machineId);
+      return m ? [{ machine: m, slot }] : [];
+    });
+    const busyNow = new Set(allHints.filter((it) => it.kind === 'busy' && it.weekday === here.getDay()
+      && hour >= it.h0 - 1 && hour <= it.h1).map((it) => it.machineId));
+    return closerStop({ layout, from: machine, next: nextMachine, candidates, busyNow,
+      recentMuscles: machine.muscles ?? [] });
+  })() : null;
 
   // Quick-switch: the OTHER machines most recently trained this workout,
   // ranked by their newest `at`-stamped set. Superset workouts swing
@@ -1739,6 +1757,8 @@ function renderLog(root, layout, active, reveal = null, message = '') {
       </div>
       ${nearby ? `<button id="nearby-machine" class="btn">Busy? #${esc(nearby.machine.num)}
         ${esc(nearby.machine.label)} is nearby →</button>` : ''}
+      ${closer ? hintHtml({ text: `Closer: #${closer.machine.num} ${closer.machine.label} — ${walkSaving(closer.ratio)}.`,
+    source: 'own' }, 'next-hint') : ''}
       <button id="change-machine" class="btn">Change machine / overview</button>`
     : nextUnbound
       ? `<button id="next-unbound" class="btn ${targetDone ? 'btn-primary' : 'btn-next'} btn-big">Next:

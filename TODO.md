@@ -15,9 +15,8 @@ visits and ratings for its last four weeks.
 
 ### History — open (review findings, built on request)
 
-- Plan "Offen": `layout.meta.scale` → metres in the path card; wall-aware
-  routing; `settings.bodyKg` → kcal; primary/secondary muscle weighting;
-  a real next-machine recommender on top of rules 6–8.
+- Plan "Offen", deliberately left out (user decision 2026-10-13):
+  `layout.meta.scale` → metres in the path card; `settings.bodyKg` → kcal.
 
 Shipped 2026-09-02, in four waves: a mobile sweep (no field under 16px, so
 iOS stops zooming on focus; 44px targets everywhere with two commented

@@ -1002,6 +1002,8 @@ details.workout summary::-webkit-details-marker { display: none; }
 /* below the machine head, full width: inside its flex row the 44px ↗ would
    squeeze the text column and push the head's buttons out at 320 px */
 .head-hint { margin: 0 0 6px; }
+/* the recommender's line under the Next row (stats.js closerStop) */
+.next-hint { margin: 2px 0 8px; }
 /* under a muscle row: the row's border moves down below the hint */
 .muscle-row:has(+ .muscle-hint) { border-bottom: 0; }
 .muscle-hint { margin: -4px 0 0; padding: 0 4px 8px; border-bottom: 1px solid var(--border); }

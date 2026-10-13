@@ -174,6 +174,163 @@ function seriesEntries(workouts, machineId, exercise = null, grip = null) {
   return rel.filter((x) => kindOf(x.e) === kind).map((x) => ({ ...x, kind }));
 }
 
+// --- walking distance on the floor (wall-aware, user decision 2026-10-13) ---
+// A* over the grid's whole-unit points, 8 neighbours. Blocked: a point
+// outside the floor outline (a layout without one is open floor), inside a
+// solid item (machines and free-standing fixtures — `skip` holds the two
+// machines the walk starts and ends AT), and a step that crosses an
+// interior wall or whose midpoint lies in a solid item. Returns the length
+// in grid units, or null when no way exists. Only the recommender reads it:
+// the walking-path card keeps its straight legs (user decision).
+const WALL_FIXTURES = new Set(['entrance', 'door', 'window']);
+const inPolygon = (x, y, poly) => {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i];
+    const b = poly[j];
+    if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) c = !c;
+  }
+  return c;
+};
+// a point ON a wall is in the wall — or a step could pass through it
+// node by node, touching it twice without ever "crossing" it
+const onSegment = (p, a, b) => Math.abs((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) < 1e-9
+  && p.x >= Math.min(a.x, b.x) - 1e-9 && p.x <= Math.max(a.x, b.x) + 1e-9
+  && p.y >= Math.min(a.y, b.y) - 1e-9 && p.y <= Math.max(a.y, b.y) + 1e-9;
+const crosses = (p1, p2, p3, p4) => {
+  const d = (a, b, c) => (c.x - a.x) * (b.y - a.y) - (b.x - a.x) * (c.y - a.y);
+  return d(p3, p4, p1) * d(p3, p4, p2) < 0 && d(p1, p2, p3) * d(p1, p2, p4) < 0;
+};
+function walkGraph(layout) {
+  const W = Math.round(layout.grid?.w ?? 0);
+  const H = Math.round(layout.grid?.h ?? 0);
+  const outline = (layout.outline?.length ?? 0) >= 3 ? layout.outline : null;
+  const solids = [...(layout.machines ?? []), ...(layout.shapes ?? [])
+    .filter((s) => s.kind === 'fixture' && !WALL_FIXTURES.has(s.fixture))]
+    .filter((it) => [it.x, it.y, it.w, it.h].every(finite));
+  const walls = (layout.shapes ?? []).filter((s) => s.kind === 'line')
+    .map((w) => [{ x: w.x, y: w.y }, { x: w.x + w.w, y: w.y + w.h }]);
+  const inside = (it, x, y) => x > it.x && x < it.x + it.w && y > it.y && y < it.y + it.h;
+  return { W, H, outline, solids, walls, inside };
+}
+export function walkLength(layout, from, to) {
+  if (!layout?.grid || !from || !to) return null;
+  const { W, H, outline, solids, walls, inside } = walkGraph(layout);
+  const skip = new Set([from.id, to.id]);
+  const blockers = solids.filter((it) => !skip.has(it.id));
+  const free = (x, y) => (!outline || inPolygon(x + 1e-6, y + 1e-6, outline))
+    && !blockers.some((it) => inside(it, x, y))
+    && !walls.some(([a, b]) => onSegment({ x, y }, a, b));
+  const node = (m) => [Math.round(m.x + m.w / 2), Math.round(m.y + m.h / 2)];
+  const [sx, sy] = node(from);
+  const [gx, gy] = node(to);
+  const key = (x, y) => y * (W + 1) + x;
+  const g = new Map([[key(sx, sy), 0]]);
+  const done = new Set();
+  // binary heap of [f, x, y]
+  const heap = [[Math.hypot(gx - sx, gy - sy), sx, sy]];
+  const push = (e) => {
+    heap.push(e);
+    for (let i = heap.length - 1; i > 0;) {
+      const p = (i - 1) >> 1;
+      if (heap[p][0] <= heap[i][0]) break;
+      [heap[p], heap[i]] = [heap[i], heap[p]];
+      i = p;
+    }
+  };
+  const pop = () => {
+    const top = heap[0];
+    const last = heap.pop();
+    if (heap.length) {
+      heap[0] = last;
+      for (let i = 0; ;) {
+        const l = 2 * i + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+        if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+        if (m === i) break;
+        [heap[m], heap[i]] = [heap[i], heap[m]];
+        i = m;
+      }
+    }
+    return top;
+  };
+  while (heap.length) {
+    const [, x, y] = pop();
+    const k = key(x, y);
+    if (done.has(k)) continue;
+    done.add(k);
+    if (x === gx && y === gy) return g.get(k);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if ((!dx && !dy) || nx < 0 || ny < 0 || nx > W || ny > H) continue;
+        const goal = nx === gx && ny === gy;
+        if (!goal && !free(nx, ny)) continue;
+        const mx = x + dx / 2;
+        const my = y + dy / 2;
+        if (blockers.some((it) => inside(it, mx, my))) continue;
+        if (walls.some(([a, b]) => crosses({ x, y }, { x: nx, y: ny }, a, b))) continue;
+        const ng = g.get(k) + Math.hypot(dx, dy);
+        const nk = key(nx, ny);
+        if (ng < (g.get(nk) ?? Infinity)) {
+          g.set(nk, ng);
+          push([ng + Math.hypot(gx - nx, gy - ny), nx, ny]);
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// The next-machine recommender (user decisions 2026-10-13): among the open
+// stops of a workout, the one worth walking to instead of the plan's
+// "Next" — said only when it saves at least 30 % of the walk and is not
+// usually busy at this hour. Score = walk (grid units, walkLength) × 1.25
+// when it trains a muscle of the machine just left (recovery), plus half a
+// unit per place in the plan (its order is a bonus, never overruled for a
+// step). `candidates` [{machine, slot}] in plan order. → { machine, slot,
+// ratio } (walk to it ÷ walk to Next) or null. It never replaces "Next".
+// Walks are MEMOISED per floor geometry: a log screen re-renders on every
+// set, the floor changes only in the Gym (measured on the demo, 17 open
+// stops: 8.4 ms per render uncached, the plan's budget is 5).
+let walkMemo = { key: null, walks: new Map() };
+function walkCached(layout, from, to) {
+  const key = JSON.stringify([layout.grid, layout.outline,
+    (layout.shapes ?? []).map((s) => [s.kind, s.fixture, s.x, s.y, s.w, s.h]),
+    (layout.machines ?? []).map((m) => [m.id, m.x, m.y, m.w, m.h])]);
+  if (walkMemo.key !== key) walkMemo = { key, walks: new Map() };
+  const pair = `${from.id}\u0000${to.id}`;
+  if (!walkMemo.walks.has(pair)) walkMemo.walks.set(pair, walkLength(layout, from, to));
+  return walkMemo.walks.get(pair);
+}
+
+export function closerStop({ layout, from, next, candidates = [], busyNow = new Set(), recentMuscles = [] }) {
+  if (!from || !next || from.id === next.id) return null;
+  const toNext = walkCached(layout, from, next);
+  if (!toNext) return null;
+  const recent = new Set(recentMuscles);
+  let best = null;
+  candidates.forEach(({ machine, slot }, i) => {
+    if (machine.id === next.id || machine.id === from.id || busyNow.has(machine.id)) return;
+    const d = walkCached(layout, from, machine);
+    if (d == null) return;
+    const same = (machine.muscles ?? []).some((mu) => recent.has(mu));
+    const score = d * (same ? 1.25 : 1) + i * 0.5;
+    if (!best || score < best.score) best = { machine, slot, d, score };
+  });
+  if (!best || best.d > 0.7 * toNext) return null;
+  return { machine: best.machine, slot: best.slot, ratio: best.d / toNext };
+}
+
+// "half the walk" — how much shorter, in words a glance can take
+export const walkSaving = (ratio) => (ratio <= 0.28 ? 'a quarter of the walk'
+  : ratio <= 0.36 ? 'a third of the walk'
+    : ratio <= 0.55 ? 'half the walk'
+      : `${Math.round((1 - ratio) * 100)} % less walk`);
+
 // One point per workout for a machine's progress chart. `volume` is
 // reps × weight (cardio: total distance); `e1rm` the best valid estimate
 // across the sets, strength only; `rir` the top set's rating when it has one.

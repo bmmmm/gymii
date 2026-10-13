@@ -34,7 +34,9 @@ ever sees ciphertext.
   per grip (rope, V-bar — `[Rope]` in a typed plan line). Stuck for what's
   next? 🎲 in the picker suggests a machine for a muscle you haven't hit
   today — it only fills in the number, you still decide. 📍 shows where the next
-  machine stands, a busy one gets the closest open alternative, and a
+  machine stands, a busy one gets the closest open alternative, an open
+  stop that saves a real part of the walk (walls and machines in the way
+  counted) gets named under "Next", and a
   coverage row tracks which muscles you've hit today. Your locker number has a
   home too — noted at the start, out of the way once you're logging. 🏁 in
   the machine header finishes the workout right where you logged the last
