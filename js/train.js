@@ -1247,7 +1247,11 @@ function renderBind(root, layout, active) {
 function nextOpenSlot(active, layout, afterId, afterExercise = null, afterGrip = null) {
   const idx = planSlotIndex(active, afterId, afterExercise, afterGrip);
   const order = [...active.plan.slice(idx + 1), ...active.plan.slice(0, Math.max(idx, 0))];
-  return order.find((slot) => slotLive(layout, slot) && !slotDone(active, slot)) ?? null;
+  // a twin of the slot on screen is no next stop: it is THIS screen once
+  // the current block is done ("Next: <this machine>", and no "Busy?")
+  const here = { machineId: afterId, exercise: afterExercise, grip: afterGrip };
+  return order.find((slot) => slotLive(layout, slot) && !slotDone(active, slot)
+    && !(slot.machineId && sameSlot(slot, here))) ?? null;
 }
 
 // The plan index the logging screen is at: the exact (machine, exercise,
@@ -1257,9 +1261,10 @@ function nextOpenSlot(active, layout, afterId, afterExercise = null, afterGrip =
 // "Next" take over once the first block is done.
 function planSlotIndex(active, machineId, exercise = null, grip = null) {
   const here = { machineId, exercise, grip };
+  // all done: the LAST twin, which holds the latest sets (and any surplus)
   const firstOpen = (match) => {
     const open = active.plan.findIndex((p) => match(p) && !slotDone(active, p));
-    return open !== -1 ? open : active.plan.findIndex(match);
+    return open !== -1 ? open : active.plan.findLastIndex(match);
   };
   const exact = firstOpen((p) => sameSlot(p, here));
   if (exact !== -1) return exact;
@@ -1408,7 +1413,18 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   const rawTarget = pickPending ? null : planTargetFor(active, machine.id, exercise, grip);
   const target = rawTarget
     && (cardio ? rawTarget.distance != null : rawTarget.reps != null) ? rawTarget : null;
-  const def = pickPending ? null : nextSetDefaults(entry, lastSets, type, s, target);
+  const slotIdx = planSlotIndex(active, machine.id, exercise, grip);
+  const planPos = `${slotIdx + 1}/${active.plan.length}`;
+  // one-tap flow state: which target set is up, and is the target met —
+  // once it is, the Next button takes over as the primary action
+  const currentSlot = slotIdx === -1 ? null : active.plan[slotIdx];
+  // A twin's block starts from ITS target: both blocks share one entry, so
+  // "the last set logged" would hand the 3x6 @ 100 block the 80 kg × 10 of
+  // the block before it.
+  const freshBlock = !!(target && currentSlot && entry?.sets.length
+    && slotSetCount(active, currentSlot) === 0);
+  const def = pickPending ? null
+    : nextSetDefaults(freshBlock ? { ...entry, sets: [] } : entry, lastSets, type, s, target);
   // What this machine rests by default, and what it rests TODAY. A rest
   // changed mid-workout is a fact about this workout ("shoulders are cold
   // today"), not about the machine — it lives on the active workout, dies
@@ -1416,11 +1432,6 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // `??` throughout, so an explicit 0 (timer off) survives every level.
   const machineRest = () => machine.restSeconds ?? s.restSeconds;
   const restSeconds = active.restOverrides?.[machine.id] ?? machineRest();
-  const slotIdx = planSlotIndex(active, machine.id, exercise, grip);
-  const planPos = `${slotIdx + 1}/${active.plan.length}`;
-  // one-tap flow state: which target set is up, and is the target met —
-  // once it is, the Next button takes over as the primary action
-  const currentSlot = slotIdx === -1 ? null : active.plan[slotIdx];
   const targetDone = !!(target && currentSlot && slotDone(active, currentSlot));
   // only a {sets,reps,weight} target can be counted off — a cardio target
   // is one bout, not a tally, and has no `sets` to count against

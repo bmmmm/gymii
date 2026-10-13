@@ -1808,14 +1808,15 @@ const withPicker = (fn) => {
   const before = store.getLayout();
   const g = store.newLayout('Twin gym');
   g.machines.push({ id: 't14', num: 14, label: 'Leg press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] },
-    { id: 't15', num: 15, label: 'Calf raise', x: 6, y: 0, w: 4, h: 3, settingsFields: [] });
+    { id: 't15', num: 15, label: 'Calf raise', x: 6, y: 0, w: 4, h: 3, settingsFields: [] },
+    { id: 't16', num: 16, label: 'Hack squat', x: 12, y: 0, w: 4, h: 3, settingsFields: [] });
   store.saveLayout(g);
   store.clearActive();
   store.saveWorkouts([]);
-  const p = store.planFromText('#14 Leg press 3x10 80\n#14 Leg press 3x6 100\n#15 Calf raise 3x15 60');
+  const p = store.planFromText('#14 Leg press 3x10 80\n#14 Leg press 3x6 100\n#15 Calf raise 3x15 60\n#16 Hack squat 3x8 50');
   store.savePlan(p);
   startWorkoutFrom({ planId: p.id, entries: p.items });
-  assert.equal(store.getActive().plan.length, 3, 'a restart keeps both twins: their targets differ');
+  assert.equal(store.getActive().plan.length, 4, 'a restart keeps both twins: their targets differ');
   const logSet = (w, r) => {
     byId.get('#set-weight').value = w;
     byId.get('#set-reps').value = r;
@@ -1825,6 +1826,8 @@ const withPicker = (fn) => {
   byId.clear();
   renderTrain(root);
   assert.ok(root.innerHTML.includes('3 × 10 @ 80 kg'), 'the first twin\'s target leads');
+  assert.ok(/Next: #15\s+Calf raise/.test(root.innerHTML), 'the other twin is no "Next": it is this screen later');
+  assert.ok(root.innerHTML.includes('Busy? #16'), 'and the busy escape hatch stays on offer');
   for (let k = 0; k < 2; k++) logSet('80', '10');
   byId.clear();
   renderTrain(root);
@@ -1833,23 +1836,30 @@ const withPicker = (fn) => {
   byId.clear();
   renderTrain(root);
   assert.ok(root.innerHTML.includes('3 × 6 @ 100 kg'), 'after three sets the second twin\'s target takes over');
-  assert.ok(root.innerHTML.includes('Log set 1/3'), 'and counts from its own first set');
-  assert.ok(root.innerHTML.includes('2/3'), 'the plan position moves to the second twin');
+  assert.ok(root.innerHTML.includes('Log set 1/3 — 100 kg × 6'),
+    'and counts from its own first set, prefilled from its own target — not the 80 kg × 10 before it');
+  assert.ok(root.innerHTML.includes('<span class="muted">2/4</span>'), 'the plan position moves to the second twin');
   assert.ok(/Next[^<]*Calf raise/.test(root.innerHTML), '"Next" is the stop after the second twin');
   const a = store.getActive();
   store.switchMachine(a, null);
   store.saveActive(a);
   byId.clear();
   renderTrain(root);
-  assert.ok(root.innerHTML.includes('3/9 target sets'), 'the tally counts the three sets once: 3/9, not 6/9');
+  assert.ok(root.innerHTML.includes('3/12 target sets'), 'the tally counts the three sets once: 3/12, not 6/12');
   assert.ok(root.innerHTML.includes('✓ 3/3 sets'), 'the first twin row is done');
-  assert.equal((root.innerHTML.match(/>open</g) ?? []).length, 2, 'the second twin and the calf raise are still open');
-  // more sets than both blocks ask for: the last twin keeps the surplus
+  assert.equal((root.innerHTML.match(/>open</g) ?? []).length, 3, 'the second twin and the two others are still open');
+  // both blocks done: the screen stays on the LAST block, not the first
   store.switchMachine(a, 't14');
   store.saveActive(a);
   byId.clear();
   renderTrain(root);
-  for (let k = 0; k < 4; k++) logSet('100', '6');
+  for (let k = 0; k < 3; k++) logSet('100', '6');
+  byId.clear();
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('3 × 6 @ 100 kg') && root.innerHTML.includes('<span class="muted">2/4</span>'),
+    'all twins done: the header names the last block');
+  // more sets than both blocks ask for: the last twin keeps the surplus
+  logSet('100', '6');
   const c = store.getActive();
   store.switchMachine(c, null);
   // twins without a target (bound on the floor): one set each
@@ -1870,7 +1880,7 @@ const withPicker = (fn) => {
   byId.clear();
   renderTrain(root);
   assert.deepEqual([...root.innerHTML.matchAll(/class="plan-status[^"]*">([^<]*)</g)].map((m) => m[1]),
-    ['✓ 3/3 sets', '✓ 4/3 sets', '✓ 1 set', 'open'], 'a target-less twin takes one set, the next stays open');
+    ['✓ 3/3 sets', '✓ 4/3 sets', 'open', '✓ 1 set', 'open'], 'a target-less twin takes one set, the next stays open');
   // a past workout's entries repeated: the same triple without targets is one slot
   store.clearActive();
   startWorkoutFrom({ entries: [{ machineId: 't14', exercise: null }, { machineId: 't14', exercise: null }] });

@@ -560,9 +560,13 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   80` plus `3x6 100` — see the same entries, so `twinShare` hands the sets
   out in plan order: each twin takes up to its `target.sets` (one set
   without a target), the last one keeps the surplus. `planSlotIndex` picks
-  the first OPEN twin, so the second block's target and "Next" take over
-  after the first block; `startWorkoutFrom` drops only exact repeats (same
-  triple AND same target), so both blocks survive a restart. A plan whose FIRST
+  the first OPEN twin (all done: the last one), so the second block's
+  target takes over after the first block — and its first set is
+  prefilled from that target, not from the previous block's last set in
+  the shared entry. `nextOpenSlot` skips twins of the slot on screen, so
+  "Next" and "Busy?" point past the machine you stand at;
+  `startWorkoutFrom` drops only exact repeats (same triple AND same
+  target), so both blocks survive a restart. A plan whose FIRST
   slot has no machine yet starts with `binding: 0` — the workout opens on
   "which machine is this?" rather than on an overview of rows to assign;
   starting at a machine from the picker (`firstMachineId`) overrules it,

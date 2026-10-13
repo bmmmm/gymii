@@ -116,7 +116,7 @@ test('a RIR chip in the rest overlay rates the set just logged', async ({ page }
 });
 
 // Finishing mid-rest ends the rest with the workout: no countdown in the hub
-// and no tone at the old zero. A 3 s rest makes "the old zero" observable.
+// and no tone at the old zero. A 5 s rest makes "the old zero" observable.
 test('finishing during a rest ends it: no timer and no tone in the hub', async ({ page }) => {
   await seedDemoGym(page);
   await startWorkoutAt(page, 1);
@@ -127,16 +127,19 @@ test('finishing during a rest ends it: no timer and no tone in the hub', async (
       return Promise.resolve();
     };
   });
-  await page.locator('#set-rest').fill('3');
+  await page.locator('#set-rest').fill('5');
   await page.locator('#log-set').click();
   await page.locator('.overlay').click({ position: { x: 5, y: 5 } });
   await expect(page.locator('#rest-cd')).toBeVisible();
+  // the rest must still be running when Finish lands, or the tone would
+  // already be counted and the wait below would prove nothing
+  expect(toSeconds(await page.locator('#rest-cd').textContent())).toBeGreaterThan(1);
   await page.locator('#log-finish').click();
   await page.locator('#log-finish').click();
   await expect(page.locator('#hub-start')).toBeVisible();
   await expect(page.locator('#rest-cd')).toHaveCount(0);
   const plays = await page.evaluate(() => window.plays.length);
-  await page.waitForTimeout(4000);
+  await page.waitForTimeout(6000);
   expect(await page.evaluate(() => window.plays.length), 'no tone where the rest would have ended').toBe(plays);
   await expect(page.locator('.overlay')).toHaveCount(0);
 });
