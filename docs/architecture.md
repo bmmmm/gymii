@@ -716,17 +716,20 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   mid-workout, no Settings detour, and the Gym's back link returns to
   the running workout.
   `nearbyAlternative()` renders a "Busy? #N … is nearby" button under the
-  next-row: the physically closest OTHER open machine (machine centers,
-  current + plan-next excluded) as the busy-machine escape hatch —
+  next-row: the closest OTHER open machine by the WALK (stats.js
+  `walkCached`, around walls and machines; a machine no way leads to is
+  none; straight lines only without a floor grid; current + plan-next
+  excluded) as the busy-machine escape hatch —
   its tap switches to that machine and records the skipped next slot as
   `busy` on the new visit (store's `switchMachine`'s `busy` option), the
   skipped slot itself resurfaces via the wrap-around. That mark is the only
   stored trace of the button: no other state, and no `busy` on a plain Next.
-  Under it, the RECOMMENDER (stats.js `closerStop`, docs/insights.md rule 9)
-  may add ONE hint line — "Closer: #7 Leg curl — half the walk." — when an
-  open stop saves at least 30 % of the WALL-AWARE walk to Next and is not
-  usually busy now; it never replaces Next, stores nothing and has no link
-  (own data). Meters are out on purpose (no `layout.meta.scale`), so the
+  Under it, the RECOMMENDER (stats.js `closerStop`, docs/insights.md "Not
+  a hint row") may add ONE hint line — "Closer: #7 Leg curl — half the
+  walk." — when an open stop saves at least 30 % of the WALL-AWARE walk to
+  Next, is not usually busy now nor marked busy in this workout, and is not
+  the machine "Busy?" already offers; it never replaces Next, stores
+  nothing and has no link (own data). Meters are out on purpose (no `layout.meta.scale`), so the
   saving is relative.
   WALKING ROUTE: every change of the current machine goes through store's
   `switchMachine` — nine call sites: workout start (first machine), the
@@ -887,11 +890,15 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   name-only list so every muscle stays reachable while one is selected.
 - `js/stats.js` — pure History analytics: weekly buckets, per-machine series
   with estimated 1RM, muscle sets per week, the walked route, transition
-  counts, rest gaps, the floor's walking distance (`walkLength`: A* over
-  whole grid points, 8 neighbours — the outline, interior walls, machines
-  and free-standing fixtures block, wall pieces like doors do not; null when
-  no way exists; the walking-path card keeps its straight legs, user
-  decision) with the recommender `closerStop` on top, and the hint rules (`insights()`: every observation
+  counts, rest gaps, the floor's walking distance (`walksFrom`: one
+  Dijkstra flood from a machine to all targets over whole grid points, 8
+  neighbours — the outline, interior walls, machines and free-standing
+  fixtures block, two touching items are a barrier, a door or entrance in an
+  interior wall opens it, a target is reached on or next to its box; the
+  floor is rasterised once per geometry on a half-unit grid, walks are
+  memoised per floor and pair (`walksCached`); null when no way exists; the
+  walking-path card keeps its straight legs, user decision) with the
+  recommender `closerStop` on top, and the hint rules (`insights()`: every observation
   that fires, as an instruction with a `source` and its target — no card,
   no cap; docs/insights.md says which screen shows which). `hintHtml()` in
   ui.js renders one: the text, a ↗ to the study, nothing from `own`. NO

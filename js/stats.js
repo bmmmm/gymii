@@ -176,12 +176,18 @@ function seriesEntries(workouts, machineId, exercise = null, grip = null) {
 
 // --- walking distance on the floor (wall-aware, user decision 2026-10-13) ---
 // A* over the grid's whole-unit points, 8 neighbours. Blocked: a point
-// outside the floor outline (a layout without one is open floor), inside a
-// solid item (machines and free-standing fixtures — `skip` holds the two
-// machines the walk starts and ends AT), and a step that crosses an
-// interior wall or whose midpoint lies in a solid item. Returns the length
-// in grid units, or null when no way exists. Only the recommender reads it:
-// the walking-path card keeps its straight legs (user decision).
+// outside the floor outline (a layout without one is open floor), strictly
+// inside a solid item (machines and free-standing fixtures) other than the
+// two machines the walk starts and ends AT, on the seam where two solid
+// items touch (flush machines are a barrier, not a corridor), and on an
+// interior wall — except where a door or entrance stands in it (map.js
+// draws the gap; snapDoorToWall puts the door's width along the wall). A
+// step is blocked when it crosses a wall or its midpoint is blocked the
+// same way. Returns the length in grid units, or null when no way exists.
+// The floor is rasterised ONCE per geometry onto a half-unit grid (points
+// and step midpoints alike), so a walk costs lookups, not item scans.
+// Only the recommender reads it: the walking-path card keeps its straight
+// legs (user decision).
 const WALL_FIXTURES = new Set(['entrance', 'door', 'window']);
 const inPolygon = (x, y, poly) => {
   let c = false;
@@ -201,34 +207,152 @@ const crosses = (p1, p2, p3, p4) => {
   const d = (a, b, c) => (c.x - a.x) * (b.y - a.y) - (b.x - a.x) * (c.y - a.y);
   return d(p3, p4, p1) * d(p3, p4, p2) < 0 && d(p1, p2, p3) * d(p1, p2, p4) < 0;
 };
-function walkGraph(layout) {
+// The interior walls as segments, each cut open where a door or entrance
+// stands on it (its centre within half a unit of the wall).
+function wallSegments(layout) {
+  const doors = (layout.shapes ?? []).filter((s) => s.kind === 'fixture'
+    && (s.fixture === 'door' || s.fixture === 'entrance') && [s.x, s.y, s.w, s.h].every(finite));
+  return (layout.shapes ?? []).filter((s) => s.kind === 'line' && [s.x, s.y, s.w, s.h].every(finite))
+    .flatMap((w) => {
+      const a = { x: w.x, y: w.y };
+      const len = Math.hypot(w.w, w.h);
+      if (!len) return [];
+      const gaps = doors.flatMap((d) => {
+        const cx = d.x + d.w / 2;
+        const cy = d.y + d.h / 2;
+        const t = ((cx - a.x) * w.w + (cy - a.y) * w.h) / (len * len);
+        const off = Math.abs((cx - a.x) * w.h - (cy - a.y) * w.w) / len;
+        return t >= 0 && t <= 1 && off <= 0.5 ? [[t - d.w / 2 / len, t + d.w / 2 / len]] : [];
+      }).sort((p, q) => p[0] - q[0]);
+      const at = (t) => ({ x: a.x + w.w * t, y: a.y + w.h * t });
+      const parts = [];
+      let from = 0;
+      gaps.forEach(([g0, g1]) => {
+        if (g0 > from) parts.push([at(from), at(g0)]);
+        from = Math.max(from, g1);
+      });
+      if (from < 1) parts.push([at(from), at(1)]);
+      return parts;
+    });
+}
+// The floor rasterised at half units: for every point (2x, 2y) the solids
+// it lies strictly inside and on whose boundary it lies — at most two of
+// each kept, which is all the blocking test needs.
+function walkFloor(layout) {
   const W = Math.round(layout.grid?.w ?? 0);
   const H = Math.round(layout.grid?.h ?? 0);
   const outline = (layout.outline?.length ?? 0) >= 3 ? layout.outline : null;
   const solids = [...(layout.machines ?? []), ...(layout.shapes ?? [])
     .filter((s) => s.kind === 'fixture' && !WALL_FIXTURES.has(s.fixture))]
     .filter((it) => [it.x, it.y, it.w, it.h].every(finite));
-  const walls = (layout.shapes ?? []).filter((s) => s.kind === 'line')
-    .map((w) => [{ x: w.x, y: w.y }, { x: w.x + w.w, y: w.y + w.h }]);
-  const inside = (it, x, y) => x > it.x && x < it.x + it.w && y > it.y && y < it.y + it.h;
-  return { W, H, outline, solids, walls, inside };
+  const walls = wallSegments(layout);
+  const CW = 2 * W + 1;
+  const n = CW * (2 * H + 1);
+  const inA = new Int32Array(n).fill(-1);
+  const inB = new Int32Array(n).fill(-1);
+  const edgeA = new Int32Array(n).fill(-1);
+  const edgeB = new Int32Array(n).fill(-1);
+  const edgeC = new Int32Array(n).fill(-1);
+  const add = (arrs, i, v) => { const slot = arrs.find((arr) => arr[i] === -1); if (slot) slot[i] = v; };
+  solids.forEach((it, k) => {
+    const i0 = Math.max(0, Math.ceil(2 * it.x));
+    const i1 = Math.min(2 * W, Math.floor(2 * (it.x + it.w)));
+    const j0 = Math.max(0, Math.ceil(2 * it.y));
+    const j1 = Math.min(2 * H, Math.floor(2 * (it.y + it.h)));
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const x = i / 2;
+        const y = j / 2;
+        const strict = x > it.x && x < it.x + it.w && y > it.y && y < it.y + it.h;
+        add(strict ? [inA, inB] : [edgeA, edgeB, edgeC], j * CW + i, k);
+      }
+    }
+  });
+  const offFloor = new Uint8Array(n);
+  for (let j = 0; j <= 2 * H; j++) {
+    for (let i = 0; i <= 2 * W; i++) {
+      const p = { x: i / 2, y: j / 2 };
+      if ((outline && !inPolygon(p.x + 1e-6, p.y + 1e-6, outline)) || walls.some(([a, b]) => onSegment(p, a, b))) {
+        offFloor[j * CW + i] = 1;
+      }
+    }
+  }
+  // fast paths: a point blocked for SOME walk (refined per walk — the
+  // start machine is no obstacle), and the grid points within a step of a
+  // wall (only their steps can cross one)
+  const anyBlock = new Uint8Array(n);
+  for (let c = 0; c < n; c++) {
+    anyBlock[c] = offFloor[c] || inA[c] !== -1 || edgeB[c] !== -1 ? 1 : 0;
+  }
+  const nearWall = new Uint8Array((W + 1) * (H + 1));
+  walls.forEach(([a, b]) => {
+    for (let y = Math.max(0, Math.floor(Math.min(a.y, b.y)) - 1); y <= Math.min(H, Math.ceil(Math.max(a.y, b.y)) + 1); y++) {
+      for (let x = Math.max(0, Math.floor(Math.min(a.x, b.x)) - 1); x <= Math.min(W, Math.ceil(Math.max(a.x, b.x)) + 1); x++) {
+        nearWall[y * (W + 1) + x] = 1;
+      }
+    }
+  });
+  return { W, H, CW, solids, walls, inA, inB, edgeA, edgeB, edgeC, offFloor, anyBlock, nearWall };
 }
-export function walkLength(layout, from, to) {
-  if (!layout?.grid || !from || !to) return null;
-  const { W, H, outline, solids, walls, inside } = walkGraph(layout);
-  const skip = new Set([from.id, to.id]);
-  const blockers = solids.filter((it) => !skip.has(it.id));
-  const free = (x, y) => (!outline || inPolygon(x + 1e-6, y + 1e-6, outline))
-    && !blockers.some((it) => inside(it, x, y))
-    && !walls.some(([a, b]) => onSegment({ x, y }, a, b));
-  const node = (m) => [Math.round(m.x + m.w / 2), Math.round(m.y + m.h / 2)];
-  const [sx, sy] = node(from);
-  const [gx, gy] = node(to);
+let floorMemo = { key: null, floor: null };
+const floorKey = (layout) => JSON.stringify([layout.grid, layout.outline,
+  (layout.shapes ?? []).map((s) => [s.kind, s.fixture, s.x, s.y, s.w, s.h]),
+  (layout.machines ?? []).map((m) => [m.id, m.x, m.y, m.w, m.h])]);
+function floorOf(layout) {
+  const key = floorKey(layout);
+  if (floorMemo.key !== key) floorMemo = { key, floor: walkFloor(layout) };
+  return floorMemo.floor;
+}
+
+// One Dijkstra flood from `from` that answers for every target at once (a
+// log screen asks for every open stop): a target is reached at the first
+// free point on or next to its box — where you stand to use it — plus the
+// straight step from there to its centre. Stops as soon as every target is
+// answered; an unreachable one leaves its null. → Map(id → length | null).
+export function walksFrom(layout, from, targets) {
+  const out = new Map(targets.map((t) => [t.id, null]));
+  if (!layout?.grid || !from || ![from.x, from.y, from.w, from.h].every(finite)) return out;
+  const { W, H, CW, solids, walls, inA, inB, edgeA, edgeB, edgeC, offFloor, anyBlock, nearWall } = floorOf(layout);
+  const own = solids.findIndex((it) => it.id === from.id);
+  const other = (v) => v !== -1 && v !== own;
+  // a half-grid point is blocked off the floor, strictly inside another
+  // solid, or on the seam of two other solids (flush machines)
+  const blocked = (i, j) => {
+    const c = j * CW + i;
+    if (!anyBlock[c]) return false;
+    return offFloor[c] === 1 || other(inA[c]) || other(inB[c])
+      || (other(edgeA[c]) + other(edgeB[c]) + other(edgeC[c])) >= 2;
+  };
   const key = (x, y) => y * (W + 1) + x;
-  const g = new Map([[key(sx, sy), 0]]);
-  const done = new Set();
-  // binary heap of [f, x, y]
-  const heap = [[Math.hypot(gx - sx, gy - sy), sx, sy]];
+  // every target's ring: the points on or one step outside its box
+  const goals = new Map();
+  let open = 0;
+  targets.forEach((t) => {
+    if (![t.x, t.y, t.w, t.h].every(finite)) return;
+    const cx = t.x + t.w / 2;
+    const cy = t.y + t.h / 2;
+    let any = false;
+    for (let y = Math.max(0, Math.floor(t.y) - 1); y <= Math.min(H, Math.ceil(t.y + t.h) + 1); y++) {
+      for (let x = Math.max(0, Math.floor(t.x) - 1); x <= Math.min(W, Math.ceil(t.x + t.w) + 1); x++) {
+        const inside = x > t.x && x < t.x + t.w && y > t.y && y < t.y + t.h;
+        const near = x >= t.x - 1 && x <= t.x + t.w + 1 && y >= t.y - 1 && y <= t.y + t.h + 1;
+        if (inside || !near) continue;
+        const k = key(x, y);
+        if (!goals.has(k)) goals.set(k, []);
+        goals.get(k).push([t.id, Math.hypot(cx - x, cy - y)]);
+        any = true;
+      }
+    }
+    if (any) open += 1;
+  });
+  const sx = Math.round(from.x + from.w / 2);
+  const sy = Math.round(from.y + from.h / 2);
+  if (!open || sx < 0 || sy < 0 || sx > W || sy > H) return out;
+  const answered = new Set();
+  const g = new Float64Array((W + 1) * (H + 1)).fill(Infinity);
+  g[key(sx, sy)] = 0;
+  const done = new Uint8Array((W + 1) * (H + 1));
+  const heap = [[0, sx, sy]]; // binary heap of [g, x, y]
   const push = (e) => {
     heap.push(e);
     for (let i = heap.length - 1; i > 0;) {
@@ -256,80 +380,91 @@ export function walkLength(layout, from, to) {
     }
     return top;
   };
-  while (heap.length) {
-    const [, x, y] = pop();
+  while (heap.length && answered.size < open) {
+    const [d, x, y] = pop();
     const k = key(x, y);
-    if (done.has(k)) continue;
-    done.add(k);
-    if (x === gx && y === gy) return g.get(k);
+    if (done[k]) continue;
+    done[k] = 1;
+    (goals.get(k) ?? []).forEach(([id, rest]) => {
+      if (answered.has(id)) return;
+      answered.add(id);
+      out.set(id, d + rest);
+    });
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
         const nx = x + dx;
         const ny = y + dy;
         if ((!dx && !dy) || nx < 0 || ny < 0 || nx > W || ny > H) continue;
-        const goal = nx === gx && ny === gy;
-        if (!goal && !free(nx, ny)) continue;
-        const mx = x + dx / 2;
-        const my = y + dy / 2;
-        if (blockers.some((it) => inside(it, mx, my))) continue;
-        if (walls.some(([a, b]) => crosses({ x, y }, { x: nx, y: ny }, a, b))) continue;
-        const ng = g.get(k) + Math.hypot(dx, dy);
+        if (blocked(2 * nx, 2 * ny) || blocked(2 * x + dx, 2 * y + dy)) continue; // point, then the step's midpoint
+        if (nearWall[k] && walls.some(([a, b]) => crosses({ x, y }, { x: nx, y: ny }, a, b))) continue;
         const nk = key(nx, ny);
-        if (ng < (g.get(nk) ?? Infinity)) {
-          g.set(nk, ng);
-          push([ng + Math.hypot(gx - nx, gy - ny), nx, ny]);
+        if (done[nk]) continue;
+        const ng = d + (dx && dy ? Math.SQRT2 : 1);
+        if (ng < g[nk]) {
+          g[nk] = ng;
+          push([ng, nx, ny]);
         }
       }
     }
   }
-  return null;
+  return out;
 }
+
+export const walkLength = (layout, from, to) => (to ? walksFrom(layout, from, [to]).get(to.id) : null);
 
 // The next-machine recommender (user decisions 2026-10-13): among the open
 // stops of a workout, the one worth walking to instead of the plan's
 // "Next" — said only when it saves at least 30 % of the walk and is not
-// usually busy at this hour. Score = walk (grid units, walkLength) × 1.25
-// when it trains a muscle of the machine just left (recovery), plus half a
+// usually busy at this hour (nor marked busy in this workout). Score = walk
+// (grid units, walkLength) × 1.25 when it trains a muscle of the machine
+// just left (recovery; primary or secondary on either side), plus half a
 // unit per place in the plan (its order is a bonus, never overruled for a
-// step). `candidates` [{machine, slot}] in plan order. → { machine, slot,
-// ratio } (walk to it ÷ walk to Next) or null. It never replaces "Next".
-// Walks are MEMOISED per floor geometry: a log screen re-renders on every
-// set, the floor changes only in the Gym (measured on the demo, 17 open
-// stops: 8.4 ms per render uncached, the plan's budget is 5).
+// step). Only stops under the 30 % line compete, so a far one can never
+// silence a near one. `candidates` [{machine, slot}] in plan order.
+// → { machine, slot, ratio } (walk to it ÷ walk to Next) or null. It never
+// replaces "Next".
+// Walks are MEMOISED per floor geometry and pair: a log screen re-renders
+// on every set, the floor changes only in the Gym.
 let walkMemo = { key: null, walks: new Map() };
-function walkCached(layout, from, to) {
-  const key = JSON.stringify([layout.grid, layout.outline,
-    (layout.shapes ?? []).map((s) => [s.kind, s.fixture, s.x, s.y, s.w, s.h]),
-    (layout.machines ?? []).map((m) => [m.id, m.x, m.y, m.w, m.h])]);
+const pairKey = (from, to) => `${from.id}\u0000${to.id}`;
+// the walks from `from` to all `targets`, one flood for the ones not known yet
+export function walksCached(layout, from, targets) {
+  const key = floorKey(layout);
   if (walkMemo.key !== key) walkMemo = { key, walks: new Map() };
-  const pair = `${from.id}\u0000${to.id}`;
-  if (!walkMemo.walks.has(pair)) walkMemo.walks.set(pair, walkLength(layout, from, to));
-  return walkMemo.walks.get(pair);
+  const missing = targets.filter((t) => !walkMemo.walks.has(pairKey(from, t)));
+  if (missing.length) {
+    const found = walksFrom(layout, from, missing);
+    missing.forEach((t) => walkMemo.walks.set(pairKey(from, t), found.get(t.id)));
+  }
+  return new Map(targets.map((t) => [t.id, walkMemo.walks.get(pairKey(from, t))]));
 }
+export const walkCached = (layout, from, to) => walksCached(layout, from, [to]).get(to.id);
 
-export function closerStop({ layout, from, next, candidates = [], busyNow = new Set(), recentMuscles = [] }) {
+const musclesOf = (m) => [...(m?.muscles ?? []), ...(m?.secondaryMuscles ?? [])];
+export function closerStop({ layout, from, next, candidates = [], busyNow = new Set(), recentMuscles = musclesOf(from) }) {
   if (!from || !next || from.id === next.id) return null;
-  const toNext = walkCached(layout, from, next);
+  const walks = walksCached(layout, from, [next, ...candidates.map((c) => c.machine)]);
+  const toNext = walks.get(next.id);
   if (!toNext) return null;
   const recent = new Set(recentMuscles);
   let best = null;
   candidates.forEach(({ machine, slot }, i) => {
     if (machine.id === next.id || machine.id === from.id || busyNow.has(machine.id)) return;
-    const d = walkCached(layout, from, machine);
-    if (d == null) return;
-    const same = (machine.muscles ?? []).some((mu) => recent.has(mu));
+    const d = walks.get(machine.id);
+    if (d == null || d > 0.7 * toNext) return;
+    const same = musclesOf(machine).some((mu) => recent.has(mu));
     const score = d * (same ? 1.25 : 1) + i * 0.5;
     if (!best || score < best.score) best = { machine, slot, d, score };
   });
-  if (!best || best.d > 0.7 * toNext) return null;
-  return { machine: best.machine, slot: best.slot, ratio: best.d / toNext };
+  return best ? { machine: best.machine, slot: best.slot, ratio: best.d / toNext } : null;
 }
 
-// "half the walk" — how much shorter, in words a glance can take
-export const walkSaving = (ratio) => (ratio <= 0.28 ? 'a quarter of the walk'
-  : ratio <= 0.36 ? 'a third of the walk'
-    : ratio <= 0.55 ? 'half the walk'
-      : `${Math.round((1 - ratio) * 100)} % less walk`);
+// how much shorter, in words a glance can take: "half the walk"
+export const walkSaving = (ratio) => (ratio <= 0.15 ? 'a fraction of the walk'
+  : ratio <= 0.28 ? 'a quarter of the walk'
+    : ratio <= 0.36 ? 'a third of the walk'
+      : ratio <= 0.55 ? 'half the walk'
+        : `${Math.round((1 - ratio) * 100)} % less walk`);
 
 // One point per workout for a machine's progress chart. `volume` is
 // reps × weight (cardio: total distance); `e1rm` the best valid estimate

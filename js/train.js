@@ -17,7 +17,7 @@ import {
   variantStr, entryKind,
 } from './ui.js';
 import { ensurePersisted } from './persist.js';
-import { insights, sameSeries, assistGoalAt, closerStop, walkSaving } from './stats.js';
+import { insights, sameSeries, assistGoalAt, closerStop, walkSaving, walkCached } from './stats.js';
 
 // Active workout shape:
 //   { v: 2, id, startedAt, plan: [{machineId, exercise|null, target?}…],
@@ -1369,6 +1369,16 @@ function planSlotIndex(active, machineId, exercise = null, grip = null) {
 export function nearbyAlternative(active, layout, machine, excludeMachineId = null) {
   const center = (m) => [m.x + m.w / 2, m.y + m.h / 2];
   const [fx, fy] = center(machine);
+  // the WALK, around walls and machines, like the "Closer:" line beside it
+  // (stats.js walkCached) — straight-line only where there is no floor grid;
+  // a machine no way leads to is no alternative
+  const dist = (m) => {
+    if (!layout.grid) {
+      const [cx, cy] = center(m);
+      return Math.hypot(cx - fx, cy - fy);
+    }
+    return walkCached(layout, machine, m);
+  };
   const seen = new Set();
   let best = null;
   for (const slot of active.plan) {
@@ -1377,8 +1387,8 @@ export function nearbyAlternative(active, layout, machine, excludeMachineId = nu
     seen.add(slot.machineId);
     const m = layout.machines.find((mm) => mm.id === slot.machineId);
     if (!m) continue;
-    const [cx, cy] = center(m);
-    const d = (cx - fx) ** 2 + (cy - fy) ** 2;
+    const d = dist(m);
+    if (d == null) continue;
     if (!best || d < best.d) best = { slot, machine: m, d };
   }
   return best;
@@ -1575,10 +1585,16 @@ function renderLog(root, layout, active, reveal = null, message = '') {
       const m = layout.machines.find((x) => x.id === slot.machineId);
       return m ? [{ machine: m, slot }] : [];
     });
-    const busyNow = new Set(allHints.filter((it) => it.kind === 'busy' && it.weekday === here.getDay()
-      && hour >= it.h0 - 1 && hour <= it.h1).map((it) => it.machineId));
-    return closerStop({ layout, from: machine, next: nextMachine, candidates, busyNow,
-      recentMuscles: machine.muscles ?? [] });
+    // busy: usually at this hour (rule 7), or marked busy in THIS workout
+    // — "Busy?" skipped it minutes ago, it comes back by the wrap-around
+    const busyNow = new Set([
+      ...allHints.filter((it) => it.kind === 'busy' && it.weekday === here.getDay()
+        && hour >= it.h0 - 1 && hour <= it.h1).map((it) => it.machineId),
+      ...(active.visits ?? []).map((v) => v.busy).filter(Boolean),
+    ]);
+    const best = closerStop({ layout, from: machine, next: nextMachine, candidates, busyNow });
+    // the Busy? button already offers that very machine: one offer, not two
+    return best && best.machine.id !== nearby?.machine.id ? best : null;
   })() : null;
 
   // Quick-switch: the OTHER machines most recently trained this workout,
@@ -1757,8 +1773,8 @@ function renderLog(root, layout, active, reveal = null, message = '') {
       </div>
       ${nearby ? `<button id="nearby-machine" class="btn">Busy? #${esc(nearby.machine.num)}
         ${esc(nearby.machine.label)} is nearby →</button>` : ''}
-      ${closer ? hintHtml({ text: `Closer: #${closer.machine.num} ${closer.machine.label} — ${walkSaving(closer.ratio)}.`,
-    source: 'own' }, 'next-hint') : ''}
+      ${closer ? hintHtml({ text: `Closer: #${closer.machine.num} ${closer.machine.label}${variantStr(closer.slot)
+      ? ` · ${variantStr(closer.slot)}` : ''} — ${walkSaving(closer.ratio)}.`, source: 'own' }, 'next-hint') : ''}
       <button id="change-machine" class="btn">Change machine / overview</button>`
     : nextUnbound
       ? `<button id="next-unbound" class="btn ${targetDone ? 'btn-primary' : 'btn-next'} btn-big">Next:

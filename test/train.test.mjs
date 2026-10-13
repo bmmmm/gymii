@@ -2097,21 +2097,30 @@ const withPicker = (fn) => {
   const g = store.newLayout('Closer gym');
   g.machines.push({ id: 'k1', num: 1, label: 'Chest press', x: 2, y: 2, w: 4, h: 3, settingsFields: [], muscles: ['Chest'] },
     { id: 'k2', num: 2, label: 'Far rower', x: 50, y: 2, w: 4, h: 3, settingsFields: [], muscles: ['Lats'] },
-    { id: 'k3', num: 3, label: 'Leg curl', x: 10, y: 2, w: 4, h: 3, settingsFields: [], muscles: ['Hamstrings'] });
+    { id: 'k3', num: 3, label: 'Pec deck', x: 10, y: 2, w: 4, h: 3, settingsFields: [], muscles: ['Chest'] },
+    { id: 'k4', num: 4, label: 'Row', x: 2, y: 11, w: 4, h: 3, settingsFields: [], muscles: ['Upper back'] });
   store.saveLayout(g);
   store.saveWorkouts([]);
-  const at = (plan) => {
-    store.saveActive({ v: 2, id: 'w-closer', startedAt: Date.now(), plan, currentMachineId: 'k1', currentExercise: null, entries: [] });
+  const at = (plan, extra = {}) => {
+    store.saveActive({ v: 2, id: 'w-closer', startedAt: Date.now(), plan, currentMachineId: 'k1', currentExercise: null,
+      entries: [], ...extra });
     byId.clear();
     renderTrain(root);
     return root.innerHTML;
   };
-  const h = at([{ machineId: 'k1', exercise: null }, { machineId: 'k2', exercise: null }, { machineId: 'k3', exercise: null }]);
+  const slots = (...ids) => ids.map((machineId) => ({ machineId, exercise: null }));
+  const h = at(slots('k1', 'k2', 'k3', 'k4'));
   assert.ok(/Next: #2\s+Far rower/.test(h), 'Next stays the plan\'s next');
-  assert.ok(h.includes('<p class="hint next-hint"><span>Closer: #3 Leg curl — a quarter of the walk.</span></p>'),
-    'and one line names the closer open stop — own data, no link');
-  assert.ok(!at([{ machineId: 'k1', exercise: null }, { machineId: 'k3', exercise: null }, { machineId: 'k2', exercise: null }])
-    .includes('Closer:'), 'Next IS the close one: nothing to say');
+  assert.ok(h.includes('Busy? #3'), '"Busy?" offers the nearest open machine — the pec deck, 8 away');
+  assert.ok(h.includes('<p class="hint next-hint"><span>Closer: #4 Row — a quarter of the walk.</span></p>'),
+    'the line names the row (9 away): the pec deck (8) right after the chest press costs the recovery malus — own data, no link');
+  assert.ok(!at(slots('k1', 'k2', 'k3')).includes('Closer:'),
+    'the only closer stop is the one "Busy?" already offers: one offer, not two');
+  assert.ok(!at(slots('k1', 'k3', 'k2', 'k4')).includes('Closer:'), 'Next IS a close one: nothing to say');
+  assert.ok(!at(slots('k1', 'k2', 'k3', 'k4'), { visits: [{ machineId: 'k1', in: 1, busy: 'k4' }] }).includes('Closer: #4'),
+    'a machine "Busy?" skipped in this workout is not recommended');
+  assert.ok(!at(slots('k1', 'k2', 'k3', 'k4'), { entries: [{ machineId: 'k4', num: 4, label: 'Row', settings: {},
+    sets: [{ reps: 10, weight: 40 }] }] }).includes('Closer: #4'), 'nor one already done');
   store.clearActive();
   store.saveLayout(before);
 }

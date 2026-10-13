@@ -30,7 +30,6 @@ own logged workouts") has `url: null`, so route and busy render no link.
 | muscle-gap, muscle-volume | History → Muscles, a line under the muscle's row | — |
 | frequency | History → This week, between the tiles and the bars | — |
 | route | the plan builder, above the items in List view (plan.js); the plan's row on the start screen says "· reorder?" (train.js `planListCard`) | a plan named like `workout` |
-| closer | Train log screen, under the Next row (train.js `renderLog` → stats.js `closerStop`) | the plan's Next is another machine and an open stop saves 30 % of the walk |
 
 History computes the list once per render over EVERY workout (never the
 filtered list: "1.5 strength days a week" says nothing about one routine);
@@ -79,9 +78,29 @@ names "Full body" (1.5).
 | 6 | route | The same backtrack (same machine A, then B, then back to a machine already visited, A → B → A excluded) shows up in at least three of the last eight workouts that have a path; counted once per workout | (workouts − 3) × 2 | "Reorder — back to #3 after #16 in 4 workouts." (`workout` carries the name those workouts go by most often, `null` when they have none — then no builder shows it) | `own` |
 | 7 | busy | At least three `busy` marks on one machine, on the same weekday, within a two-hour span of wall-clock time, in the last 56 days | marks − 3 | "Usually busy Mondays 17–19 h — start elsewhere." | `own` |
 | 8 | plateau | At least eight sessions with an estimated 1RM, none of the last six beating the best of the earlier ones, and the machine was trained in the last 21 days | workouts since the best − 6 | "No new best in 6 workouts (76 kg e1RM) — vary reps or load." | `pmc11435939` |
-| 9 | closer (recommender) | On the log screen, when the plan's Next is another machine: among the open stops of the workout (one per machine, live, not done), the best score = WALK (wall-aware A*, `walkLength`: outline, interior walls, machines and free-standing fixtures block; memoised per floor geometry) × 1.25 if it trains a muscle of the machine just left (recovery) + 0.5 per place in the plan (order bonus). Shown only when its walk is at most 70 % of the walk to Next and it is not usually busy now (rule 7 at this weekday, from an hour before its window to an hour after) | — (not ranked; one line) | "Closer: #7 Leg curl — half the walk." (a quarter / a third / half the walk, else "N % less walk") | `own` |
 | 1a | progress (assisted) | Rule 1 at an ASSISTED machine: the same test at the same least assist A (top set = least assist, then most reps), A > 0 (unassisted has no step left). The next step follows the goal (`assistGoalAt()`, the same for the log screen and both rules: what the user said on the log screen, else the trend over the last six workouts — assist down: strength, reps up at the same assist: endurance — else the target reps of the plan the latest session came from, or the last top set: 12+ is endurance; with neither, strength) | lowest reps at A minus T | strength: "Target beaten twice — try 2.5 kg less assist." (`settings.weightStep`, never more than A); endurance: "Target beaten twice — add 2 reps at this assist." | `acsm2009` |
 | 8a | plateau (assisted) | Rule 8 at an ASSISTED machine, no e1RM: the record is the least assist (strength goal) or the most reps at the least assist (endurance goal); eight workouts, none of the last six past the earlier best, trained in the last 21 days; quiet for a strength goal once the last six reach 0 kg (unassisted: no lower to reach) | workouts since the best − 6 | strength: "No new low in 6 workouts (25 kg assist) — vary reps or assist."; endurance: "No new rep best in 6 workouts (12 reps) — vary assist or reps." | `acsm2009` |
+
+## Not a hint row: the "Closer:" line (recommender)
+
+`closerStop()` in stats.js is NOT an `insights()` row (no kind, score or
+source key): train.js `renderLog` asks it directly and renders one line
+under the Next row, own data, no link. Among the open stops of the workout
+(one per machine, live, not done, not "usually busy" at this hour — rule 7's
+window — and not marked busy in this workout) it scores each by its WALK
+(stats.js `walksFrom`: one Dijkstra flood over the floor's whole grid points
+— the outline, interior walls, machines and free-standing fixtures block;
+two items touching are a barrier, not a corridor; a door or entrance in an
+interior wall opens it; a stop is reached on or next to its box) × 1.25 if
+it trains a muscle (primary or secondary) of the machine just left, + 0.5
+per place in the plan. Only stops whose walk is at most 70 % of the walk to
+Next compete (so a far one never silences a near one); the best one is said
+— "Closer: #7 Leg curl — half the walk." — unless "Busy?" already offers
+that very machine. Measured on the demo gym (node, M-series): a machine
+switch floods once for all 17 stops, median 1.05 ms, max 3.1 ms; the floor
+is rasterised once per geometry (7.2 ms incl. the first flood); 200 × 200
+with 60 machines: 18 ms per switch. Meters are out on purpose, so the
+saving is said relatively.
 
 Estimated 1RM is Epley, `w × (1 + reps / 30)`, only for a real load and 1 to
 10 reps (1 rep is the weight itself). Beyond 10 reps it overestimates badly,

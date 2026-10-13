@@ -232,3 +232,46 @@ stand. An expectation that fails becomes an issue labelled `bug`.
 - **Template browser filters.** Country/city already render per entry; a
   filter row (chips, like History's) only earns its place once the library
   holds enough templates that scanning the list stops working.
+
+### Review leftovers of the 2026-10-13 round (reviewer P2s, built on request)
+
+- **Twins.** A tap on a twin's overview row loses WHICH twin was meant
+  (`switchMachine` carries only the triple; `planSlotIndex` takes the first
+  open one), so the heavy block cannot go first. Binding a line that becomes
+  the EARLIER twin re-deals sets already logged ("3/3" → "✓ 2/2" + "1/3").
+  Two identical blocks (same target) stay one slot — on purpose.
+- **Brackets.** An UNBOUND item with a bracketed exercise (`Curl [EZ]`) does
+  not survive List → Text → List (only bound items can ask the machine).
+- **Placement.** `.field input[type="text"]` (max-width 62 %) now also
+  matches Settings' `#weight-step` — probably invisible, not compared in a
+  browser. `freeSpot` (store.js) steps by 1, map.js's `SNAP = 1` — coupled
+  by a comment only.
+- **Hints.** A busy window touching midnight (`h1 = 24`, `h0 = 0`) never
+  shows its hour on the neighbouring weekday. `keepFocus` loses the focus
+  when the tapped control itself disappears ("+N more", "All muscles").
+  Untested: `planListCard`'s name guard and the six `keepFocus` call sites
+  in history.js (only ui.test pins the helper).
+- **Staged fields.** Label, model and the card's `stageText` fields can
+  save `''` or untrimmed text when another control's `save()` runs before
+  their `change` (iOS does not blur on a chip tap) — one shared fix.
+- **AI export.** After a renumbering, entries and visits carry snapshot
+  nums while `gym.machines` and plans carry the current ones; one num space
+  (the layout's, by `machineId`, while the machine exists) is a product
+  decision. The pretty-printed export (`JSON.stringify(…, null, 1)`) puts
+  every number on its own line — compact tuples would save about two thirds.
+- **True black.** The first paint still uses the default dark colours
+  (app.js is a deferred module; the manifest splash is fixed) — a tiny
+  classic script in `<head>` would fix it (SHELL + CACHE). 🎲 weighs a
+  machine without muscle tags as 0 while any tagged muscle is open, and its
+  map highlight stays when another number is typed.
+- **Assisted.** The endurance plateau compares reps at the least assist
+  across different assist steps. `assistGoal` is per machine while charts
+  and hints are per series (a machine with pull-up AND dip shares one goal —
+  decided). It travels in exported gym templates like `restSeconds`. A file
+  machine flagged both bodyweight and assisted is not refused (display
+  follows `entryKind`).
+- **Muscles.** The demo gym has no `secondaryMuscles`, so the new UI is not
+  visible there. The list chip says its state in `aria-label` and again in
+  `aria-pressed`.
+- **Gym editor.** The undo copy is the same stale-layout class the
+  2026-10-12 audit fixed elsewhere (`saveLayout` from a render-time copy).
