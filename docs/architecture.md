@@ -59,7 +59,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   open one at the finish and drops tap-throughs under 15 s unless they carry
   `busy` or a set stamped at that machine inside them (a burst-logger's
   stop stays in the route; the demo calls it without entries); `rateLastSet(active, rir)` rates the newest `at`-stamped non-cardio
-  set (the same value again clears it); `shiftWorkout(w, delta)` moves every
+  set (the same value again clears it) — picked by `newestStampedSet(active,
+  keep)`, the ONE selection rule (newest `at`, a tie to the later set) that
+  train.js's "Reps left?" rows use too; `shiftWorkout(w, delta)` moves every
   timestamp a workout holds — `startedAt`, `finishedAt`, each set's `at`,
   each visit's `in`/`out` — so the gaps between them survive a date edit
   (`updatedAt` is a sync stamp, not a moment, and stays).
@@ -883,7 +885,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   the workout's startedAt) when the set has `at`, and a fourth, `rir`, when a
   strength or bodyweight set was rated: `[w, r, sec|null, rir]` — `null`
   holds the third slot for a rated set without `at`; cardio never carries
-  `rir`. The prompt and the export `note` teach both.
+  `rir`. A workout with `visits` exports them as `[num, inSec, outSec,
+  busyNum?]` (nums from the entry snapshot, else the layout; a machine
+  neither knows is dropped). The prompt and the export `note` teach all of it.
   Saved plans ride along in the export (same wire shape the prompt
   teaches for answers, plus their `id`) — measured at ~5% of a demo-sized
   export, omitted entirely when no plans exist. Pasting a `workout-plan`

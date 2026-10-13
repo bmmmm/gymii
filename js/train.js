@@ -3,6 +3,7 @@ import {
   lastEntryFor, lastGripFor, getWorkouts, getPlans, savePlan, planFromText, uid,
   usageByMachine, layoutMuscles, distUnit, newLayout, addMachine, nextNum,
   ensureMachine, addMachineVariant, bindItemTo, machineTrainedWhole, newEntry, nameChipsFor, todayStatus, skipPlanDay, machineBrand,
+  newestStampedSet,
   switchMachine, rateLastSet,
 } from './store.js';
 import { drawLayout, usagePayload, findMachineByNum } from './map.js';
@@ -1496,7 +1497,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
 
   // Rest 0 opens no overlay, so its "Reps left?" chips sit above the log
   // button instead — only while the set they would rate was logged HERE.
-  const rated = newestStamped(active);
+  const rated = newestStampedSet(active);
   const rirHere = restSeconds === 0 && !cardio && rated?.entry === entry;
 
   root.innerHTML = `
@@ -2123,15 +2124,6 @@ const rirChips = (sel) => `<span class="muted">Reps left?</span>${RIR_CHOICES
 const paintRir = (row, rir) => row.querySelectorAll('.chip').forEach((c) =>
   c.classList.toggle('sel', Number(c.dataset.rir) === rir));
 
-// The workout's newest `at`-stamped set and its entry — the set rateLastSet
-// rates whenever that entry is not cardio (same >= tie-break).
-function newestStamped(active) {
-  let best = null;
-  active?.entries.forEach((e) => e.sets.forEach((st) => {
-    if (Number.isFinite(st.at) && (!best || st.at >= best.set.at)) best = { entry: e, set: st };
-  }));
-  return best;
-}
 
 function openRestOverlay() {
   const dimChips = (sel) => [['off', 'Never'], ['10s', 'After 10 s'], ['now', 'Now']]
@@ -2139,7 +2131,7 @@ function openRestOverlay() {
       data-dim="${v}">${label}</button>`).join('');
 
   // the set this rest follows — a cardio bout gets no "Reps left?"
-  const rated = newestStamped(getActive());
+  const rated = newestStampedSet(getActive());
 
   const overlay = document.createElement('div');
   overlay.className = 'overlay';

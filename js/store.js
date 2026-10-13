@@ -926,17 +926,26 @@ export function closeVisits(visits, now, entries = []) {
   return kept.length ? kept : undefined;
 }
 
+// The workout's newest `at`-stamped set and its entry ({ entry, set }, or
+// null), over the entries `keep` admits. A tie goes to the LATER one in
+// entry/set order (>=) — the set logged last when two share a millisecond.
+// ONE rule for the rest overlay's "Reps left?" and the set rateLastSet rates.
+export function newestStampedSet(active, keep = () => true) {
+  let best = null;
+  active?.entries.forEach((e) => keep(e) && e.sets.forEach((st) => {
+    if (Number.isFinite(st.at) && (!best || st.at >= best.set.at)) best = { entry: e, set: st };
+  }));
+  return best;
+}
+
 // Rates the newest stamped strength/bodyweight set with reps in reserve
 // (0..3, 3 = "3 or more"); the same value again clears it. Cardio sets and
 // sets without `at` are never rated. Returns the set, or null.
 export function rateLastSet(active, rir) {
   if (![0, 1, 2, 3].includes(rir)) return null;
-  let newest = null;
   // the entry's flag is the type (train re-flags an entry only while it is
   // empty, so its sets never mix), as in ai.js and history.js
-  active.entries.forEach((e) => !e.cardio && e.sets.forEach((s) => {
-    if (Number.isFinite(s.at) && (!newest || s.at >= newest.at)) newest = s;
-  }));
+  const newest = newestStampedSet(active, (e) => !e.cardio)?.set;
   if (!newest) return null;
   if (newest.rir === rir) delete newest.rir;
   else newest.rir = rir;

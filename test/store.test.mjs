@@ -923,6 +923,13 @@ assert.strictEqual(store.rateLastSet({ entries: [
   { machineId: 'c1', cardio: true, sets: [{ distance: 1000, seconds: 300, at: 5 }] },
   { machineId: 'm1', sets: [{ reps: 10, weight: 40 }] },
 ] }, 2), null, 'nothing rateable: null');
+// newestStampedSet: the one selection rule behind rateLastSet and the overlay's "Reps left?"
+assert.strictEqual(store.newestStampedSet(rated).entry, rated.entries[2], 'without a filter the newest is the cardio bout');
+assert.strictEqual(store.newestStampedSet(rated, (e) => !e.cardio).set, rated.entries[0].sets[1], 'a filter skips its entries');
+const tie = { entries: [{ machineId: 'a', sets: [{ reps: 1, weight: 1, at: 50 }] }, { machineId: 'b', sets: [{ reps: 2, weight: 2, at: 50 }] }] };
+assert.strictEqual(store.newestStampedSet(tie).entry, tie.entries[1], 'a tie goes to the later set (>=)');
+assert.strictEqual(store.newestStampedSet({ entries: [{ machineId: 'a', sets: [{ reps: 1, weight: 1 }] }] }), null, 'no stamp: null');
+assert.strictEqual(store.newestStampedSet(null), null, 'no workout: null');
 
 const DAY = 86400000;
 const moved = {

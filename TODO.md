@@ -17,9 +17,7 @@ visits and ratings for its last four weeks.
 
 - Plan "Offen": `layout.meta.scale` → metres in the path card; wall-aware
   routing; `settings.bodyKg` → kcal; primary/secondary muscle weighting;
-  a real next-machine recommender on top of rules 6–8; `visits` in the AI
-  export; `train.js` re-inlines the newest-stamped-set pick that
-  `rateLastSet` owns (`newestStamped`) — a store helper would keep them one.
+  a real next-machine recommender on top of rules 6–8.
 
 Shipped 2026-09-02, in four waves: a mobile sweep (no field under 16px, so
 iOS stops zooming on focus; 44px targets everywhere with two commented

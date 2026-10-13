@@ -119,6 +119,22 @@ const tupleSets = JSON.parse(buildAiExport()).workouts[0].entries.map((e) => e.s
 assert.deepEqual(tupleSets[0], [[40, 10], [40, 10, 90], [40, 10, 90, 2], [40, 10, null, 0]],
   'tuples grow only as far as the data goes; rir 0 is kept; rir without at gets a null');
 assert.deepEqual(tupleSets[1], [[3000, 900, 120]], 'cardio sets never carry rir');
+assert.equal('visits' in JSON.parse(buildAiExport()).workouts[0], false, 'no visits recorded: no visits key');
+
+// --- visits: the route, as [num, inSec, outSec, busyNum?] ---
+store.saveWorkouts([{
+  id: 'vw', startedAt: t0, finishedAt: t0 + 3600000,
+  entries: [{ machineId: 'm1', num: 4, label: 'Chest press', settings: {}, sets: [{ reps: 10, weight: 40 }] }],
+  visits: [
+    { machineId: 'm1', in: t0, out: t0 + 600000 },
+    { machineId: 'tm', in: t0 + 600000, out: t0 + 1500400, busy: 'm1' },
+    { machineId: 'gone', in: t0 + 1500400, out: t0 + 1600000, busy: 'tm' },
+  ],
+}]);
+assert.deepEqual(JSON.parse(buildAiExport()).workouts[0].visits, [[4, 0, 600], [9, 600, 1500, 4]],
+  'nums from the entry snapshot, else the layout; seconds since the start; busy as a num; a deleted machine drops out');
+assert.match(JSON.parse(buildAiExport()).note, /visits are \[num, seconds in, seconds out, busy num\?\]/,
+  'the note explains the shape');
 store.saveWorkouts([]);
 
 store.savePlans([{
