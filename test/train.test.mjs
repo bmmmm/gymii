@@ -1772,8 +1772,45 @@ const withPicker = (fn) => {
   assert.deepEqual(store.getLayout().machines.find((m) => m.id === 'm1').grips, ['Rope', 'Wide bar'],
     'a typed grip loses its brackets — "[…]" names the grip in a plan line');
   assert.equal(store.getActive().currentGrip, 'Wide bar', 'and is selected too');
+  // a tap on "+ Grip" bubbles into #grip-chips — it must not pick a grip there
+  byId.get('#grip-chips').listeners.click({ target: { closest: () => ({ id: 'grip-add', dataset: {} }) } });
+  assert.equal(store.getActive().currentGrip, 'Wide bar', '"+ Grip" is no grip chip');
+  byId.get('#grip-add').listeners.click();
+  byId.get('#grip-custom').value = 'rope';
+  byId.get('#grip-custom').listeners.keydown({ key: 'Enter', target: byId.get('#grip-custom') });
+  assert.deepEqual(store.getLayout().machines.find((m) => m.id === 'm1').grips, ['Rope', 'Wide bar'],
+    'Enter adds too, and "rope" is the Rope the machine knows — no second series');
+  assert.equal(store.getActive().currentGrip, 'Rope', 'that Rope is selected');
+  // the open picker belongs to this machine in this workout only
+  byId.get('#grip-add').listeners.click();
+  assert.ok(root.innerHTML.includes('id="grip-new"'), 'picker open');
+  a = store.getActive();
+  store.switchMachine(a, 'ct', 'Pushdown');
+  store.saveActive(a);
+  byId.clear();
+  renderTrain(root);
+  a = store.getActive();
+  store.switchMachine(a, 'm1');
+  store.saveActive(a);
+  byId.clear();
+  renderTrain(root);
+  assert.ok(!root.innerHTML.includes('id="grip-new"'), 'leaving the machine closed it');
+  // cardio: no "+ Grip", but grips it already has still show (and stay switchable)
+  const cg = store.getLayout();
+  cg.machines.find((m) => m.id === 'm1').cardio = true;
+  store.saveLayout(cg);
+  byId.clear();
+  renderTrain(root);
+  assert.ok(!root.innerHTML.includes('id="grip-add"'), 'a cardio machine offers no + Grip');
+  assert.ok(/id="grip-chips"[\s\S]*data-grip="Rope"/.test(root.innerHTML), 'but shows the grips it has');
   const reset = store.getLayout();
   delete reset.machines.find((m) => m.id === 'm1').grips;
+  store.saveLayout(reset);
+  byId.clear();
+  renderTrain(root);
+  assert.ok(!root.innerHTML.includes('id="grip-add"') && !root.innerHTML.includes('id="grip-chips"'),
+    'a gripless cardio machine shows no grip UI at all');
+  delete reset.machines.find((m) => m.id === 'm1').cardio;
   store.saveLayout(reset);
 
   // a wildcard slot counts both grips; two grip slots walk Next between them

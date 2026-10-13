@@ -60,8 +60,8 @@ export function goToPlans() { screen = 'plans'; }
 // starts (machine pick, plan button, repeat, quick start), so the number
 // lives on the workout itself from its first second.
 let pendingLocker = '';
-// The machine whose "+ Grip" picker on the log screen is open (null = none);
-// leaving the machine closes it, since the id no longer matches.
+// `${workoutId}:${machineId}` whose "+ Grip" picker on the log screen is
+// open (null = none); renderLog drops it on any other machine or workout.
 let gripPicker = null;
 
 // One plan item per (machine, exercise) pair of a past workout, deduped —
@@ -1636,7 +1636,23 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   const rated = newestStampedSet(active);
   const rirHere = restSeconds === 0 && !cardio && rated?.entry === entry;
 
-  const gripPickOpen = gripPicker === machine.id;
+  // "+ Grip" (never on cardio — a grip a cardio machine already has still
+  // shows its chips). Opening it from the lone chip keeps the chip where it
+  // was: no card header grows above it.
+  const pickerKey = `${active.id}:${machine.id}`;
+  if (gripPicker !== pickerKey) gripPicker = null; // another machine or workout
+  const gripPickOpen = gripPicker != null;
+  const gripAddChip = `<button type="button" class="chip${gripPickOpen ? ' sel' : ''}" id="grip-add"
+          aria-expanded="${gripPickOpen}">+ Grip</button>`;
+  const gripPickHtml = gripPickOpen ? `
+      <div class="chip-select grip-new" id="grip-new">
+        ${COMMON_GRIPS.filter((g) => !grips.includes(g)).map((g) => `<button type="button" class="chip"
+          data-grip="${esc(g)}">${esc(g)}</button>`).join('')}
+      </div>
+      <div class="row grip-custom-row">
+        <input id="grip-custom" type="text" enterkeyhint="done" placeholder="Other grip…">
+        <button type="button" id="grip-custom-add" class="btn btn-inline">Add</button>
+      </div>` : '';
 
   root.innerHTML = `
     <button type="button" id="log-back" class="back-row">‹ Workout</button>
@@ -1695,7 +1711,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
       ${pickPending ? '<p class="muted">Pick an exercise to start logging.</p>' : ''}
     </section>` : ''}
 
-    ${!pickPending && !cardio && (grips.length || gripPickOpen) ? `
+    ${pickPending ? '' : grips.length ? `
     <section class="card">
       <h2>Grip</h2>
       <div class="chip-select" id="grip-chips">
@@ -1704,22 +1720,14 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     return `<button type="button" class="chip${g === grip ? ' sel' : ''}${done ? ' done' : ''}"
           data-grip="${esc(g)}">${esc(g)}</button>`;
   }).join('')}
-        <button type="button" class="chip${gripPickOpen ? ' sel' : ''}" id="grip-add"
-          aria-expanded="${gripPickOpen}">+ Grip</button>
+        ${cardio ? '' : gripAddChip}
       </div>
-      ${gripPickOpen ? `
-      <div class="chip-select grip-new" id="grip-new">
-        ${COMMON_GRIPS.filter((g) => !grips.includes(g)).map((g) => `<button type="button" class="chip"
-          data-grip="${esc(g)}">${esc(g)}</button>`).join('')}
-      </div>
-      <div class="row">
-        <input id="grip-custom" type="text" enterkeyhint="done" placeholder="Other grip…">
-        <button type="button" id="grip-custom-add" class="btn btn-inline">Add</button>
-      </div>` : ''}
-    </section>` : !pickPending && !cardio ? `
+      ${gripPickHtml}
+    </section>` : cardio ? '' : `
     <div class="grip-add-row">
-      <button type="button" class="chip" id="grip-add" aria-expanded="false">+ Grip</button>
-    </div>` : ''}
+      <div class="chip-select">${gripAddChip}</div>
+      ${gripPickHtml}
+    </div>`}
 
     ${goal ? `
     <section class="card">
@@ -1832,13 +1840,15 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // mid-workout — the chosen grip is taught to the machine (like a fresh
   // exercise at bind time) and selected at once, so the switch is one tap.
   root.querySelector('#grip-add')?.addEventListener('click', () => {
-    gripPicker = gripPickOpen ? null : machine.id;
+    gripPicker = gripPickOpen ? null : pickerKey;
     renderTrain(root);
   });
   const takeGrip = (raw) => {
     // "[…]" is how a plan line names the grip, so a name may not hold one
-    const g = raw.replace(/[[\]]/g, '').replace(/\s+/g, ' ').trim();
-    if (!g) return;
+    const typed = raw.replace(/[[\]]/g, '').replace(/\s+/g, ' ').trim();
+    if (!typed) return;
+    // "rope" is the Rope the machine already knows, not a second series
+    const g = [...grips, ...COMMON_GRIPS].find((x) => x.toLowerCase() === typed.toLowerCase()) ?? typed;
     addMachineVariant(machine.id, { grips: [g] });
     gripPicker = null;
     active.currentGrip = g;

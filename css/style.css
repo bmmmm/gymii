@@ -898,7 +898,7 @@ details.name-edit .row { margin-bottom: 12px; }
 .grip-add-row { margin: 12px 0; }
 .grip-new { margin: 12px 0 8px; }
 #grip-chips + .grip-new { padding-top: 12px; border-top: 1px solid var(--border); }
-.card .grip-new + .row .btn-inline { flex: 0 0 auto; }
+.grip-custom-row .btn-inline { flex: 0 0 auto; }
 
 /* --- history --- */
 

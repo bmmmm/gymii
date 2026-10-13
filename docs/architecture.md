@@ -556,9 +556,12 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   the machine has no grips, else the Grip card's last chip) opens
   `COMMON_GRIPS` minus the machine's own plus an "Other grip…" field; a
   pick goes through `addMachineVariant` and becomes `currentGrip` in the
-  same tap, so a grip never needs a detour through the gym editor. The
-  open picker is module state keyed by machine id (`gripPicker`), so
-  leaving the machine closes it. Overview hub, per-machine
+  same tap, so a grip never needs a detour through the gym editor; a typed
+  name matching a known grip case-insensitively IS that grip. A cardio
+  machine gets no "+ Grip", but grips it already has keep their card —
+  resolveEntry still records them. The open picker is module state keyed
+  by workout and machine id (`gripPicker`), dropped by any render
+  elsewhere. Overview hub, per-machine
   `restSeconds` (changed mid-workout it lands on the WORKOUT, see the rest
   paragraph below), locker number, two-tap finish guard on TWO surfaces —
   the overview's Finish button and 🏁 in the machine header, because the
