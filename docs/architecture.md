@@ -567,7 +567,16 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   machine the pull brought in; the edit's own keys win and its undo entry
   stays its own. When what it took in touches the open machine or a gym
   field, it re-renders the card too (a text field's `change` saves without
-  re-rendering; renderProps never calls save(), so this cannot recurse). An
+  re-rendering; renderProps never calls save(), so this cannot recurse) —
+  but only once the gesture is over: a text field's `change` fires inside
+  the NEXT tap's pointerdown (the focus moves there), and a card replaced
+  right then detaches the control that tap is about to click or the field
+  it is about to focus (tap lost, keyboard dropped). `requestCardRefresh`
+  waits for pointerup on `root` while a pointer is held (a mouse), else for
+  the end of the current event sequence via `setTimeout(0)` (touch raises
+  pointerup BEFORE the synthesized mousedown that blurs the field); any
+  explicit renderProps() in between satisfies it, so a chip tap that draws
+  the card anyway causes no second render. An
   edit to a machine another device deleted meanwhile brings it back — the
   edit wins (user decision 2026-10-13). Undo and redo read the stored
   layout IN THE TAP too and write only their parts, objects key by key (`applySide`): a machine

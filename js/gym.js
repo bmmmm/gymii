@@ -271,6 +271,30 @@ export function renderGym(root) {
     redoBtn.disabled = hIndex === history.length;
   };
 
+  // A text field's `change` fires inside the NEXT tap — the focus moves on
+  // its pointerdown — so a card re-render from save() right there would
+  // detach the control that tap is about to click, or the field it is
+  // about to focus (the tap is lost, the keyboard drops). The refresh a
+  // foreign change asks for therefore waits for the gesture to end: with a
+  // pointer held, until after its pointerup; otherwise until the current
+  // event sequence is through (touch raises pointerup BEFORE the
+  // synthesized mousedown that moves the focus, a mouse after it). Any
+  // explicit renderProps() in between satisfies it.
+  let pointerHeld = false;
+  let cardRefreshDue = false;
+  const refreshCard = () => { if (cardRefreshDue) renderProps(); };
+  const requestCardRefresh = () => {
+    cardRefreshDue = true;
+    if (!pointerHeld) setTimeout(refreshCard, 0);
+  };
+  const pointerReleased = () => {
+    pointerHeld = false;
+    if (cardRefreshDue) setTimeout(refreshCard, 0);
+  };
+  root.addEventListener('pointerdown', () => { pointerHeld = true; }, true);
+  root.addEventListener('pointerup', pointerReleased);
+  root.addEventListener('pointercancel', pointerReleased);
+
   // every gym mutation goes through save(): persist + record what changed
   const save = () => {
     staged.forEach((e) => {
@@ -290,9 +314,10 @@ export function renderGym(root) {
       applySide(layout, foreign, 'after');
       redraw();
       // the open card shows it too (a grip synced onto it, the gym's brand)
-      // — many handlers re-render it anyway, a text field's `change` does not;
-      // renderProps never calls save(), so this cannot recurse
-      if (foreign.some((c) => c.field || c.id === selectedId)) renderProps();
+      // — many handlers re-render it anyway, a text field's `change` does
+      // not; after the gesture (above). renderProps never calls save(), so
+      // this cannot recurse
+      if (foreign.some((c) => c.field || c.id === selectedId)) requestCardRefresh();
     }
     saveLayout(layout);
     lastSaved = clone(layout);
@@ -948,6 +973,7 @@ export function renderGym(root) {
   // and the keyboard mid-word. preserveFocus puts both back (the fields
   // stage their value on `input`, so nothing typed is lost either).
   function renderProps() {
+    cardRefreshDue = false;
     preserveFocus(props, renderPropsCard);
   }
 

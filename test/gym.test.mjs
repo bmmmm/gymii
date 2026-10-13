@@ -59,8 +59,11 @@ function fakeRoot() {
     inverse: () => ({ a: 1 / S, b: 0, c: 0, d: 1 / S, e: -PAD, f: -PAD }),
   });
   const cache = new Map([['#floor', floor]]);
+  const listeners = {};
   return {
     floor,
+    listeners,
+    addEventListener(type, fn) { (listeners[type] ??= []).push(fn); },
     innerHTML: '',
     querySelector(sel) {
       if (!cache.has(sel)) cache.set(sel, stubEl());
@@ -894,17 +897,28 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
 // --- a save that takes in another writer's change re-renders the open card ---
 // A text field's `change` saves without re-rendering, so the grip a sync
 // brought onto the open machine stayed off its card until the next chip tap.
-{
+// The re-render waits for the gesture that fired the `change`: the field
+// blurs on the next tap's pointerdown, and a card replaced right there loses
+// that tap (its target is detached) or drops the keyboard.
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+const rootEvent = (root, type) => (root.listeners[type] || []).forEach((fn) => fn({}));
+const openWithSyncedGrip = () => {
   const { root, props } = gymWithProps([{ ...mk('c1', 1, 10, 10), label: 'Cable' }]);
   fire(root.floor, 'pointerdown', { ...at(12, 11), target: onItem('c1') });
   fire(root.floor, 'pointerup');
   store.addMachineVariant('c1', { grips: ['Thick rope'] }); // synced in while the card is open
   assert.ok(!props.innerHTML.includes('Thick rope'), 'the card was drawn before');
-  const label = props.querySelector('#m-label');
+  return { root, props, label: props.querySelector('#m-label') };
+};
+{
+  // touch: pointerup came before the synthesized mousedown, no pointer is held
+  const { props, label } = openWithSyncedGrip();
   label.value = 'Cable tower';
   last(label, 'change')();
   assert.equal(machineAt('c1').label, 'Cable tower', 'the edit is saved');
-  assert.ok(props.innerHTML.includes('data-value="Thick rope"'), 'and the card shows the grip that came in');
+  assert.ok(!props.innerHTML.includes('Thick rope'), 'the card is not replaced inside the change itself');
+  await tick();
+  assert.ok(props.innerHTML.includes('data-value="Thick rope"'), 'it shows the grip that came in once the event sequence is through');
   // a gym field another writer changed (the brand the card falls back to) counts too
   const pulled = store.getLayout();
   pulled.meta = { ...(pulled.meta ?? {}), brand: 'Synced brand' };
@@ -912,7 +926,35 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   assert.ok(!props.innerHTML.includes('Synced brand'), 'the card was drawn before the brand came in');
   label.value = 'Cable column';
   last(label, 'change')();
+  await tick();
   assert.ok(props.innerHTML.includes('Synced brand'), 'a gym field taken in re-renders the card too');
+}
+{
+  // a mouse: the next tap's pointer is held while the field's change fires
+  const { root, props, label } = openWithSyncedGrip();
+  rootEvent(root, 'pointerdown');
+  label.value = 'Cable tower';
+  last(label, 'change')();
+  await tick();
+  assert.ok(!props.innerHTML.includes('Thick rope'), 'the card waits while the pointer is held');
+  rootEvent(root, 'pointerup');
+  assert.ok(!props.innerHTML.includes('Thick rope'), 'and through pointerup itself — the click is still to come');
+  await tick();
+  assert.ok(props.innerHTML.includes('data-value="Thick rope"'), 'then it shows the grip that came in');
+}
+{
+  // a handler that re-renders anyway satisfies the pending refresh
+  const { root, props, label } = openWithSyncedGrip();
+  rootEvent(root, 'pointerdown');
+  label.value = 'Cable tower';
+  last(label, 'change')();
+  const beforeTap = props.innerHTML;
+  last(props.querySelector('#m-grips'), 'click')(chipTap('Wide'));
+  const after = props.innerHTML;
+  assert.notEqual(after, beforeTap, 'the chip tap drew the card');
+  rootEvent(root, 'pointerup');
+  await tick();
+  assert.equal(props.innerHTML, after, 'no second re-render after the chip tap drew the card');
 }
 
 console.log('gym editor: all assertions passed');
