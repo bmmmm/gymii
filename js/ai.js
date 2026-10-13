@@ -171,9 +171,10 @@ function visitTuples(w, layout) {
 // JSON.stringify(…, null, 1) puts every number of every set on its own line
 // (~3300 lines for the demo gym). Same valid JSON, but whatever fits within
 // WIDTH columns stays on one line — tuples, machines, entries — and only
-// containers that do not fit break, one child per line.
+// containers that do not fit break, one child per line. Exported for the
+// logic tests.
 const WIDTH = 160;
-function compactJson(v, indent = '') {
+export function compactJson(v, indent = '') {
   const flat = JSON.stringify(v);
   if (flat === undefined || flat.length + indent.length <= WIDTH || v === null || typeof v !== 'object') return flat;
   const inner = `${indent} `;

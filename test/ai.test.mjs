@@ -7,7 +7,7 @@ import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
-const { renderAi, buildAiExport, DEFAULT_PROMPT } = await import(new URL('../js/ai.js', import.meta.url).href);
+const { renderAi, buildAiExport, compactJson, DEFAULT_PROMPT } = await import(new URL('../js/ai.js', import.meta.url).href);
 
 // --- fixture: a small gym and one saved plan with everything on it ---
 
@@ -143,7 +143,16 @@ assert.match(DEFAULT_PROMPT, /"visits"[^.]*\[num, seconds in, seconds out\]/, 't
   store.saveWorkouts(Array.from({ length: 6 }, (_, i) => ({ id: `c${i}`, startedAt: t0 + i * 86400000, finishedAt: t0 + i * 86400000 + 1000,
     entries: [{ machineId: 'm1', num: 1, label: 'Chest press', settings: { Seat: '3' }, sets }] })));
   const raw = buildAiExport();
-  assert.deepEqual(JSON.parse(raw), JSON.parse(JSON.stringify(JSON.parse(raw))), 'still valid JSON');
+  // the broken-up branches against the value BEFORE it was written — a key
+  // or element lost there could not hide behind a parse of the output itself
+  const v = { note: 'x'.repeat(150), nested: { a: [1, 2, [3, 'q"uote', null]], b: { deep: 'y'.repeat(170), n: 0, t: true } },
+    list: Array.from({ length: 30 }, (_, i) => ({ i, s: `s${i}` })), empty: [], none: {} };
+  const out = compactJson(v);
+  assert.ok(out.split('\n').length > 30, 'the sample does break across lines');
+  assert.deepEqual(JSON.parse(out), v, 'still valid JSON, every key and element where it was');
+  const wide = 'w'.repeat(170);
+  assert.deepEqual(JSON.parse(compactJson({ keep: wide, gone: undefined })), { keep: wide },
+    'an undefined key drops out of a broken-up object, as in JSON.stringify');
   assert.ok(raw.split('\n').length < 80, `compact output stays short (${raw.split('\n').length} lines)`);
   assert.ok(raw.includes('"sets":[[40,10,60,2],[40,11,120,2]'), 'a set list sits on one line');
   assert.equal(JSON.parse(raw).workouts.length, 6);
