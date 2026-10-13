@@ -665,10 +665,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   last set in the shared entry. A twin's overview row names its target
   ("Leg press · 3 × 6 @ 100 kg"), or two rows would read alike and the
   heavy one could not be told apart. `active.chosenSlot` is the plan index an
-  overview row or a bind passes through `switchMachine`'s `slot` option;
-  any other switch forgets it, and it dies with the workout via
-  `finishWorkout`'s allow-list. Next / Busy? still pass only the triple, so
-  a Next pointing at the later twin opens the first open twin. `nextOpenSlot` skips twins of the slot on screen, so
+  overview row, a bind, Next or Busy? passes through `switchMachine`'s
+  `slot` option (Next and Busy? hand on the index of the plan line they
+  name, so a Next pointing at the later twin opens THAT block, not the first
+  open one); any other switch forgets it, and it dies with the workout via
+  `finishWorkout`'s allow-list. `nextOpenSlot` skips twins of the slot on screen, so
   "Next" and "Busy?" point past the machine you stand at;
   `startWorkoutFrom` drops only exact repeats (same triple AND same
   target), so both blocks survive a restart. A plan whose FIRST
@@ -798,7 +799,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   nothing and has no link (own data). Meters are out on purpose (no `layout.meta.scale`), so the
   saving is relative.
   WALKING ROUTE: every change of the current machine goes through store's
-  `switchMachine` — nine call sites (the plan-slot tap and a bind pass `slot`): workout start (first machine), the
+  `switchMachine` — nine call sites (the plan-slot tap, a bind, Busy? and Next pass `slot`): workout start (first machine), the
   plan-slot tap, the machine picker, binding an unbound slot, a machine
   deleted mid-workout (→ null), the quick-switch chips, Busy?, Next, and the
   back-to-overview tap (→ null). A bare `active.currentMachineId = …` would

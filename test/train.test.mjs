@@ -1028,6 +1028,7 @@ store.saveWorkouts([]);
   logOne();
   assert.ok(root.innerHTML.includes('Busy? #4'), '#3 is next, #4 is the escape hatch');
   byId.get('#nearby-machine').listeners.click(); // #3 busy → #4
+  assert.equal(store.getActive().chosenSlot, 3, '"Busy?" hands on the plan index of the block it named');
   logOne();
   assert.ok(/Next: #3\s+Leg press/.test(root.innerHTML), 'the skipped #3 is the last open stop: Next');
   store.clearActive();
@@ -2265,6 +2266,15 @@ const withPicker = (fn) => {
     'the line just bound is the screen, though the light block before it is still open');
   toOverview();
   assert.deepEqual(statuses(), ['1/3 sets', 'open'], 'and the light set stays on the light block');
+  // "Next" naming the LATER twin opens that block, not the earlier one still open
+  store.clearActive();
+  startWorkoutFrom({ planId: p.id, entries: p.items });
+  tapRow(1);
+  assert.ok(/Next: #14\s+Leg press/.test(root.innerHTML), 'from the calves, Next is the leg press');
+  byId.get('#next-machine').listeners.click();
+  assert.ok(root.innerHTML.includes('Target: 3 × 6 @ 100 kg') && root.innerHTML.includes('<span class="muted">3/4</span>'),
+    'a tap on Next opens the heavy block it named — not the light one before it');
+  assert.equal(store.getActive().chosenSlot, 2, 'Next hands its plan index on');
   store.clearActive();
   store.saveWorkouts([]);
   store.saveLayout(before);

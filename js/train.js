@@ -2124,17 +2124,25 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     renderLog(root, layout, active);
   });
 
+  // switchMachine's slot option for a plan line (nextSlot / nearby.slot are
+  // the plan's own objects): its index, so a twin opens as the block named
+  const planSlot = (slot) => {
+    const i = active.plan.indexOf(slot);
+    return i === -1 ? {} : { slot: i };
+  };
+
   // same move as a Next tap, just to the nearby machine instead — and the
   // skipped next machine goes on record as busy at this hour
   root.querySelector('#nearby-machine')?.addEventListener('click', () => {
     switchMachine(active, nearby.slot.machineId, nearby.slot.exercise,
-      { busy: nextSlot.machineId, ...slotGrip(nearby.slot) });
+      { busy: nextSlot.machineId, ...slotGrip(nearby.slot), ...planSlot(nearby.slot) });
     saveLog(active);
     renderTrain(root);
   });
 
   root.querySelector('#next-machine')?.addEventListener('click', () => {
-    switchMachine(active, nextSlot.machineId, nextSlot.exercise, slotGrip(nextSlot));
+    // the block "Next" names — of twins, the triple alone opens the first open one
+    switchMachine(active, nextSlot.machineId, nextSlot.exercise, { ...slotGrip(nextSlot), ...planSlot(nextSlot) });
     saveLog(active);
     renderTrain(root);
   });
