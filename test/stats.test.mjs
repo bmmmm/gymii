@@ -454,6 +454,27 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     'busy: a Tuesday is another weekday');
   assert.equal(find([mon(58, 17, 10), mon(9, 17, 40), mon(2, 18, 30)], 'busy'), undefined,
     'busy: a mark older than 8 weeks does not count');
+
+  // where the log screen shows it (inBusyWindow): an hour before the window
+  // to an hour after its end, counted in hours of the WEEK — a window that
+  // touches midnight reaches into the neighbouring weekday
+  const at = (d, hh, mm = 0) => new Date(2026, 10, d, hh, mm); // 1 Nov = Sunday, 2 = Monday, 3 = Tuesday
+  const inDay = (row, t) => t.getDay() === row.weekday && t.getHours() >= row.h0 - 1 && t.getHours() <= row.h1;
+  for (let h = 0; h < 168; h++) {
+    const t = at(1 + Math.floor(h / 24), h % 24, 30);
+    assert.equal(stats.inBusyWindow(b, t), inDay(b, t), `busy 17–19 h: unchanged on day ${t.getDay()} at ${t.getHours()}:30`);
+  }
+  const late = find([mon(16, 23, 10), mon(9, 23, 30), mon(2, 23, 50)], 'busy');
+  assert.deepEqual([late?.text, late?.h0, late?.h1], ['Usually busy Mondays 23–24 h — start elsewhere.', 23, 24]);
+  assert.deepEqual([at(2, 21, 59), at(2, 22), at(3, 0, 30), at(3, 0, 59), at(3, 1)].map((t) => stats.inBusyWindow(late, t)),
+    [false, true, true, true, false], 'busy until 24 h: still said at 00:30 on Tuesday, gone at 01:00');
+  const tue = (n, hh, mm) => busyW(day(n, hh, mm)); // day(15|8|1) = Tuesdays 20 Oct, 27 Oct, 3 Nov
+  const early = find([tue(15, 0, 10), tue(8, 0, 20), tue(1, 0, 40)], 'busy');
+  assert.deepEqual([early?.weekday, early?.h0, early?.h1], [2, 0, 1], 'Tuesdays 0–1 h');
+  assert.deepEqual([at(2, 22, 59), at(2, 23), at(3, 1, 59), at(3, 2)].map((t) => stats.inBusyWindow(early, t)),
+    [false, true, true, false], 'busy from 0 h: already said at 23:00 on Monday');
+  assert.equal(stats.inBusyWindow({ weekday: 0, h0: 0, h1: 1 }, at(7, 23, 30)), true,
+    'Sundays 0–1 h: said on Saturday night — the week wraps');
 }
 
 // 8 plateau — ≥ 8 e1RM sessions, the best older than the last 6, trained in the last 21 d
@@ -644,6 +665,14 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     'seven workouts without a new low: one short of the eight it needs');
   assert.equal(find(series8([30, 0, 0, 0, 0, 0, 0, 0, 0]), 'plateau', { layout: LA('strength') }), undefined,
     'unassisted already: no lower to reach, no plateau');
+  // endurance: reps compare within ONE assist step — 14 reps with 30 kg of
+  // help are no record for the 25 kg step
+  const steps = (pairs) => pairs.map(([kg, reps], i) => W(day(40 - 4 * i), [A([S(reps, kg)])]));
+  assert.equal(find(steps([[30, 14], [30, 14], [25, 10], [25, 11], [25, 12], [25, 12], [25, 12], [25, 12]]), 'plateau',
+    { layout: LA('endurance') }), undefined, 'endurance: six workouts at the new step are too few, whatever 30 kg saw');
+  assert.equal(find(steps([[30, 15], [25, 10], [25, 12], [25, 12], [25, 12], [25, 12], [25, 12], [25, 12], [25, 12]]), 'plateau',
+    { layout: LA('endurance') })?.text, 'No new rep best in 6 workouts (12 reps) — vary assist or reps.',
+  'endurance: eight at 25 kg — the record is that step\'s own');
   // one goal for every rule and screen: a plan target of 8 says strength even
   // where the reps (12) alone would say endurance
   const planned = [{ id: 'pp', items: [{ machineId: 'ma', exercise: null, target: { sets: 3, reps: 8, weight: 25 } }] }];
@@ -783,6 +812,117 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   assert.equal(stats.walkLength(floor([a, b], [doorPiece]), a, b), open, 'a wall piece (door) is no obstacle itself');
   const offGridMachine = box('x', 30, 4); // left beyond a floor that was shrunk
   assert.equal(stats.walkLength(floor([a, offGridMachine]), a, offGridMachine), null, 'a machine off the grid: null, no flood');
+  // ring points tied on the flood distance: the shorter step to the centre
+  // wins, never the heap's order — so a floor and its mirror image agree.
+  // Around the obstacle, (8, 3) and (8, 5) are both 4 + √2 from the start;
+  // (8, 3) is nearer T's centre (10, 2.5).
+  {
+    const tie = (flip) => {
+      const f = (m) => (flip ? { ...m, y: 9 - m.y - m.h } : m);
+      const F = f(box('F', 2, 3));
+      const T = f(box('T', 9, 1, 2, 3));
+      return stats.walkLength({ grid: { w: 13, h: 9 }, outline: [], shapes: [], machines: [F, T, f(box('o', 7, 3, 1, 2))] }, F, T);
+    };
+    const best = 4 + Math.SQRT2 + Math.hypot(2, 0.5);
+    assert.ok(Math.abs(tie(false) - best) < 1e-9, `a tie takes the shorter step (${tie(false)})`);
+    assert.ok(Math.abs(tie(true) - best) < 1e-9, `and its mirror image walks the same (${tie(true)})`);
+    // a target at the dead end of a corridor: the flood runs dry on its last
+    // ring point while the tie is still open — the answer stands
+    const end = box('E', 6.5, 0.5, 1, 1);
+    const start = box('S', 0.5, 0.5, 1, 1);
+    assert.equal(stats.walkLength({ grid: { w: 8, h: 2 }, outline: [], shapes: [], machines: [start, end] }, start, end), 6,
+      'a dead end: still answered');
+  }
+  // a target listed twice is one target: the flood still stops as soon as it
+  // is reached, instead of waiting for a second answer that never comes
+  {
+    const near = box('n', 4, 4);
+    const settled = (targets) => {
+      const before = stats.floodSettled();
+      const walks = stats.walksFrom(floor([a, b, near]), a, targets);
+      return [stats.floodSettled() - before, [...walks]];
+    };
+    const [once, w1] = settled([near]);
+    const [twice, w2] = settled([near, near]);
+    assert.deepEqual(w2, w1, 'listed twice: one answer, the same');
+    assert.equal(twice, once, `listed twice: the flood stops as early (${twice} points vs ${once})`);
+    assert.ok(once < 50, `and early it is: ${once} of the floor's ~200 points`);
+  }
+  // the start: a machine is left the way it is reached. Its rounded centre
+  // only where that point is on the floor with no wall to the true centre —
+  // a 1-deep machine flush above or left of a partition rounds ONTO it, one
+  // flush against the rim onto the rim, one reaching past the outline off it
+  {
+    const across = { id: 'p', kind: 'line', x: -1, y: 10, w: 22, h: 0 };
+    const up = box('U', 5, 9, 2, 1); // centre (6, 9.5) rounds to (6, 10): on the partition
+    const down = box('D', 5, 12);
+    const rooms = (shapes) => ({ grid: { w: 20, h: 20 }, outline: [], shapes, machines: [up, down] });
+    assert.deepEqual([stats.walkLength(rooms([across]), up, down), stats.walkLength(rooms([across]), down, up)], [null, null],
+      'flush above a partition: no walk through it, either way');
+    const door = { id: 'd', kind: 'fixture', fixture: 'door', x: 16.8, y: 9.4, w: 2.4, h: 1.2 };
+    const there = stats.walkLength(rooms([across, door]), up, down);
+    assert.ok(there > 20 && there === stats.walkLength(rooms([across, door]), down, up),
+      `through the door at the far end, the same walk both ways (${there})`);
+    const left = box('L', 9, 5, 1, 2); // centre (9.5, 6) rounds to (10, 6): on the partition
+    const right = box('R', 12, 5);
+    const side = { grid: { w: 20, h: 20 }, outline: [], shapes: [{ id: 'q', kind: 'line', x: 10, y: -1, w: 0, h: 22 }], machines: [left, right] };
+    assert.equal(stats.walkLength(side, left, right), null, 'flush left of a partition: no walk through it');
+    const F = box('F', 5, 6);
+    const past = box('T', 5, 10, 2, 3); // centre (6, 11.5) lies past the outline
+    const short = { grid: { w: 20, h: 20 }, outline: [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 11 }, { x: 0, y: 11 }],
+      shapes: [], machines: [F, past] };
+    assert.deepEqual([stats.walkLength(short, past, F), stats.walkLength(short, F, past)], [4.5, 4.5],
+      'a machine reaching past the outline is left from the floor, as it is reached — not walled in');
+    const edge = box('E', 5, 19, 2, 1); // flush against the grid's edge: rounds onto the rim
+    const rim = { grid: { w: 20, h: 20 }, outline: [], shapes: [], machines: [F, edge] };
+    assert.equal(stats.walkLength(rim, edge, F), stats.walkLength(rim, F, edge), 'a machine on the rim walks the same both ways');
+  }
+  // …and a fuzz against an exact rule: a doorless partition past both edges
+  // splits the floor in two rooms, so no walk joins machines on different
+  // sides. File-shaped machines (0.1 steps, from 0.3 a side, half of them
+  // flush against the partition) are where rounding and the raster leak.
+  {
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    const tenth = (lo, hi) => Math.round((lo + rnd() * (hi - lo)) * 10) / 10;
+    let pairs = 0;
+    const leaks = [];
+    for (let n = 0; n < 150; n++) {
+      const W = 8 + Math.floor(rnd() * 16);
+      const H = 8 + Math.floor(rnd() * 16);
+      const horiz = rnd() < 0.5;
+      const span = horiz ? H : W;
+      const k = rnd();
+      const p = k < 0.4 ? 2 + Math.floor(rnd() * (span - 3)) : k < 0.7 ? 2.5 + Math.floor(rnd() * (span - 4)) : tenth(2, span - 2);
+      const wallP = horiz ? { id: 'p', kind: 'line', x: -1, y: p, w: W + 2, h: 0 } : { id: 'p', kind: 'line', x: p, y: -1, w: 0, h: H + 2 };
+      const ms = [];
+      for (let tries = 0; ms.length < 6 && tries < 40; tries++) {
+        const w = rnd() < 0.3 ? [0.5, 1, 1.5][Math.floor(rnd() * 3)] : tenth(0.3, 4);
+        const h = rnd() < 0.3 ? [0.5, 1, 1.5][Math.floor(rnd() * 3)] : tenth(0.3, 4);
+        const before = rnd() < 0.5;
+        const flush = rnd() < 0.5;
+        let x = tenth(0, W - w);
+        let y = tenth(0, H - h);
+        if (horiz) y = before ? (flush ? p - h : Math.min(y, p - h)) : (flush ? p : Math.max(y, p));
+        else x = before ? (flush ? p - w : Math.min(x, p - w)) : (flush ? p : Math.max(x, p));
+        x = Math.round(x * 10) / 10;
+        y = Math.round(y * 10) / 10;
+        if (x < 0 || y < 0 || x + w > W || y + h > H
+          || ms.some((o) => x < o.x + o.w && o.x < x + w && y < o.y + o.h && o.y < y + h)) continue;
+        ms.push({ ...box(`m${ms.length}`, x, y, w, h), before });
+      }
+      const layout = { grid: { w: W, h: H }, outline: [], shapes: [wallP], machines: ms };
+      ms.forEach((A) => {
+        const walks = stats.walksFrom(layout, A, ms.filter((B) => B.before !== A.before));
+        walks.forEach((d, id) => {
+          pairs++;
+          if (d != null && leaks.length < 3) leaks.push(JSON.stringify({ W, H, wall: wallP, A, B: ms.find((B) => B.id === id), d }));
+        });
+      });
+    }
+    assert.ok(pairs > 500, `the fuzz walked ${pairs} pairs across the partition`);
+    assert.deepEqual(leaks, [], 'no walk crosses a doorless partition');
+  }
 }
 
 // --- closerStop: the recommender under "Next" ---
