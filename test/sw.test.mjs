@@ -257,4 +257,76 @@ const flush = async () => { for (let i = 0; i < 6; i++) await new Promise((r) =>
   await e.answers[0];
 }
 
+// ------------------------------------------------- the first-paint boot script
+
+// js/theme-boot.js is a classic script in <head> that repeats ONE decision
+// of ui.js's applyTheme before the first paint. Run the real file in a vm
+// with fake storage and a fake document, run the real applyTheme on an
+// identical fake, and demand the same result for every kind of setting —
+// including the ones that must do nothing.
+{
+  const BOOT = readFileSync(new URL('../js/theme-boot.js', import.meta.url), 'utf8');
+  const HTML = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const fakeDoc = () => {
+    const meta = { content: '#0f1216', setAttribute(k, v) { this[k] = v; } };
+    return {
+      meta,
+      documentElement: { dataset: {} },
+      querySelector: (sel) => (sel === 'meta[name="theme-color"]' ? meta : null),
+    };
+  };
+  const runBoot = (stored, { throws = false } = {}) => {
+    const document = fakeDoc();
+    const localStorage = {
+      getItem: (key) => {
+        if (throws) throw new Error('storage blocked');
+        return key === 'gymii.settings' ? stored : null;
+      },
+    };
+    vm.runInNewContext(BOOT, { document, localStorage, JSON });
+    return document;
+  };
+  const prior = globalThis.document;
+  const { applyTheme } = await import(new URL('../js/ui.js', import.meta.url).href);
+  const viaApp = (settings) => {
+    const document = fakeDoc();
+    globalThis.document = document;
+    applyTheme(settings);
+    return document;
+  };
+  const shape = (d) => [d.documentElement.dataset.theme, d.meta.content];
+
+  const cases = [
+    ['black', JSON.stringify({ theme: 'black' })],
+    ['dark', JSON.stringify({ theme: 'dark' })],
+    ['no theme key', JSON.stringify({ unit: 'kg' })],
+    ['a crafted value', JSON.stringify({ theme: '"><script>' })],
+    ['null', 'null'],
+    ['an array', '[]'],
+    ['corrupt JSON', '{theme: black'],
+    ['nothing stored', null],
+  ];
+  for (const [label, stored] of cases) {
+    let settings = {};
+    try { settings = JSON.parse(stored) ?? {}; } catch { /* corrupt: app.js falls back too */ }
+    assert.deepEqual(shape(runBoot(stored)), shape(viaApp(settings)),
+      `theme-boot and applyTheme agree on ${label}`);
+  }
+  assert.deepEqual(shape(runBoot(cases[0][1])), ['black', '#000000'], 'True black is stamped before app.js');
+  assert.deepEqual(shape(runBoot(null, { throws: true })), [undefined, '#0f1216'],
+    'blocked storage never throws and leaves the default theme');
+  globalThis.document = prior;
+  if (prior === undefined) delete globalThis.document;
+
+  // it must be a classic script (no module syntax), loaded synchronously in
+  // <head> BEFORE the stylesheet, and precached
+  assert.ok(!/^\s*(import|export)\b/m.test(BOOT), 'theme-boot.js uses no module syntax');
+  const tag = '<script src="js/theme-boot.js"></script>';
+  assert.ok(HTML.includes(tag), 'index.html loads theme-boot.js as a plain script (no defer/async/module)');
+  assert.ok(HTML.indexOf(tag) < HTML.indexOf('<link rel="stylesheet"'), 'and before the stylesheet');
+  assert.ok(HTML.indexOf('<meta name="theme-color"') < HTML.indexOf(tag), 'and after the theme-color meta it rewrites');
+  assert.ok(HTML.indexOf(tag) < HTML.indexOf('</head>'), 'inside <head>');
+  assert.ok(/'js\/theme-boot\.js'/.test(SRC), 'sw.js precaches it (SHELL)');
+}
+
 console.log('sw: all assertions passed');

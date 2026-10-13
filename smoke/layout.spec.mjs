@@ -69,6 +69,28 @@ test('True black switches the theme and every route still holds the rules', asyn
   await expect(page.locator('html')).not.toHaveAttribute('data-theme', 'black');
 });
 
+// First paint: js/theme-boot.js (a classic script in <head>) stamps the theme
+// BEFORE the deferred app.js module exists. Proof by subtraction — app.js is
+// aborted, so nothing but the boot script can have set the attribute.
+test('True black is on <html> without app.js, the default theme stays untouched', async ({ page }) => {
+  await page.route('**/js/app.js', (route) => route.abort());
+  const seed = (theme) => page.addInitScript((t) => {
+    try { localStorage.setItem('gymii.settings', JSON.stringify({ theme: t })); } catch { /* about:blank */ }
+  }, theme);
+  await seed('black');
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'black');
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#000000');
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(0, 0, 0)');
+
+  // a stored default theme is a no-op (this init script runs after the first
+  // and overwrites it before the page's own scripts)
+  await seed('dark');
+  await page.goto('/?default');
+  await expect(page.locator('html')).not.toHaveAttribute('data-theme', /.*/);
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#0f1216');
+});
+
 // 🎲 in the machine picker: a 44px chip that fills the number and says
 // why — and starts nothing (the start stays the action button's job).
 test('the picker\'s 🎲 suggests a machine and starts nothing', async ({ page }) => {

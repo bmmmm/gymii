@@ -48,6 +48,25 @@ layout.machines.forEach((m) => {
   assert.ok(m.x >= 0 && m.y >= 0 && m.x + m.w <= layout.grid.w && m.y + m.h <= layout.grid.h,
     `${m.label} inside the grid`);
 });
+// secondaryMuscles (half a set in History) are visible in the demo: a few
+// machines carry them, from the app's own vocabulary, never repeating a
+// primary muscle of the same machine, and each one is a muscle the demo
+// already trains as a primary elsewhere (so no new subject enters the
+// volume hints and the SHOWN list below holds)
+const primaries = new Set(layout.machines.flatMap((m) => m.muscles));
+const tagged = layout.machines.filter((m) => 'secondaryMuscles' in m);
+assert.ok(tagged.length >= 3, 'a few demo machines carry secondaryMuscles');
+tagged.forEach((m) => {
+  assert.ok(Array.isArray(m.secondaryMuscles) && m.secondaryMuscles.length, `${m.label}: non-empty list`);
+  m.secondaryMuscles.forEach((mu) => {
+    assert.ok(store.MUSCLE_GROUPS.includes(mu), `${m.label}: ${mu} is a known muscle`);
+    assert.ok(!m.muscles.includes(mu), `${m.label}: ${mu} is not also a primary`);
+    assert.ok(primaries.has(mu), `${m.label}: ${mu} is trained as a primary somewhere`);
+  });
+});
+assert.ok(layout.machines.some((m) => m.cardio !== true && m.secondaryMuscles?.length),
+  'a resistance machine carries them (cardio machines are not tallied)');
+
 // no two machine boxes overlap (the layout's collision rule)
 layout.machines.forEach((a, i) => layout.machines.slice(i + 1).forEach((b) => {
   const apart = a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
@@ -173,6 +192,8 @@ LAT_FIXTURE.forEach((id) => { latSets(drawn, id).at(-1).reps = null; });
 // …and the assisted pull-up (2026-10-13) the same way: its machine and its entries
 drawn.layout.machines = drawn.layout.machines.filter((m) => m.id !== 'demo-assisted-pullup');
 drawn.workouts.forEach((w) => { w.entries = w.entries.filter((e) => e.machineId !== 'demo-assisted-pullup'); });
+// …and the demo's secondaryMuscles the same way: strip them and the layout is the old one
+drawn.layout.machines.forEach((m) => { delete m.secondaryMuscles; });
 assert.deepEqual({
   layout: digest(drawn.layout),
   plans: digest(drawn.plans),

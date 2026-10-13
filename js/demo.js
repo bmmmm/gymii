@@ -42,14 +42,17 @@ function mulberry32(seed) {
 // template's empty Free-weights and Cardio zones with the coverage the
 // template lacks: cardio, bodyweight and a multi-exercise machine.
 // [id, num, label, x, y, w, h, settingsFields, muscles, extra]
+// `extra.secondaryMuscles` (worth half a set in History) name muscles that are
+// ALREADY trained as a primary elsewhere, so the volume hints keep their subject.
 const MACHINES = [
   ['chest-press', 1, 'Chest press', 4, 4, 5, 4, ['Seat'], ['Chest', 'Triceps'],
-    { docUrl: 'https://en.wikipedia.org/wiki/Bench_press' }],
+    { docUrl: 'https://en.wikipedia.org/wiki/Bench_press', secondaryMuscles: ['Shoulders'] }],
   ['lat-pulldown', 2, 'Lat pulldown', 11, 4, 5, 4, ['Seat', 'Thigh pad'], ['Lats', 'Upper back', 'Biceps']],
-  ['seated-row', 3, 'Seated row', 18, 4, 5, 4, ['Chest pad'], ['Upper back', 'Lats']],
+  ['seated-row', 3, 'Seated row', 18, 4, 5, 4, ['Chest pad'], ['Upper back', 'Lats'],
+    { secondaryMuscles: ['Biceps'] }],
   ['shoulder-press', 4, 'Shoulder press', 25, 4, 5, 4, ['Seat'], ['Shoulders', 'Triceps']],
   ['leg-press', 5, 'Leg press', 4, 12, 5, 4, ['Seat angle'], ['Quads', 'Glutes'],
-    { restSeconds: 150 }],
+    { restSeconds: 150, secondaryMuscles: ['Hamstrings'] }],
   ['leg-extension', 6, 'Leg extension', 11, 12, 5, 4, ['Seat', 'Shin pad'], ['Quads']],
   ['leg-curl', 7, 'Leg curl', 18, 12, 5, 4, ['Seat', 'Ankle pad'], ['Hamstrings']],
   ['pec-deck', 8, 'Pec deck', 25, 12, 5, 4, ['Seat', 'Arm pads'], ['Chest']],
@@ -64,11 +67,11 @@ const MACHINES = [
   ['demo-rower', 13, 'Rowing machine', 41, 23, 3, 7, ['Foot plate'], ['Lats', 'Upper back', 'Quads'],
     { cardio: true }],
   ['demo-pullup', 14, 'Pull-up bar', 36, 4, 4, 2, [], ['Lats', 'Biceps'],
-    { bodyweight: true }],
+    { bodyweight: true, secondaryMuscles: ['Upper back'] }],
   // "Dip station" is this piece of equipment's real-world name, not the
   // old synonym for machine — it stays as a user would read it on the floor
   ['demo-dip', 15, 'Dip station', 42, 4, 4, 3, [], ['Chest', 'Triceps'],
-    { bodyweight: true }],
+    { bodyweight: true, secondaryMuscles: ['Shoulders'] }],
   ['demo-dumbbells', 16, 'Dumbbell rack', 36, 10, 12, 2, [], ['Biceps', 'Shoulders', 'Forearms'],
     { exercises: ['Biceps curls', 'Lateral raises', 'Hammer curls'] }],
   // a counterweight machine: weight is the ASSIST. LAST, so every machine
