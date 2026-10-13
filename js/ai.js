@@ -9,7 +9,7 @@ import {
 import { openPlanBuilder } from './train.js';
 import { twoTapConfirm, plural, dateValue } from './ui.js';
 
-const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; an "exercise" field names one movement at a multi-exercise machine like a free-weight area; a "grip" field names the attachment or grip it was done with (a rope and a V-bar on one cable tower are separate progressions — never mix their numbers); a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis, and null there means the set has no timestamp; a fourth element, when present, is RIR, reps in reserve, 0–3, 3 = three or more; absent = not rated). A workout's "visits", when present, is the route I walked: [num, seconds in, seconds out] per machine, in order, seconds since the workout started; a fourth element is the num of a machine I skipped because it was busy.
+export const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; an "exercise" field names one movement at a multi-exercise machine like a free-weight area; a "grip" field names the attachment or grip it was done with (a rope and a V-bar on one cable tower are separate progressions — never mix their numbers); a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis, and null there means the set has no timestamp; a fourth element, when present, is RIR, reps in reserve, 0–3, 3 = three or more; absent = not rated). A workout's "visits", when present, is the route I walked: [num, seconds in, seconds out] per machine, in order, seconds since the workout started; a fourth element is the num of a machine I skipped because it was busy.
 
 Analyze my progress: trends per machine, plateaus, and muscle-group imbalances. Then suggest concrete targets for my next workout — weight × reps per machine — and one or two practical tips.
 
@@ -140,24 +140,27 @@ export function renderAi(root) {
   });
 }
 
-// Compact, LLM-friendly snapshot: machines + saved plans + full log, no
-// floor layout.
 // A workout's route as [num, inSec, outSec, busyNum?] — numbers, not ids
 // (the LLM joins on num), seconds since the start like the set tuples. A
 // visit names a machine id; the workout's own entry snapshot knows its num,
-// else the layout does, and a machine neither knows (deleted since) is dropped.
+// else the layout does, and a machine neither knows (deleted since) is
+// dropped. `visits` arrives through backups and sync unchecked, so anything
+// that is not a list of objects counts as no route — never a dead AI tab.
 function visitTuples(w, layout) {
+  if (!Array.isArray(w.visits)) return [];
   const numOf = (id) => w.entries.find((e) => e.machineId === id)?.num
     ?? layout?.machines.find((m) => m.id === id)?.num ?? null;
   const sec = (t) => (Number.isFinite(t) ? Math.round((t - w.startedAt) / 1000) : null);
   return w.visits.flatMap((v) => {
-    const num = numOf(v.machineId);
+    const num = v && typeof v === 'object' ? numOf(v.machineId) : null;
     if (num == null) return [];
     const busy = v.busy ? numOf(v.busy) : null;
     return [[num, sec(v.in), sec(v.out), ...(busy != null ? [busy] : [])]];
   });
 }
 
+// Compact, LLM-friendly snapshot: machines + saved plans + full log, no
+// floor layout.
 export function buildAiExport() {
   const layout = getLayout();
   const settings = getSettings();
@@ -212,26 +215,29 @@ export function buildAiExport() {
         }).filter(Boolean),
       })),
     } : {}),
-    workouts: getWorkouts().map((w) => ({
-      date: dateValue(w.startedAt),
-      ...(w.visits?.length ? { visits: visitTuples(w, layout) } : {}),
-      entries: w.entries.map((e) => ({
-        machine: e.label,
-        num: e.num,
-        ...(e.exercise ? { exercise: e.exercise } : {}),
-        ...(e.grip ? { grip: e.grip } : {}),
-        ...(e.cardio ? { cardio: true } : {}),
-        ...(e.bodyweight ? { bodyweight: true } : {}),
-        ...(Object.keys(e.settings || {}).some((k) => String(e.settings[k]).trim() !== '')
-          ? { settings: e.settings } : {}),
-        sets: e.sets.map((st) => {
-          const base = e.cardio ? [st.distance, st.seconds] : [st.weight, st.reps];
-          const rir = !e.cardio && st.rir != null ? st.rir : null;
-          if (st.at == null && rir == null) return base;
-          const sec = st.at == null ? null : Math.round((st.at - w.startedAt) / 1000);
-          return rir == null ? [...base, sec] : [...base, sec, rir];
-        }),
-      })),
-    })),
+    workouts: getWorkouts().map((w) => {
+      const visits = visitTuples(w, layout);
+      return {
+        date: dateValue(w.startedAt),
+        ...(visits.length ? { visits } : {}), // absent rather than empty
+        entries: w.entries.map((e) => ({
+          machine: e.label,
+          num: e.num,
+          ...(e.exercise ? { exercise: e.exercise } : {}),
+          ...(e.grip ? { grip: e.grip } : {}),
+          ...(e.cardio ? { cardio: true } : {}),
+          ...(e.bodyweight ? { bodyweight: true } : {}),
+          ...(Object.keys(e.settings || {}).some((k) => String(e.settings[k]).trim() !== '')
+            ? { settings: e.settings } : {}),
+          sets: e.sets.map((st) => {
+            const base = e.cardio ? [st.distance, st.seconds] : [st.weight, st.reps];
+            const rir = !e.cardio && st.rir != null ? st.rir : null;
+            if (st.at == null && rir == null) return base;
+            const sec = st.at == null ? null : Math.round((st.at - w.startedAt) / 1000);
+            return rir == null ? [...base, sec] : [...base, sec, rir];
+          }),
+        })),
+      };
+    }),
   }, null, 1);
 }

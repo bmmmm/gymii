@@ -887,7 +887,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   holds the third slot for a rated set without `at`; cardio never carries
   `rir`. A workout with `visits` exports them as `[num, inSec, outSec,
   busyNum?]` (nums from the entry snapshot, else the layout; a machine
-  neither knows is dropped). The prompt and the export `note` teach all of it.
+  neither knows is dropped, an unknown busy mark only loses its slot;
+  `visits` that is no list of objects — backups and sync pass it on
+  unchecked — exports as none; absent rather than empty). The prompt and the export `note` teach all of it.
   Saved plans ride along in the export (same wire shape the prompt
   teaches for answers, plus their `id`) — measured at ~5% of a demo-sized
   export, omitted entirely when no plans exist. Pasting a `workout-plan`

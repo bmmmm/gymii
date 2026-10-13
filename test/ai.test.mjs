@@ -7,7 +7,7 @@ import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
-const { renderAi, buildAiExport } = await import(new URL('../js/ai.js', import.meta.url).href);
+const { renderAi, buildAiExport, DEFAULT_PROMPT } = await import(new URL('../js/ai.js', import.meta.url).href);
 
 // --- fixture: a small gym and one saved plan with everything on it ---
 
@@ -135,6 +135,20 @@ assert.deepEqual(JSON.parse(buildAiExport()).workouts[0].visits, [[4, 0, 600], [
   'nums from the entry snapshot, else the layout; seconds since the start; busy as a num; a deleted machine drops out');
 assert.match(JSON.parse(buildAiExport()).note, /visits are \[num, seconds in, seconds out, busy num\?\]/,
   'the note explains the shape');
+assert.match(DEFAULT_PROMPT, /"visits"[^.]*\[num, seconds in, seconds out\]/, 'the prompt teaches visits too');
+// a busy mark naming a machine nobody knows keeps the visit, minus the mark
+store.saveWorkouts([{ id: 'vb', startedAt: t0, finishedAt: t0 + 60000, entries: [],
+  visits: [{ machineId: 'm1', in: t0, out: t0 + 30000, busy: 'gone' }] }]);
+assert.deepEqual(JSON.parse(buildAiExport()).workouts[0].visits, [[1, 0, 30]], 'the stop stays, the unknown busy mark goes');
+// every visit at a machine deleted since: no route, and no empty key either
+store.saveWorkouts([{ id: 've', startedAt: t0, finishedAt: t0 + 60000, entries: [],
+  visits: [{ machineId: 'gone', in: t0, out: t0 + 30000 }] }]);
+assert.equal('visits' in JSON.parse(buildAiExport()).workouts[0], false, 'absent rather than empty');
+// visits arrive through backups and sync unchecked: junk is no route, never a dead AI tab
+for (const junk of [[null], 'abc', [7, 'x'], { machineId: 'm1' }]) {
+  store.saveWorkouts([{ id: 'vj', startedAt: t0, finishedAt: t0 + 60000, entries: [], visits: junk }]);
+  assert.equal('visits' in JSON.parse(buildAiExport()).workouts[0], false, `junk visits ${JSON.stringify(junk)} export as none`);
+}
 store.saveWorkouts([]);
 
 store.savePlans([{
