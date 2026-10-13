@@ -140,16 +140,25 @@ export function renderAi(root) {
   });
 }
 
+// One num space: the export names a machine by its CURRENT layout num,
+// looked up by machineId while the machine exists. Entries and visits carry
+// the num they were logged under, which drifts after a renumbering; a
+// machine deleted since is the only case where that snapshot is still the
+// best name there is. Stored data is never touched — only the export.
+function machineName(layout, machineId, snapshot) {
+  const m = machineId ? layout?.machines.find((x) => x.id === machineId) : null;
+  return { num: m ? m.num : snapshot?.num ?? null, label: m ? m.label : snapshot?.label };
+}
+
 // A workout's route as [num, inSec, outSec, busyNum?] — numbers, not ids
 // (the LLM joins on num), seconds since the start like the set tuples. A
-// visit names a machine id; the workout's own entry snapshot knows its num,
-// else the layout does, and a machine neither knows (deleted since) is
-// dropped. `visits` arrives through backups and sync unchecked, so anything
-// that is not a list of objects counts as no route — never a dead AI tab.
+// visit names a machine id; the layout knows its current num, else the
+// workout's own entry snapshot does, and a machine neither knows is dropped.
+// `visits` arrives through backups and sync unchecked, so anything that is
+// not a list of objects counts as no route — never a dead AI tab.
 function visitTuples(w, layout) {
   if (!Array.isArray(w.visits)) return [];
-  const numOf = (id) => w.entries.find((e) => e.machineId === id)?.num
-    ?? layout?.machines.find((m) => m.id === id)?.num ?? null;
+  const numOf = (id) => machineName(layout, id, w.entries.find((e) => e.machineId === id)).num;
   const sec = (t) => (Number.isFinite(t) ? Math.round((t - w.startedAt) / 1000) : null);
   return w.visits.flatMap((v) => {
     const num = v && typeof v === 'object' ? numOf(v.machineId) : null;
@@ -159,17 +168,35 @@ function visitTuples(w, layout) {
   });
 }
 
+// JSON.stringify(…, null, 1) puts every number of every set on its own line
+// (~3300 lines for the demo gym). Same valid JSON, but whatever fits within
+// WIDTH columns stays on one line — tuples, machines, entries — and only
+// containers that do not fit break, one child per line.
+const WIDTH = 160;
+function compactJson(v, indent = '') {
+  const flat = JSON.stringify(v);
+  if (flat === undefined || flat.length + indent.length <= WIDTH || v === null || typeof v !== 'object') return flat;
+  const inner = `${indent} `;
+  if (Array.isArray(v)) {
+    return `[\n${v.map((x) => inner + compactJson(x, inner)).join(',\n')}\n${indent}]`;
+  }
+  const rows = Object.entries(v).filter(([, x]) => x !== undefined && typeof x !== 'function')
+    .map(([k, x]) => `${inner}${JSON.stringify(k)}: ${compactJson(x, inner)}`);
+  return `{\n${rows.join(',\n')}\n${indent}}`;
+}
+
 // Compact, LLM-friendly snapshot: machines + saved plans + full log, no
 // floor layout.
 export function buildAiExport() {
   const layout = getLayout();
   const settings = getSettings();
   const plans = getPlans();
-  return JSON.stringify({
+  return compactJson({
     app: 'gymii',
     kind: 'ai-export',
     unit: settings.unit,
-    note: `sets are [weight, reps]; entries with cardio:true use [distance, seconds], distance in ${
+    note: `every num is the machine's current num in gym.machines (a machine deleted since keeps ` +
+      `the num it was logged under); sets are [weight, reps]; entries with cardio:true use [distance, seconds], distance in ${
       distUnit(settings)}; bodyweight:true entries log ADDED weight (0 = bodyweight only); ` +
       'assisted:true entries log the ASSISTANCE (less = stronger, 0 = unassisted); ' +
       'a third element, when present, is seconds since the workout started (sets logged before ' +
@@ -223,25 +250,28 @@ export function buildAiExport() {
       return {
         date: dateValue(w.startedAt),
         ...(visits.length ? { visits } : {}), // absent rather than empty
-        entries: w.entries.map((e) => ({
-          machine: e.label,
-          num: e.num,
-          ...(e.exercise ? { exercise: e.exercise } : {}),
-          ...(e.grip ? { grip: e.grip } : {}),
-          ...(e.cardio ? { cardio: true } : {}),
-          ...(e.bodyweight ? { bodyweight: true } : {}),
-          ...(e.assisted ? { assisted: true } : {}),
-          ...(Object.keys(e.settings || {}).some((k) => String(e.settings[k]).trim() !== '')
-            ? { settings: e.settings } : {}),
-          sets: e.sets.map((st) => {
-            const base = e.cardio ? [st.distance, st.seconds] : [st.weight, st.reps];
-            const rir = !e.cardio && st.rir != null ? st.rir : null;
-            if (st.at == null && rir == null) return base;
-            const sec = st.at == null ? null : Math.round((st.at - w.startedAt) / 1000);
-            return rir == null ? [...base, sec] : [...base, sec, rir];
-          }),
-        })),
+        entries: w.entries.map((e) => {
+          const { num, label } = machineName(layout, e.machineId, e);
+          return {
+            machine: label,
+            num,
+            ...(e.exercise ? { exercise: e.exercise } : {}),
+            ...(e.grip ? { grip: e.grip } : {}),
+            ...(e.cardio ? { cardio: true } : {}),
+            ...(e.bodyweight ? { bodyweight: true } : {}),
+            ...(e.assisted ? { assisted: true } : {}),
+            ...(Object.keys(e.settings || {}).some((k) => String(e.settings[k]).trim() !== '')
+              ? { settings: e.settings } : {}),
+            sets: e.sets.map((st) => {
+              const base = e.cardio ? [st.distance, st.seconds] : [st.weight, st.reps];
+              const rir = !e.cardio && st.rir != null ? st.rir : null;
+              if (st.at == null && rir == null) return base;
+              const sec = st.at == null ? null : Math.round((st.at - w.startedAt) / 1000);
+              return rir == null ? [...base, sec] : [...base, sec, rir];
+            }),
+          };
+        }),
       };
     }),
-  }, null, 1);
+  });
 }
