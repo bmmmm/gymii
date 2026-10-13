@@ -577,7 +577,9 @@ export function renderGym(root) {
     const secondary = m.secondaryMuscles ?? [];
     if (primary.includes(mu)) {
       m.muscles = primary.filter((x) => x !== mu);
-      m.secondaryMuscles = [...secondary, mu];
+      // never twice: a muscle may already sit in both lists (a client that
+      // knows no secondary muscles tagged it primary again)
+      m.secondaryMuscles = [...secondary.filter((x) => x !== mu), mu];
     } else if (secondary.includes(mu)) {
       m.secondaryMuscles = secondary.filter((x) => x !== mu);
     } else {
@@ -590,6 +592,15 @@ export function renderGym(root) {
     : (m.secondaryMuscles ?? []).includes(mu) ? ' secondary' : '');
   const musclePressed = (m, mu) => ((m.muscles ?? []).includes(mu) ? 'true'
     : (m.secondaryMuscles ?? []).includes(mu) ? 'mixed' : 'false');
+  // A list row's muscles in ONE fixed order (the pick list's, others
+  // after, by name), whatever their state: a chip turning secondary stays
+  // where the thumb is, so the second tap — removing it — lands on it.
+  const rowMuscles = (m) => [...new Set([...(m.muscles || []), ...(m.secondaryMuscles || [])])]
+    .sort((a, b) => {
+      const ia = MUSCLE_GROUPS.indexOf(a);
+      const ib = MUSCLE_GROUPS.indexOf(b);
+      return (ia === -1) - (ib === -1) || ia - ib || a.localeCompare(b);
+    });
   // the type flags are mutually exclusive; absent = strength, and a flag is
   // deleted (never set false) to keep exports clean
   const TYPE_FLAGS = ['cardio', 'bodyweight', 'assisted'];
@@ -614,8 +625,8 @@ export function renderGym(root) {
     const brands = [...new Set([...MACHINE_BRANDS, ...layout.machines.map((m) => m.brand)])]
       .filter((b) => b && b !== gymBrand);
     const rows = [...layout.machines].sort((a, b) => a.num - b.num).map((m) => {
-      // primary chips first, then secondary — one row, tap to cycle
-      const muscles = [...(m.muscles || []), ...(m.secondaryMuscles || []).filter((mu) => !(m.muscles || []).includes(mu))];
+      // one row in a fixed order, tap to cycle
+      const muscles = rowMuscles(m);
       const own = ownBrand(layout, m);
       const other = otherText.get(m.id);
       const groups = MUSCLE_REGIONS
@@ -649,7 +660,7 @@ export function renderGym(root) {
           ${muscles.map((mu) => `<button type="button" class="chip sm${muscleClass(m, mu)}" data-muscle="${esc(mu)}"
             aria-pressed="${musclePressed(m, mu)}" aria-label="${esc(mu)}: ${(m.muscles || []).includes(mu)
     ? 'primary — tap for secondary' : 'secondary — tap to remove'}">${esc(mu)}${
-    (m.muscles || []).includes(mu) ? '' : ' ½'} ✕</button>`).join('')}
+    (m.muscles || []).includes(mu) ? '' : ' ½ ✕'}</button>`).join('')}
           <select id="ml-muscle-${esc(m.id)}" data-field="muscle" aria-label="Add muscle">
             ${option('', '+ Muscle', true)}
             ${groups.map((r) => `<optgroup label="${esc(r.label)}">${
@@ -774,7 +785,7 @@ export function renderGym(root) {
         const m = rowMachine(chip);
         if (!m) return;
         const mu = chip.dataset.muscle;
-        const rowOrder = () => [...(m.muscles || []), ...(m.secondaryMuscles || []).filter((x) => !(m.muscles || []).includes(x))];
+        const rowOrder = () => rowMuscles(m);
         const focused = hadFocus(chip);
         const was = rowOrder().indexOf(mu);
         cycleMuscle(m, mu); // primary → secondary → gone

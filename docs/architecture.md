@@ -501,8 +501,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   staged in `otherText` (id → text) so a re-render from another row renders
   it back into ITS row, still open), a `model` field (staged on `input`,
   saved trimmed on `change`, absent when empty — the card's rule),
-  assigned muscles as removable chips
-  plus an add-`<select>` whose `<optgroup>`s are the regions (a region with
+  its muscles as chips in ONE fixed order (the pick list's, `rowMuscles`)
+  that a tap cycles primary → secondary ("½ ✕") → removed, so the chip
+  stays under the thumb for its second tap,
+  plus an add-`<select>` (adding a muscle as primary drops it from the
+  secondary list) whose `<optgroup>`s are the regions (a region with
   nothing left to pick is no header). Four delegated listeners on
   `#machine-list` (input/change/click/keydown) instead of one per control,
   because a muscle change re-renders the whole list — followed by
@@ -511,8 +514,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   keyboard or screen-reader user; a phone tap never focuses a chip, and a
   programmatic focus there could pop the picker or drop a typing keyboard)
   — by a FOCUS that would otherwise fall to `<body>`: after an add the
-  select keeps it, after a removal the chip that moved into its place (else
-  the select); the label is staged on `input` like the
+  select keeps it, after a tap the chip of the same muscle while it is
+  still on the row, else the chip that moved into its place (else the
+  select); the label is staged on `input` like the
   card's. Same flag/brand invariants as the card (flags deleted, never
   false), same `save()` — undo covers it. The
   Location card holds `meta.postcode` and an `#gym-osm` search link built by

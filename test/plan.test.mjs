@@ -1016,6 +1016,21 @@ assert.deepEqual(store.parsePlanLine('Leg press 3x8-12 80', s).target, { sets: 3
 assert.deepEqual(store.parsePlanLine('Leg press 3x8 – 12 80', s).target, { sets: 3, reps: 8, weight: 80 },
   'and so is a dash with spaces');
 
+// --- a muscle only ever SECONDARY still finds its machines in the builder ---
+{
+  const g = store.newLayout('Secondary builder gym');
+  g.machines.push({ id: 'cp', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
+    muscles: ['Chest'], secondaryMuscles: ['Triceps'] });
+  store.saveLayout(g);
+  byId.clear();
+  byId.set('#plan-text', null);
+  renderPlanBuilder(root, { seed: [{ machineId: 'cp', exercise: null }] }, () => {});
+  assert.ok(root.innerHTML.includes('data-muscle="Triceps"'), 'the builder offers the secondary-only muscle');
+  root.querySelector('#muscle-chips').listeners.click({ target: { closest: () => ({ dataset: { muscle: 'Triceps' } }) } });
+  assert.ok(/id="machine-chips"[\s\S]*data-id="cp">#1 Chest press/.test(root.innerHTML)
+    && !root.innerHTML.includes('No machines match this muscle.'), 'and its chip leads to the chest press');
+}
+
 // --- an assisted machine's target weight is the assist ---
 {
   const g = store.newLayout('Assist builder gym');

@@ -183,8 +183,10 @@ export function renderPlanBuilder(
     // what this plan trains, plus names already in use — a nameless plan
     // is a plan nobody finds again
     const nameChips = nameChipsFor(draft.items.map((it) => it.machineId).filter(Boolean), layout);
+    // a muscle chip lists the machines that work it, as a primary muscle or
+    // a secondary one (layoutMuscles offers both)
     const filtered = (muscle
-      ? machines.filter((m) => (m.muscles || []).includes(muscle))
+      ? machines.filter((m) => (m.muscles || []).includes(muscle) || (m.secondaryMuscles || []).includes(muscle))
       : machines).slice().sort((a, b) => a.num - b.num);
 
     root.innerHTML = `

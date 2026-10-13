@@ -1435,6 +1435,10 @@ const withPicker = (fn) => {
   // "open today" counts this morning's finished workout too
   const earlier = surpriseMachine(g, null, { rand: () => 0, earlier: done.entries });
   assert.equal(earlier.num, 2, 'Chest trained earlier today: #1 is not suggested, #2 (Quads) is');
+  // a muscle that is only SECONDARY narrows the draw to its machines too
+  const sec = { ...g, machines: [...g.machines, { ...mm('d5', 5, 30, ['Quads']), secondaryMuscles: ['Forearms'] }] };
+  assert.ok([0, 0.5, 0.99].every((r) => surpriseMachine(sec, done, { rand: () => r, muscle: 'Forearms' }).num === 5),
+    'a Forearms filter: the one machine that works them as a secondary muscle');
   // the picker's muscle filter narrows the draw while it has something left
   assert.ok([0, 0.5, 0.99].every((r) => surpriseMachine(g, done, { rand: () => r, muscle: 'Triceps' }).num === 3),
     'a Triceps filter: the Triceps machine');

@@ -762,7 +762,9 @@ export function surpriseMachine(layout, active = null, { rand = Math.random, ear
   const num = (v, fb) => (Number.isFinite(Number(v)) ? Number(v) : fb);
   const center = (m) => [num(m.x, 0) + num(m.w, 0) / 2, num(m.y, 0) + num(m.h, 0) / 2];
   const done = new Set([...(active?.entries ?? []), ...earlier].filter((e) => e.sets.length).map((e) => e.machineId));
-  const narrowed = muscle ? layout.machines.filter((m) => (m.muscles ?? []).includes(muscle)) : [];
+  // the filter's machines — primary or secondary, as the picker lists them
+  const narrowed = muscle ? layout.machines.filter((m) => (m.muscles ?? []).includes(muscle)
+    || (m.secondaryMuscles ?? []).includes(muscle)) : [];
   const scope = narrowed.some((m) => !done.has(m.id)) ? narrowed : layout.machines;
   const pool = scope.filter((m) => !done.has(m.id));
   const candidates = (pool.length ? pool : scope).slice().sort((a, b) => a.num - b.num);
