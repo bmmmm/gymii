@@ -246,41 +246,13 @@ stand. An expectation that fails becomes an issue labelled `bug`.
 Unbound items and the muscle filter: fine as is. Template browser filters:
 the library holds one template.
 
-### Review leftovers of the 2026-10-13 round (reviewer P2s, built on request)
-
-Decided: `assistGoal` is per machine (a machine with pull-up AND dip shares
-one goal) and travels in exported gym templates like `restSeconds`. Metres
-and kcal stay out ("relations are enough", user 2026-10-13). A machine cut
-by a wall is reached from its floor side.
-
-- **Twins.** Next / Busy? still pass only the triple, so a Next pointing at
-  the later twin opens the first open twin. Two identical blocks (same
-  target) stay one slot — on purpose.
-- **Grips.** A typed grip in the gym EDITOR is deduplicated by exact match
-  only (the log screen's "+ Grip" matches case-insensitively).
-- **Gym editor.** An edit to a machine another device deleted meanwhile
-  brings it back on every device (the edit's re-stamp beats the
-  tombstone) — the editor's save() lets this edit win; the other choice
-  would drop the edit silently. A save that takes in another writer's
-  change redraws the map but not the open card; most chip handlers
-  re-render it anyway.
-- **AI export.** test/ai.test.mjs's "still valid JSON" assertion compares
-  the parse with itself; the other `JSON.parse(buildAiExport())` calls are
-  what really pins validity.
-- **Hints.** Busy marks on either side of midnight fall into different
-  weekday groups and never cluster.
-- **Routing.** The floor is rasterised at half units, so geometry off that
-  grid can leak or close: a wall ending exactly on the grid's edge is
-  passed round its end, a slit of the outline thinner than half a unit is
-  no slit, and a machine reachable only through a 1-unit lane can read
-  unreachable (0.18 % of editor-shaped pairs in a fuzz). The sampling
-  density (every half unit) is a tolerance of that raster, not a rule: once
-  per unit decides about 2–4 % of pairs differently. The rim counts as a
-  wall, so a passage of the outline exactly 1 unit wide is closed. An
-  outline door within half a unit of a partition's end opens the partition.
-  A machine cut by a partition is reached from both rooms but left only
-  into its centre's room — unless its rounded centre lands ON the
-  partition, then into both (104 one-way pairs in the editor fuzz);
-  starting from both rooms would mirror the wall decision. A machine entirely
-  outside the outline gets no walk, so Busy? offers nothing from it — a
-  product question for train.js.
+The review leftovers of the 2026-10-13 round are all worked off (2026-10-13m:
+twins via Next / Busy?, editor grips case-insensitive, the open card after a
+foreign change, a red-capable AI-export test, a cut machine left into both
+rooms). Decided: `assistGoal` is per machine and travels in gym templates
+like `restSeconds`; metres and kcal stay out; a machine cut by a wall is
+reached from its floor side; an editor edit beats another device's delete
+(it brings the machine back); busy marks either side of midnight do not
+cluster; a machine entirely outside the outline gets no walk (an editor
+error); two identical blocks (same target) stay one slot. The half-unit
+raster's tolerances (wall ends, slits, 1-unit lanes) are accepted.
