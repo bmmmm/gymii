@@ -42,6 +42,77 @@ const DOUBLE_TAP_MS = 450;
 // lock it again mid-arrangement.
 const TAP_SLOP = 1.5;
 
+// --- undo entries ---
+// An undo entry is what one edit CHANGED, part by part — each machine and
+// shape by id, each structural field — never a snapshot of the whole
+// layout. Undo and redo write that side of it onto the layout as stored
+// IN THE TAP: a snapshot written back is a render-time copy (store.js,
+// ensureMachine), and saveLayout tombstones every id such a copy lacks — a
+// machine an ambient sync pull or another tab brought in meanwhile would
+// die on every device, and their changes to the other parts would be
+// reverted.
+const STRUCTURAL = ['name', 'grid', 'meta', 'outline'];
+const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const isRecord = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+function layoutDiff(a, b) {
+  const changes = STRUCTURAL.filter((field) => !same(a[field], b[field]))
+    .map((field) => ({ field, before: clone(a[field]), after: clone(b[field]) }));
+  ['machines', 'shapes'].forEach((coll) => {
+    const la = a[coll] ?? [];
+    const lb = b[coll] ?? [];
+    const ia = new Map(la.map((it, i) => [it.id, i]));
+    const ib = new Map(lb.map((it, i) => [it.id, i]));
+    new Set([...ia.keys(), ...ib.keys()]).forEach((id) => {
+      const before = la[ia.get(id)] ?? null;
+      const after = lb[ib.get(id)] ?? null;
+      if (same(before, after)) return;
+      changes.push({
+        coll, id, before: clone(before), after: clone(after), at: { before: ia.get(id), after: ib.get(id) },
+      });
+    });
+  });
+  return changes;
+}
+
+// Only the keys the edit changed, so a key another writer set since
+// survives (a grip Train taught the machine whose type is being undone).
+function writeKeys(target, want, was) {
+  new Set([...Object.keys(want), ...Object.keys(was)]).forEach((k) => {
+    if (same(want[k], was[k])) return;
+    if (k in want) target[k] = clone(want[k]);
+    else delete target[k];
+  });
+}
+
+// side: 'before' undoes the entry, 'after' redoes it. A part the edit
+// changed that another writer deleted since stays deleted.
+function applySide(target, changes, side) {
+  const other = side === 'before' ? 'after' : 'before';
+  changes.forEach((c) => {
+    const want = c[side];
+    const was = c[other];
+    if (c.field) {
+      if (isRecord(want) && isRecord(was) && isRecord(target[c.field])) writeKeys(target[c.field], want, was);
+      else if (want === undefined) delete target[c.field];
+      else target[c.field] = clone(want);
+      return;
+    }
+    const list = (target[c.coll] ??= []);
+    const i = list.findIndex((it) => it.id === c.id);
+    if (!want) {
+      if (i !== -1) list.splice(i, 1);
+    } else if (i === -1) {
+      if (!was) list.splice(Math.min(c.at[side], list.length), 0, clone(want));
+    } else if (was) {
+      writeKeys(list[i], want, was);
+    } else {
+      list[i] = clone(want);
+    }
+  });
+}
+
 export function focusMachine(id) {
   pendingFocus = id;
 }
@@ -146,30 +217,62 @@ export function renderGym(root) {
   });
   updateModeBar();
 
-  // --- undo/redo: one snapshot per completed edit ---
-  const history = [JSON.stringify(layout)];
-  let hIndex = 0;
+  // --- staged text ---
+  // A text field commits on `change`, which fires only on blur or Enter —
+  // and iOS does not blur a field when a chip next to it is tapped. Typed
+  // text waits here (`${machine id}:${field}` -> { m, field, text }), so a
+  // re-render prints it back as typed, spaces and all; and save() commits
+  // every waiting field first, so whichever control saves, a field is
+  // written exactly as its own `change` writes it — never '' or untrimmed.
+  const staged = new Map();
+  // How a machine's text field is written, for the card and the list alike:
+  // trimmed text in, what the field shows afterwards out.
+  const MACHINE_TEXT = {
+    label: (m, v) => { m.label = v || `Machine ${m.num}`; return m.label; },
+    // absent, never empty: exports and templates stay clean
+    model: (m, v) => { if (v) m.model = v; else delete m.model; return v; },
+    docUrl: (m, v) => { m.docUrl = v; return v; },
+  };
+  const stageText = (m, field, text) => staged.set(`${m.id}:${field}`, { m, field, text });
+  const stagedText = (m, field, value) => staged.get(`${m.id}:${field}`)?.text ?? value;
+  const commitText = (m, field, text) => {
+    staged.delete(`${m.id}:${field}`);
+    return MACHINE_TEXT[field](m, text.trim());
+  };
+
+  // --- undo/redo: one entry per completed edit (see layoutDiff) ---
+  const history = [];
+  let hIndex = 0; // entries applied; history[hIndex - 1] is the one undo takes back
+  let lastSaved = clone(layout); // the layout as this editor last wrote it
   const undoBtn = root.querySelector('#undo');
   const redoBtn = root.querySelector('#redo');
 
   const updateUndoButtons = () => {
     undoBtn.disabled = hIndex === 0;
-    redoBtn.disabled = hIndex === history.length - 1;
+    redoBtn.disabled = hIndex === history.length;
   };
 
-  // every gym mutation goes through save(): persist + record history
+  // every gym mutation goes through save(): persist + record what changed
   const save = () => {
+    staged.forEach(({ m, field, text }) => MACHINE_TEXT[field](m, text.trim()));
+    const changes = layoutDiff(lastSaved, layout);
+    if (!changes.length) return; // no write, and no undo step that does nothing
     saveLayout(layout);
-    history.length = hIndex + 1; // editing kills the redo branch
-    history.push(JSON.stringify(layout));
+    lastSaved = clone(layout);
+    history.length = hIndex; // editing kills the redo branch
+    history.push(changes);
     if (history.length > 60) history.shift();
-    else hIndex++;
+    hIndex = history.length;
     updateUndoButtons();
   };
 
-  const restore = (json) => {
-    layout = JSON.parse(json);
+  const restore = (changes, side) => {
+    staged.clear(); // half-typed text belongs to the state being left
+    const next = getLayout() ?? layout; // read in the tap
+    applySide(next, changes, side);
+    layout = next;
     saveLayout(layout); // persist without recording — undo/redo just moves the pointer
+    lastSaved = clone(layout);
     selectedId = null; // the selected item may not exist in this state
     selectedVertex = null;
     unlockedId = null;
@@ -181,12 +284,12 @@ export function renderGym(root) {
   undoBtn.addEventListener('click', () => {
     if (hIndex === 0) return;
     hIndex--;
-    restore(history[hIndex]);
+    restore(history[hIndex], 'before');
   });
   redoBtn.addEventListener('click', () => {
-    if (hIndex === history.length - 1) return;
+    if (hIndex === history.length) return;
     hIndex++;
-    restore(history[hIndex]);
+    restore(history[hIndex - 1], 'after');
   });
 
   function svgPoint(e) {
@@ -590,6 +693,8 @@ export function renderGym(root) {
   // chip state for a muscle: ' sel' primary, ' secondary' (dashed) secondary
   const muscleClass = (m, mu) => ((m.muscles ?? []).includes(mu) ? ' sel'
     : (m.secondaryMuscles ?? []).includes(mu) ? ' secondary' : '');
+  // ...and for a screen reader: aria-pressed alone says the state (mixed =
+  // secondary), so a chip's name stays its muscle's whatever the state
   const musclePressed = (m, mu) => ((m.muscles ?? []).includes(mu) ? 'true'
     : (m.secondaryMuscles ?? []).includes(mu) ? 'mixed' : 'false');
   // A list row's muscles in ONE fixed order (the pick list's, others
@@ -637,7 +742,7 @@ export function renderGym(root) {
           <input class="mrow-num" type="number" inputmode="numeric" min="1" data-field="num"
             value="${esc(m.num)}" aria-label="Number">
           <input id="ml-label-${esc(m.id)}" class="mrow-label" type="text" data-field="label"
-            value="${esc(m.label)}" aria-label="Label">
+            value="${esc(stagedText(m, 'label', m.label))}" aria-label="Label">
         </div>
         <div class="mrow-selects">
           <select data-field="type" aria-label="Type">
@@ -655,11 +760,10 @@ export function renderGym(root) {
           <button type="button" class="btn btn-inline mrow-other-set">Set</button>
         </div>
         <input id="ml-model-${esc(m.id)}" class="mrow-model" type="text" data-field="model"
-          value="${esc(m.model || '')}" placeholder="Model (optional)" aria-label="Model">
+          value="${esc(stagedText(m, 'model', m.model || ''))}" placeholder="Model (optional)" aria-label="Model">
         <div class="mrow-muscles">
           ${muscles.map((mu) => `<button type="button" class="chip sm${muscleClass(m, mu)}" data-muscle="${esc(mu)}"
-            aria-pressed="${musclePressed(m, mu)}" aria-label="${esc(mu)}: ${(m.muscles || []).includes(mu)
-    ? 'primary — tap for secondary' : 'secondary — tap to remove'}">${esc(mu)}${
+            aria-pressed="${musclePressed(m, mu)}" aria-label="${esc(mu)}">${esc(mu)}${
     (m.muscles || []).includes(mu) ? '' : ' ½ ✕'}</button>`).join('')}
           <select id="ml-muscle-${esc(m.id)}" data-field="muscle" aria-label="Add muscle">
             ${option('', '+ Muscle', true)}
@@ -687,9 +791,9 @@ export function renderGym(root) {
     list.addEventListener('input', (e) => {
       const m = rowMachine(e.target);
       if (!m) return;
-      if (e.target.dataset.field === 'label') m.label = e.target.value;
-      if (e.target.dataset.field === 'model') m.model = e.target.value;
-      if (e.target.dataset.field === 'other') otherText.set(m.id, e.target.value);
+      const { field } = e.target.dataset;
+      if (field === 'label' || field === 'model') stageText(m, field, e.target.value);
+      if (field === 'other') otherText.set(m.id, e.target.value);
     });
     list.addEventListener('change', (e) => {
       const m = rowMachine(e.target);
@@ -714,20 +818,14 @@ export function renderGym(root) {
           return;
         }
         case 'label':
-          m.label = v.trim() || `Machine ${m.num}`;
-          e.target.value = m.label;
+          e.target.value = commitText(m, 'label', v);
           save();
           redraw();
           return;
-        case 'model': {
-          // absent, never empty — the card's rule (optionalText)
-          const t = v.trim();
-          if (t) m.model = t;
-          else delete m.model;
-          e.target.value = t;
+        case 'model': // absent, never empty — the card's rule (MACHINE_TEXT)
+          e.target.value = commitText(m, 'model', v);
           save();
           return;
-        }
         case 'type':
           setType(m, v);
           save();
@@ -1059,7 +1157,8 @@ export function renderGym(root) {
             </div>
           </label>
           ${refusedHtml}
-          <label class="field"><span>Label</span><input id="m-label" type="text" value="${esc(item.label)}"></label>
+          <label class="field"><span>Label</span><input id="m-label" type="text"
+            value="${esc(stagedText(item, 'label', item.label))}"></label>
           <div class="field-block"><span>Brand</span>
             <p class="brand-line">${brandLine}
               <button type="button" id="m-brand-other" class="linkish">${brandOpen
@@ -1075,7 +1174,8 @@ export function renderGym(root) {
     ? `Use the gym's brand (${esc(gymBrand)})` : 'Clear the brand'}</button>` : ''}
           </div>
           <label class="field"><span>Model</span><input id="m-model" type="text"
-            placeholder="e.g. Selection Pro Chest Press" value="${esc(item.model || '')}"></label>
+            placeholder="e.g. Selection Pro Chest Press"
+            value="${esc(stagedText(item, 'model', item.model || ''))}"></label>
           <div class="field-block"><span>Type</span>
             <div class="chip-select">
               <button type="button" id="m-cardio"
@@ -1119,7 +1219,7 @@ export function renderGym(root) {
             </div>
           </div>
           <label class="field"><span>Doc link</span><input id="m-doc" type="text" inputmode="url"
-            placeholder="https://…" value="${esc(item.docUrl || '')}"></label>
+            placeholder="https://…" value="${esc(stagedText(item, 'docUrl', item.docUrl || ''))}"></label>
           <p class="muted">${unlockedId === item.id
     ? '🔓 Unlocked — drag it on the plan to move it, drag the handle to resize. Double-tap it again to lock.'
     : '🔒 Locked so it cannot be nudged by accident. Double-tap it on the plan to move or resize it.'}</p>
@@ -1141,30 +1241,19 @@ export function renderGym(root) {
         if (numMsgShown) renderProps();
       });
       // Text fields commit on `change` — which only fires on blur or Enter,
-      // while a chip tap right next to them re-renders the card. Staging
-      // every keystroke into the item means the re-render prints back what
-      // was typed instead of eating it; `change` still owns the undo
-      // snapshot, the trim and the fallback.
-      const stageText = (sel, onInput, onChange) => {
+      // while a chip tap right next to them re-renders the card. Every
+      // keystroke is staged (see `staged`), so the re-render prints back
+      // what was typed instead of eating it; `change` commits it.
+      const bindText = (sel, field) => {
         const el = props.querySelector(sel);
-        el.addEventListener('input', () => onInput(el.value));
+        el.addEventListener('input', () => stageText(item, field, el.value));
         el.addEventListener('change', () => {
-          el.value = onChange(el.value.trim()) ?? el.value;
+          el.value = commitText(item, field, el.value);
           save();
         });
       };
-      stageText('#m-label', (v) => { item.label = v; }, (v) => {
-        item.label = v || `Machine ${item.num}`;
-        return item.label;
-      });
-      // Absent, never empty: exports and templates stay clean, and
-      // "has a brand" is a plain truthiness check everywhere else.
-      const optionalText = (key) => (v) => {
-        if (v) item[key] = v;
-        else delete item[key];
-        return v;
-      };
-      stageText('#m-model', (v) => { item.model = v; }, optionalText('model'));
+      bindText('#m-label', 'label');
+      bindText('#m-model', 'model');
 
       // Brand: the gym's unless this machine says otherwise. Typed text
       // lands on an existing spelling (matchBrand), and picking or typing
@@ -1305,10 +1394,7 @@ export function renderGym(root) {
         if (e.key === 'Enter') addGrip();
       });
 
-      stageText('#m-doc', (v) => { item.docUrl = v; }, (v) => {
-        item.docUrl = v;
-        return v;
-      });
+      bindText('#m-doc', 'docUrl');
     } else if (item.kind === 'rect') {
       const zoneOptions = [...ZONE_LABELS,
         ...(item.label && !ZONE_LABELS.includes(item.label) ? [item.label] : [])];
