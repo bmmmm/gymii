@@ -90,7 +90,8 @@ under the Next row, own data, no link. Among the open stops of the workout
 window — and not marked busy in this workout) it scores each by its WALK
 (stats.js `walksFrom`: one Dijkstra flood over the floor's whole grid points
 — the outline, interior walls, machines and free-standing fixtures block;
-two items touching are a barrier, not a corridor; a door or entrance in an
+two items touching are a barrier, not a corridor, and so is an item
+flush against the outer wall; a door or entrance in an
 interior wall opens it; a stop is reached on or next to its box, from a
 point whose straight step towards its centre crosses — up to a quarter unit
 into the box — no wall, no slit of the outline and no other solid; a grid
@@ -102,9 +103,9 @@ Next compete (so a far one never silences a near one); the best one is said
 — "Closer: #7 Leg curl — half the walk." — unless "Busy?" already offers
 that very machine. Measured on the demo gym (node, M-series): a machine
 switch floods once for all 17 stops — the same flood answers "Busy?" —
-median 1.1 ms, max 3.2 ms; the floor is rasterised once per geometry
-(8 ms incl. the first flood); 200 × 200 with 60 machines: 24 ms first,
-19–22 ms per switch after. Meters are out on purpose, so the
+median 1.2 ms, max 3.1 ms; the floor is rasterised once per geometry
+(9.4 ms incl. the first flood); 200 × 200 with 60 machines: 30 ms first,
+18–20 ms per switch after. Meters are out on purpose, so the
 saving is said relatively.
 
 Estimated 1RM is Epley, `w × (1 + reps / 30)`, only for a real load and 1 to

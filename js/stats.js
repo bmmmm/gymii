@@ -274,11 +274,17 @@ function walkFloor(layout) {
       }
     }
   });
+  // the floor's rim (the outline, else the grid's border) is a wall too: a
+  // point on it is in it, or a row of machines flush against it would leave
+  // a lane of zero width along the wall
+  const ring = outline ?? [{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: H }, { x: 0, y: H }];
+  const rim = ring.map((a, k) => [a, ring[(k + 1) % ring.length]]);
   const offFloor = new Uint8Array(n);
   for (let j = 0; j <= 2 * H; j++) {
     for (let i = 0; i <= 2 * W; i++) {
       const p = { x: i / 2, y: j / 2 };
-      if ((outline && !inPolygon(p.x + 1e-6, p.y + 1e-6, outline)) || walls.some(([a, b]) => onSegment(p, a, b))) {
+      if ((outline && !inPolygon(p.x + 1e-6, p.y + 1e-6, outline))
+        || walls.some(([a, b]) => onSegment(p, a, b)) || rim.some(([a, b]) => onSegment(p, a, b))) {
         offFloor[j * CW + i] = 1;
       }
     }
@@ -340,8 +346,9 @@ export function walksFrom(layout, from, targets) {
   // way (read off the raster every half unit): a machine flush against a
   // wall or behind a mirror is not "reached" from the other side. What lies
   // deeper is the machine itself — a wall drawn through it or a centre past
-  // the outline blocks nothing — and the step stays short however large a
-  // file's machine is.
+  // the outline blocks nothing. A step that leaves the grid ends its samples
+  // there (it never comes back), so a file's machine of any size costs no
+  // more than the grid it lies on.
   const into = (p, c, lo, hi) => (p < lo ? (lo - p) / (c - p) : p > hi ? (hi - p) / (c - p) : 0);
   const clearStep = (px, py, t, cx, cy) => {
     const len = Math.hypot(cx - px, cy - py);
@@ -354,7 +361,7 @@ export function walksFrom(layout, from, targets) {
     for (let s = 1; s < steps; s++) {
       const i = Math.round(2 * (px + ((ex - px) * s) / steps));
       const j = Math.round(2 * (py + ((ey - py) * s) / steps));
-      if (i < 0 || j < 0 || i > 2 * W || j > 2 * H) break; // left the grid: it never comes back
+      if (i < 0 || j < 0 || i > 2 * W || j > 2 * H) break;
       const c = j * CW + i;
       if (!anyBlock[c]) continue;
       if (offFloor[c] === 1) return false;

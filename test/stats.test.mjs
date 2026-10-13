@@ -760,6 +760,17 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     'two flush machines across the floor: no way along their seam');
   assert.equal(stats.walkLength(floor([a, b, box('c1', 6, -1, 2, 6), box('c2', 8, 5, 2, 6)]), a, b), null,
     'two machines touching at a corner: no squeezing through the corner');
+  {
+    // a row flush against the outer wall at both ends: the wall is no lane
+    const F = box('F', 2, 8, 4, 3);
+    const T = box('T', 14, 8, 4, 3);
+    const row = [box('r1', 8, 0, 4, 10), box('r2', 8, 10, 4, 10)];
+    const sq = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }];
+    for (const outline of [sq, []]) {
+      assert.equal(stats.walkLength({ grid: { w: 20, h: 20 }, outline, shapes: [], machines: [F, T, ...row] }, F, T), null,
+        `a row wall to wall: no walking along the ${outline.length ? 'outline' : "grid's edge"}`);
+    }
+  }
   // a door in an interior wall opens it
   const fullWall = { id: 'fw', kind: 'line', x: 10, y: 0, w: 0, h: 10 };
   assert.equal(stats.walkLength(floor([a, b], [fullWall]), a, b), null, 'a wall across the floor: no way');

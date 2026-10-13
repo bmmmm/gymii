@@ -895,7 +895,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   counts, rest gaps, the floor's walking distance (`walksFrom`: one
   Dijkstra flood from a machine to all targets over whole grid points, 8
   neighbours — the outline, interior walls, machines and free-standing
-  fixtures block, two touching items are a barrier, a door or entrance in an
+  fixtures block, two touching items are a barrier (the floor's rim counts
+  as a wall), a door or entrance in an
   interior wall opens it, a target is reached on or next to its box from a
   point whose straight step towards its centre crosses — up to a quarter
   unit into the box, the machine itself is no obstacle — no wall, outline

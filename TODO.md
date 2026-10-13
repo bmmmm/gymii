@@ -278,9 +278,18 @@ stand. An expectation that fails becomes an issue labelled `bug`.
 - **Routing.** The floor is rasterised at half units, so geometry off that
   grid can leak or close: a wall ending exactly on the grid's edge is
   passed round its end, a slit of the outline thinner than half a unit is
-  no slit, and in a 1-unit corridor a ring step can round onto a wall's end
-  (the machine reads unreachable). An outline door within half a unit of a
+  no slit, and a machine reachable only through a 1-unit lane can read
+  unreachable (the ring step aims at its centre and rounds onto a wall's
+  end or a neighbour — 0.18 % of editor-shaped pairs in a fuzz). The
+  sampling density (every half unit) is a tolerance of that raster, not a
+  rule: once per unit decides about 2–4 % of pairs differently. A target
+  listed twice is counted once (by id) — not pinned by a test. An outline door within half a unit of a
   partition's end opens the partition. A start machine outside the outline
   is walled in (Busy? then offers nothing). The start is the machine's
   rounded centre: a 1-deep machine from a file, flush above or left of a
   partition, starts ON it and walks through — A→B and B→A can differ.
+  **Decision for the user:** the ring step is checked only a quarter unit
+  into the target's box, so a machine cut by a wall is reached from its
+  floor side — and one the editor pushed a whole unit through a partition
+  is reached from the other room too ("4.5 away"). Checking to the centre
+  instead turns both into "unreachable".
