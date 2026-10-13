@@ -176,8 +176,8 @@ function seriesEntries(workouts, machineId, exercise = null, grip = null) {
 
 // --- walking distance on the floor (wall-aware, user decision 2026-10-13) ---
 // A Dijkstra flood over the grid's whole-unit points, 8 neighbours. Blocked:
-// a point outside the floor outline (a layout without one is open floor),
-// strictly inside a solid item (machines and free-standing fixtures) other
+// a point outside the floor outline or on its rim (without an outline the
+// grid's border is the rim — the outer wall is a wall), strictly inside a solid item (machines and free-standing fixtures) other
 // than the machine the walk starts AT, on the seam where two solid
 // items touch (flush machines are a barrier, not a corridor), and on an
 // interior wall — except where a door or entrance stands in it (map.js

@@ -283,7 +283,13 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   end or a neighbour — 0.18 % of editor-shaped pairs in a fuzz). The
   sampling density (every half unit) is a tolerance of that raster, not a
   rule: once per unit decides about 2–4 % of pairs differently. A target
-  listed twice is counted once (by id) — not pinned by a test. An outline door within half a unit of a
+  listed twice is counted once (by id) — not pinned by a test. The rim
+  counts as a wall, so a passage of the outline exactly 1 unit wide is
+  closed (as a 1-unit gap between interior walls already was). A walk is
+  the first ring point the flood reaches plus its straight step, so ties
+  on the flood distance break by heap order (the demo's lat pulldown →
+  assisted pull-up moved 37.73 → 37.18 that way); the least `d + rest`
+  among tied points would be stable. An outline door within half a unit of a
   partition's end opens the partition. A start machine outside the outline
   is walled in (Busy? then offers nothing). The start is the machine's
   rounded centre: a 1-deep machine from a file, flush above or left of a
