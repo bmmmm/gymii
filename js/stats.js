@@ -308,9 +308,12 @@ function walkFloor(layout) {
 }
 let floorMemo = { key: null, floor: null };
 // how many floods ran — the tests pin one per log screen (a flood per stop
-// would answer the same and cost the walk once per machine)
+// would answer the same and cost the walk once per machine) — and how many
+// grid points they settled (the tests pin the early stop with it)
 let floods = 0;
+let settledPoints = 0;
 export const floodCount = () => floods;
+export const floodSettled = () => settledPoints;
 const floorKey = (layout) => JSON.stringify([layout.grid, layout.outline,
   (layout.shapes ?? []).map((s) => [s.kind, s.fixture, s.x, s.y, s.w, s.h]),
   (layout.machines ?? []).map((m) => [m.id, m.x, m.y, m.w, m.h])]);
@@ -323,8 +326,10 @@ function floorOf(layout) {
 // One Dijkstra flood from `from` that answers for every target at once (a
 // log screen asks for every open stop): a target is reached at the first
 // free point on or next to its box — where you stand to use it — plus the
-// straight step from there to its centre. Stops as soon as every target is
-// answered; an unreachable one leaves its null. → Map(id → length | null).
+// straight step from there to its centre; several such points at the same
+// flood distance take the shortest step, so a tie never falls to the heap's
+// order. Stops as soon as every target is answered; an unreachable one
+// leaves its null. → Map(id → length | null).
 export function walksFrom(layout, from, targets) {
   const out = new Map(targets.map((t) => [t.id, null]));
   if (!walkableGrid(layout) || !from || ![from.x, from.y, from.w, from.h].every(finite)) return out;
@@ -346,9 +351,12 @@ export function walksFrom(layout, from, targets) {
   // way (read off the raster every half unit): a machine flush against a
   // wall or behind a mirror is not "reached" from the other side. What lies
   // deeper is the machine itself — a wall drawn through it or a centre past
-  // the outline blocks nothing. A step that leaves the grid ends its samples
-  // there (it never comes back), so a file's machine of any size costs no
-  // more than the grid it lies on.
+  // the outline blocks nothing (user decision 2026-10-13: a machine cut by a
+  // wall stays reachable from its floor side, and one the editor pushed a
+  // whole unit through a partition is reached from the other room too;
+  // checking up to the centre would make both unreachable). A step that
+  // leaves the grid ends its samples there (it never comes back), so a
+  // file's machine of any size costs no more than the grid it lies on.
   const into = (p, c, lo, hi) => (p < lo ? (lo - p) / (c - p) : p > hi ? (hi - p) / (c - p) : 0);
   const clearStep = (px, py, t, cx, cy) => {
     const len = Math.hypot(cx - px, cy - py);
@@ -369,36 +377,56 @@ export function walksFrom(layout, from, targets) {
     }
     return true;
   };
-  // every target's ring: the points on or one step outside its box
-  const goals = new Map();
-  const open = new Set(); // ids, so a target listed twice is still answered once
-  targets.forEach((t) => {
-    if (![t.x, t.y, t.w, t.h].every(finite)) return;
+  // A box's ring: the points on or one step outside it whose straight step
+  // towards its centre is clear, each with that step's length — where a
+  // target is reached from, and where a start is left from when its centre
+  // will not do (below)
+  const ring = (t) => {
     const cx = t.x + t.w / 2;
     const cy = t.y + t.h / 2;
-    let any = false;
+    const pts = [];
     for (let y = Math.max(0, Math.floor(t.y) - 1); y <= Math.min(H, Math.ceil(t.y + t.h) + 1); y++) {
       for (let x = Math.max(0, Math.floor(t.x) - 1); x <= Math.min(W, Math.ceil(t.x + t.w) + 1); x++) {
         const inside = x > t.x && x < t.x + t.w && y > t.y && y < t.y + t.h;
         const near = x >= t.x - 1 && x <= t.x + t.w + 1 && y >= t.y - 1 && y <= t.y + t.h + 1;
-        if (inside || !near || !clearStep(x, y, t, cx, cy)) continue;
-        const k = key(x, y);
-        if (!goals.has(k)) goals.set(k, []);
-        goals.get(k).push([t.id, Math.hypot(cx - x, cy - y)]);
-        any = true;
+        if (!inside && near && clearStep(x, y, t, cx, cy)) pts.push([x, y, Math.hypot(cx - x, cy - y)]);
       }
     }
-    if (any) open.add(t.id);
+    return pts;
+  };
+  const goals = new Map();
+  const open = new Set(); // ids, so a target listed twice is still answered once
+  targets.forEach((t) => {
+    if (![t.x, t.y, t.w, t.h].every(finite)) return;
+    const pts = ring(t);
+    pts.forEach(([x, y, rest]) => {
+      const k = key(x, y);
+      if (!goals.has(k)) goals.set(k, []);
+      goals.get(k).push([t.id, rest]);
+    });
+    if (pts.length) open.add(t.id);
   });
-  const sx = Math.round(from.x + from.w / 2);
-  const sy = Math.round(from.y + from.h / 2);
-  if (!open.size || sx < 0 || sy < 0 || sx > W || sy > H) return out;
+  // The start: the machine's rounded centre — when that point is on the
+  // floor for this walk with no wall between it and the true centre. A thin
+  // machine flush against a partition rounds ONTO it (or past it) and walked
+  // into the other room from there; a machine flush against the rim rounds
+  // onto the rim, one in a corner of the outline past it. Then the walk
+  // starts from every free point of its ring, each at its straight step
+  // from the centre: a machine is left the way it is reached.
+  const fx = from.x + from.w / 2;
+  const fy = from.y + from.h / 2;
+  const sx = Math.round(fx);
+  const sy = Math.round(fy);
+  const free = (x, y) => x >= 0 && y >= 0 && x <= W && y <= H && !blocked(2 * x, 2 * y);
+  const seeds = free(sx, sy) && !walls.some(([a, b]) => crosses({ x: fx, y: fy }, { x: sx, y: sy }, a, b))
+    ? [[0, sx, sy]] : ring(from).filter(([x, y]) => free(x, y)).map(([x, y, d]) => [d, x, y]);
+  if (!open.size || !seeds.length) return out;
   floods += 1;
   const answered = new Set();
   const g = new Float64Array((W + 1) * (H + 1)).fill(Infinity);
-  g[key(sx, sy)] = 0;
+  seeds.forEach(([d, x, y]) => { g[key(x, y)] = d; });
   const done = new Uint8Array((W + 1) * (H + 1));
-  const heap = [[0, sx, sy]]; // binary heap of [g, x, y]
+  const heap = []; // binary heap of [g, x, y]
   const push = (e) => {
     heap.push(e);
     for (let i = heap.length - 1; i > 0;) {
@@ -426,15 +454,29 @@ export function walksFrom(layout, from, targets) {
     }
     return top;
   };
+  seeds.forEach(push);
+  // A target's first ring point holds its answer until the flood moves past
+  // that distance: another ring point at the same distance with a shorter
+  // step wins (the heap pops equal distances in no meaningful order).
+  const tied = new Map(); // id → [d, d + rest]
+  const settle = (d) => tied.forEach(([d0, best], id) => {
+    if (d - d0 <= 1e-9) return;
+    out.set(id, best);
+    answered.add(id);
+    tied.delete(id);
+  });
   while (heap.length && answered.size < open.size) {
     const [d, x, y] = pop();
+    settle(d);
     const k = key(x, y);
     if (done[k]) continue;
     done[k] = 1;
+    settledPoints += 1;
     (goals.get(k) ?? []).forEach(([id, rest]) => {
       if (answered.has(id)) return;
-      answered.add(id);
-      out.set(id, d + rest);
+      const t = tied.get(id);
+      if (!t) tied.set(id, [d, d + rest]);
+      else t[1] = Math.min(t[1], d + rest);
     });
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
@@ -453,6 +495,7 @@ export function walksFrom(layout, from, targets) {
       }
     }
   }
+  settle(Infinity); // the heap ran dry with a tie still open
   return out;
 }
 
@@ -965,12 +1008,23 @@ function busyRule(ws, layout, now) {
       source: 'own',
       machineId,
       weekday: day,
-      // the window the text names — the log screen shows the line only
-      // around it, not on that weekday's morning
+      // the window the text names — inBusyWindow says when the line
+      // applies: around it, not on that weekday's morning
       h0,
       h1,
     })];
   });
+}
+
+// Whether a busy row applies at `at`: from an hour before its window to an
+// hour after the window ends (h1 is the END hour: "18–19 h" shows
+// 17:00–19:59). Counted in wall-clock hours of the WEEK, so a window that
+// touches midnight reaches into the neighbouring weekday: "Mondays 23–24 h"
+// still shows at 00:30 on Tuesday, "Mondays 0–1 h" from 23:00 on Sunday.
+export function inBusyWindow(row, at) {
+  const d = new Date(at);
+  const from = row.weekday * 24 + row.h0 - 1;
+  return (((d.getDay() * 24 + d.getHours() - from) % 168) + 168) % 168 <= row.h1 - row.h0 + 1;
 }
 
 // 8 — no new best estimated 1RM for six or more workouts on a machine that
@@ -1002,9 +1056,14 @@ function plateauRule(ws, settings, now, layout = null, plans = []) {
 // 8, assisted — no e1RM to compare: the record is the LEAST assist
 // (strength goal) or the MOST reps at the least assist (endurance goal),
 // with the same windows: eight workouts, none of the last six past the best
-// of the earlier ones, trained in the last 21 days.
+// of the earlier ones, trained in the last 21 days. Reps compare within ONE
+// assist step — 14 reps with 30 kg of help say nothing about 10 with 25 kg —
+// so the endurance record counts only the workouts at the latest one's least
+// assist, and a new step starts the count afresh.
 function assistPlateau(series, goal, unit, now) {
-  const pts = series.filter((p) => p.kind === 'assisted');
+  const all = series.filter((p) => p.kind === 'assisted');
+  const step = all[all.length - 1]?.top.weight;
+  const pts = goal === 'endurance' ? all.filter((p) => p.top.weight === step) : all;
   if (pts.length < 8 || daysBetween(pts[pts.length - 1].t, now) >= RECENT_DAYS) return [];
   // unassisted already (0 kg): no lower to reach — not a plateau
   if (goal === 'strength' && pts.slice(-6).some((p) => p.top.weight === 0)) return [];

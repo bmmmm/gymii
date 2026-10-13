@@ -24,7 +24,7 @@ own logged workouts") has `url: null`, so route and busy render no link.
 | kind | where | only when |
 |---|---|---|
 | progress | Train log screen, below the machine head (train.js `renderLog`) | the machine, exercise AND grip on screen |
-| busy | Train log screen, below the machine head | the machine on screen, on `weekday` (today), from an hour before `h0` to an hour after the window ends (`h1` is its end hour: "18–19 h" shows 17:00–19:59) |
+| busy | Train log screen, below the machine head | the machine on screen, on `weekday` (today), from an hour before `h0` to an hour after the window ends (`h1` is its end hour: "18–19 h" shows 17:00–19:59) — counted in hours of the week (`inBusyWindow()`), so a window touching midnight reaches into the neighbouring weekday: "Mondays 23–24 h" still shows at 00:30 on Tuesday, "Mondays 0–1 h" from 23:00 on Sunday |
 | rest | the rest overlay, under "Next:" (train.js `openRestOverlay`) | — |
 | plateau | History → Progress, `#chart-note` under the chart | the picked machine, exercise AND grip |
 | muscle-gap, muscle-volume | History → Muscles, a line under the muscle's row | — |
@@ -79,7 +79,7 @@ names "Full body" (1.5).
 | 7 | busy | At least three `busy` marks on one machine, on the same weekday, within a two-hour span of wall-clock time, in the last 56 days | marks − 3 | "Usually busy Mondays 17–19 h — start elsewhere." | `own` |
 | 8 | plateau | At least eight sessions with an estimated 1RM, none of the last six beating the best of the earlier ones, and the machine was trained in the last 21 days | workouts since the best − 6 | "No new best in 6 workouts (76 kg e1RM) — vary reps or load." | `pmc11435939` |
 | 1a | progress (assisted) | Rule 1 at an ASSISTED machine: the same test at the same least assist A (top set = least assist, then most reps), A > 0 (unassisted has no step left). The next step follows the goal (`assistGoalAt()`, the same for the log screen and both rules: what the user said on the log screen, else the trend over the last six workouts — assist down: strength, reps up at the same assist: endurance — else the target reps of the plan the latest session came from, or the last top set: 12+ is endurance; with neither, strength) | lowest reps at A minus T | strength: "Target beaten twice — try 2.5 kg less assist." (`settings.weightStep`, never more than A); endurance: "Target beaten twice — add 2 reps at this assist." | `acsm2009` |
-| 8a | plateau (assisted) | Rule 8 at an ASSISTED machine, no e1RM: the record is the least assist (strength goal) or the most reps at the least assist (endurance goal); eight workouts, none of the last six past the earlier best, trained in the last 21 days; quiet for a strength goal once the last six reach 0 kg (unassisted: no lower to reach) | workouts since the best − 6 | strength: "No new low in 6 workouts (25 kg assist) — vary reps or assist."; endurance: "No new rep best in 6 workouts (12 reps) — vary assist or reps." | `acsm2009` |
+| 8a | plateau (assisted) | Rule 8 at an ASSISTED machine, no e1RM: the record is the least assist (strength goal) or the most reps at the least assist (endurance goal); eight workouts, none of the last six past the earlier best, trained in the last 21 days; quiet for a strength goal once the last six reach 0 kg (unassisted: no lower to reach). Reps compare within ONE assist step: for an endurance goal only the workouts whose least assist is the latest one's count (eight of them), so a new step starts afresh — 14 reps with 30 kg of help are no record for 25 kg | workouts since the best − 6 | strength: "No new low in 6 workouts (25 kg assist) — vary reps or assist."; endurance: "No new rep best in 6 workouts (12 reps) — vary assist or reps." | `acsm2009` |
 
 ## Not a hint row: the "Closer:" line (recommender)
 
@@ -94,7 +94,15 @@ two items touching are a barrier, not a corridor, and so is an item
 flush against the outer wall; a door or entrance in an
 interior wall opens it; a stop is reached on or next to its box, from a
 point whose straight step towards its centre crosses — up to a quarter unit
-into the box — no wall, no slit of the outline and no other solid; a grid
+into the box — no wall, no slit of the outline and no other solid (user
+decision: a machine cut by a wall stays reachable from its floor side, one
+pushed through a partition from both rooms); of such points at the same
+flood distance the shortest step counts, never the heap's order; the walk
+starts at the machine's rounded centre where that point is on the floor
+with no wall to the true centre, else from its ring the same way (a thin
+machine flush against a partition never starts ON it, one reaching past the
+outline is left from the floor — a machine is left the way it is reached);
+a grid
 outside 1–400 units is no floor, so no line at all, while "Busy?" falls
 back to straight lines) × 1.25 if
 it trains a muscle (primary or secondary) of the machine just left, + 0.5
