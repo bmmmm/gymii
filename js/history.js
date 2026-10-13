@@ -7,6 +7,7 @@ import {
   esc, fmtDate, fmtDay, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
   dateValue, timeValue, machineChain, keepInView, minsBetween, fmtDuration,
   parseDuration, parseDistance, hintHtml, variantStr, fieldValue, keepFocus, fmtMetric, cssStr,
+  entryKind,
 } from './ui.js';
 import { lineChart, barChart } from './chart.js';
 import {
@@ -374,6 +375,10 @@ const weekCard = {
 const CHIP_LIMIT = 8;
 const RANGES = [['4w', '4 wk'], ['12w', '12 wk'], ['1y', '1 yr'], ['all', 'All']];
 const rangeOf = (s) => (RANGES.some(([k]) => k === s.historyRange) ? s.historyRange : '12w');
+// An assisted machine charts its least ASSIST (lower is stronger) or the
+// reps at it — `settings.historyAssistView`, device-local like the range.
+const ASSIST_VIEWS = [['assist', 'Assist'], ['reps', 'Reps']];
+const assistViewOf = (s) => (s.historyAssistView === 'reps' ? 'reps' : 'assist');
 
 // The x window: the range back from now, never earlier than the machine's
 // first point. A future-dated back-log stretches it rather than vanishing.
@@ -416,6 +421,7 @@ const progressCard = {
       ${recent.length ? `
       <div class="chip-select scroll" id="machine-chips">${machineChipsHtml(recent)}</div>
       <div class="map-mode" id="range-chips">${rangeChipsHtml(rangeOf(s))}</div>
+      <div class="map-mode" id="assist-chips"></div>
       <div class="chart-wrap" id="chart"></div>
       <div id="chart-note"></div>
       <div class="c-pick" id="chart-pick" role="status"></div>`
@@ -430,6 +436,7 @@ const progressCard = {
     const noteEl = root.querySelector('#chart-note');
     const pickEl = root.querySelector('#chart-pick');
     const chartTitle = root.querySelector('#chart-title');
+    const assistEl = root.querySelector('#assist-chips');
 
     // Redraws THIS card's parts only: the chart handlers close over
     // chartEl, so re-rendering an ancestor would leave them on a dead node.
@@ -457,12 +464,17 @@ const progressCard = {
       // already dropped entries of any other shape); bodyweight progress
       // lives in reps until extra weight shows up.
       const kind = series[series.length - 1].kind;
-      const reps = kind === 'bodyweight' && !series.some((p) => p.top.weight > 0);
+      const reps = (kind === 'bodyweight' && !series.some((p) => p.top.weight > 0))
+        || (kind === 'assisted' && assistViewOf(getSettings()) === 'reps');
       const valueOf = (p) => (kind === 'cardio' ? p.top.distance : reps ? p.top.reps : p.top.weight);
       const points = series.map((p) => ({ t: p.t, v: valueOf(p), workoutId: p.workoutId, e1rm: p.e1rm }));
       const metric = kind === 'cardio' ? `top distance (${distUnit(s)})`
         : kind === 'bodyweight' ? (reps ? 'top reps' : `top added weight (${unit})`)
-          : `top set weight (${unit})`;
+          : kind === 'assisted' ? (reps ? 'reps at the least assist' : `assist (${unit}) — lower is stronger`)
+            : `top set weight (${unit})`;
+      assistEl.innerHTML = kind === 'assisted' ? ASSIST_VIEWS.map(([k, label]) => `<button type="button"
+        class="chip${(reps ? 'reps' : 'assist') === k ? ' sel' : ''}" data-view="${k}"
+        aria-pressed="${(reps ? 'reps' : 'assist') === k}">${label}</button>`).join('') : '';
       const xDomain = domainFor(range, points);
       // The point shown under the chart is the one the chart selects —
       // picked here and handed in as selectedT, so the two never disagree.
@@ -477,7 +489,7 @@ const progressCard = {
         pickEl.innerHTML = e ? `
           <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>${p.e1rm != null
             ? `<span class="muted">e1RM ${p.e1rm} ${esc(unit)}</span>` : ''}</div>
-          <div class="muted">${e.sets.map((st) => setStr(st, s, !!e.bodyweight)).join(', ')}</div>
+          <div class="muted">${e.sets.map((st) => setStr(st, s, entryKind(e))).join(', ')}</div>
           <button type="button" class="btn btn-inline pick-open" data-wid="${esc(w.id)}">Open workout ›</button>`
           : '';
       };
@@ -486,7 +498,7 @@ const progressCard = {
       lineChart(chartEl, points, {
         unit: kind === 'cardio' ? distUnit(s) : reps ? 'reps' : unit,
         label: `Progress: ${machineName(m)} — ${metric} over time`,
-        name: kind === 'cardio' ? 'Top distance' : reps ? 'Top reps' : 'Top set',
+        name: kind === 'cardio' ? 'Top distance' : reps ? 'Top reps' : kind === 'assisted' ? 'Least assist' : 'Top set',
         // e1RM only where it is valid: loaded strength sets of 1–10 reps
         second: kind === 'strength' ? {
           points: series.filter((p) => p.e1rm != null).map((p) => ({ t: p.t, v: p.e1rm })),
@@ -517,6 +529,12 @@ const progressCard = {
       }
       keepFocus(root, drawProgress);
       if (keep != null) chipsEl.scrollLeft = keep;
+    });
+    assistEl.addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      saveSettings({ ...getSettings(), historyAssistView: chip.dataset.view });
+      keepFocus(root, drawProgress);
     });
     rangeEl.addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
@@ -701,8 +719,9 @@ function wireHeatmap(root, { workouts, s, unit }) {
       const entries = sel ? w.entries.filter((e) => entryMatches(e, sel)) : w.entries;
       const sets = entries.reduce((n, e) => n + e.sets.length, 0);
       if (!sets) return;
-      const volume = entries.reduce(
-        (v, e) => v + e.sets.reduce((x, st) => x + (st.reps * st.weight || 0), 0), 0);
+      // an assisted set's weight is the help, not the load: no volume
+      const volume = entries.reduce((v, e) => (e.assisted ? v
+        : v + e.sets.reduce((x, st) => x + (st.reps * st.weight || 0), 0)), 0);
       const dist = entries.reduce(
         (v, e) => v + e.sets.reduce((x, st) => x + (st.distance || 0), 0), 0);
       const day = days.get(d.getDate()) || { sets: 0, volume: 0, dist: 0, nums: new Set() };
@@ -971,7 +990,7 @@ function workoutHtml(w, s, open = false, readOnly = false) {
     ${w.entries.map((e) => `
       <div class="entry-line">
         <div>${entryTitle(e)}</div>
-        <div class="sets">${e.sets.map((st) => setStr(st, s, !!e.bodyweight)).join(', ')}${settingsStr(e)}</div>
+        <div class="sets">${e.sets.map((st) => setStr(st, s, entryKind(e))).join(', ')}${settingsStr(e)}</div>
       </div>`).join('')}
     <button class="btn repeat-w" data-wid="${esc(w.id)}">Repeat this workout</button>
     <div class="row">${readOnly ? `
@@ -1085,9 +1104,9 @@ function editWorkoutHtml(w, s, layout, gripMsg = null) {
               <input type="text" inputmode="numeric" autocomplete="off" data-kind="time"
                 class="edit-minutes" data-ei="${ei}" data-si="${si}"
                 value="${fmtDuration(st.seconds)}" aria-label="Time (m:ss)">` : `
-              ${e.bodyweight ? 'BW+' : ''}<input type="text" inputmode="decimal" autocomplete="off" data-kind="decimal" class="edit-weight"
+              ${e.bodyweight ? 'BW+' : e.assisted ? '−' : ''}<input type="text" inputmode="decimal" autocomplete="off" data-kind="decimal" class="edit-weight"
                 data-ei="${ei}" data-si="${si}" value="${esc(st.weight)}"
-                aria-label="${e.bodyweight ? 'Extra weight' : 'Weight'} (${esc(s.unit)})"> ${esc(s.unit)} ×
+                aria-label="${e.bodyweight ? 'Extra weight' : e.assisted ? 'Assist' : 'Weight'} (${esc(s.unit)})"> ${esc(s.unit)} ×
               <input type="number" inputmode="numeric" class="edit-reps" data-ei="${ei}" data-si="${si}"
                 value="${esc(st.reps)}" aria-label="Reps">`}
             </span>

@@ -54,7 +54,8 @@ exist because breaking them was once a real bug.
   (`bindOrCreateMachine`, `newEntry`, `nameChipsFor`) — extend, never
   re-inline. `js/persist.js` — origin durability.
 - Cross-module traps: sets are strength `{reps, weight}`, cardio
-  `{distance, seconds}`, bodyweight = ADDED weight, and `at` is optional —
+  `{distance, seconds}`, bodyweight = ADDED weight, assisted = the ASSIST
+  (less is stronger, no volume; ui.js `entryKind` reads the flag), and `at` is optional —
   every consumer guards (`st.reps * st.weight || 0`). Stored weights and
   distances are in the DISPLAY unit: a new such field must be converted by
   `setUnit()` too. A stepper field is read only via `fieldValue()` (ui.js)

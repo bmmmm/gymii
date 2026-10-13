@@ -110,7 +110,8 @@ export function weeklyBuckets(workouts, { weeks = 12, now = Date.now(), layout =
       }
       if (!e.sets.length) return;
       days[i].add(startOfDay(w.startedAt).getTime());
-      b.volume += sum(e.sets.map(setVolume));
+      // an assisted set's weight is the help, not the load: no volume
+      if (!e.assisted) b.volume += sum(e.sets.map(setVolume));
       muscles.get(e.machineId)?.forEach((mu) => {
         b.muscles.set(mu, (b.muscles.get(mu) ?? 0) + e.sets.length);
       });
@@ -128,11 +129,15 @@ export function e1rm(weight, reps) {
   return Math.round(weight * (1 + reps / 30) * 10) / 10;
 }
 
-const kindOf = (e) => (e.cardio ? 'cardio' : e.bodyweight ? 'bodyweight' : 'strength');
+const kindOf = (e) => (e.cardio ? 'cardio' : e.bodyweight ? 'bodyweight' : e.assisted ? 'assisted' : 'strength');
 
 // The heaviest set, then the most reps; a tie goes to the LATER set (the
 // more fatigued one — its rating is the honest one).
 const topSet = (sets) => sets.reduce((a, st) => ((st.weight || 0) > (a.weight || 0)
+  || ((st.weight || 0) === (a.weight || 0) && (st.reps || 0) >= (a.reps || 0)) ? st : a));
+// Assisted (weight = the counterweight's HELP): the least assist, then the
+// most reps; a tie goes to the later set, as above.
+const topAssist = (sets) => sets.reduce((a, st) => ((st.weight || 0) < (a.weight || 0)
   || ((st.weight || 0) === (a.weight || 0) && (st.reps || 0) >= (a.reps || 0)) ? st : a));
 // The longest distance, then the shorter time.
 const topCardio = (sets) => sets.reduce((a, st) => ((st.distance || 0) > (a.distance || 0)
@@ -178,14 +183,14 @@ export function machineSeries(workouts, machineId, exercise = null, grip = null)
         sets: e.sets.length,
       };
     }
-    const top = topSet(e.sets);
+    const top = (kind === 'assisted' ? topAssist : topSet)(e.sets);
     const est = kind === 'strength'
       ? e.sets.map((st) => e1rm(st.weight, st.reps)).filter((v) => v != null) : [];
     return {
       t: w.startedAt, workoutId: w.id, kind,
       top: { weight: top.weight || 0, reps: top.reps || 0 },
       e1rm: est.length ? Math.max(...est) : null,
-      volume: sum(e.sets.map(setVolume)),
+      volume: kind === 'assisted' ? 0 : sum(e.sets.map(setVolume)),
       sets: e.sets.length,
       ...(isRir(top.rir) ? { rir: top.rir } : {}),
     };
@@ -405,29 +410,58 @@ function targetReps(plans, machineId, exercise, planId, grip = null) {
   return hit ? hit.target.reps : null;
 }
 
+// The goal at an assisted machine. What the user SAID wins
+// (`machine.assistGoal`); else what the history SHOWS over the last (up
+// to six) workouts — the least assist went down: strength; it held while
+// the reps went up: endurance; else the rep range — a target (or the last
+// top set) of 12 reps or more is endurance work. { goal, observed }.
+export function assistGoal(machine, points = [], targetReps = null) {
+  const said = machine?.assistGoal;
+  if (said === 'strength' || said === 'endurance') return { goal: said, observed: false };
+  const pts = points.filter((p) => p.kind === 'assisted').slice(-6);
+  if (pts.length >= 2) {
+    const [a, b] = [pts[0].top, pts[pts.length - 1].top];
+    if (b.weight < a.weight) return { goal: 'strength', observed: true };
+    if (b.weight === a.weight && b.reps > a.reps) return { goal: 'endurance', observed: true };
+  }
+  const reps = targetReps ?? pts[pts.length - 1]?.top.reps ?? 0;
+  return { goal: reps >= 12 ? 'endurance' : 'strength', observed: true };
+}
+
 // A machine counts as "still being trained" for this many days (rules 1, 8).
 const RECENT_DAYS = 21;
 
 // 1 — the target is beaten twice at the same load: time to add weight.
-function progressRule(ws, settings, plans, now) {
+// At an assisted machine the same test runs at the same ASSIST, and the
+// next step follows the goal: less assist (strength) or more reps
+// (endurance) — an unassisted machine (assist 0) has no step left.
+function progressRule(ws, settings, plans, now, layout = null) {
   const unit = settings?.unit ?? 'kg';
   const step = settings?.weightStep ?? 2.5;
   return trainedPairs(ws).flatMap(({ machineId, exercise, grip }) => {
     const series = seriesEntries(ws, machineId, exercise, grip);
-    if (series.length < 2 || series[0].kind !== 'strength') return [];
+    if (series.length < 2 || !['strength', 'assisted'].includes(series[0].kind)) return [];
+    const assisted = series[0].kind === 'assisted';
+    const top = assisted ? topAssist : topSet;
     const [p, q] = series.slice(-2);
     // a machine not trained in three weeks is not "due" for more load —
     // the same recency window as the plateau rule
     if (daysBetween(q.w.startedAt, now) >= RECENT_DAYS) return [];
-    const W = topSet(q.e.sets).weight;
-    if (!(W > 0) || topSet(p.e.sets).weight !== W) return [];
+    const W = top(q.e.sets).weight;
+    if (!(W > 0) || top(p.e.sets).weight !== W) return [];
     const T = targetReps(plans, machineId, exercise, q.w.planId, grip) ?? 12;
     const repsAt = (e) => Math.max(...e.sets.filter((st) => st.weight === W).map((st) => st.reps || 0));
     const beaten = (e) => repsAt(e) >= T + 2
       || e.sets.some((st) => st.weight === W && st.reps >= T && st.rir >= 2);
     if (!beaten(p.e) || !beaten(q.e)) return [];
     const reps = Math.min(repsAt(p.e), repsAt(q.e));
-    const next = step > 0.1 * W ? 'add 1–2 reps first' : `try ${num(W + step, 2)} ${unit}`;
+    const machine = layout?.machines.find((m) => m.id === machineId);
+    const goal = assisted
+      ? assistGoal(machine, machineSeries(ws, machineId, exercise, grip), targetReps(plans, machineId, exercise, q.w.planId, grip)).goal
+      : null;
+    const next = goal === 'endurance' ? 'add 2 reps at this assist'
+      : goal === 'strength' ? `try ${num(Math.min(step, W), 2)} ${unit} less assist`
+        : step > 0.1 * W ? 'add 1–2 reps first' : `try ${num(W + step, 2)} ${unit}`;
     return [insight('progress', reps - T, {
       text: `Target beaten twice — ${next}.`,
       source: 'acsm2009',
@@ -585,10 +619,15 @@ function busyRule(ws, layout, now) {
 
 // 8 — no new best estimated 1RM for six or more workouts on a machine that
 // is still being trained.
-function plateauRule(ws, settings, now) {
+function plateauRule(ws, settings, now, layout = null) {
   const unit = settings?.unit ?? 'kg';
   return trainedPairs(ws).flatMap(({ machineId, exercise, grip }) => {
-    const pts = machineSeries(ws, machineId, exercise, grip).filter((p) => p.kind === 'strength' && p.e1rm != null);
+    const series = machineSeries(ws, machineId, exercise, grip);
+    if (series[series.length - 1]?.kind === 'assisted') {
+      return assistPlateau(series, layout?.machines.find((m) => m.id === machineId), unit, now)
+        .map((extra) => insight('plateau', extra.score, { ...extra.row, machineId, exercise, grip }));
+    }
+    const pts = series.filter((p) => p.kind === 'strength' && p.e1rm != null);
     if (pts.length < 8) return [];
     const best = Math.max(...pts.slice(0, -6).map((p) => p.e1rm));
     if (Math.max(...pts.slice(-6).map((p) => p.e1rm)) > best) return [];
@@ -602,6 +641,30 @@ function plateauRule(ws, settings, now) {
       grip,
     })];
   });
+}
+
+// 8, assisted — no e1RM to compare: the record is the LEAST assist
+// (strength goal) or the MOST reps at the least assist (endurance goal),
+// with the same windows: eight workouts, none of the last six past the best
+// of the earlier ones, trained in the last 21 days.
+function assistPlateau(series, machine, unit, now) {
+  const pts = series.filter((p) => p.kind === 'assisted');
+  if (pts.length < 8 || daysBetween(pts[pts.length - 1].t, now) >= RECENT_DAYS) return [];
+  const { goal } = assistGoal(machine, pts);
+  // one number per workout where HIGHER is better
+  const val = (p) => (goal === 'strength' ? -p.top.weight : p.top.reps);
+  const best = Math.max(...pts.slice(0, -6).map(val));
+  if (Math.max(...pts.slice(-6).map(val)) > best) return [];
+  const since = pts.length - 1 - pts.findIndex((p) => val(p) === best);
+  return [{
+    score: since - 6,
+    row: {
+      text: goal === 'strength'
+        ? `No new low in ${since} workouts (${num(-best)} ${unit} assist) — vary reps or assist.`
+        : `No new rep best in ${since} workouts (${best} reps) — vary assist or reps.`,
+      source: 'acsm2009',
+    },
+  }];
 }
 
 // Every observation that fires, as a one-line instruction (`text`, raw —
@@ -633,13 +696,13 @@ export function insights(workouts, layout, settings, { now = Date.now(), plans =
 function rules(workouts, layout, settings, now, plans) {
   const ws = byStart(workouts);
   return [
-    ...progressRule(ws, settings, plans, now),
+    ...progressRule(ws, settings, plans, now, layout),
     ...frequencyRule(ws, now),
     ...(layout ? muscleGapRule(ws, layout, now) : []),
     ...(layout ? muscleVolumeRule(ws, layout, now) : []),
     ...restRule(ws),
     ...(layout ? routeRule(ws, layout) : []),
     ...(layout ? busyRule(ws, layout, now) : []),
-    ...plateauRule(ws, settings, now),
+    ...plateauRule(ws, settings, now, layout),
   ].sort((a, b) => b.score - a.score || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0));
 }

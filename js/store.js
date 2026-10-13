@@ -677,6 +677,26 @@ export function lastGripFor(machineId, exercise = null) {
   return null;
 }
 
+// --- assisted machines (counterweight: less assist = stronger) ---
+// `machine.assisted: true` — a set is {reps, weight} where weight is the
+// ASSISTANCE, so setUnit converts it like any weight. `machine.assistGoal`
+// is what the user said they train for there: 'strength' (less assist) or
+// 'endurance' (more reps at the same assist); absent = not said, and
+// stats.js's assistGoal() observes it from the history instead.
+export const ASSIST_GOALS = ['strength', 'endurance'];
+
+// Says (or, with null, unsays) the goal at one machine — read and written
+// in the tap, so a machine that synced in meanwhile is not tombstoned by a
+// render-time copy of the layout.
+export function setAssistGoal(machineId, goal) {
+  const layout = getLayout();
+  const m = layout?.machines.find((x) => x.id === machineId);
+  if (!m) return;
+  if (ASSIST_GOALS.includes(goal)) m.assistGoal = goal;
+  else delete m.assistGoal;
+  saveLayout(layout);
+}
+
 // A fresh history entry for this machine. num/label, the type flags and the
 // exercise are SNAPSHOTTED here — history, the editor, the chart and the AI
 // export read the entry, never the live machine, so a machine renamed or
@@ -691,6 +711,7 @@ export function newEntry(machine, exercise = null, sets = [], grip = null) {
     label: machine.label,
     ...(machine.cardio ? { cardio: true } : {}),
     ...(machine.bodyweight ? { bodyweight: true } : {}),
+    ...(machine.assisted ? { assisted: true } : {}),
     ...(exercise ? { exercise } : {}),
     ...(grip ? { grip } : {}),
     settings: {},
@@ -1324,6 +1345,14 @@ function stringOrDrop(o, key) {
   return rest;
 }
 
+// The type flags are true or absent; anything else from a file or a peer
+// is no flag at all.
+function flagOrDrop(o, key) {
+  if (o[key] === undefined || o[key] === true) return o;
+  const { [key]: _, ...rest } = o;
+  return rest;
+}
+
 function numFields(o, keys) {
   const out = { ...o };
   keys.forEach((k) => {
@@ -1341,7 +1370,9 @@ const isValidMachine = (m) => !!m && isSafeId(m.id) && Number.isFinite(m.num)
   && (m.exercises === undefined
     || (Array.isArray(m.exercises) && m.exercises.every((x) => typeof x === 'string')))
   && (m.grips === undefined
-    || (Array.isArray(m.grips) && m.grips.every((x) => typeof x === 'string')));
+    || (Array.isArray(m.grips) && m.grips.every((x) => typeof x === 'string')))
+  && (m.assisted === undefined || typeof m.assisted === 'boolean')
+  && (m.assistGoal === undefined || ASSIST_GOALS.includes(m.assistGoal));
 const isValidShape = (s) => !!s && isSafeId(s.id) && isPlaced(s) && isColor(s.color);
 const hasValidFrame = (layout) => !!layout.grid
   && Number.isFinite(layout.grid.w) && Number.isFinite(layout.grid.h)
@@ -1382,7 +1413,7 @@ export function cleanWorkout(w) {
   if (!w || !isSafeId(w.id) || !Array.isArray(w.entries)) return null;
   const entries = w.entries.map((e) => (e && (e.machineId == null || isSafeId(e.machineId))
     && Array.isArray(e.sets)
-    ? { ...stringOrDrop(numFields(e, ['num']), 'grip'), sets: e.sets.map((st) => numFields(st, SET_NUMBERS)) }
+    ? { ...flagOrDrop(stringOrDrop(numFields(e, ['num']), 'grip'), 'assisted'), sets: e.sets.map((st) => numFields(st, SET_NUMBERS)) }
     : null));
   return entries.includes(null) ? null : { ...w, entries };
 }

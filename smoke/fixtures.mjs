@@ -8,7 +8,7 @@
 export const ROUTES = ['train', 'gym', 'history', 'ai', 'settings'];
 
 /**
- * Loads the deterministic Demo gym — 16 machines, 8 weeks of history,
+ * Loads the deterministic Demo gym — 17 machines, 8 weeks of history,
  * three plans — and reboots the app on it.
  */
 export async function seedDemoGym(page) {

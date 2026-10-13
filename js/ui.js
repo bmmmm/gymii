@@ -340,13 +340,23 @@ export const stepperField = (label, id, { step, min, value, mode = 'decimal', ki
     </div>
   </div>`;
 
-// One set, rendered compactly; bodyweight shares {reps,weight}, so its
-// flag is passed in rather than sniffed from the shape. HTML-ready.
-export const setStr = (st, settings, bodyweight = false) => esc(st.distance != null
+// An entry's (or machine's) type from its flags: the four set shapes.
+// Bodyweight and assisted share {reps, weight} with strength — weight is
+// ADDED weight or the ASSISTANCE there — so the flag, never the shape, says
+// which it is.
+export const entryKind = (e) => (e?.cardio ? 'cardio' : e?.bodyweight ? 'bodyweight'
+  : e?.assisted ? 'assisted' : 'strength');
+
+// One set, rendered compactly; the entry's kind is passed in rather than
+// sniffed from the shape (`true` is the old bodyweight flag). An assisted
+// set reads as a minus: the counterweight takes that much off. HTML-ready.
+export const setStr = (st, settings, kind = 'strength') => esc(st.distance != null
   ? `${st.distance} ${distUnit(settings)} · ${fmtDuration(st.seconds)}`
-  : bodyweight
+  : kind === true || kind === 'bodyweight'
     ? (st.weight ? `BW+${st.weight}×${st.reps}` : `BW×${st.reps}`)
-    : `${st.weight ?? 0}×${st.reps}`);
+    : kind === 'assisted'
+      ? `−${st.weight ?? 0}×${st.reps}`
+      : `${st.weight ?? 0}×${st.reps}`);
 
 // A re-render replaces whole subtrees, so the control you JUST used drifts
 // down whenever the list above it grew by a row — log a set and the log
@@ -537,8 +547,9 @@ export function playTimerSound(name) {
 // distance; parts appear only when non-zero so pure-cardio workouts don't
 // read "0 kg". HTML-ready.
 export function workoutTotals(workout, settings) {
-  const volume = workout.entries.reduce(
-    (v, e) => v + e.sets.reduce((x, st) => x + (st.reps * st.weight || 0), 0), 0);
+  // an assisted set's weight is the help, not the load: no volume
+  const volume = workout.entries.reduce((v, e) => (e.assisted ? v
+    : v + e.sets.reduce((x, st) => x + (st.reps * st.weight || 0), 0)), 0);
   const distance = workout.entries.reduce(
     (v, e) => v + e.sets.reduce((x, st) => x + (st.distance || 0), 0), 0);
   const unit = esc(settings.unit);

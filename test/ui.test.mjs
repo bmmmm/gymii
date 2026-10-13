@@ -101,6 +101,10 @@ const kg = { unit: 'kg' };
 assert.equal(ui.setStr({ reps: 10, weight: 40 }, kg), '40×10');
 assert.equal(ui.setStr({ reps: 10, weight: 0 }, kg, true), 'BW×10', 'bodyweight with no added load');
 assert.equal(ui.setStr({ reps: 10, weight: 5 }, kg, true), 'BW+5×10');
+assert.equal(ui.setStr({ reps: 10, weight: 5 }, kg, 'bodyweight'), 'BW+5×10', 'the kind by name, too');
+assert.equal(ui.setStr({ reps: 8, weight: 20 }, kg, 'assisted'), '−20×8', 'assisted: the counterweight reads as a minus');
+assert.deepEqual(['cardio', 'bodyweight', 'assisted', 'strength'].map((k) => ui.entryKind(k === 'strength' ? {} : { [k]: true })),
+  ['cardio', 'bodyweight', 'assisted', 'strength'], 'entryKind reads the flags');
 assert.equal(ui.setStr({ distance: 2000, seconds: 600 }, kg), '2000 m · 10:00');
 assert.equal(ui.setStr({ distance: 1.5, seconds: 600 }, { unit: 'lb' }), '1.5 mi · 10:00',
   'distances follow the weight unit');
@@ -122,6 +126,8 @@ assert.equal(ui.workoutTotals(wo([{ reps: 10, weight: 40 }, { distance: 500, sec
 assert.equal(ui.workoutTotals(wo([{ reps: 10 }]), kg), '0 kg',
   'a set with no weight contributes 0, not NaN');
 assert.equal(ui.workoutTotals(wo([]), kg), '0 kg', 'and an empty workout says so');
+assert.equal(ui.workoutTotals({ entries: [{ sets: [{ reps: 10, weight: 40 }] }, { assisted: true, sets: [{ reps: 8, weight: 20 }] }] }, kg),
+  '400 kg', 'an assisted set adds no volume: its weight is the help, not the load');
 
 assert.equal(ui.machineChain({ entries: [{ num: 3 }, { num: 7 }] }), '#3 → #7');
 assert.equal(ui.machineChain({ entries: [{ num: 16 }, { num: 16 }] }), '#16',

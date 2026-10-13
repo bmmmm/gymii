@@ -586,4 +586,59 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     'a rope plan item sets the rope\'s target');
 }
 
+// --- assisted machines: the weight is the ASSIST, less is stronger ---
+{
+  const MA = (goal) => M('ma', 17, 'Assisted pull-up', 50, 30, ['Lats'], { assisted: true, ...(goal ? { assistGoal: goal } : {}) });
+  const LA = (goal) => ({ ...LAYOUT, machines: [...LAYOUT.machines, MA(goal)] });
+  const A = (sts) => E('ma', sts, { assisted: true });
+  // the top set is the least assist, then the most reps; no e1RM, no volume
+  const one = stats.machineSeries([W(day(3), [A([S(8, 30), S(10, 25), S(6, 25)])])], 'ma');
+  assert.deepEqual([one[0].kind, one[0].top, one[0].e1rm, one[0].volume], ['assisted', { weight: 25, reps: 10 }, null, 0],
+    'assisted top set: 25 kg assist × 10, the least help');
+  const wk = stats.weeklyBuckets([W(day(0), [A([S(10, 30)]), E('m1', [S(10, 40)])])], { weeks: 1, now: NOW });
+  assert.equal(wk[0].volume, 400, 'an assisted set adds no volume — its weight is help, not load');
+  assert.equal(wk[0].sets, 2, 'but it is a set');
+
+  // the goal: said > observed trend > rep range (12+ is endurance)
+  const pts = (pairs) => pairs.map(([w, r], i) => ({ kind: 'assisted', t: i, top: { weight: w, reps: r } }));
+  assert.deepEqual(stats.assistGoal({ assistGoal: 'endurance' }, pts([[30, 8], [25, 8]])),
+    { goal: 'endurance', observed: false }, 'what the user said wins over the trend');
+  assert.deepEqual(stats.assistGoal({}, pts([[30, 8], [27.5, 8]])), { goal: 'strength', observed: true },
+    'the assist went down: strength');
+  assert.deepEqual(stats.assistGoal({}, pts([[30, 8], [30, 11]])), { goal: 'endurance', observed: true },
+    'the reps went up at the same assist: endurance');
+  assert.deepEqual(stats.assistGoal({}, pts([[30, 12]])).goal, 'endurance', 'no trend, 12 reps: endurance');
+  assert.deepEqual(stats.assistGoal({}, pts([[30, 11]])).goal, 'strength', 'no trend, 11 reps: strength');
+  assert.deepEqual(stats.assistGoal({}, pts([[30, 8], [30, 8]]), 12).goal, 'endurance', 'a plan target of 12 decides a flat trend');
+  assert.deepEqual(stats.assistGoal({ assistGoal: 'bogus' }, pts([[30, 8], [25, 8]])).observed, true, 'an unknown goal is no goal');
+
+  // rule 1 at the same assist: the next step follows the goal
+  const prog = (r2, r3, w = 25) => [W(day(9), [A([S(10, 30)])]), W(day(5), [A([S(r2, w)])]), W(day(1), [A([S(r3, w)])])];
+  assert.equal(find(prog(14, 14), 'progress', { layout: LA('strength') })?.text,
+    'Target beaten twice — try 2.5 kg less assist.', 'strength: less assist');
+  assert.equal(find(prog(14, 14), 'progress', { layout: LA('endurance') })?.text,
+    'Target beaten twice — add 2 reps at this assist.', 'endurance: more reps at this assist');
+  assert.equal(find(prog(14, 13), 'progress', { layout: LA('strength') }), undefined, 'one rep short of T + 2: quiet');
+  assert.equal(find(prog(14, 14, 2), 'progress', { layout: LA('strength') })?.text,
+    'Target beaten twice — try 2 kg less assist.', 'never more off than the assist that is left');
+  assert.equal(find(prog(14, 14, 0), 'progress', { layout: LA('strength') }), undefined,
+    'unassisted (0 kg): no assist left to take away');
+  assert.equal(find(prog(14, 14), 'progress', { layout: LA() })?.text,
+    'Target beaten twice — try 2.5 kg less assist.', 'no goal said: the trend (30 → 25 kg) says strength');
+
+  // rule 8, assisted: the record is the least assist (strength) or the most reps (endurance)
+  const series8 = (vals, goalReps = false) => vals.map((v, i) => W(day(40 - 5 * i),
+    [A([goalReps ? S(v, 25) : S(8, v)])]));
+  assert.equal(find(series8([30, 25, 25, 25, 25, 25, 25, 25]), 'plateau', { layout: LA('strength') })?.text,
+    'No new low in 6 workouts (25 kg assist) — vary reps or assist.', 'strength: no new low in six');
+  assert.equal(find(series8([30, 25, 25, 25, 25, 25, 25, 22.5]), 'plateau', { layout: LA('strength') }), undefined,
+    'a new low in the last six: no plateau');
+  assert.equal(find(series8([8, 12, 12, 12, 12, 12, 12, 12], true), 'plateau', { layout: LA('endurance') })?.text,
+    'No new rep best in 6 workouts (12 reps) — vary assist or reps.', 'endurance: no new rep best in six');
+  assert.equal(find(series8([8, 12, 12, 12, 12, 12, 12, 13], true), 'plateau', { layout: LA('endurance') }), undefined,
+    'a new rep best: no plateau');
+  assert.equal(find(series8([25, 30, 30, 30, 30, 30, 30]), 'plateau', { layout: LA('strength') }), undefined,
+    'seven workouts without a new low: one short of the eight it needs');
+}
+
 console.log('stats.test.mjs: all passed');

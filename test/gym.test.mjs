@@ -424,8 +424,12 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   change('m1', 'type', 'bodyweight');
   assert.equal(machineAt('m1').cardio, undefined, 'the flags are exclusive');
   assert.equal(machineAt('m1').bodyweight, true, 'Bodyweight sets its own');
+  change('m1', 'type', 'assisted');
+  assert.deepEqual([machineAt('m1').assisted, 'bodyweight' in machineAt('m1')], [true, false],
+    'Assisted is a type of its own, exclusive like the others');
   change('m1', 'type', '');
   assert.equal('bodyweight' in machineAt('m1'), false, 'Strength = no flag at all, never false');
+  assert.equal('assisted' in machineAt('m1'), false, 'and no assisted flag either');
 
   change('m2', 'brand', '');
   assert.equal(machineAt('m2').brand, undefined, 'picking the gym\'s brand deletes the machine\'s own');
@@ -557,6 +561,13 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   assert.ok(html.includes('chip-group-label">Back</span>'), 'muscles come grouped by region');
   assert.ok(html.includes('chip-group-label">Other</span>') && html.includes('data-value="Serratus"'),
     'a muscle outside the pick list keeps a row of its own');
+
+  // the card's type chips: Assisted joins Cardio and Bodyweight, one at a time
+  last(props.querySelector('#m-bodyweight'), 'click')();
+  last(props.querySelector('#m-assisted'), 'click')();
+  assert.deepEqual([machineAt('m1').assisted, 'bodyweight' in machineAt('m1')], [true, false], 'Assisted replaces Bodyweight');
+  last(props.querySelector('#m-assisted'), 'click')();
+  assert.equal('assisted' in machineAt('m1'), false, 'the selected chip again: strength');
 
   last(props.querySelector('#m-brand-other'), 'click')();
   html = props.innerHTML;

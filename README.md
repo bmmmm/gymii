@@ -25,7 +25,10 @@ ever sees ciphertext.
   machine.
 - 💪 **Train** — repeat a past workout in order, or roam by number, map tap or
   muscle. Last workout's numbers prefill every set. Cardio machines log
-  distance + time, bodyweight machines reps + extra weight, free-weight
+  distance + time, bodyweight machines reps + extra weight, assisted ones
+  (pull-up or dip with a counterweight) reps + the assist — less is
+  stronger, and you say whether you're after less assist or more reps
+  (until you do, gymii reads it from your history), free-weight
   areas keep separate histories per named exercise, and a cable tower one
   per grip (rope, V-bar — `[Rope]` in a typed plan line). Stuck for what's
   next? 🎲 in the picker suggests a machine for a muscle you haven't hit

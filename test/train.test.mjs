@@ -1998,4 +1998,56 @@ const withPicker = (fn) => {
   store.saveLayout(before);
 }
 
+// --- assisted machines: the log screen speaks assist, and asks the goal ---
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Assist gym');
+  g.machines.push({ id: 'ax', num: 17, label: 'Assisted pull-up', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
+    muscles: ['Lats'], assisted: true });
+  store.saveLayout(g);
+  const ent = (weight) => ({ machineId: 'ax', num: 17, label: 'Assisted pull-up', assisted: true, settings: {},
+    sets: [{ reps: 8, weight }] });
+  store.saveWorkouts([{ id: 'as1', startedAt: 1000, finishedAt: 2000, entries: [ent(30)] },
+    { id: 'as2', startedAt: 3000, finishedAt: 4000, entries: [ent(27.5)] }]);
+  const open = () => {
+    store.saveActive({ v: 2, id: 'w-assist', startedAt: Date.now(),
+      plan: [{ machineId: 'ax', exercise: null, target: { sets: 3, reps: 8, weight: 25 } }],
+      currentMachineId: 'ax', currentExercise: null, entries: [] });
+    byId.clear();
+    renderTrain(root);
+  };
+  open();
+  const h = root.innerHTML;
+  assert.ok(h.includes('<span class="label">Assist</span>'), 'the load stepper is the assist');
+  assert.ok(h.includes('Target: 3 × 8 @ −25 kg'), 'the target reads as a minus');
+  assert.ok(h.includes('Last: −27.5×8 kg'), '"Last:" too');
+  assert.ok(/class="chip sel" data-goal="strength" aria-pressed="true">Less assist/.test(h),
+    'the goal: less assist, read from the history (30 → 27.5 kg)');
+  assert.ok(h.includes('Read from your last workouts'), 'and it says it was read, not said');
+  const goalTap = (goal) => byId.get('#assist-goal').listeners.click({ target: { closest: () => ({ dataset: { goal } }) } });
+  goalTap('endurance');
+  assert.equal(store.getLayout().machines[0].assistGoal, 'endurance', 'a tap says the goal, on the machine');
+  assert.ok(/class="chip sel" data-goal="endurance" aria-pressed="true">More reps/.test(root.innerHTML)
+    && !root.innerHTML.includes('Read from your last workouts'), 'said, not read');
+  goalTap('endurance');
+  assert.equal('assistGoal' in store.getLayout().machines[0], false, 'the chosen chip again unsays it');
+  open();
+  byId.get('#set-weight').value = '25';
+  byId.get('#set-reps').value = '8';
+  byId.get('#set-rest').value = '0';
+  byId.get('#log-set').listeners.click();
+  assert.ok(root.innerHTML.includes('<span>−25 kg × 8</span>'), 'a logged set reads "−25 kg × 8"');
+  assert.equal(store.getActive().entries[0].assisted, true, 'and its entry is flagged assisted');
+  // a machine retyped to assisted before its first set: the empty entry follows
+  store.saveActive({ v: 2, id: 'w-retype', startedAt: Date.now(), plan: [{ machineId: 'ax', exercise: null }],
+    currentMachineId: 'ax', currentExercise: null,
+    entries: [{ machineId: 'ax', num: 17, label: 'Assisted pull-up', settings: {}, sets: [] }] });
+  byId.clear();
+  renderTrain(root);
+  assert.equal(store.getActive().entries[0].assisted, true, 'an empty entry takes the machine\'s new type');
+  store.clearActive();
+  store.saveWorkouts([]);
+  store.saveLayout(before);
+}
+
 console.log('train plan construction: all assertions passed');

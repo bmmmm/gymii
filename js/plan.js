@@ -15,7 +15,7 @@ import {
 import { drawLayout } from './map.js';
 import {
   esc, twoTapConfirm, stepperField, plural, keepInView, fmtDuration, parseDuration, parseDistance,
-  hintHtml, variantStr, fieldValue,
+  hintHtml, variantStr, fieldValue, entryKind,
 } from './ui.js';
 import { insights } from './stats.js';
 
@@ -35,9 +35,7 @@ function targetDefaults(machine, exercise, grip, s) {
   if (!machine) return { sets: 3, reps: 10, weight: 20 };
   const last = lastEntryFor(machine.id, exercise ?? null, grip ?? null,
     { anyGrip: !machine.grips?.length });
-  const typed = last
-    && !!last.cardio === !!machine.cardio
-    && !!last.bodyweight === !!machine.bodyweight ? last : null;
+  const typed = last && entryKind(last) === entryKind(machine) ? last : null;
   const st = typed?.sets[typed.sets.length - 1];
   if (machine.cardio) {
     return {
@@ -158,7 +156,7 @@ export function renderPlanBuilder(
     : `
         ${stepperField('Sets', `t-sets-${i}`, { step: 1, min: 1, value: t.sets, mode: 'numeric' })}
         ${stepperField('Reps', `t-reps-${i}`, { step: 1, min: 1, value: t.reps, mode: 'numeric' })}
-        ${stepperField(m?.bodyweight ? 'Extra weight' : 'Weight', `t-weight-${i}`, { step: s.weightStep, min: 0, value: t.weight, kind: 'decimal' })}`}
+        ${stepperField(m?.bodyweight ? 'Extra weight' : m?.assisted ? 'Assist' : 'Weight', `t-weight-${i}`, { step: s.weightStep, min: 0, value: t.weight, kind: 'decimal' })}`}
       </div>
     </div>`;
   };

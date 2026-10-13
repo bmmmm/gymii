@@ -61,6 +61,8 @@ assert.equal(store.importData(template(layoutOf())), 'gym-template', 'a clean te
   ['machine restSeconds', (l) => { l.machines[0].restSeconds = `60${X}`; }],
   ['machine grips (no array)', (l) => { l.machines[0].grips = X; }],
   ['machine grips (no strings)', (l) => { l.machines[0].grips = [1]; }],
+  ['machine assisted (no boolean)', (l) => { l.machines[0].assisted = X; }],
+  ['machine assistGoal (unknown)', (l) => { l.machines[0].assistGoal = X; }],
   ['shape id', (l) => { l.shapes[0].id += X; }],
   ['shape color', (l) => { l.shapes[0].color = `red${X}`; }],
   ['shape w', (l) => { l.shapes[0].w = `4${X}`; }],
@@ -115,6 +117,18 @@ store.importData(backup({ workouts: [workoutOf()] }));
   const l = layoutOf();
   l.machines[0].grips = ['Rope', 'V-bar'];
   assert.equal(store.importData(template(l)), 'gym-template', 'a machine with string grips imports');
+  l.machines[0].assisted = true;
+  l.machines[0].assistGoal = 'endurance';
+  assert.equal(store.importData(template(l)), 'gym-template', 'an assisted machine with a known goal imports');
+}
+{
+  const w = workoutOf();
+  w.id = 'w-assist';
+  w.entries.push({ ...workoutOf().entries[0], assisted: X }, { ...workoutOf().entries[0], assisted: true });
+  store.importData(backup({ workouts: [w] }));
+  const [, odd, ok] = store.getWorkouts().find((x) => x.id === 'w-assist').entries;
+  assert.equal('assisted' in odd, false, 'an assisted flag that is not true is dropped, the entry kept');
+  assert.equal(ok.assisted, true, 'a true one stays');
 }
 
 // --- 1d. backup plans: a bad id drops the plan, bad numbers are repaired ---

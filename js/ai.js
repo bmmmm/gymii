@@ -9,7 +9,7 @@ import {
 import { openPlanBuilder } from './train.js';
 import { twoTapConfirm, plural, dateValue } from './ui.js';
 
-export const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; an "exercise" field names one movement at a multi-exercise machine like a free-weight area; a "grip" field names the attachment or grip it was done with (a rope and a V-bar on one cable tower are separate progressions — never mix their numbers); a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis, and null there means the set has no timestamp; a fourth element, when present, is RIR, reps in reserve, 0–3, 3 = three or more; absent = not rated). A workout's "visits", when present, is the route I walked: [num, seconds in, seconds out] per machine, in order, seconds since the workout started; a fourth element is the num of a machine I skipped because it was busy.
+export const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; for entries marked assisted:true (a counterweight machine like an assisted pull-up) the weight is the ASSISTANCE — less is stronger, 0 = unassisted — and the machine's "assistGoal", when present, says whether I train there for less assistance ("strength") or more reps at the same assistance ("endurance"); an "exercise" field names one movement at a multi-exercise machine like a free-weight area; a "grip" field names the attachment or grip it was done with (a rope and a V-bar on one cable tower are separate progressions — never mix their numbers); a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis, and null there means the set has no timestamp; a fourth element, when present, is RIR, reps in reserve, 0–3, 3 = three or more; absent = not rated). A workout's "visits", when present, is the route I walked: [num, seconds in, seconds out] per machine, in order, seconds since the workout started; a fourth element is the num of a machine I skipped because it was busy.
 
 Analyze my progress: trends per machine, plateaus, and muscle-group imbalances. Then suggest concrete targets for my next workout — weight × reps per machine — and one or two practical tips.
 
@@ -171,6 +171,7 @@ export function buildAiExport() {
     unit: settings.unit,
     note: `sets are [weight, reps]; entries with cardio:true use [distance, seconds], distance in ${
       distUnit(settings)}; bodyweight:true entries log ADDED weight (0 = bodyweight only); ` +
+      'assisted:true entries log the ASSISTANCE (less = stronger, 0 = unassisted); ' +
       'a third element, when present, is seconds since the workout started (sets logged before ' +
       'timing was added lack it; null = no timestamp); a fourth element, when present, is RIR ' +
       '(reps in reserve, 0-3, 3 = three or more; absent = not rated); a workout\'s visits are ' +
@@ -189,6 +190,7 @@ export function buildAiExport() {
         ...(m.model ? { model: m.model } : {}),
         ...(m.cardio ? { cardio: true } : {}),
         ...(m.bodyweight ? { bodyweight: true } : {}),
+        ...(m.assisted ? { assisted: true, ...(m.assistGoal ? { assistGoal: m.assistGoal } : {}) } : {}),
         ...(m.exercises?.length ? { exercises: m.exercises } : {}),
         ...(m.grips?.length ? { grips: m.grips } : {}),
         settings: m.settingsFields,
@@ -227,6 +229,7 @@ export function buildAiExport() {
           ...(e.grip ? { grip: e.grip } : {}),
           ...(e.cardio ? { cardio: true } : {}),
           ...(e.bodyweight ? { bodyweight: true } : {}),
+          ...(e.assisted ? { assisted: true } : {}),
           ...(Object.keys(e.settings || {}).some((k) => String(e.settings[k]).trim() !== '')
             ? { settings: e.settings } : {}),
           sets: e.sets.map((st) => {

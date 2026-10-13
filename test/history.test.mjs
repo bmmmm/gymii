@@ -834,4 +834,31 @@ mem.set(layoutKey, savedLayout);
   store.saveWorkouts([]);
 }
 
+// --- assisted: the chart shows the assist (lower is stronger) or the reps at it ---
+{
+  const g = store.newLayout('Assist history gym');
+  g.machines.push({ id: 'ax', num: 17, label: 'Assisted pull-up', x: 0, y: 0, w: 4, h: 3, settingsFields: [], assisted: true });
+  store.saveLayout(g);
+  const t = Date.now();
+  const ent = (weight, reps) => ({ machineId: 'ax', num: 17, label: 'Assisted pull-up', assisted: true, settings: {},
+    sets: [{ reps, weight }] });
+  store.saveWorkouts([
+    { id: 'ah1', startedAt: t - 3 * 864e5, finishedAt: t - 3 * 864e5 + 3600e3, entries: [ent(30, 8)] },
+    { id: 'ah2', startedAt: t - 864e5, finishedAt: t - 864e5 + 3600e3, entries: [ent(25, 9)] },
+  ]);
+  enter();
+  const title = () => root.querySelector('#chart-title').textContent;
+  assert.equal(title(), 'Progress — assist (kg) — lower is stronger', 'the assist, and which way is better');
+  assert.ok(pickEl().innerHTML.includes('−25×9'), 'the picked workout reads as a minus');
+  const assistChips = () => root.querySelector('#assist-chips');
+  assert.ok(/class="chip sel" data-view="assist"/.test(assistChips().innerHTML), 'Assist / Reps chips, Assist first');
+  assistChips().listeners.click(clickOn('.chip', { view: 'reps' }));
+  assert.equal(store.getSettings().historyAssistView, 'reps', 'the view is kept on the device');
+  assert.equal(title(), 'Progress — reps at the least assist', 'and the chart shows the reps');
+  enter();
+  assert.equal(title(), 'Progress — reps at the least assist', 'it survives a tab tap');
+  assistChips().listeners.click(clickOn('.chip', { view: 'assist' }));
+  store.saveWorkouts([]);
+}
+
 console.log('history: all assertions passed');

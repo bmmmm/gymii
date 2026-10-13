@@ -164,7 +164,9 @@ test('the rest overlay carries the rest hint with its 44px ↗', async ({ page }
       return {
         id: `short${n}`, startedAt: t0, finishedAt: t0 + 900e3,
         entries: [{ machineId: 'lat-pulldown', num: 2, label: 'Lat pulldown', settings: {},
-          sets: [0, 1, 2].map((k) => ({ reps: 10, weight: 50, at: t0 + 100e3 + k * 60e3 })) }],
+          // five sets, four 60 s gaps each: enough to outweigh the demo's own
+          // pull day (the newest stamped workout) whatever machines it holds
+          sets: [0, 1, 2, 3, 4].map((k) => ({ reps: 10, weight: 50, at: t0 + 100e3 + k * 60e3 })) }],
       };
     });
     store.saveWorkouts([...store.getWorkouts(), ...short]);

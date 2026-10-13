@@ -563,11 +563,18 @@ export function renderGym(root) {
   // get their type, brand and muscles fixed in one pass without a tap on
   // the plan per machine. Same fields, same invariants (absent flags,
   // brand only when it differs from the gym's), same save().
-  const TYPE_OPTIONS = [['', 'Strength'], ['cardio', 'Cardio'], ['bodyweight', 'Bodyweight']];
+  const TYPE_OPTIONS = [['', 'Strength'], ['cardio', 'Cardio'], ['bodyweight', 'Bodyweight'], ['assisted', 'Assisted']];
   // ids from a template are untrusted text; `CSS` does not exist in the
   // logic tests' Node, where the selector is never resolved anyway
   const cssId = (id) => (typeof CSS === 'undefined' ? id : CSS.escape(id));
-  const machineType = (m) => (m.cardio ? 'cardio' : m.bodyweight ? 'bodyweight' : '');
+  const machineType = (m) => (m.cardio ? 'cardio' : m.bodyweight ? 'bodyweight' : m.assisted ? 'assisted' : '');
+  // the type flags are mutually exclusive; absent = strength, and a flag is
+  // deleted (never set false) to keep exports clean
+  const TYPE_FLAGS = ['cardio', 'bodyweight', 'assisted'];
+  const setType = (m, flag) => {
+    TYPE_FLAGS.forEach((f) => delete m[f]);
+    if (TYPE_FLAGS.includes(flag)) m[flag] = true;
+  };
   // Focus is handed on only when the control HAD it — a keyboard or screen-
   // reader user, whom a re-render would drop onto <body>. A tap on a phone
   // never focuses a chip (iOS), and a programmatic focus there could pop
@@ -686,11 +693,7 @@ export function renderGym(root) {
           return;
         }
         case 'type':
-          // the two flags are mutually exclusive; absent = strength, and a
-          // flag is deleted (never set false) to keep exports clean
-          delete m.cardio;
-          delete m.bodyweight;
-          if (v) m[v] = true;
+          setType(m, v);
           save();
           return;
         case 'brand': {
@@ -1031,6 +1034,8 @@ export function renderGym(root) {
                 class="chip${item.cardio ? ' sel' : ''}">Cardio — distance + time</button>
               <button type="button" id="m-bodyweight"
                 class="chip${item.bodyweight ? ' sel' : ''}">Bodyweight — reps + extra weight</button>
+              <button type="button" id="m-assisted"
+                class="chip${item.assisted ? ' sel' : ''}">Assisted — reps + counterweight</button>
             </div>
           </div>
           <div class="field-block"><span>Color on the plan</span>
@@ -1157,19 +1162,13 @@ export function renderGym(root) {
         });
       }
 
-      // The two type flags are mutually exclusive; absent = strength
-      // machine, and flags are deleted (not set false) to keep exports clean.
-      props.querySelector('#m-cardio').addEventListener('click', () => {
-        if (item.cardio) delete item.cardio;
-        else { item.cardio = true; delete item.bodyweight; }
-        save();
-        renderProps();
-      });
-      props.querySelector('#m-bodyweight').addEventListener('click', () => {
-        if (item.bodyweight) delete item.bodyweight;
-        else { item.bodyweight = true; delete item.cardio; }
-        save();
-        renderProps();
+      // One chip per type flag; the selected one again means strength.
+      TYPE_FLAGS.forEach((flag) => {
+        props.querySelector(`#m-${flag}`).addEventListener('click', () => {
+          setType(item, item[flag] ? null : flag);
+          save();
+          renderProps();
+        });
       });
 
       wireColorRow('#m-color', item);

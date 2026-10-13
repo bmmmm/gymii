@@ -35,8 +35,8 @@ assert.notDeepEqual(
 const { layout, workouts, plans } = demo.buildDemoData({ now: NOW, settings: KG });
 
 // --- layout shape ---
-assert.equal(layout.machines.length, 16);
-assert.equal(new Set(layout.machines.map((m) => m.num)).size, 16, 'nums unique');
+assert.equal(layout.machines.length, 17);
+assert.equal(new Set(layout.machines.map((m) => m.num)).size, 17, 'nums unique');
 assert.equal(layout.machines.filter((m) => m.cardio).length, 2);
 assert.equal(layout.machines.filter((m) => m.bodyweight).length, 2);
 assert.ok(!layout.machines.some((m) => m.cardio && m.bodyweight), 'flags are exclusive');
@@ -170,6 +170,9 @@ LAT_FIXTURE.forEach((id) => { latSets(drawn, id).at(-1).reps = null; });
   item.exercise = null;
   delete item.grip;
 }
+// …and the assisted pull-up (2026-10-13) the same way: its machine and its entries
+drawn.layout.machines = drawn.layout.machines.filter((m) => m.id !== 'demo-assisted-pullup');
+drawn.workouts.forEach((w) => { w.entries = w.entries.filter((e) => e.machineId !== 'demo-assisted-pullup'); });
 assert.deepEqual({
   layout: digest(drawn.layout),
   plans: digest(drawn.plans),
@@ -199,6 +202,16 @@ assert.deepEqual({
   'demo-legs-w0': '2f4d3b154df0f2e9',
   'demo-pull-w0': '0114d89b91b0de08',
 }, 'every value drawn before the live-log data existed is unchanged');
+
+// --- the assisted pull-up: weight is the assist, the history reads as a strength goal ---
+{
+  const ap = layout.machines.find((m) => m.id === 'demo-assisted-pullup');
+  assert.deepEqual([ap.num, ap.assisted, 'assistGoal' in ap], [17, true, false], '#17 is assisted, no goal said');
+  const series = stats.machineSeries(workouts, 'demo-assisted-pullup');
+  assert.ok(series.length >= 6 && series.every((p) => p.kind === 'assisted'), 'one assisted point per pull day');
+  assert.ok(series[series.length - 1].top.weight < series[0].top.weight, 'the assist comes down over the weeks');
+  assert.equal(stats.assistGoal(ap, series).goal, 'strength', 'so the observed goal is strength');
+}
 
 // --- grips: the cable tower shows two series on one exercise ---
 {
@@ -321,7 +334,7 @@ const realJson = JSON.stringify([store.getLayout(), store.getWorkouts()]);
 const r1 = demo.loadDemoData({ now: NOW, settings: KG });
 assert.equal(r1.created, true);
 assert.equal(store.getGyms().activeId, r1.gymId, 'Demo gym active');
-assert.equal(store.getLayout().machines.length, 16);
+assert.equal(store.getLayout().machines.length, 17);
 assert.equal(store.getWorkouts().length, r1.workouts);
 assert.equal(store.getPlans().length, 3);
 

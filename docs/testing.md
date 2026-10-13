@@ -102,8 +102,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   workout editor pass the same 44px / 16px / no-overflow measures, and the
   path card draws a route; the True black theme (`layout.spec.mjs`: the
   chip flips `html[data-theme]`, survives a reload, every route still
-  passes the measures) and the picker's 🎲 (fills the number, starts
-  nothing); and the Gym's folded parts (`gym.spec.mjs`,
+  passes the measures), the picker's 🎲 (fills the number, starts
+  nothing) and an assisted log screen (the demo's #17: "Assist", 44px Goal
+  chips, a tap says the goal on the machine); and the Gym's folded parts (`gym.spec.mjs`,
   320px): the machine list editor and the machine card's brand fold-out
   pass them too.
   A NEW browser spec goes in

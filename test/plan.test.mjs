@@ -1006,4 +1006,20 @@ goToHub();
   store.saveWorkouts([]);
 }
 
+// --- an assisted machine's target weight is the assist ---
+{
+  const g = store.newLayout('Assist builder gym');
+  g.machines.push({ id: 'ax', num: 17, label: 'Assisted pull-up', x: 0, y: 0, w: 4, h: 3, settingsFields: [], assisted: true });
+  store.saveLayout(g);
+  store.saveWorkouts([{ id: 'ab', startedAt: 1000, entries: [
+    { machineId: 'ax', num: 17, label: 'Assisted pull-up', assisted: true, settings: {}, sets: [{ reps: 8, weight: 27.5 }] },
+  ] }]);
+  byId.clear();
+  byId.set('#plan-text', null);
+  renderPlanBuilder(root, { seed: [{ machineId: 'ax', exercise: null }] }, () => {});
+  assert.ok(root.innerHTML.includes('<span class="label">Assist</span>'), 'the stepper says Assist');
+  assert.ok(/id="t-weight-0"[^>]*value="27.5"/.test(root.innerHTML), 'seeded from the assisted history');
+  store.saveWorkouts([]);
+}
+
 console.log('workout plans: all assertions passed');

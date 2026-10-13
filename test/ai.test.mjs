@@ -136,6 +136,29 @@ assert.deepEqual(JSON.parse(buildAiExport()).workouts[0].visits, [[4, 0, 600], [
 assert.match(JSON.parse(buildAiExport()).note, /visits are \[num, seconds in, seconds out, busy num\?\]/,
   'the note explains the shape');
 assert.match(DEFAULT_PROMPT, /"visits"[^.]*\[num, seconds in, seconds out\]/, 'the prompt teaches visits too');
+
+// --- assisted machines: the flag and the goal travel, the prompt says what weight means there ---
+{
+  const keepLayout = store.getLayout();
+  const g = store.getLayout();
+  g.machines.push({ id: 'ap', num: 17, label: 'Assisted pull-up', x: 20, y: 0, w: 4, h: 3, settingsFields: [],
+    muscles: ['Lats'], assisted: true, assistGoal: 'strength' }, { id: 'ap2', num: 18, label: 'Assisted dip', x: 26, y: 0,
+    w: 4, h: 3, settingsFields: [], muscles: ['Chest'], assisted: true });
+  store.saveLayout(g);
+  store.saveWorkouts([{ id: 'aw', startedAt: t0, finishedAt: t0 + 60000,
+    entries: [{ machineId: 'ap', num: 17, label: 'Assisted pull-up', assisted: true, settings: {}, sets: [{ reps: 8, weight: 25 }] }] }]);
+  const ex = JSON.parse(buildAiExport());
+  const machine = (n) => ex.gym.machines.find((m) => m.num === n);
+  assert.deepEqual([machine(17).assisted, machine(17).assistGoal], [true, 'strength'], 'the machine carries its flag and goal');
+  assert.equal('assistGoal' in machine(18), false, 'no goal said: none exported');
+  assert.equal('assisted' in machine(1), false, 'a strength machine carries no flag');
+  assert.deepEqual(ex.workouts[0].entries[0], { machine: 'Assisted pull-up', num: 17, assisted: true, sets: [[25, 8]] },
+    'the entry says assisted, its weight is the assist');
+  assert.match(ex.note, /assisted:true entries log the ASSISTANCE/, 'the note says what the weight is');
+  assert.match(DEFAULT_PROMPT, /assisted:true[^;]*ASSISTANCE — less is stronger/, 'and so does the prompt');
+  store.saveWorkouts([]);
+  store.saveLayout(keepLayout);
+}
 // a busy mark naming a machine nobody knows keeps the visit, minus the mark
 store.saveWorkouts([{ id: 'vb', startedAt: t0, finishedAt: t0 + 60000, entries: [],
   visits: [{ machineId: 'm1', in: t0, out: t0 + 30000, busy: 'gone' }] }]);

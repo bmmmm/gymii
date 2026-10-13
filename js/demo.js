@@ -71,6 +71,10 @@ const MACHINES = [
     { bodyweight: true }],
   ['demo-dumbbells', 16, 'Dumbbell rack', 36, 10, 12, 2, [], ['Biceps', 'Shoulders', 'Forearms'],
     { exercises: ['Biceps curls', 'Lateral raises', 'Hammer curls'] }],
+  // a counterweight machine: weight is the ASSIST. LAST, so every machine
+  // above keeps its index (and every value drawn for it)
+  ['demo-assisted-pullup', 17, 'Assisted pull-up', 48, 4, 4, 3, ['Knee pad'], ['Lats', 'Biceps'],
+    { assisted: true }],
 ];
 
 const SHAPES = [
@@ -198,6 +202,12 @@ function pullEntries(layout, rng, weekIdx) {
     entries.push(entryFor(layout, 'demo-rower', null,
       [{ distance: 2000, seconds: 480 + Math.floor(rng() * 120) }]));
   }
+  // the assisted pull-up comes LAST and draws no rng(): every value drawn
+  // above keeps its value, so the pinned demo numbers stay where they were.
+  // The assist drops 2.5 kg every second week — a strength goal, which
+  // History reads from the history (no goal is set on the machine).
+  entries.push(entryFor(layout, 'demo-assisted-pullup', null,
+    Array.from({ length: 3 }, () => ({ reps: 8, weight: 35 - 2.5 * Math.floor(weekIdx / 2) }))));
   return entries;
 }
 

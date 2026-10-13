@@ -85,3 +85,23 @@ test('the picker\'s 🎲 suggests a machine and starts nothing', async ({ page }
   expect(small, 'undersized touch targets on the start screen').toEqual([]);
   expect(tiny, 'fields iOS would zoom into on the start screen').toEqual([]);
 });
+
+// An assisted machine (the demo's #17): the log screen speaks assist, its
+// Goal chips are 44px and a tap says the goal on the machine.
+test('the assisted log screen holds the rules and its goal chips work', async ({ page }) => {
+  await page.setViewportSize(NARROW);
+  await seedDemoGym(page);
+  await startWorkoutAt(page, 17);
+  await expect(page.locator('.next-set .label').first()).toHaveText('Assist');
+  await expect(page.locator('#assist-goal .chip.sel')).toHaveText('Less assist');
+  expect(await page.evaluate(findOverflow), 'the assisted log screen overflows').toBeNull();
+  const { small, tiny } = await page.evaluate(measure);
+  expect(small, 'undersized touch targets on the assisted log screen').toEqual([]);
+  expect(tiny, 'fields iOS would zoom into on the assisted log screen').toEqual([]);
+  await page.locator('#assist-goal .chip[data-goal="endurance"]').click();
+  await expect(page.locator('#assist-goal .chip.sel')).toHaveText('More reps');
+  expect(await page.evaluate(async () => {
+    const store = await import('/js/store.js');
+    return store.getLayout().machines.find((m) => m.num === 17).assistGoal;
+  })).toBe('endurance');
+});

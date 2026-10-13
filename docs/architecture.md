@@ -41,7 +41,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   unit — `setUnit()` converts ALL gyms' data in one shot. Set shapes:
   strength `{reps, weight}`, cardio `{distance, seconds}` (distance in the
   display unit, m/mi via `distUnit()`; seconds unit-less), bodyweight
-  reuses `{reps, weight}` with weight = ADDED weight. Live-logged sets also
+  reuses `{reps, weight}` with weight = ADDED weight, assisted with weight =
+  the ASSIST of a counterweight machine (less is stronger; it counts as no
+  volume anywhere — ui.js `workoutTotals`, stats.js `weeklyBuckets`, the
+  heatmap; `setUnit` converts it like any weight). Live-logged sets also
   carry `at` (epoch ms, stamped at log time) — older sets lack it, and so
   must sets added by editing or back-logging; every consumer must guard.
   Strength and bodyweight sets may also carry `rir` (0..3, 3 = "3 or more";
@@ -71,7 +74,15 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   editing a date would silently break it. Workouts may carry an optional `name`
   (locker-style lifecycle: dropped when emptied; start screen groups
   routines by name when present). Machine type flags
-  `cardio`/`bodyweight` are mutually exclusive and absent for strength;
+  `cardio`/`bodyweight`/`assisted` are mutually exclusive and absent for
+  strength (ui.js `entryKind` turns them into one kind, in that order); an
+  assisted machine may carry `assistGoal` ('strength' = less assist,
+  'endurance' = more reps at the same assist, `ASSIST_GOALS`), said on the
+  log screen and written by `setAssistGoal(machineId, goal|null)` on the
+  layout read in the tap — absent means "not said", and stats.js
+  `assistGoal()` observes it instead. A file whose machine carries a
+  non-boolean `assisted` or an unknown `assistGoal` is refused like a bad
+  `grips`; an entry's non-true `assisted` is dropped;
   optional `machine.exercises: [string]` (deleted when emptied) splits a
   machine into per-exercise entries, and `machine.grips: [string]` (the
   same lifecycle; `COMMON_GRIPS` seeds the editor's chips) into per-grip
@@ -665,7 +676,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   plan instead of gating it. The binding is written back into the stored
   plan via `active.planId` — asked once per exercise, not once per workout.
   `machine.cardio` flips the log screen to
-  distance+time, `machine.bodyweight` to reps + extra weight; type flags
+  distance+time, `machine.bodyweight` to reps + extra weight,
+  `machine.assisted` to "Assist" + reps (sets, target and "Last:" read as a
+  minus: "3 × 8 @ −25 kg"; a Goal card offers "Less assist" / "More reps",
+  marked as read from the history until one is tapped; the chosen chip
+  again unsays it); type flags
   and `exercise` (and `grip`, `newEntry`'s 4th argument) are SNAPSHOTTED onto the entry (like num/label) —
   history/edit/chart/AI read the entry, never the live machine.
   Multi-exercise machines hold one entry per (machineId, exercise);
@@ -782,7 +797,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `settings.historyMetric` ('workouts'|'sets'|'volume'|'minutes', default
   sets); both are device-local — deliberately NOT in merge.js's
   `USER_SETTINGS` — and validated on read (`rangeOf`/`metricOf`: any unknown
-  value falls back to the default), store.js knows nothing of them. Past workouts are fully editable: per-set
+  value falls back to the default), store.js knows nothing of them. An
+  assisted machine's chart plots its least ASSIST ("assist (kg) — lower is
+  stronger", the line titled "Least assist") or, by the Assist/Reps chips
+  under the range, the reps at it — `settings.historyAssistView`, device-local
+  and validated the same way (`assistViewOf`). Past workouts are fully editable: per-set
   values, `+ Set` (copies the previous one, minus its `at` and `rir` — it
   was neither logged live nor rated), `+ Machine` (snapshots num/label/type
   flags like the log screen), remove set or whole machine, date + time and

@@ -400,6 +400,24 @@ assert.deepEqual(Object.keys(cardioEntry),
   ['machineId', 'num', 'label', 'cardio', 'exercise', 'settings', 'sets'],
   'flags before the exercise, settings and sets last (history reads this shape)');
 assert.equal(store.newEntry({ id: 'b1', num: 4, label: 'Pull-up bar', bodyweight: true }).bodyweight, true);
+assert.equal(store.newEntry({ id: 'a1', num: 17, label: 'Assisted pull-up', assisted: true }).assisted, true,
+  'assisted is snapshotted like the other type flags');
+// setAssistGoal: said in a tap, read and written on the stored layout
+{
+  const keep = store.getLayout();
+  const g = store.newLayout('Assist gym');
+  g.machines.push({ id: 'ap', num: 1, label: 'Assisted pull-up', x: 0, y: 0, w: 4, h: 3, settingsFields: [], assisted: true });
+  store.saveLayout(g);
+  store.setAssistGoal('ap', 'endurance');
+  assert.equal(store.getLayout().machines[0].assistGoal, 'endurance', 'the goal is stored on the machine');
+  store.setAssistGoal('ap', 'nonsense');
+  assert.equal('assistGoal' in store.getLayout().machines[0], false, 'anything else unsays it (absent, never junk)');
+  store.setAssistGoal('ap', 'strength');
+  store.setAssistGoal('ap', null);
+  assert.equal('assistGoal' in store.getLayout().machines[0], false, 'null unsays it');
+  store.setAssistGoal('nope', 'strength'); // an unknown machine is a no-op
+  if (keep) store.saveLayout(keep);
+}
 const flagless = store.newEntry({ id: 'x', num: 1, label: 'X', cardio: false, bodyweight: false }, '');
 assert.ok(!('cardio' in flagless) && !('bodyweight' in flagless) && !('exercise' in flagless),
   'false flags and an empty exercise are absent, not falsy');

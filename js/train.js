@@ -3,7 +3,7 @@ import {
   lastEntryFor, lastGripFor, getWorkouts, getPlans, savePlan, planFromText, uid,
   usageByMachine, layoutMuscles, distUnit, newLayout, addMachine, nextNum,
   ensureMachine, addMachineVariant, bindItemTo, machineTrainedWhole, newEntry, nameChipsFor, todayStatus, skipPlanDay, machineBrand,
-  newestStampedSet,
+  newestStampedSet, setAssistGoal,
   switchMachine, rateLastSet,
 } from './store.js';
 import { drawLayout, usagePayload, findMachineByNum } from './map.js';
@@ -14,10 +14,10 @@ import {
   esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural, machineChain,
   minsBetween,
   primeAudio, playTimerSound, keepInView, parseDuration, parseDistance, hintHtml, fieldValue,
-  variantStr,
+  variantStr, entryKind,
 } from './ui.js';
 import { ensurePersisted } from './persist.js';
-import { insights, sameSeries } from './stats.js';
+import { insights, sameSeries, assistGoal, machineSeries } from './stats.js';
 
 // Active workout shape:
 //   { v: 2, id, startedAt, plan: [{machineId, exercise|null, target?}…],
@@ -1381,15 +1381,30 @@ const planTargetFor = (active, machineId, exercise = null, grip = null) => {
   return idx === -1 ? null : active.plan[idx].target ?? null;
 };
 
-// "3 × 10 @ 50 kg" / "3 × 10 @ BW+5 kg" / "1000 m · 10:00" / "20:00"
-// A cardio target may name only one of the two — "Treadmill 20min" sets no
-// distance, and "0 m ·" in front of it is noise, not information.
+// "3 × 10 @ 50 kg" / "3 × 10 @ BW+5 kg" / "3 × 8 @ −20 kg" (assisted) /
+// "1000 m · 10:00" / "20:00". A cardio target may name only one of the
+// two — "Treadmill 20min" sets no distance, and "0 m ·" in front of it is
+// noise, not information.
 const targetStr = (t, type, s) => (type === 'cardio'
   ? [t.distance ? `${t.distance} ${distUnit(s)}` : '',
     t.seconds ? fmtDuration(t.seconds) : ''].filter(Boolean).join(' · ') || '—'
   : type === 'bodyweight'
     ? `${t.sets} × ${t.reps}${t.weight ? ` @ BW+${t.weight} ${s.unit}` : ''}`
-    : `${t.sets} × ${t.reps} @ ${t.weight} ${s.unit}`);
+    : type === 'assisted'
+      ? `${t.sets} × ${t.reps} @ −${t.weight} ${s.unit}`
+      : `${t.sets} × ${t.reps} @ ${t.weight} ${s.unit}`);
+
+// One logged (or about-to-be-logged) set in words, by the entry's type —
+// the set list, the log button and "Next:" on the rest screen. Assisted
+// reads as a minus: the counterweight takes that much off ("unassisted"
+// once it is down to 0).
+const setWords = (st, type, s) => (type === 'cardio'
+  ? `${st.distance} ${distUnit(s)} · ${fmtDuration(st.seconds)}`
+  : type === 'bodyweight'
+    ? (st.weight ? `BW+${st.weight} ${s.unit} × ${st.reps}` : `BW × ${st.reps}`)
+    : type === 'assisted'
+      ? (st.weight ? `−${st.weight} ${s.unit} × ${st.reps}` : `unassisted × ${st.reps}`)
+      : `${st.weight} ${s.unit} × ${st.reps}`);
 
 // --- logging screen ---
 
@@ -1430,11 +1445,11 @@ function resolveEntry(machine, active) {
     machine.settingsFields.forEach((f) => { entry.settings[f] = last?.settings?.[f] ?? ''; });
     active.entries.push(entry);
     saveLog(active);
-  } else if (!entry.sets.length
-    && (!!entry.cardio !== !!machine.cardio || !!entry.bodyweight !== !!machine.bodyweight)) {
+  } else if (!entry.sets.length && entryKind(entry) !== entryKind(machine)) {
     // machine type was toggled in the gym before any set was logged
     if (machine.cardio) entry.cardio = true; else delete entry.cardio;
     if (machine.bodyweight) entry.bodyweight = true; else delete entry.bodyweight;
+    if (machine.assisted) entry.assisted = true; else delete entry.assisted;
     saveLog(active);
   }
   return { exercises, grips, exercise, grip, pickPending, entry, last };
@@ -1469,14 +1484,12 @@ function renderLog(root, layout, active, reveal = null, message = '') {
 
   const s = getSettings();
   // entry flags rule the screen — sets stay homogeneous per entry
-  const type = entry?.cardio ? 'cardio' : entry?.bodyweight ? 'bodyweight' : 'strength';
+  const type = entry ? entryKind(entry) : 'strength';
   const cardio = type === 'cardio';
   const du = distUnit(s);
   // A last entry of another type (flag toggled since) is useless as a
   // set prefill or "Last:" line; machine settings still carry over above.
-  const lastSets = last
-    && !!last.cardio === !!entry?.cardio
-    && !!last.bodyweight === !!entry?.bodyweight ? last : null;
+  const lastSets = last && entryKind(last) === type ? last : null;
   // What to do at THIS machine and exercise (stats.js): the progress
   // hint for exactly this pair — a hint about the machine's other exercise
   // would name the wrong load — and the busy hint on its weekday, from an
@@ -1507,6 +1520,10 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     && slotSetCount(active, currentSlot) === 0);
   const def = pickPending ? null
     : nextSetDefaults(freshBlock ? { ...entry, sets: [] } : entry, lastSets, type, s, target);
+  // At an assisted machine: what you train FOR — said by you (a chip
+  // tap, kept on the machine) or, until you say it, read from your history.
+  const goal = !pickPending && type === 'assisted'
+    ? assistGoal(machine, machineSeries(getWorkouts(), machine.id, exercise, grip), target?.reps ?? null) : null;
   // What this machine rests by default, and what it rests TODAY. A rest
   // changed mid-workout is a fact about this workout ("shoulders are cold
   // today"), not about the machine — it lives on the active workout, dies
@@ -1521,11 +1538,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   const setPos = setGoal && currentSlot
     ? Math.min(slotSetCount(active, currentSlot) + 1, setGoal) : null;
   // the log button always says what one tap will log
-  const setLabel = (d) => (cardio
-    ? `${d.distance} ${du} · ${fmtDuration(d.seconds)}`
-    : type === 'bodyweight'
-      ? (d.weight ? `BW+${d.weight} ${s.unit} × ${d.reps}` : `BW × ${d.reps}`)
-      : `${d.weight} ${s.unit} × ${d.reps}`);
+  const setLabel = (d) => setWords(d, type, s);
   const logLabel = (d) =>
     `✓ Log set${setGoal && !targetDone ? ` ${setPos}/${setGoal}` : ''} — ${setLabel(d)}`;
   const nextSlot = nextOpenSlot(active, layout, machine.id, exercise, grip);
@@ -1585,7 +1598,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
         <div class="muted">${pickPending
     ? 'Pick an exercise below'
     : lastSets
-      ? `Last: ${setsSummary(lastSets.sets, s, !!lastSets.bodyweight)}`
+      ? `Last: ${setsSummary(lastSets.sets, s, entryKind(lastSets))}`
       : `First time on this ${exercise ? 'exercise' : 'machine'}`}</div>
         ${target ? `<div class="muted">Target: ${esc(`${targetStr(target, type, s)}${targetDone
     ? ' · ✓ done' : setGoal ? ` · set ${setPos}/${setGoal}` : ''}`)}</div>` : ''}
@@ -1640,6 +1653,16 @@ function renderLog(root, layout, active, reveal = null, message = '') {
       </div>
     </section>` : ''}
 
+    ${goal ? `
+    <section class="card">
+      <h2>Goal</h2>
+      <div class="chip-select" id="assist-goal">
+        ${[['strength', 'Less assist'], ['endurance', 'More reps']].map(([g, label]) => `<button type="button"
+          class="chip${goal.goal === g ? ' sel' : ''}" data-goal="${g}" aria-pressed="${goal.goal === g}">${label}</button>`).join('')}
+      </div>
+      ${goal.observed ? '<p class="muted">Read from your last workouts — tap one to set it yourself.</p>' : ''}
+    </section>` : ''}
+
     ${pickPending ? '' : `
     ${machine.settingsFields.length ? `
     <section class="card">
@@ -1657,11 +1680,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
         ${entry.sets.map((st, i) => `
           <div class="set-row">
             <span>Set ${i + 1}</span>
-            <span>${esc(cardio
-    ? `${st.distance} ${du} · ${fmtDuration(st.seconds)}`
-    : type === 'bodyweight'
-      ? (st.weight ? `BW+${st.weight} ${s.unit} × ${st.reps}` : `BW × ${st.reps}`)
-      : `${st.weight} ${s.unit} × ${st.reps}`)}</span>
+            <span>${esc(setWords(st, type, s))}</span>
             <button class="x" data-i="${i}" aria-label="Remove set ${i + 1}">✕</button>
           </div>`).join('') || '<p class="muted">No sets logged yet.</p>'}
       </div>
@@ -1673,7 +1692,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
         ${stepperField('Reps', 'set-reps', { step: 1, min: 1, value: def.reps, mode: 'numeric' })}
         ${stepperField('Extra weight', 'set-weight', { step: s.weightStep, min: 0, value: def.weight, kind: 'decimal' })}`
       : `
-        ${stepperField('Weight', 'set-weight', { step: s.weightStep, min: 0, value: def.weight, kind: 'decimal' })}
+        ${stepperField(type === 'assisted' ? 'Assist' : 'Weight', 'set-weight', { step: s.weightStep, min: 0, value: def.weight, kind: 'decimal' })}
         ${stepperField('Reps', 'set-reps', { step: 1, min: 1, value: def.reps, mode: 'numeric' })}`}
         ${stepperField('Rest (s)', 'set-rest', { step: 15, min: 0, value: restSeconds, mode: 'numeric' })}
         <button type="button" id="rest-keep" class="linkish rest-keep"${restSeconds === machineRest()
@@ -1732,6 +1751,16 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     if (!chip) return;
     active.currentGrip = chip.dataset.grip === grip ? null : chip.dataset.grip;
     saveLog(active);
+    renderTrain(root);
+  });
+
+  // The goal is the machine's (one gym, one counterweight); the chosen chip
+  // again unsays it, and the history speaks again.
+  root.querySelector('#assist-goal')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    const said = !goal.observed && goal.goal === chip.dataset.goal;
+    setAssistGoal(machine.id, said ? null : chip.dataset.goal);
     renderTrain(root);
   });
 
@@ -1995,8 +2024,8 @@ export function nextSetDefaults(entry, last, type, s, target = null) {
 
 // Joins ui.js's setStr per set; the weight unit is appended once when any
 // weight was actually moved. HTML-ready, like setStr.
-const setsSummary = (sets, s, bodyweight = false) => {
-  const body = sets.map((st) => setStr(st, s, bodyweight)).join(', ');
+const setsSummary = (sets, s, kind = 'strength') => {
+  const body = sets.map((st) => setStr(st, s, kind)).join(', ');
   const suffix = sets.every((st) => st.distance == null) && sets.some((st) => st.weight)
     ? ` ${esc(s.unit)}` : '';
   return body + suffix;
