@@ -52,12 +52,18 @@ function quantile(sorted, q) {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 
-// machineId -> muscles, for RESISTANCE machines only: a treadmill tagged
-// Calves is not a calf set. Resolved against the live layout, like store's
-// usageByMuscle (entries don't snapshot muscles).
+// machineId -> [[muscle, weight]], for RESISTANCE machines only: a
+// treadmill tagged Calves is not a calf set. A primary muscle
+// (`machine.muscles`) counts a set as 1, a secondary one
+// (`machine.secondaryMuscles`) as ½ — the triceps on a chest press work,
+// but not like on a pushdown. Resolved against the live layout, like
+// store's usageByMuscle (entries don't snapshot muscles).
 const resistanceMuscles = (layout) => new Map((layout?.machines ?? [])
-  .filter((m) => !m.cardio && m.muscles?.length)
-  .map((m) => [m.id, m.muscles]));
+  .filter((m) => !m.cardio && (m.muscles?.length || m.secondaryMuscles?.length))
+  .map((m) => [m.id, [
+    ...(m.muscles ?? []).map((mu) => [mu, 1]),
+    ...(m.secondaryMuscles ?? []).filter((mu) => !(m.muscles ?? []).includes(mu)).map((mu) => [mu, 0.5]),
+  ]]));
 
 // `weeks` Monday starts, oldest first, ending with the week holding `now`,
 // plus the exclusive end of that last week.
@@ -112,8 +118,8 @@ export function weeklyBuckets(workouts, { weeks = 12, now = Date.now(), layout =
       days[i].add(startOfDay(w.startedAt).getTime());
       // an assisted set's weight is the help, not the load: no volume
       if (kindOf(e) !== 'assisted') b.volume += sum(e.sets.map(setVolume));
-      muscles.get(e.machineId)?.forEach((mu) => {
-        b.muscles.set(mu, (b.muscles.get(mu) ?? 0) + e.sets.length);
+      muscles.get(e.machineId)?.forEach(([mu, weight]) => {
+        b.muscles.set(mu, (b.muscles.get(mu) ?? 0) + e.sets.length * weight);
       });
     });
   });
@@ -203,7 +209,7 @@ export function machineSeries(workouts, machineId, exercise = null, grip = null)
 // like store's usageByMuscle).
 export function muscleWeekly(workouts, layout, { weeks = 12, now = Date.now() } = {}) {
   const out = new Map();
-  [...new Set([...resistanceMuscles(layout).values()].flat())]
+  [...new Set([...resistanceMuscles(layout).values()].flat().map(([mu]) => mu))]
     .sort((a, b) => a.localeCompare(b))
     .forEach((mu) => out.set(mu, new Array(weeks).fill(0)));
   weeklyBuckets(workouts, { weeks, now, layout }).forEach((b, i) => {
@@ -505,7 +511,9 @@ function muscleGapRule(ws, layout, now) {
   const last = new Map();
   ws.forEach((w) => w.entries.forEach((e) => {
     if (e.cardio || !e.sets.length) return;
-    muscles.get(e.machineId)?.forEach((mu) => last.set(mu, w.startedAt));
+    // only a PRIMARY muscle was trained: a chest press does not tick off
+    // the triceps for this rule
+    muscles.get(e.machineId)?.forEach(([mu, weight]) => { if (weight === 1) last.set(mu, w.startedAt); });
   }));
   if (ws.filter((w) => daysBetween(w.startedAt, now) < 10).length < 2) return [];
   return [...last].flatMap(([muscle, t]) => {

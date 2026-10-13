@@ -19,7 +19,8 @@ ever sees ciphertext.
   its brand once (a machine only says so when it differs), its full address
   with a link straight to OpenStreetMap, and a list editor that fixes every
   machine's type, brand, model and muscles in one pass without a tap on the plan
-  per machine. Undo/redo included, and typing a machine
+  per machine. A muscle can be secondary too (the triceps on a chest press):
+  it counts as half a set in History. Undo/redo included, and typing a machine
   number lights it up on the plan. One tap away from the Train hub. Optional:
   draw it once your gym is in there and gymii can point you at the next
   machine.

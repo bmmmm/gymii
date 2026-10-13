@@ -885,17 +885,19 @@ function machinePicker(container, layout, onPick, { actionLabel = 'Open', active
   const chips = container.querySelector('.pick-chips');
   const applyMuscleFilter = () => {
     const muscle = muscleSelect?.value || '';
-    const matching = muscle
-      ? layout.machines.filter((m) => (m.muscles || []).includes(muscle))
-      : [];
-    const matchIds = new Set(matching.map((m) => m.id));
+    // the machines that work it as a primary muscle, by number, then the
+    // ones that work it as a secondary (½)
+    const byNum = (a, b) => a.num - b.num;
+    const primary = muscle ? layout.machines.filter((m) => (m.muscles || []).includes(muscle)).sort(byNum) : [];
+    const secondary = muscle ? layout.machines.filter((m) => !(m.muscles || []).includes(muscle)
+      && (m.secondaryMuscles || []).includes(muscle)).sort(byNum) : [];
+    const matchIds = new Set([...primary, ...secondary].map((m) => m.id));
     svg.querySelectorAll('.machine').forEach((g) => {
       g.style.opacity = !muscle || matchIds.has(g.dataset.id) ? '' : '0.22';
     });
     if (chips) {
-      chips.innerHTML = matching
-        .sort((a, b) => a.num - b.num)
-        .map((m) => `<button class="chip" data-id="${esc(m.id)}">#${esc(m.num)} ${esc(m.label)}</button>`)
+      chips.innerHTML = [...primary.map((m) => [m, '']), ...secondary.map((m) => [m, ' ½'])]
+        .map(([m, half]) => `<button class="chip" data-id="${esc(m.id)}">#${esc(m.num)} ${esc(m.label)}${half}</button>`)
         .join('');
     }
   };
@@ -1028,6 +1030,10 @@ function renderOverview(root, layout, active, message = '') {
   // tapping one drives the picker's muscle filter below.
   const allMuscles = layoutMuscles(layout);
   const trained = trainedMuscles(active, layout);
+  // worked only as a SECONDARY muscle so far today: half-done, drawn dashed
+  const touched = new Set(active.entries.filter((e) => e.sets.length)
+    .flatMap((e) => layout.machines.find((m) => m.id === e.machineId)?.secondaryMuscles ?? [])
+    .filter((mu) => !trained.has(mu)));
 
   // Name suggestions: what was actually trained (one id per logged set,
   // so the dominant region wins) plus the names already in use. Offered as
@@ -1101,7 +1107,8 @@ function renderOverview(root, layout, active, message = '') {
       <h2>Muscles today</h2>
       <div class="chip-select" id="muscle-coverage">
         ${allMuscles.map((m) => `<button type="button" class="chip${trained.has(m)
-    ? ' sel done' : ''}" data-muscle="${esc(m)}">${esc(m)}</button>`).join('')}
+    ? ' sel done' : touched.has(m) ? ' secondary' : ''}" data-muscle="${esc(m)}">${esc(m)}${
+    touched.has(m) ? ' ½' : ''}</button>`).join('')}
       </div>
       <p class="muted">Tap an open muscle to find a machine for it below.</p>
     </section>` : ''}
@@ -1603,7 +1610,10 @@ function renderLog(root, layout, active, reveal = null, message = '') {
       : `First time on this ${exercise ? 'exercise' : 'machine'}`}</div>
         ${target ? `<div class="muted">Target: ${esc(`${targetStr(target, type, s)}${targetDone
     ? ' · ✓ done' : setGoal ? ` · set ${setPos}/${setGoal}` : ''}`)}</div>` : ''}
-        ${machine.muscles?.length ? `<div class="muted">${machine.muscles.map(esc).join(' · ')}</div>` : ''}
+        ${machine.muscles?.length || machine.secondaryMuscles?.length ? `<div class="muted">${[
+    ...(machine.muscles ?? []).map(esc),
+    ...(machine.secondaryMuscles ?? []).filter((mu) => !(machine.muscles ?? []).includes(mu)).map((mu) => `${esc(mu)} ½`),
+  ].join(' · ')}</div>` : ''}
         ${machineBrand(layout, machine) || machine.model
     ? `<div class="muted">${[machineBrand(layout, machine), machine.model].filter(Boolean).map(esc).join(' · ')}</div>`
     : ''}

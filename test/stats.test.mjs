@@ -652,4 +652,27 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   assert.equal(stats.assistGoalAt(reps12, LA(), [], { machineId: 'ma' }).goal, 'endurance', 'without it, 12 reps do');
 }
 
+// --- secondary muscles: half a set each, and never "trained" for the gap rule ---
+{
+  const PM = (id, num, muscles, secondaryMuscles) => M(id, num, `M${num}`, 2 + num * 6, 2, muscles,
+    secondaryMuscles ? { secondaryMuscles } : {});
+  const L2 = { ...LAYOUT, machines: [PM('p1', 1, ['Chest'], ['Triceps']), PM('p2', 2, ['Triceps'])] };
+  const wk = stats.weeklyBuckets([W(day(0), [E('p1', sets(4))])], { weeks: 1, now: NOW, layout: L2 });
+  assert.deepEqual([wk[0].muscles.get('Chest'), wk[0].muscles.get('Triceps')], [4, 2],
+    'four chest-press sets: 4 for the chest, 2 for the triceps');
+  assert.ok(stats.muscleWeekly([], L2, { weeks: 1, now: NOW }).has('Triceps'), 'a secondary muscle is listed');
+  // the gap rule: a chest press yesterday does not count as triceps training
+  const gap = [W(day(12), [E('p2', sets(3))]), W(day(3), [E('p1', sets(3))]), W(day(1), [E('p1', sets(3))])];
+  const g = find(gap, 'muscle-gap', { layout: L2 });
+  assert.equal(g?.muscle, 'Triceps', 'the triceps was last trained (as PRIMARY) 12 days ago');
+  assert.equal(g?.text, 'Train it this week — last trained 12 days ago.');
+  // the volume rule at its threshold: X only ever secondary
+  const L5 = { ...LAYOUT, machines: [PM('a', 1, ['A']), PM('b', 2, ['B']), PM('c', 3, ['C']), PM('d', 4, ['D']), PM('f', 5, [], ['X'])] };
+  const weeks = (fSets) => [9, 16, 23, 30].map((n) => W(day(n),
+    [E('a', sets(4)), E('b', sets(4)), E('c', sets(4)), E('d', sets(4)), E('f', sets(fSets))]));
+  assert.equal(find(weeks(3), 'muscle-volume', { layout: L5 })?.text,
+    'Add a set or two — 1.5 sets/week, your median muscle gets 4.', 'three secondary sets a week are 1.5: under half of 4');
+  assert.equal(find(weeks(4), 'muscle-volume', { layout: L5 }), undefined, 'four are 2: exactly half, quiet');
+}
+
 console.log('stats.test.mjs: all passed');

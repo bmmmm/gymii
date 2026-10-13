@@ -2062,4 +2062,29 @@ const withPicker = (fn) => {
   store.saveLayout(before);
 }
 
+// --- Muscles today: a muscle worked only as a secondary one is half done ---
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Secondary train gym');
+  g.machines.push({ id: 'cp', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
+    muscles: ['Chest'], secondaryMuscles: ['Triceps'] },
+  { id: 'pd', num: 2, label: 'Pushdown', x: 6, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Triceps'] });
+  store.saveLayout(g);
+  store.saveActive({ v: 2, id: 'w-sec', startedAt: Date.now(), plan: [{ machineId: 'cp', exercise: null }],
+    currentMachineId: null, currentExercise: null,
+    entries: [{ machineId: 'cp', num: 1, label: 'Chest press', settings: {}, sets: [{ reps: 10, weight: 40 }] }] });
+  byId.clear();
+  withPicker(() => renderTrain(root));
+  const cov = root.innerHTML.match(/id="muscle-coverage"[\s\S]*?<\/div>/)[0];
+  assert.ok(/class="chip sel done" data-muscle="Chest">Chest</.test(cov), 'the chest is done');
+  assert.ok(/class="chip secondary" data-muscle="Triceps">Triceps ½</.test(cov), 'the triceps only half: dashed, ½');
+  store.saveActive({ v: 2, id: 'w-sec2', startedAt: Date.now(), plan: [{ machineId: 'cp', exercise: null }],
+    currentMachineId: 'cp', currentExercise: null, entries: [] });
+  byId.clear();
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('<div class="muted">Chest · Triceps ½</div>'), 'the log head names both, the secondary with ½');
+  store.clearActive();
+  store.saveLayout(before);
+}
+
 console.log('train plan construction: all assertions passed');

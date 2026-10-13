@@ -59,7 +59,14 @@ question back to back.
 
 All "days" are whole calendar days between local midnights. "Strength"
 means non-cardio entries; muscles come from resistance machines only (a
-treadmill tagged Calves is not a calf set).
+treadmill tagged Calves is not a calf set). A machine's PRIMARY muscles
+(`muscles`) count each set as 1, its SECONDARY ones (`secondaryMuscles`) as
+½ in the weekly sets (rule 4, `muscleWeekly`, `weeklyBuckets`); for rule 3
+only a primary muscle counts as "trained" — a chest press does not tick off
+the triceps. Measured on the demo gym with each machine's first muscle
+primary and the rest secondary: the median muscle drops from 5.6 to 3.5
+sets/week (Triceps 4.75 → 2.38, Biceps 14 → 9.38), the volume hint still
+names "Full body" (1.5).
 
 | # | kind | fires when | magnitude | text | source |
 |---|---|---|---|---|---|

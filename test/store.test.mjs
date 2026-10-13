@@ -455,9 +455,18 @@ const mWorkouts = [
 const usage = store.usageByMuscle(mWorkouts, mGym);
 assert.equal(usage.get('Quads').sets, 3, 'both leg-press entries counted');
 assert.equal(usage.get('Glutes').sets, 3, 'second muscle gets the FULL count, not half');
-assert.deepEqual(usage.get('Quads'), { sets: 3, workouts: 2 });
-assert.deepEqual(usage.get('Lats'), { sets: 1, workouts: 1 });
+assert.deepEqual(usage.get('Quads'), { sets: 3, secondary: 0, workouts: 2 });
+assert.deepEqual(usage.get('Lats'), { sets: 1, secondary: 0, workouts: 1 });
 assert.ok(!usage.has(undefined) && usage.size === 3, 'untagged and deleted machines attribute nothing');
+// a SECONDARY muscle is counted apart (worth half in stats.js), and still filters
+{
+  const g2 = { ...mGym, machines: mGym.machines.map((m) => (m.id === 'm2' ? { ...m, secondaryMuscles: ['Biceps', 'Lats'] } : m)) };
+  const u2 = store.usageByMuscle(mWorkouts, g2);
+  assert.deepEqual(u2.get('Biceps'), { sets: 0, secondary: 1, workouts: 1 }, 'the pulldown\'s set counts for the biceps as secondary');
+  assert.deepEqual(u2.get('Lats'), { sets: 1, secondary: 0, workouts: 1 }, 'a muscle that is primary too is primary only');
+  assert.deepEqual(store.workoutsWithMuscle(mWorkouts, g2, 'Biceps').map((w) => w.id), ['mw2'], 'the filter finds it');
+  assert.deepEqual(store.layoutMuscles(g2).includes('Biceps'), true, 'and the layout lists it');
+}
 assert.equal(store.usageByMuscle([], mGym).size, 0);
 assert.equal(store.usageByMuscle(mWorkouts, null).size, 0, 'no layout, no muscles');
 

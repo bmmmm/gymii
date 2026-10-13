@@ -318,6 +318,9 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-col
 .mrow-muscles { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .mrow-muscles select { flex: 1 1 140px; width: auto; }
 .chip.sel { background: var(--accent-dim); border-color: var(--accent); color: #dff5e9; }
+/* a SECONDARY muscle (half a set): the accent outline, dashed, no fill —
+   the "½" in the label says it without the colour */
+.chip.secondary { border-style: dashed; border-color: var(--accent); }
 
 /* quick-switch: swing back to a recently trained other station */
 .quick-switch { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }

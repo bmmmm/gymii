@@ -861,4 +861,21 @@ mem.set(layoutKey, savedLayout);
   store.saveWorkouts([]);
 }
 
+// --- the Muscles card: a secondary share is said apart and worth half the bar ---
+{
+  const g = store.newLayout('Secondary history gym');
+  g.machines.push({ id: 'cp', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
+    muscles: ['Chest'], secondaryMuscles: ['Triceps'] });
+  store.saveLayout(g);
+  const t = Date.now();
+  store.saveWorkouts([{ id: 'sh1', startedAt: t - 864e5, finishedAt: t - 864e5 + 3600e3,
+    entries: [{ machineId: 'cp', num: 1, label: 'Chest press', settings: {}, sets: [{ reps: 10, weight: 40 }, { reps: 10, weight: 40 }] }] }]);
+  enter();
+  const row = (mu) => root.innerHTML.slice(root.innerHTML.indexOf(`data-muscle="${mu}"`)).split('</button>')[0];
+  assert.ok(row('Chest').includes('2 sets · 1 workout') && row('Chest').includes('width:100%'), 'the chest: two sets, the full bar');
+  assert.ok(row('Triceps').includes('0 sets + 2 secondary · 1 workout') && row('Triceps').includes('width:50%'),
+    'the triceps: two secondary sets, half the bar');
+  store.saveWorkouts([]);
+}
+
 console.log('history: all assertions passed');

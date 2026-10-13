@@ -1104,7 +1104,8 @@ export function setUnit(unit) {
 
 // Sorted list of every muscle assigned across the layout's machines — feeds
 // the picker's filter, the overview's coverage chips and the plan builder.
-export const layoutMuscles = (layout) => [...new Set(layout.machines.flatMap((m) => m.muscles || []))]
+export const layoutMuscles = (layout) => [...new Set(layout.machines
+  .flatMap((m) => [...(m.muscles || []), ...(m.secondaryMuscles || [])]))]
   .sort((a, b) => a.localeCompare(b));
 
 // --- naming a workout ---
@@ -1190,24 +1191,34 @@ export function usageByMachine() {
 // Muscles live on the MACHINE, never on the entry, so history resolves
 // them against the layout as it is today — a deleted or untagged machine
 // simply contributes to no muscle.
-const muscleIndex = (layout) => new Map((layout?.machines ?? []).map((m) => [m.id, m.muscles ?? []]));
+// machineId -> { primary, secondary } muscle lists (a muscle in both is primary)
+const muscleIndex = (layout) => new Map((layout?.machines ?? []).map((m) => [m.id, {
+  primary: m.muscles ?? [],
+  secondary: (m.secondaryMuscles ?? []).filter((mu) => !(m.muscles ?? []).includes(mu)),
+}]));
 
 // Sets per muscle over `workouts` (the caller passes its filtered list).
 // A set on a two-muscle machine counts fully for BOTH: this answers "how
 // many sets worked this muscle", not "what should this workout be called"
 // — suggestWorkoutNames splits 1/n because naming is a vote, usage isn't.
 // → Map<muscle, {sets, workouts}>
+// `secondary` counts the sets where the muscle was only SECONDARY (a chest
+// press for the triceps) — shown apart, and worth half in stats.js.
 export function usageByMuscle(workouts, layout) {
   const muscles = muscleIndex(layout);
   const usage = new Map();
   workouts.forEach((w) => {
     const seen = new Set(); // count each workout once per muscle
-    w.entries.forEach((e) => muscles.get(e.machineId)?.forEach((mu) => {
-      const u = usage.get(mu) ?? { sets: 0, workouts: 0 };
-      u.sets += e.sets.length;
-      if (!seen.has(mu)) { u.workouts += 1; seen.add(mu); }
-      usage.set(mu, u);
-    }));
+    w.entries.forEach((e) => {
+      const m = muscles.get(e.machineId);
+      if (!m) return;
+      [[m.primary, 'sets'], [m.secondary, 'secondary']].forEach(([list, key]) => list.forEach((mu) => {
+        const u = usage.get(mu) ?? { sets: 0, secondary: 0, workouts: 0 };
+        u[key] += e.sets.length;
+        if (!seen.has(mu)) { u.workouts += 1; seen.add(mu); }
+        usage.set(mu, u);
+      }));
+    });
   });
   return usage;
 }
@@ -1217,8 +1228,10 @@ export function usageByMuscle(workouts, layout) {
 // the machines that didn't match.
 export function workoutsWithMuscle(workouts, layout, muscle) {
   const muscles = muscleIndex(layout);
-  return workouts.filter((w) =>
-    w.entries.some((e) => muscles.get(e.machineId)?.includes(muscle)));
+  return workouts.filter((w) => w.entries.some((e) => {
+    const m = muscles.get(e.machineId);
+    return m && (m.primary.includes(muscle) || m.secondary.includes(muscle));
+  }));
 }
 
 // The stamp is the USER settings' clock (merge.js USER_SETTINGS) — the one
@@ -1371,6 +1384,8 @@ const isValidMachine = (m) => !!m && isSafeId(m.id) && Number.isFinite(m.num)
     || (Array.isArray(m.exercises) && m.exercises.every((x) => typeof x === 'string')))
   && (m.grips === undefined
     || (Array.isArray(m.grips) && m.grips.every((x) => typeof x === 'string')))
+  && (m.secondaryMuscles === undefined
+    || (Array.isArray(m.secondaryMuscles) && m.secondaryMuscles.every((x) => typeof x === 'string')))
   && (m.assisted === undefined || typeof m.assisted === 'boolean')
   && (m.assistGoal === undefined || ASSIST_GOALS.includes(m.assistGoal));
 const isValidShape = (s) => !!s && isSafeId(s.id) && isPlaced(s) && isColor(s.color);

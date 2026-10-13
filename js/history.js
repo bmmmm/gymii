@@ -222,13 +222,17 @@ const muscleCard = {
   html({ allMuscles, byName, layout, hints }) {
     if (!allMuscles.length) return '';
     const usage = usageByMuscle(byName, layout);
+    // a secondary set is worth half (stats.js does the same): the bar and
+    // the order follow that weight, the line says the secondary share apart
+    const weighted = (r) => r.sets + r.secondary / 2;
     const rows = allMuscles
-      .map((mu) => ({ mu, ...(usage.get(mu) ?? { sets: 0, workouts: 0 }) }))
-      .sort((a, b) => b.sets - a.sets || a.mu.localeCompare(b.mu));
-    const max = rows[0]?.sets || 1;
+      .map((mu) => ({ mu, ...(usage.get(mu) ?? { sets: 0, secondary: 0, workouts: 0 }) }))
+      .sort((a, b) => weighted(b) - weighted(a) || a.mu.localeCompare(b.mu));
+    const max = (rows[0] && weighted(rows[0])) || 1;
     // sets whose machine is gone or untagged — count them, or the card
     // silently disagrees with the workout list's totals
-    const tagged = new Set(layout.machines.filter((m) => m.muscles?.length).map((m) => m.id));
+    const tagged = new Set(layout.machines.filter((m) => m.muscles?.length || m.secondaryMuscles?.length)
+      .map((m) => m.id));
     const lost = byName.reduce((n, w) => n + w.entries.reduce(
       (k, e) => k + (tagged.has(e.machineId) ? 0 : e.sets.length), 0), 0);
     return `
@@ -241,10 +245,11 @@ const muscleCard = {
         <button type="button" class="muscle-row${muscleFilter === r.mu ? ' sel' : ''}"
           data-muscle="${esc(r.mu)}" aria-pressed="${muscleFilter === r.mu}">
           <span class="spread"><span>${esc(r.mu)}</span>
-            <span class="m-count">${plural(r.sets, 'set')}${r.workouts
+            <span class="m-count">${plural(r.sets, 'set')}${r.secondary
+              ? ` + ${r.secondary} secondary` : ''}${r.workouts
               ? ` · ${plural(r.workouts, 'workout')}` : ''}</span></span>
           <span class="bar-track"><span class="bar-fill"
-            style="width:${Math.round((r.sets / max) * 100)}%"></span></span>
+            style="width:${Math.round((weighted(r) / max) * 100)}%"></span></span>
         </button>${hints.filter((it) => it.muscle === r.mu).map((it) => hintHtml(it, 'muscle-hint')).join('')}`).join('')}
       </div>
       ${lost ? `<p class="muted">${plural(lost, 'set')} can't be attributed —

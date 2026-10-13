@@ -84,7 +84,13 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   non-boolean `assisted` or an unknown `assistGoal` is refused like a bad
   `grips`; an entry's non-true `assisted` is dropped;
   optional `machine.exercises: [string]` (deleted when emptied) splits a
-  machine into per-exercise entries, and `machine.grips: [string]` (the
+  machine into per-exercise entries, `machine.secondaryMuscles: [string]`
+  (the same lifecycle — absent when empty; older clients ignore it) holds
+  the muscles a machine works LESS than its `muscles` (half a set in
+  stats.js, "+ N secondary" on History's Muscles card, "½" on Train's
+  coverage chips and log head, listed after the primary machines in the
+  picker's muscle filter; the editors cycle a chip off → primary →
+  secondary → off), and `machine.grips: [string]` (the
   same lifecycle; `COMMON_GRIPS` seeds the editor's chips) into per-grip
   ones — a rope and a V-bar carry different loads, so a grip is part of
   what was lifted. A SERIES is the triple (machineId, exercise, grip):

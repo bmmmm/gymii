@@ -62,6 +62,8 @@ assert.equal(store.importData(template(layoutOf())), 'gym-template', 'a clean te
   ['machine grips (no array)', (l) => { l.machines[0].grips = X; }],
   ['machine grips (no strings)', (l) => { l.machines[0].grips = [1]; }],
   ['machine assisted (no boolean)', (l) => { l.machines[0].assisted = X; }],
+  ['machine secondaryMuscles (no array)', (l) => { l.machines[0].secondaryMuscles = X; }],
+  ['machine secondaryMuscles (no strings)', (l) => { l.machines[0].secondaryMuscles = [{}]; }],
   ['machine assistGoal (unknown)', (l) => { l.machines[0].assistGoal = X; }],
   ['shape id', (l) => { l.shapes[0].id += X; }],
   ['shape color', (l) => { l.shapes[0].color = `red${X}`; }],
@@ -120,6 +122,9 @@ store.importData(backup({ workouts: [workoutOf()] }));
   l.machines[0].assisted = true;
   l.machines[0].assistGoal = 'endurance';
   assert.equal(store.importData(template(l)), 'gym-template', 'an assisted machine with a known goal imports');
+  l.machines[0].secondaryMuscles = ['Biceps'];
+  assert.equal(store.importData(template(l)), 'gym-template', 'string secondary muscles import');
+  assert.deepEqual(store.getLayout().machines[0].secondaryMuscles, ['Biceps'], 'and travel with the template');
 }
 {
   const w = workoutOf();

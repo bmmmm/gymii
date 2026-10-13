@@ -568,6 +568,28 @@ export function renderGym(root) {
   // logic tests' Node, where the selector is never resolved anyway
   const cssId = (id) => (typeof CSS === 'undefined' ? id : CSS.escape(id));
   const machineType = (m) => (m.cardio ? 'cardio' : m.bodyweight ? 'bodyweight' : m.assisted ? 'assisted' : '');
+  // A muscle tap cycles off → primary → secondary → off. Primary muscles
+  // live in `muscles` (the list everything has always read), secondary ones
+  // in `secondaryMuscles` — worth half a set in History, absent when empty
+  // (exercises' lifecycle), so older clients just ignore them.
+  const cycleMuscle = (m, mu) => {
+    const primary = m.muscles ?? [];
+    const secondary = m.secondaryMuscles ?? [];
+    if (primary.includes(mu)) {
+      m.muscles = primary.filter((x) => x !== mu);
+      m.secondaryMuscles = [...secondary, mu];
+    } else if (secondary.includes(mu)) {
+      m.secondaryMuscles = secondary.filter((x) => x !== mu);
+    } else {
+      m.muscles = [...primary, mu];
+    }
+    if (!m.secondaryMuscles?.length) delete m.secondaryMuscles;
+  };
+  // chip state for a muscle: ' sel' primary, ' secondary' (dashed) secondary
+  const muscleClass = (m, mu) => ((m.muscles ?? []).includes(mu) ? ' sel'
+    : (m.secondaryMuscles ?? []).includes(mu) ? ' secondary' : '');
+  const musclePressed = (m, mu) => ((m.muscles ?? []).includes(mu) ? 'true'
+    : (m.secondaryMuscles ?? []).includes(mu) ? 'mixed' : 'false');
   // the type flags are mutually exclusive; absent = strength, and a flag is
   // deleted (never set false) to keep exports clean
   const TYPE_FLAGS = ['cardio', 'bodyweight', 'assisted'];
@@ -592,7 +614,8 @@ export function renderGym(root) {
     const brands = [...new Set([...MACHINE_BRANDS, ...layout.machines.map((m) => m.brand)])]
       .filter((b) => b && b !== gymBrand);
     const rows = [...layout.machines].sort((a, b) => a.num - b.num).map((m) => {
-      const muscles = m.muscles || [];
+      // primary chips first, then secondary — one row, tap to cycle
+      const muscles = [...(m.muscles || []), ...(m.secondaryMuscles || []).filter((mu) => !(m.muscles || []).includes(mu))];
       const own = ownBrand(layout, m);
       const other = otherText.get(m.id);
       const groups = MUSCLE_REGIONS
@@ -623,8 +646,10 @@ export function renderGym(root) {
         <input id="ml-model-${esc(m.id)}" class="mrow-model" type="text" data-field="model"
           value="${esc(m.model || '')}" placeholder="Model (optional)" aria-label="Model">
         <div class="mrow-muscles">
-          ${muscles.map((mu) => `<button type="button" class="chip sm sel" data-muscle="${esc(mu)}"
-            aria-label="Remove ${esc(mu)}">${esc(mu)} ✕</button>`).join('')}
+          ${muscles.map((mu) => `<button type="button" class="chip sm${muscleClass(m, mu)}" data-muscle="${esc(mu)}"
+            aria-pressed="${musclePressed(m, mu)}" aria-label="${esc(mu)}: ${(m.muscles || []).includes(mu)
+    ? 'primary — tap for secondary' : 'secondary — tap to remove'}">${esc(mu)}${
+    (m.muscles || []).includes(mu) ? '' : ' ½'} ✕</button>`).join('')}
           <select id="ml-muscle-${esc(m.id)}" data-field="muscle" aria-label="Add muscle">
             ${option('', '+ Muscle', true)}
             ${groups.map((r) => `<optgroup label="${esc(r.label)}">${
@@ -717,6 +742,9 @@ export function renderGym(root) {
           if (!v) return;
           const focused = hadFocus(e.target);
           m.muscles = [...(m.muscles || []), v];
+          // added as primary: it is no secondary any more
+          if (m.secondaryMuscles) m.secondaryMuscles = m.secondaryMuscles.filter((x) => x !== v);
+          if (!m.secondaryMuscles?.length) delete m.secondaryMuscles;
           save();
           renderProps();
           // the chip row above the select grew — keep the select under the
@@ -745,15 +773,19 @@ export function renderGym(root) {
       if (chip) {
         const m = rowMachine(chip);
         if (!m) return;
-        const at = (m.muscles || []).indexOf(chip.dataset.muscle);
+        const mu = chip.dataset.muscle;
+        const rowOrder = () => [...(m.muscles || []), ...(m.secondaryMuscles || []).filter((x) => !(m.muscles || []).includes(x))];
         const focused = hadFocus(chip);
-        m.muscles = (m.muscles || []).filter((x) => x !== chip.dataset.muscle);
+        const was = rowOrder().indexOf(mu);
+        cycleMuscle(m, mu); // primary → secondary → gone
+        const now = rowOrder().indexOf(mu);
         save();
         renderProps();
-        // a focused chip hands its focus to the chip that moved into its
-        // place, else to the select of the same row — never to <body>
+        // a focused chip keeps the focus on its muscle while it is still on
+        // the row (now secondary), else hands it to the chip that moved into
+        // its place, else to the select of the same row — never to <body>
         const next = focused ? props.querySelector(`.mrow[data-id="${cssId(m.id)}"]`)
-          ?.querySelectorAll('.chip[data-muscle]')[at] : null;
+          ?.querySelectorAll('.chip[data-muscle]')[now === -1 ? was : now] : null;
         keepInView(props, `#ml-muscle-${cssId(m.id)}`, { focus: focused && !next });
         next?.focus?.({ preventScroll: true });
         return;
@@ -981,7 +1013,8 @@ export function renderGym(root) {
       const muscles = item.muscles || [];
       // one chip row per body region; muscles typed in elsewhere (an
       // imported template's own vocabulary) keep a row of their own
-      const custom = muscles.filter((m) => !MUSCLE_GROUPS.includes(m));
+      const custom = [...new Set([...muscles, ...(item.secondaryMuscles || [])])]
+        .filter((m) => !MUSCLE_GROUPS.includes(m));
       const muscleGroups = [...MUSCLE_REGIONS, ...(custom.length ? [{ label: 'Other', muscles: custom }] : [])];
       const settingsOptions = [...new Set([...COMMON_SETTINGS, ...item.settingsFields])];
       const gripOptions = [...new Set([...COMMON_GRIPS, ...(item.grips ?? [])])];
@@ -999,6 +1032,10 @@ export function renderGym(root) {
       const chipRow = (options, selected) => options.map((o) =>
         `<button type="button" class="chip${selected.includes(o) ? ' sel' : ''}"
           data-value="${esc(o)}">${esc(o)}</button>`).join('');
+      // muscles: three states — see cycleMuscle; ½ marks a secondary one
+      const muscleChips = (options) => options.map((o) =>
+        `<button type="button" class="chip${muscleClass(item, o)}" aria-pressed="${musclePressed(item, o)}"
+          data-value="${esc(o)}">${esc(o)}${muscleClass(item, o) === ' secondary' ? ' ½' : ''}</button>`).join('');
 
       props.innerHTML = `
         <section class="card">
@@ -1041,11 +1078,11 @@ export function renderGym(root) {
           <div class="field-block"><span>Color on the plan</span>
             <div id="m-color">${colorRow(item.color)}</div>
           </div>
-          <div class="field-block"><span>Muscles — tap to toggle</span>
+          <div class="field-block"><span>Muscles — tap: primary, again: secondary (½), again: off</span>
             <div id="m-muscles">
               ${muscleGroups.map((g) => `<div class="chip-group">
                 <span class="chip-group-label">${esc(g.label)}</span>
-                <div class="chip-select">${chipRow(g.muscles, muscles)}</div>
+                <div class="chip-select">${muscleChips(g.muscles)}</div>
               </div>`).join('')}
             </div>
           </div>
@@ -1177,7 +1214,7 @@ export function renderGym(root) {
       props.querySelector('#m-muscles').addEventListener('click', (e) => {
         const chip = e.target.closest('.chip');
         if (!chip) return;
-        item.muscles = toggleIn(muscles, chip.dataset.value);
+        cycleMuscle(item, chip.dataset.value);
         save();
         renderProps();
       });

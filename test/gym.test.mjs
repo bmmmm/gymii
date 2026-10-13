@@ -466,9 +466,11 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   assert.deepEqual(machineAt('m1').muscles, ['Chest', 'Lats'], 'the muscle dropdown adds one');
   assert.ok(props.innerHTML.includes('data-muscle="Lats"'), 'and the row re-renders with its chip');
   assert.deepEqual(focused.splice(0), ['select'], 'the re-rendered row\'s select keeps the focus, not <body>');
-  // the chips the re-rendered row holds after a removal: the next one moves into the removed one's place
+  // a chip tap CYCLES its muscle: primary → secondary (½, after the primary
+  // chips) → removed; a focused chip keeps the focus on its muscle while it
+  // is on the row, else hands it to the chip in its place, else the select
   const chipEl = (name) => ({ focus: (o) => focused.push([name, o]) });
-  let rowChips = [chipEl('Chest'), chipEl('Traps')];
+  let rowChips = [];
   props.querySelector('.mrow[data-id="m1"]').querySelectorAll = (sel) => (sel === '.chip[data-muscle]' ? rowChips : []);
   const tapChip = (muscle, { keyboard = true } = {}) => {
     const chip = { dataset: { muscle }, closest: (sel) => (sel === '.mrow' ? row('m1') : null) };
@@ -477,15 +479,27 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   };
   change('m1', 'muscle', 'Traps'); // Chest, Lats, Traps
   focused.length = 0;
-  tapChip('Lats'); // the middle one: Traps moves into its place (index 1)
-  assert.deepEqual(machineAt('m1').muscles, ['Chest', 'Traps'], 'tapping a chip removes that muscle');
-  assert.deepEqual(focused.splice(0), [['Traps', { preventScroll: true }]], 'the focus moves to the chip that took its place');
-  rowChips = [chipEl('Chest')];
-  tapChip('Traps'); // the last one: nothing moves into index 1
+  rowChips = ['Chest', 'Traps', 'Lats'].map(chipEl); // the row after the tap
+  tapChip('Lats');
+  assert.deepEqual([machineAt('m1').muscles, machineAt('m1').secondaryMuscles], [['Chest', 'Traps'], ['Lats']],
+    'a primary muscle tapped turns secondary');
+  assert.ok(/class="chip sm secondary" data-muscle="Lats"\s+aria-pressed="mixed"/.test(props.innerHTML)
+    && props.innerHTML.includes('Lats ½ ✕'), 'and reads as one: dashed, ½, aria-pressed mixed');
+  assert.deepEqual(focused.splice(0), [['Lats', { preventScroll: true }]], 'the focus stays on its muscle, now at the end');
+  rowChips = ['Chest', 'Traps'].map(chipEl);
+  tapChip('Lats'); // secondary → gone; nothing moves into index 2
+  assert.equal('secondaryMuscles' in machineAt('m1'), false, 'a secondary muscle tapped is removed — the list goes when empty');
   assert.deepEqual(focused.splice(0), ['select'], 'no chip in its place: the row\'s select takes it');
+  rowChips = ['Traps', 'Chest'].map(chipEl);
+  tapChip('Chest'); // primary → secondary: Chest moves behind Traps
+  assert.deepEqual(focused.splice(0), [['Chest', { preventScroll: true }]], 'the focus follows the muscle to its new place');
+  rowChips = ['Traps'].map(chipEl);
+  tapChip('Chest'); // secondary at index 1 → gone: nothing at index 1
+  assert.deepEqual(focused.splice(0), ['select']);
   rowChips = [];
-  tapChip('Chest', { keyboard: false });
-  assert.deepEqual(machineAt('m1').muscles, [], 'a tap removes it all the same');
+  tapChip('Traps', { keyboard: false });
+  tapChip('Traps', { keyboard: false });
+  assert.deepEqual([machineAt('m1').muscles, 'secondaryMuscles' in machineAt('m1')], [[], false], 'taps cycle it all the same');
   assert.deepEqual(focused.splice(0), [], 'but a tap that never focused the chip moves no focus');
   const tapAdd = { closest: (sel) => (sel === '.mrow' ? row('m1') : null), dataset: { field: 'muscle' }, value: 'Chest' };
   globalThis.document = { activeElement: {} };
@@ -568,6 +582,17 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   assert.deepEqual([machineAt('m1').assisted, 'bodyweight' in machineAt('m1')], [true, false], 'Assisted replaces Bodyweight');
   last(props.querySelector('#m-assisted'), 'click')();
   assert.equal('assisted' in machineAt('m1'), false, 'the selected chip again: strength');
+
+  // the card's muscle chips cycle too: primary → secondary (½) → off
+  const muscleTap = (value) => last(props.querySelector('#m-muscles'), 'click')(chipTap(value));
+  muscleTap('Chest');
+  assert.deepEqual([machineAt('m1').muscles, machineAt('m1').secondaryMuscles], [['Serratus'], ['Chest']], 'primary → secondary');
+  assert.ok(/class="chip secondary" aria-pressed="mixed"\s+data-value="Chest">Chest ½</.test(props.innerHTML), 'drawn dashed, with ½');
+  muscleTap('Chest');
+  assert.equal('secondaryMuscles' in machineAt('m1'), false, 'secondary → off, and the empty list goes');
+  muscleTap('Chest');
+  assert.deepEqual(machineAt('m1').muscles, ['Serratus', 'Chest'], 'off → primary');
+  assert.ok(/class="chip sel" aria-pressed="true"\s+data-value="Chest">Chest</.test(props.innerHTML), 'drawn selected');
 
   last(props.querySelector('#m-brand-other'), 'click')();
   html = props.innerHTML;
