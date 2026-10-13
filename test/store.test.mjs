@@ -30,6 +30,7 @@ activeBefore.name = 'Push day';
 // on that shape, not on a filter.
 activeBefore.restOverrides = { m1: 75 };
 activeBefore.restUntil = Date.now() + 60000;
+activeBefore.chosenSlot = 0;
 // visits DO reach history: the open one closes at finish, a tap-through
 // (3 s on m2) is not a stop and is dropped
 const visitT = Date.now();
@@ -40,6 +41,7 @@ activeBefore.visits = [
 const saved = store.finishWorkout(activeBefore);
 assert.ok(!('restOverrides' in saved), 'per-workout rest overrides die with the workout');
 assert.ok(!('restUntil' in saved), 'and so does a rest that was still running');
+assert.ok(!('chosenSlot' in saved), 'and the block an overview row chose');
 assert.deepEqual(saved.visits, [{ machineId: 'm1', in: visitT - 60000, out: saved.finishedAt }],
   'the open visit closes at finishedAt, the 3 s tap-through is gone');
 assert.deepEqual(store.getWorkouts()[0].visits, saved.visits, 'and the visits are what history stored');
@@ -896,6 +898,14 @@ assert.equal(run.visits[1].out, 50000, 'the overview closes the visit');
 assert.equal(run.visits.length, 2, 'and opens none');
 assert.strictEqual(run.currentMachineId, null, 'machine id normalised to null');
 assert.ok(run.visits.every((v) => !('id' in v)), 'visits never carry an id');
+// the plan index of the very block meant: twins share the triple, so only
+// the index says which; any switch without one forgets it
+store.switchMachine(run, 'm1', null, { slot: 2, now: 60000 });
+assert.equal(run.chosenSlot, 2, 'a switch naming its slot keeps it on the workout');
+store.switchMachine(run, 'm1', null, { slot: 0, now: 61000 });
+assert.equal(run.chosenSlot, 0, 'index 0 is a slot too');
+store.switchMachine(run, 'm1', null, { now: 62000 });
+assert.ok(!('chosenSlot' in run), 'a switch without one forgets it — absent, never stale');
 
 const openVisit = { machineId: 'm2', in: 18000 };
 assert.strictEqual(store.closeVisits(undefined, 1), undefined, 'no visits stay absent');

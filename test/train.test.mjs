@@ -1132,6 +1132,40 @@ try {
   Date.now = hintsRealNow;
 }
 
+// --- the plan list asks the hint rules only when some plan has a NAME ---
+// planListCard's guard: "reorder?" can only name a named plan, so with none
+// the rules (4 ms at 435 workouts) must not run at all. insights() keeps ONE
+// memo entry, so a probe asked before the render comes back as the same
+// object only if nothing asked the rules anything else in between.
+{
+  const before = store.getLayout();
+  const { insights } = await import(new URL('../js/stats.js', import.meta.url).href);
+  const g = store.newLayout('Guard gym');
+  g.machines.push({ id: 'n1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
+  store.saveLayout(g);
+  store.saveWorkouts([1, 2, 3].map((k) => ({ id: `ng${k}`, startedAt: k * 864e5, finishedAt: k * 864e5 + 1800e3,
+    entries: [{ machineId: 'n1', num: 1, label: 'Chest press', settings: {}, sets: [{ reps: 10, weight: 40 }] }] })));
+  const item = { machineId: 'n1', exercise: null };
+  const probe = () => insights(store.getWorkouts(), store.getLayout(), store.getSettings(), { plans: [], now: 0 });
+  const listAsks = (plans) => {
+    store.savePlans(plans);
+    const asked = probe();
+    goToPlans();
+    byId.clear();
+    renderTrain(root);
+    assert.ok(root.innerHTML.includes('Planned workouts'), 'the plans screen shows its list');
+    return probe() !== asked;
+  };
+  assert.equal(listAsks([{ id: 'nameless', name: '', items: [item] }]), false,
+    'no named plan: the list never runs the rules');
+  assert.equal(listAsks([{ id: 'named', name: 'Push day', items: [item] }]), true,
+    'a named plan does (the probe can see it)');
+  goToHub();
+  store.savePlans([]);
+  store.saveWorkouts([]);
+  store.saveLayout(before);
+}
+
 // --- the log screen reads what its fields SHOW (fieldValue) ---
 // iOS lets the Log set tap land before the blur that restores a field the
 // overwrite arming emptied on focus: '' + dataset.prevValue must log the
@@ -1492,6 +1526,54 @@ const withPicker = (fn) => {
     picked = store.getActive() ? 1 : 0;
   });
   assert.equal(picked, 0, 'no workout was started — a suggestion, never a decision');
+  goToHub();
+  store.saveLayout(before);
+}
+
+// --- 🎲: an untagged machine is an unknown, and a typed number ends the suggestion ---
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Dice tag gym');
+  const mm = (id, num, x, muscles) => ({ id, num, label: `M${num}`, x, y: 0, w: 4, h: 3, settingsFields: [],
+    ...(muscles ? { muscles } : {}) });
+  g.machines.push(mm('u1', 1, 0), mm('c1', 2, 6, ['Chest']), mm('c2', 3, 12, ['Quads', 'Glutes']), mm('c3', 4, 18, ['Chest']));
+  store.saveLayout(g);
+  const chestDone = { entries: [{ machineId: 'c3', sets: [{ reps: 10, weight: 40 }] }], currentMachineId: 'c3' };
+  const n = {};
+  for (let i = 0; i < 1000; i++) {
+    const m = surpriseMachine(g, chestDone, { rand: () => (i + 0.5) / 1000 });
+    n[m.num] = (n[m.num] ?? 0) + 1;
+  }
+  assert.ok(n[1] > 0, `the untagged #1 still comes up while tagged muscles are open — ${JSON.stringify(n)}`);
+  assert.equal(n[2] ?? 0, 0, 'a tagged machine whose muscles are trained is still out');
+  assert.ok(n[3] > n[1], `two open muscles outweigh the unknown — ${JSON.stringify(n)}`);
+
+  // the suggestion lights the machine on the map; another number typed puts it out
+  goToStart();
+  byId.clear();
+  withPicker((picker) => {
+    const surprise = stubEl();
+    const mode = picker.querySelector('.pick-mode');
+    const qs = mode.querySelector;
+    mode.querySelector = (sel) => (sel === '.pick-surprise' ? surprise : qs.call(mode, sel));
+    const svg = picker.querySelector('svg');
+    svg.childElementCount = 1; // the map is drawn
+    svg.setAttribute = () => {};
+    renderTrain(root);
+    const realRand = Math.random;
+    Math.random = () => 0.999;
+    try { surprise.listeners.click(); } finally { Math.random = realRand; }
+    const num = picker.parts.get('.pick-num');
+    const err = picker.parts.get('.pick-err');
+    assert.ok(svg.innerHTML.includes(`class="machine locate" data-id="${g.machines.find((m) => String(m.num) === num.value).id}"`),
+      'the 🎲 pick is highlighted on the map');
+    num.listeners.input?.();
+    assert.ok(svg.innerHTML.includes('machine locate'), 'its own number in the field keeps it');
+    num.value = '7';
+    num.listeners.input?.();
+    assert.ok(!svg.innerHTML.includes('machine locate'), 'another number typed: the highlight is gone');
+    assert.ok(!err.textContent.startsWith('🎲'), 'and so is the 🎲 line naming the machine no longer meant');
+  });
   goToHub();
   store.saveLayout(before);
 }
@@ -2061,6 +2143,114 @@ const withPicker = (fn) => {
   store.clearActive();
   startWorkoutFrom({ entries: [{ machineId: 't14', exercise: null }, { machineId: 't14', exercise: null }] });
   assert.equal(store.getActive().plan.length, 1, 'an exact repeat still dedupes');
+  store.clearActive();
+  store.saveWorkouts([]);
+  store.saveLayout(before);
+}
+
+// --- twins: an overview row opens exactly ITS block; a bind never re-deals ---
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Twin row gym');
+  g.machines.push({ id: 't14', num: 14, label: 'Leg press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] },
+    { id: 't15', num: 15, label: 'Calf raise', x: 6, y: 0, w: 4, h: 3, settingsFields: [] },
+    { id: 't16', num: 16, label: 'Hack squat', x: 12, y: 0, w: 4, h: 3, settingsFields: [] });
+  store.saveLayout(g);
+  store.clearActive();
+  store.saveWorkouts([]);
+  // the twins apart: the light block leads, the heavy one comes after the calves
+  const p = store.planFromText('#14 Leg press 3x10 80\n#15 Calf raise 3x15 60\n#14 Leg press 3x6 100\n#16 Hack squat 3x8 50');
+  store.savePlan(p);
+  startWorkoutFrom({ planId: p.id, entries: p.items });
+  const logSet = (w, r) => {
+    byId.get('#set-weight').value = w;
+    byId.get('#set-reps').value = r;
+    byId.get('#set-rest').value = '0';
+    byId.get('#log-set').listeners.click();
+  };
+  const toOverview = () => {
+    const a = store.getActive();
+    store.switchMachine(a, null);
+    store.saveActive(a);
+    byId.clear();
+    renderTrain(root);
+  };
+  const statuses = () => [...root.innerHTML.matchAll(/class="plan-status[^"]*">([^<]*)</g)].map((m) => m[1]);
+  // the overview's row `i`, tapped — the plain stub hands out no rows
+  const tapRow = (i) => {
+    const row = stubEl();
+    row.dataset.i = String(i);
+    const qsa = root.querySelectorAll;
+    root.querySelectorAll = (sel) => (sel === '.plan-row' ? [row] : []);
+    try { toOverview(); } finally { root.querySelectorAll = qsa; }
+    byId.clear();
+    row.listeners.click();
+  };
+  tapRow(2);
+  const heavy = (h) => h.includes('Target: 3 × 6 @ 100 kg') && h.includes('<span class="muted">3/4</span>');
+  assert.ok(heavy(root.innerHTML), 'the heavy row opens the heavy block — its target, its plan position');
+  assert.ok(root.innerHTML.includes('Log set 1/3 — 100 kg × 6'), 'its first set comes from its own target');
+  assert.ok(/Next: #16\s+Hack squat/.test(root.innerHTML), '"Next" is the stop after THAT block, not after the light one');
+  assert.equal(store.getActive().chosenSlot, 2, 'the choice lives on the workout');
+  byId.clear();
+  renderTrain(root); // a re-render reads the workout back from storage, as a reload does
+  assert.ok(heavy(root.innerHTML), 'and survives a re-render and a reload');
+  logSet('100', '6');
+  logSet('100', '6');
+  assert.ok(heavy(root.innerHTML) && root.innerHTML.includes('Log set 3/3 — 100 kg × 6'),
+    'its sets count on it: the third heavy set is up');
+  toOverview();
+  assert.deepEqual(statuses(), ['open', 'open', '2/3 sets', 'open'], 'the overview books them on the heavy row');
+  tapRow(2);
+  logSet('100', '6');
+  assert.ok(root.innerHTML.includes('Target: 3 × 10 @ 80 kg') && root.innerHTML.includes('<span class="muted">1/4</span>')
+    && root.innerHTML.includes('Log set 1/3 — 80 kg × 10'), 'the heavy block done: the light block takes over, from its own target');
+  tapRow(2);
+  assert.ok(root.innerHTML.includes('Target: 3 × 10 @ 80 kg'),
+    'a done block yields to its open twin — "Next" never offers a twin of the screen it is on');
+  for (let k = 0; k < 3; k++) logSet('80', '10');
+  toOverview();
+  assert.deepEqual(statuses(), ['✓ 3/3 sets', 'open', '✓ 3/3 sets', 'open'], 'each block holds its own three');
+  assert.ok(!('chosenSlot' in store.getActive()), 'back on the overview the choice is gone');
+
+  // a line bound later as the EARLIER twin takes none of the sets already logged
+  store.saveActive({ v: 2, id: 'w-rebind', startedAt: Date.now(), currentMachineId: 't14', currentExercise: null, entries: [],
+    plan: [{ machineId: null, name: 'Leg press', exercise: null, target: { sets: 2, reps: 10, weight: 80 } },
+      { machineId: 't14', exercise: null, target: { sets: 3, reps: 6, weight: 100 } }] });
+  byId.clear();
+  renderTrain(root);
+  for (let k = 0; k < 3; k++) logSet('100', '6');
+  const a = store.getActive();
+  a.binding = 0;
+  store.saveActive(a);
+  byId.clear();
+  renderTrain(root);
+  root.querySelector('#bind-num').value = '14';
+  byId.get('#bind-go').listeners.click();
+  const bound = store.getActive().plan;
+  assert.ok(bound[0].machineId === 't14' && bound[0].exercise == null, 'trained whole: the bound line is a twin');
+  assert.ok(root.innerHTML.includes('Target: 2 × 10 @ 80 kg') && root.innerHTML.includes('Log set 1/2 — 80 kg × 10'),
+    'the screen is the line just bound');
+  toOverview();
+  assert.deepEqual(statuses(), ['open', '✓ 3/3 sets'], 'the three sets stay where they were logged — not "✓ 2/2" + "1/3"');
+  // …and one bound as the LATER twin opens itself, not the earlier block still open
+  store.saveActive({ v: 2, id: 'w-rebind2', startedAt: Date.now(), currentMachineId: 't14', currentExercise: null, entries: [],
+    plan: [{ machineId: 't14', exercise: null, target: { sets: 3, reps: 10, weight: 80 } },
+      { machineId: null, name: 'Leg press', exercise: null, target: { sets: 3, reps: 6, weight: 100 } }] });
+  byId.clear();
+  renderTrain(root);
+  logSet('80', '10');
+  const b = store.getActive();
+  b.binding = 1;
+  store.saveActive(b);
+  byId.clear();
+  renderTrain(root);
+  root.querySelector('#bind-num').value = '14';
+  byId.get('#bind-go').listeners.click();
+  assert.ok(root.innerHTML.includes('Target: 3 × 6 @ 100 kg') && root.innerHTML.includes('<span class="muted">2/2</span>'),
+    'the line just bound is the screen, though the light block before it is still open');
+  toOverview();
+  assert.deepEqual(statuses(), ['1/3 sets', 'open'], 'and the light set stays on the light block');
   store.clearActive();
   store.saveWorkouts([]);
   store.saveLayout(before);

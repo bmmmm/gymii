@@ -911,7 +911,11 @@ export function clearActive() {
 // would look like no change at all. Mutates `active`.
 // `grip`: undefined leaves the grip unresolved (the log screen picks one:
 // the slot's, else the last one trained); null is a deliberate "no grip".
-export function switchMachine(active, machineId, exercise = null, { busy = null, now = Date.now(), grip } = {}) {
+// `slot`: the plan index of the very block meant (an overview row, a line
+// just bound) — the triple alone cannot say which of two TWINS that is.
+// Kept as `active.chosenSlot`; every switch without one forgets it, and
+// finishWorkout's allow-list never copies it out.
+export function switchMachine(active, machineId, exercise = null, { busy = null, now = Date.now(), grip, slot = null } = {}) {
   const next = machineId ?? null;
   if ((active.currentMachineId ?? null) !== next) {
     const visits = active.visits ?? [];
@@ -923,6 +927,8 @@ export function switchMachine(active, machineId, exercise = null, { busy = null,
   active.currentExercise = exercise; // the default already maps undefined to null
   if (grip === undefined) delete active.currentGrip;
   else active.currentGrip = grip;
+  if (slot == null) delete active.chosenSlot;
+  else active.chosenSlot = slot;
   return active;
 }
 

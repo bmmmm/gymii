@@ -751,9 +751,10 @@ const finishedToday = (now = Date.now()) => {
 
 // 🎲 "Surprise me": a machine not trained yet this workout, drawn at random
 // with each candidate weighted by how many of its muscles are still open
-// today; nearness to where you stand (the last machine, else the entrance,
-// else the floor's middle — straight lines between centres) adds less
-// than one open muscle, so it only tips the odds between equals. With every
+// today (a machine without tags counts as one); nearness to where you
+// stand (the last machine, else the entrance, else the floor's middle —
+// straight lines between centres) adds less than one open muscle, so it
+// only tips the odds between equals. With every
 // muscle trained (or none tagged) it is a plain random pick among the
 // machines not trained today. `rand` is injectable so tests replay a draw.
 // `earlier`: entries already trained today in finished workouts; `muscle`:
@@ -781,7 +782,11 @@ export function surpriseMachine(layout, active = null, { rand = Math.random, ear
   const dist = (m) => Math.hypot(center(m)[0] - fx, center(m)[1] - fy);
   const far = Math.max(...candidates.map(dist), 1);
   const anyOpen = candidates.some((m) => open(m) > 0);
-  const weight = (m) => (!anyOpen ? 1 : open(m) ? open(m) + 0.5 * (1 - dist(m) / far) : 0);
+  // a machine without muscle tags is an unknown, not a trained one: it
+  // weighs as ONE open muscle — never starved by a tagged neighbour, never
+  // above a machine known to work two
+  const score = (m) => ((m.muscles ?? []).length ? open(m) : 1);
+  const weight = (m) => (!anyOpen ? 1 : score(m) ? score(m) + 0.5 * (1 - dist(m) / far) : 0);
   const weights = candidates.map(weight);
   let r = rand() * weights.reduce((a, b) => a + b, 0);
   for (let i = 0; i < candidates.length; i++) {
@@ -822,7 +827,8 @@ function machinePicker(container, layout, onPick, { actionLabel = 'Open', active
     <p class="pick-err muted">Enter a machine number — or pick by muscle or map.</p>`;
 
   const svg = container.querySelector('svg');
-  // the 🎲 suggestion, highlighted on the map until the next pick
+  // the 🎲 suggestion, highlighted on the map until the next pick (or
+  // another number typed over it)
   let suggestedId = null;
   // drawn lazily on first expand — most picks go via number or muscle
   const drawMap = () => drawLayout(svg, layout, {
@@ -860,6 +866,7 @@ function machinePicker(container, layout, onPick, { actionLabel = 'Open', active
   // no enterkeyhint on .pick-num — the iOS number keypad has no return key
   const input = container.querySelector('.pick-num');
   const err = container.querySelector('.pick-err');
+  const errIdle = err.textContent;
 
   const go = () => {
     const num = Math.round(parseFloat(input.value));
@@ -926,6 +933,15 @@ function machinePicker(container, layout, onPick, { actionLabel = 'Open', active
       + `Tap ${actionLabel} to go.`;
     if (svg.childElementCount) { drawMap(); applyMuscleFilter(); }
   });
+  // another number typed over the 🎲's is a choice of its own: the
+  // highlight and the 🎲 line would point at a machine no longer meant
+  input.addEventListener('input', () => {
+    const m = suggestedId && layout.machines.find((x) => x.id === suggestedId);
+    if (!m || input.value === String(m.num)) return;
+    suggestedId = null;
+    err.textContent = errIdle;
+    if (svg.childElementCount) { drawMap(); applyMuscleFilter(); }
+  });
 
   modeBar.addEventListener('click', (e) => {
     const chip = e.target.closest('.chip[data-mode]'); // not the map toggle
@@ -980,21 +996,38 @@ const slotEntries = (active, slot) =>
     && (!slot.exercise || (e.exercise ?? null) === slot.exercise)
     && (slot.grip == null || (e.grip ?? null) === slot.grip));
 // Twins — bound slots with the same triple ("#14 Leg press 3x10 80" plus
-// "#14 Leg press 3x6 100") — see the same entries, so they share the sets
-// in plan order: each takes up to its target's set count (one set without
-// a target), the last twin takes whatever is left. Counting every set on
-// every twin would tick both off after the first block.
+// "#14 Leg press 3x6 100") — see the same entries, so each set has to
+// belong to ONE of them: the slot on screen when it was logged, which
+// keeps the set's `at` in `slot.logged` (written whether or not the slot
+// has a twin yet — a line bound later can make any slot one). So the
+// heavy block may go first, and a bind never re-deals sets already
+// logged. Sets no twin claims (a workout started before the claims, a set
+// without `at`) are dealt in plan order: each twin fills up to its
+// target's set count (one set without a target), the last twin takes
+// whatever is left. Counting every set on every twin would tick both off
+// after one block.
 function twinShare(active, slot) {
-  const total = slotEntries(active, slot).reduce((n, e) => n + e.sets.length, 0);
+  const sets = slotEntries(active, slot).flatMap((e) => e.sets);
   const twins = slot.machineId ? active.plan.filter((p) => p.machineId && sameSlot(p, slot)) : [];
-  if (twins.length < 2 || !twins.includes(slot)) return total;
-  let left = total;
+  if (twins.length < 2 || !twins.includes(slot)) return sets.length;
+  // each kept stamp claims ONE set: two sets logged in the same millisecond
+  // are two claims, never one set counted on both twins (or a deleted
+  // set's stamp counted at all)
+  const free = sets.map((st) => st.at);
+  const own = twins.map((t) => (t.logged ?? []).filter((at) => {
+    const k = free.indexOf(at);
+    if (k === -1) return false;
+    free.splice(k, 1);
+    return true;
+  }).length);
+  let left = free.length;
   for (const [i, t] of twins.entries()) {
-    const take = i === twins.length - 1 ? left : Math.min(left, t.target?.sets || 1);
-    if (t === slot) return take;
+    const take = i === twins.length - 1 ? left
+      : Math.min(left, Math.max(0, (t.target?.sets || 1) - own[i]));
+    if (t === slot) return own[i] + take;
     left -= take;
   }
-  return total;
+  return sets.length;
 }
 const slotSetCount = twinShare;
 // Done means any set logged — or, when the slot carries a plan target,
@@ -1173,7 +1206,8 @@ function renderOverview(root, layout, active, message = '') {
         renderTrain(root);
         return;
       }
-      switchMachine(active, slot.machineId, slot.exercise, slotGrip(slot));
+      // exactly THIS row's block: of two twins the triple names neither
+      switchMachine(active, slot.machineId, slot.exercise, { ...slotGrip(slot), slot: i });
       saveActive(active);
       renderTrain(root);
     });
@@ -1294,7 +1328,8 @@ function renderBind(root, layout, active) {
     }
     if (learn.exercises.length || learn.grips.length) addMachineVariant(machine.id, learn);
     delete active.binding;
-    switchMachine(active, machine.id, slot.exercise ?? null, slotGrip(slot));
+    // the line just bound is the block on screen, even as a later twin
+    switchMachine(active, machine.id, slot.exercise ?? null, { ...slotGrip(slot), slot: i });
     saveActive(active);
     renderTrain(root, message);
   };
@@ -1346,10 +1381,16 @@ function nextOpenSlot(active, layout, afterId, afterExercise = null, afterGrip =
 // The plan index the logging screen is at: the exact (machine, exercise,
 // grip) slot when one exists, else the (machine, exercise) slot without a
 // grip (it counts every grip), else the machine's first slot (pick pending).
-// Among twins it is the first OPEN one, so the second block's target and
-// "Next" take over once the first block is done.
+// Among twins it is the one an overview row or a bind chose
+// (`active.chosenSlot`), else the first OPEN one, so the second block's
+// target and "Next" take over once the first block is done. A chosen block
+// that is done yields to an open twin — "Next" never offers a twin of the
+// screen it is on.
 function planSlotIndex(active, machineId, exercise = null, grip = null) {
   const here = { machineId, exercise, grip };
+  const chosen = active.plan[active.chosenSlot];
+  if (chosen && sameSlot(chosen, here) && (!slotDone(active, chosen)
+    || !active.plan.some((p) => sameSlot(p, here) && !slotDone(active, p)))) return active.chosenSlot;
   // all done: the LAST twin, which holds the latest sets (and any surplus)
   const firstOpen = (match) => {
     const open = active.plan.findIndex((p) => match(p) && !slotDone(active, p));
@@ -1971,9 +2012,13 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     } else {
       entry.sets.push({ ...readStrength(), at: Date.now() });
     }
+    // the set is the block on screen's: twins share one entry, and only
+    // this mark keeps their sets apart (twinShare)
+    const claims = currentSlot ? (currentSlot.logged ??= []) : null;
+    claims?.push(entry.sets.at(-1).at);
     // a refused write must not leave the set behind in memory: the list
     // does not re-render, so every further tap would stack another one
-    try { saveLog(active); } catch (e) { entry.sets.pop(); throw e; }
+    try { saveLog(active); } catch (e) { entry.sets.pop(); claims?.pop(); throw e; }
     // the set list just grew a row above the inputs — put them back under
     // the thumb, so the next set is one tap and not a scroll away
     renderLog(root, layout, active, '.next-set');
