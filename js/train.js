@@ -17,7 +17,7 @@ import {
   variantStr, entryKind,
 } from './ui.js';
 import { ensurePersisted } from './persist.js';
-import { insights, sameSeries, assistGoal, machineSeries } from './stats.js';
+import { insights, sameSeries, assistGoalAt } from './stats.js';
 
 // Active workout shape:
 //   { v: 2, id, startedAt, plan: [{machineId, exercise|null, target?}…],
@@ -1391,7 +1391,7 @@ const targetStr = (t, type, s) => (type === 'cardio'
   : type === 'bodyweight'
     ? `${t.sets} × ${t.reps}${t.weight ? ` @ BW+${t.weight} ${s.unit}` : ''}`
     : type === 'assisted'
-      ? `${t.sets} × ${t.reps} @ −${t.weight} ${s.unit}`
+      ? `${t.sets} × ${t.reps}${t.weight ? ` @ −${t.weight} ${s.unit}` : ' unassisted'}`
       : `${t.sets} × ${t.reps} @ ${t.weight} ${s.unit}`);
 
 // One logged (or about-to-be-logged) set in words, by the entry's type —
@@ -1522,8 +1522,9 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     : nextSetDefaults(freshBlock ? { ...entry, sets: [] } : entry, lastSets, type, s, target);
   // At an assisted machine: what you train FOR — said by you (a chip
   // tap, kept on the machine) or, until you say it, read from your history.
+  // stats.js assistGoalAt: the SAME goal the progress and plateau hints use
   const goal = !pickPending && type === 'assisted'
-    ? assistGoal(machine, machineSeries(getWorkouts(), machine.id, exercise, grip), target?.reps ?? null) : null;
+    ? assistGoalAt(getWorkouts(), layout, getPlans(), { machineId: machine.id, exercise, grip }) : null;
   // What this machine rests by default, and what it rests TODAY. A rest
   // changed mid-workout is a fact about this workout ("shoulders are cold
   // today"), not about the machine — it lives on the active workout, dies
@@ -1660,7 +1661,11 @@ function renderLog(root, layout, active, reveal = null, message = '') {
         ${[['strength', 'Less assist'], ['endurance', 'More reps']].map(([g, label]) => `<button type="button"
           class="chip${goal.goal === g ? ' sel' : ''}" data-goal="${g}" aria-pressed="${goal.goal === g}">${label}</button>`).join('')}
       </div>
-      ${goal.observed ? '<p class="muted">Read from your last workouts — tap one to set it yourself.</p>' : ''}
+      ${{
+    trend: '<p class="muted">Read from your last workouts — tap one to set it yourself.</p>',
+    reps: '<p class="muted">Going by your reps (12 or more is endurance work) — tap one to set it yourself.</p>',
+    none: '<p class="muted">Not set yet — tap the one you train for.</p>',
+  }[goal.basis] ?? ''}
     </section>` : ''}
 
     ${pickPending ? '' : `

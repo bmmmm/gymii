@@ -472,6 +472,7 @@ const progressCard = {
         : kind === 'bodyweight' ? (reps ? 'top reps' : `top added weight (${unit})`)
           : kind === 'assisted' ? (reps ? 'reps at the least assist' : `assist (${unit}) — lower is stronger`)
             : `top set weight (${unit})`;
+      assistEl.hidden = kind !== 'assisted'; // an empty row would still take its margin
       assistEl.innerHTML = kind === 'assisted' ? ASSIST_VIEWS.map(([k, label]) => `<button type="button"
         class="chip${(reps ? 'reps' : 'assist') === k ? ' sel' : ''}" data-view="${k}"
         aria-pressed="${(reps ? 'reps' : 'assist') === k}">${label}</button>`).join('') : '';
@@ -720,7 +721,7 @@ function wireHeatmap(root, { workouts, s, unit }) {
       const sets = entries.reduce((n, e) => n + e.sets.length, 0);
       if (!sets) return;
       // an assisted set's weight is the help, not the load: no volume
-      const volume = entries.reduce((v, e) => (e.assisted ? v
+      const volume = entries.reduce((v, e) => (entryKind(e) === 'assisted' ? v
         : v + e.sets.reduce((x, st) => x + (st.reps * st.weight || 0), 0)), 0);
       const dist = entries.reduce(
         (v, e) => v + e.sets.reduce((x, st) => x + (st.distance || 0), 0), 0);

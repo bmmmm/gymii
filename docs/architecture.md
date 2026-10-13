@@ -47,7 +47,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   heatmap; `setUnit` converts it like any weight). Live-logged sets also
   carry `at` (epoch ms, stamped at log time) — older sets lack it, and so
   must sets added by editing or back-logging; every consumer must guard.
-  Strength and bodyweight sets may also carry `rir` (0..3, 3 = "3 or more";
+  Strength, bodyweight and assisted sets may also carry `rir` (0..3, 3 = "3 or more";
   absent = not rated, never `null`), written only by `rateLastSet()`.
   Workouts may carry `visits: [{machineId, in, out, busy?}]` — the walking
   route: `in` is the moment that machine's log screen became current, `out`
@@ -678,9 +678,14 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `machine.cardio` flips the log screen to
   distance+time, `machine.bodyweight` to reps + extra weight,
   `machine.assisted` to "Assist" + reps (sets, target and "Last:" read as a
-  minus: "3 × 8 @ −25 kg"; a Goal card offers "Less assist" / "More reps",
-  marked as read from the history until one is tapped; the chosen chip
-  again unsays it); type flags
+  minus: "3 × 8 @ −25 kg", "unassisted" at 0; a Goal card offers "Less
+  assist" / "More reps" from stats.js `assistGoalAt` — the one goal the
+  progress and plateau hints use too — and says where an unsaid goal came
+  from: the history's trend, the reps, or nothing yet; tapping the chip the
+  history picked SAYS it, the chosen chip again unsays it). A typed or
+  back-logged line reads the app's own minus back: "3x8 -25" is 8 reps at
+  25 kg assist (a rep RANGE needs an attached hyphen or a dash, "3x8-12");
+  type flags
   and `exercise` (and `grip`, `newEntry`'s 4th argument) are SNAPSHOTTED onto the entry (like num/label) —
   history/edit/chart/AI read the entry, never the live machine.
   Multi-exercise machines hold one entry per (machineId, exercise);

@@ -2031,6 +2031,18 @@ const withPicker = (fn) => {
     && !root.innerHTML.includes('Read from your last workouts'), 'said, not read');
   goalTap('endurance');
   assert.equal('assistGoal' in store.getLayout().machines[0], false, 'the chosen chip again unsays it');
+  goalTap('strength');
+  assert.equal(store.getLayout().machines[0].assistGoal, 'strength',
+    'tapping the chip the history picked SAYS it — it does not unsay what was never said');
+  goalTap('strength');
+  // no history and no target: the card does not pretend to have read one
+  store.saveWorkouts([]);
+  open();
+  assert.ok(root.innerHTML.includes('Not set yet — tap the one you train for.') && !root.innerHTML.includes('Read from'),
+    'a first visit says the goal is not set, not "read from your workouts"');
+  assert.ok(root.innerHTML.includes('Target: 3 × 8 @ −25 kg'));
+  store.saveWorkouts([{ id: 'as1', startedAt: 1000, finishedAt: 2000, entries: [ent(30)] },
+    { id: 'as2', startedAt: 3000, finishedAt: 4000, entries: [ent(27.5)] }]);
   open();
   byId.get('#set-weight').value = '25';
   byId.get('#set-reps').value = '8';

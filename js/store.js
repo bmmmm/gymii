@@ -1452,9 +1452,12 @@ export function cleanSettings(settings) {
 
 // sets × reps, with an optional rep range ("3x8-12" targets the low end —
 // the number you are sure to hit is the better prefill).
-const SETS_REPS = /(\d+)\s*(?:sets?)?\s*[x×*]\s*(\d+)(?:\s*[-–—]\s*\d+)?\s*(?:reps?)?/i;
+// A rep RANGE ("3x8-12") takes a hyphen attached to the reps or a dash:
+// "3x8 -25" is 8 reps at an assist of 25, the minus the app itself shows
+// on an assisted machine — not a range of 8 to 25.
+const SETS_REPS = /(\d+)\s*(?:sets?)?\s*[x×*]\s*(\d+)(?:-\s*\d+|\s*[–—]\s*\d+)?\s*(?:reps?)?/i;
 // weight right after the sets term ("3x10 80", "3x10x80", "3x10 @ 40kg")
-const TRAILING_WEIGHT = /^\s*(?:@|x|×|\*|-|with)?\s*(\d+(?:[.,]\d+)?)\s*(kgs?|lbs?|pounds?)?\b/i;
+const TRAILING_WEIGHT = /^\s*(?:@|x|×|\*|-|with)?\s*[-−]?\s*(\d+(?:[.,]\d+)?)\s*(kgs?|lbs?|pounds?)?\b/i;
 // …or anywhere, when it names its unit ("Chest press 40kg 3x10")
 const UNIT_WEIGHT = /(\d+(?:[.,]\d+)?)\s*(kgs?|lbs?|pounds?)\b/i;
 const DURATION = /(\d+(?:[.,]\d+)?)\s*(h|hrs?|hours?|min(?:ute)?s?|sec(?:ond)?s?)\b/i;

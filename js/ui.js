@@ -355,7 +355,7 @@ export const setStr = (st, settings, kind = 'strength') => esc(st.distance != nu
   : kind === true || kind === 'bodyweight'
     ? (st.weight ? `BW+${st.weight}×${st.reps}` : `BW×${st.reps}`)
     : kind === 'assisted'
-      ? `−${st.weight ?? 0}×${st.reps}`
+      ? `${st.weight ? `−${st.weight}` : 0}×${st.reps}`
       : `${st.weight ?? 0}×${st.reps}`);
 
 // A re-render replaces whole subtrees, so the control you JUST used drifts
@@ -548,7 +548,7 @@ export function playTimerSound(name) {
 // read "0 kg". HTML-ready.
 export function workoutTotals(workout, settings) {
   // an assisted set's weight is the help, not the load: no volume
-  const volume = workout.entries.reduce((v, e) => (e.assisted ? v
+  const volume = workout.entries.reduce((v, e) => (entryKind(e) === 'assisted' ? v
     : v + e.sets.reduce((x, st) => x + (st.reps * st.weight || 0), 0)), 0);
   const distance = workout.entries.reduce(
     (v, e) => v + e.sets.reduce((x, st) => x + (st.distance || 0), 0), 0);

@@ -602,15 +602,18 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   // the goal: said > observed trend > rep range (12+ is endurance)
   const pts = (pairs) => pairs.map(([w, r], i) => ({ kind: 'assisted', t: i, top: { weight: w, reps: r } }));
   assert.deepEqual(stats.assistGoal({ assistGoal: 'endurance' }, pts([[30, 8], [25, 8]])),
-    { goal: 'endurance', observed: false }, 'what the user said wins over the trend');
-  assert.deepEqual(stats.assistGoal({}, pts([[30, 8], [27.5, 8]])), { goal: 'strength', observed: true },
+    { goal: 'endurance', observed: false, basis: 'said' }, 'what the user said wins over the trend');
+  assert.deepEqual(stats.assistGoal({}, pts([[30, 8], [27.5, 8]])), { goal: 'strength', observed: true, basis: 'trend' },
     'the assist went down: strength');
-  assert.deepEqual(stats.assistGoal({}, pts([[30, 8], [30, 11]])), { goal: 'endurance', observed: true },
+  assert.deepEqual(stats.assistGoal({}, pts([[30, 8], [30, 11]])), { goal: 'endurance', observed: true, basis: 'trend' },
     'the reps went up at the same assist: endurance');
   assert.deepEqual(stats.assistGoal({}, pts([[30, 12]])).goal, 'endurance', 'no trend, 12 reps: endurance');
   assert.deepEqual(stats.assistGoal({}, pts([[30, 11]])).goal, 'strength', 'no trend, 11 reps: strength');
   assert.deepEqual(stats.assistGoal({}, pts([[30, 8], [30, 8]]), 12).goal, 'endurance', 'a plan target of 12 decides a flat trend');
   assert.deepEqual(stats.assistGoal({ assistGoal: 'bogus' }, pts([[30, 8], [25, 8]])).observed, true, 'an unknown goal is no goal');
+  assert.deepEqual(stats.assistGoal({}, []), { goal: 'strength', observed: true, basis: 'none' },
+    'no history, no target: strength — and it says it read nothing');
+  assert.equal(stats.assistGoal({}, pts([[30, 12]])).basis, 'reps', 'one workout: going by the reps');
 
   // rule 1 at the same assist: the next step follows the goal
   const prog = (r2, r3, w = 25) => [W(day(9), [A([S(10, 30)])]), W(day(5), [A([S(r2, w)])]), W(day(1), [A([S(r3, w)])])];
@@ -639,6 +642,14 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     'a new rep best: no plateau');
   assert.equal(find(series8([25, 30, 30, 30, 30, 30, 30]), 'plateau', { layout: LA('strength') }), undefined,
     'seven workouts without a new low: one short of the eight it needs');
+  assert.equal(find(series8([30, 0, 0, 0, 0, 0, 0, 0, 0]), 'plateau', { layout: LA('strength') }), undefined,
+    'unassisted already: no lower to reach, no plateau');
+  // one goal for every rule and screen: a plan target of 8 says strength even
+  // where the reps (12) alone would say endurance
+  const planned = [{ id: 'pp', items: [{ machineId: 'ma', exercise: null, target: { sets: 3, reps: 8, weight: 25 } }] }];
+  const reps12 = [W(day(9), [A([S(12, 25)])]), W(day(5), [A([S(12, 25)])], { planId: 'pp' })];
+  assert.equal(stats.assistGoalAt(reps12, LA(), planned, { machineId: 'ma' }).goal, 'strength', 'the plan target decides');
+  assert.equal(stats.assistGoalAt(reps12, LA(), [], { machineId: 'ma' }).goal, 'endurance', 'without it, 12 reps do');
 }
 
 console.log('stats.test.mjs: all passed');

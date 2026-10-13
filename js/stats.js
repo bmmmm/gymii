@@ -111,7 +111,7 @@ export function weeklyBuckets(workouts, { weeks = 12, now = Date.now(), layout =
       if (!e.sets.length) return;
       days[i].add(startOfDay(w.startedAt).getTime());
       // an assisted set's weight is the help, not the load: no volume
-      if (!e.assisted) b.volume += sum(e.sets.map(setVolume));
+      if (kindOf(e) !== 'assisted') b.volume += sum(e.sets.map(setVolume));
       muscles.get(e.machineId)?.forEach((mu) => {
         b.muscles.set(mu, (b.muscles.get(mu) ?? 0) + e.sets.length);
       });
@@ -414,18 +414,32 @@ function targetReps(plans, machineId, exercise, planId, grip = null) {
 // (`machine.assistGoal`); else what the history SHOWS over the last (up
 // to six) workouts — the least assist went down: strength; it held while
 // the reps went up: endurance; else the rep range — a target (or the last
-// top set) of 12 reps or more is endurance work. { goal, observed }.
+// top set) of 12 reps or more is endurance work; with neither, strength.
+// { goal, observed, basis: 'said' | 'trend' | 'reps' | 'none' } — the log
+// screen says which, so it never claims a history it does not have.
 export function assistGoal(machine, points = [], targetReps = null) {
   const said = machine?.assistGoal;
-  if (said === 'strength' || said === 'endurance') return { goal: said, observed: false };
+  if (said === 'strength' || said === 'endurance') return { goal: said, observed: false, basis: 'said' };
   const pts = points.filter((p) => p.kind === 'assisted').slice(-6);
   if (pts.length >= 2) {
     const [a, b] = [pts[0].top, pts[pts.length - 1].top];
-    if (b.weight < a.weight) return { goal: 'strength', observed: true };
-    if (b.weight === a.weight && b.reps > a.reps) return { goal: 'endurance', observed: true };
+    if (b.weight < a.weight) return { goal: 'strength', observed: true, basis: 'trend' };
+    if (b.weight === a.weight && b.reps > a.reps) return { goal: 'endurance', observed: true, basis: 'trend' };
   }
-  const reps = targetReps ?? pts[pts.length - 1]?.top.reps ?? 0;
-  return { goal: reps >= 12 ? 'endurance' : 'strength', observed: true };
+  const reps = targetReps ?? pts[pts.length - 1]?.top.reps ?? null;
+  if (reps == null) return { goal: 'strength', observed: true, basis: 'none' };
+  return { goal: reps >= 12 ? 'endurance' : 'strength', observed: true, basis: 'reps' };
+}
+
+// THE goal of one assisted series, the same answer for every screen and
+// rule (log screen, progress, plateau): the target reps are the plan's the
+// latest session of that series came from, else the first plan's.
+export function assistGoalAt(workouts, layout, plans, { machineId, exercise = null, grip = null }) {
+  const sel = { machineId, exercise, grip };
+  const latest = byStart(workouts).filter((w) => w.entries.some((e) => sameSeries(e, sel) && e.sets.length)).pop();
+  return assistGoal(layout?.machines.find((m) => m.id === machineId),
+    machineSeries(workouts, machineId, exercise, grip),
+    targetReps(plans ?? [], machineId, exercise, latest?.planId, grip));
 }
 
 // A machine counts as "still being trained" for this many days (rules 1, 8).
@@ -455,10 +469,7 @@ function progressRule(ws, settings, plans, now, layout = null) {
       || e.sets.some((st) => st.weight === W && st.reps >= T && st.rir >= 2);
     if (!beaten(p.e) || !beaten(q.e)) return [];
     const reps = Math.min(repsAt(p.e), repsAt(q.e));
-    const machine = layout?.machines.find((m) => m.id === machineId);
-    const goal = assisted
-      ? assistGoal(machine, machineSeries(ws, machineId, exercise, grip), targetReps(plans, machineId, exercise, q.w.planId, grip)).goal
-      : null;
+    const goal = assisted ? assistGoalAt(ws, layout, plans, { machineId, exercise, grip }).goal : null;
     const next = goal === 'endurance' ? 'add 2 reps at this assist'
       : goal === 'strength' ? `try ${num(Math.min(step, W), 2)} ${unit} less assist`
         : step > 0.1 * W ? 'add 1–2 reps first' : `try ${num(W + step, 2)} ${unit}`;
@@ -619,12 +630,12 @@ function busyRule(ws, layout, now) {
 
 // 8 — no new best estimated 1RM for six or more workouts on a machine that
 // is still being trained.
-function plateauRule(ws, settings, now, layout = null) {
+function plateauRule(ws, settings, now, layout = null, plans = []) {
   const unit = settings?.unit ?? 'kg';
   return trainedPairs(ws).flatMap(({ machineId, exercise, grip }) => {
     const series = machineSeries(ws, machineId, exercise, grip);
     if (series[series.length - 1]?.kind === 'assisted') {
-      return assistPlateau(series, layout?.machines.find((m) => m.id === machineId), unit, now)
+      return assistPlateau(series, assistGoalAt(ws, layout, plans, { machineId, exercise, grip }).goal, unit, now)
         .map((extra) => insight('plateau', extra.score, { ...extra.row, machineId, exercise, grip }));
     }
     const pts = series.filter((p) => p.kind === 'strength' && p.e1rm != null);
@@ -647,10 +658,11 @@ function plateauRule(ws, settings, now, layout = null) {
 // (strength goal) or the MOST reps at the least assist (endurance goal),
 // with the same windows: eight workouts, none of the last six past the best
 // of the earlier ones, trained in the last 21 days.
-function assistPlateau(series, machine, unit, now) {
+function assistPlateau(series, goal, unit, now) {
   const pts = series.filter((p) => p.kind === 'assisted');
   if (pts.length < 8 || daysBetween(pts[pts.length - 1].t, now) >= RECENT_DAYS) return [];
-  const { goal } = assistGoal(machine, pts);
+  // unassisted already (0 kg): no lower to reach — not a plateau
+  if (goal === 'strength' && pts.slice(-6).some((p) => p.top.weight === 0)) return [];
   // one number per workout where HIGHER is better
   const val = (p) => (goal === 'strength' ? -p.top.weight : p.top.reps);
   const best = Math.max(...pts.slice(0, -6).map(val));
@@ -703,6 +715,6 @@ function rules(workouts, layout, settings, now, plans) {
     ...restRule(ws),
     ...(layout ? routeRule(ws, layout) : []),
     ...(layout ? busyRule(ws, layout, now) : []),
-    ...plateauRule(ws, settings, now, layout),
+    ...plateauRule(ws, settings, now, layout, plans),
   ].sort((a, b) => b.score - a.score || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0));
 }

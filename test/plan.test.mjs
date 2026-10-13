@@ -1006,6 +1006,16 @@ goToHub();
   store.saveWorkouts([]);
 }
 
+// --- the minus the app shows on an assisted machine reads back as the assist ---
+assert.deepEqual(store.parsePlanLine('#17 Assisted pull-up 3x8 -25', s).target, { sets: 3, reps: 8, weight: 25 },
+  '"3x8 -25": 8 reps at 25 kg assist, not a rep range 8–25');
+assert.deepEqual(store.parsePlanLine('#17 Assisted pull-up 3x8 @ −25', s).target, { sets: 3, reps: 8, weight: 25 },
+  'the true minus sign too');
+assert.deepEqual(store.parsePlanLine('Leg press 3x8-12 80', s).target, { sets: 3, reps: 8, weight: 80 },
+  'an attached hyphen is still a rep range');
+assert.deepEqual(store.parsePlanLine('Leg press 3x8 – 12 80', s).target, { sets: 3, reps: 8, weight: 80 },
+  'and so is a dash with spaces');
+
 // --- an assisted machine's target weight is the assist ---
 {
   const g = store.newLayout('Assist builder gym');

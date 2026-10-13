@@ -103,6 +103,7 @@ assert.equal(ui.setStr({ reps: 10, weight: 0 }, kg, true), 'BW×10', 'bodyweight
 assert.equal(ui.setStr({ reps: 10, weight: 5 }, kg, true), 'BW+5×10');
 assert.equal(ui.setStr({ reps: 10, weight: 5 }, kg, 'bodyweight'), 'BW+5×10', 'the kind by name, too');
 assert.equal(ui.setStr({ reps: 8, weight: 20 }, kg, 'assisted'), '−20×8', 'assisted: the counterweight reads as a minus');
+assert.equal(ui.setStr({ reps: 6, weight: 0 }, kg, 'assisted'), '0×6', 'unassisted: no "−0"');
 assert.deepEqual(['cardio', 'bodyweight', 'assisted', 'strength'].map((k) => ui.entryKind(k === 'strength' ? {} : { [k]: true })),
   ['cardio', 'bodyweight', 'assisted', 'strength'], 'entryKind reads the flags');
 assert.equal(ui.setStr({ distance: 2000, seconds: 600 }, kg), '2000 m · 10:00');
