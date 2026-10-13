@@ -598,6 +598,7 @@ function renderSettingsView(root) {
     if (!file) return;
     try {
       const kind = importData(JSON.parse(await file.text()));
+      applyTheme(getSettings()); // a backup carries its device settings, theme included
       msg.textContent = kind === 'backup' ? 'Backup imported.'
         : kind === 'workout-plan' ? 'Workout plan imported — find it on the Train tab.'
           : 'Gym template imported.';
@@ -852,6 +853,7 @@ function renderSettingsView(root) {
   clearBtn.addEventListener('click', () => {
     if (!twoTapConfirm(clearBtn, 'Tap again to erase everything', 'Clear all data')) return;
     clearAll();
+    applyTheme(getSettings()); // back to the default, on screen too
     renderSettings(root);
   });
 

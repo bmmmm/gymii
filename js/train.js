@@ -729,21 +729,22 @@ function renderOnboarding(root, message) {
   wireQuickStart(root);
 }
 
-// Number input, muscle filter and a tappable mini-map; calls
-// onPick(machineId). The action button says what a pick actually does here —
-// "Start training" on the start screen, "Add" mid-workout — because the same
-// picker starts a whole workout in one place and only appends in the other.
-// The map is collapsed by default (settings.pickerMap) — number and muscle
-// are the picker's primary inputs, the map is the on-demand answer to
-// "where?", not the main navigation surface.
-// Muscles of every machine with ≥1 set this workout, read live from the
-// layout (entries don't snapshot muscles; deleted machines contribute
+// Muscles of every machine with ≥1 set in these entries, read live from
+// the layout (entries don't snapshot muscles; deleted machines contribute
 // none). The overview's coverage chips and the 🎲 pick share it.
-function trainedMuscles(active, layout) {
-  return new Set((active?.entries ?? [])
+function trainedMuscles(active, layout, earlier = []) {
+  return new Set([...(active?.entries ?? []), ...earlier]
     .filter((e) => e.sets.length)
     .flatMap((e) => layout.machines.find((m) => m.id === e.machineId)?.muscles ?? []));
 }
+
+// The entries of workouts FINISHED today — "open today" also means not
+// trained in this morning's session.
+const finishedToday = (now = Date.now()) => {
+  const day = new Date(now).toDateString();
+  return getWorkouts().filter((w) => new Date(w.startedAt).toDateString() === day)
+    .flatMap((w) => w.entries);
+};
 
 // 🎲 "Surprise me": a machine not trained yet this workout, drawn at random
 // with each candidate weighted by how many of its muscles are still open
@@ -752,14 +753,21 @@ function trainedMuscles(active, layout) {
 // than one open muscle, so it only tips the odds between equals. With every
 // muscle trained (or none tagged) it is a plain random pick among the
 // machines not trained today. `rand` is injectable so tests replay a draw.
+// `earlier`: entries already trained today in finished workouts; `muscle`:
+// the picker's muscle filter, which narrows the draw when it can.
 // It only SUGGESTS — the caller never starts anything with it.
-export function surpriseMachine(layout, active = null, { rand = Math.random } = {}) {
-  const center = (m) => [m.x + m.w / 2, m.y + m.h / 2];
-  const done = new Set((active?.entries ?? []).filter((e) => e.sets.length).map((e) => e.machineId));
-  const pool = layout.machines.filter((m) => !done.has(m.id));
-  const candidates = (pool.length ? pool : layout.machines).slice().sort((a, b) => a.num - b.num);
+export function surpriseMachine(layout, active = null, { rand = Math.random, earlier = [], muscle = '' } = {}) {
+  // geometry from a hand-made template may be missing: a NaN centre would
+  // poison every weight, so it counts as "somewhere in the middle"
+  const num = (v, fb) => (Number.isFinite(Number(v)) ? Number(v) : fb);
+  const center = (m) => [num(m.x, 0) + num(m.w, 0) / 2, num(m.y, 0) + num(m.h, 0) / 2];
+  const done = new Set([...(active?.entries ?? []), ...earlier].filter((e) => e.sets.length).map((e) => e.machineId));
+  const narrowed = muscle ? layout.machines.filter((m) => (m.muscles ?? []).includes(muscle)) : [];
+  const scope = narrowed.some((m) => !done.has(m.id)) ? narrowed : layout.machines;
+  const pool = scope.filter((m) => !done.has(m.id));
+  const candidates = (pool.length ? pool : scope).slice().sort((a, b) => a.num - b.num);
   if (!candidates.length) return null;
-  const trained = trainedMuscles(active, layout);
+  const trained = trainedMuscles(active, layout, earlier);
   const open = (m) => (m.muscles ?? []).filter((mu) => !trained.has(mu)).length;
   const lastId = active?.currentMachineId ?? active?.visits?.at(-1)?.machineId;
   const here = layout.machines.find((m) => m.id === lastId);
@@ -778,6 +786,13 @@ export function surpriseMachine(layout, active = null, { rand = Math.random } = 
   return candidates.findLast((m, i) => weights[i] > 0);
 }
 
+// Number input, muscle filter and a tappable mini-map; calls
+// onPick(machineId). The action button says what a pick actually does here —
+// "Start training" on the start screen, "Add" mid-workout — because the same
+// picker starts a whole workout in one place and only appends in the other.
+// The map is collapsed by default (settings.pickerMap) — number and muscle
+// are the picker's primary inputs, the map is the on-demand answer to
+// "where?", not the main navigation surface.
 function machinePicker(container, layout, onPick, { actionLabel = 'Open', active = null } = {}) {
   const allMuscles = layoutMuscles(layout);
 
@@ -893,11 +908,12 @@ function machinePicker(container, layout, onPick, { actionLabel = 'Open', active
   // 🎲 fills the number and points at the machine; the start stays a tap
   // on the action button — a suggestion, never a decision
   modeBar.querySelector('.pick-surprise').addEventListener('click', () => {
-    const m = surpriseMachine(layout, active);
+    const earlier = finishedToday();
+    const m = surpriseMachine(layout, active, { earlier, muscle: muscleSelect?.value || '' });
     if (!m) return;
     suggestedId = m.id;
     input.value = String(m.num);
-    const trained = trainedMuscles(active, layout);
+    const trained = trainedMuscles(active, layout, earlier);
     const openNow = (m.muscles ?? []).filter((mu) => !trained.has(mu));
     err.textContent = `🎲 #${m.num} ${m.label}${openNow.length ? ` — ${openNow.join(', ')} still open today` : ''}. `
       + `Tap ${actionLabel} to go.`;

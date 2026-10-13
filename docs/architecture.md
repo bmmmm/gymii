@@ -624,9 +624,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   Its 🎲 chip (`surpriseMachine(layout, active, { rand })`, exported for the
   tests) only SUGGESTS: it fills the number field, highlights the machine
   on the map and says which of its muscles are still open — the start
-  stays a tap on the action button. The draw: machines not trained yet this
-  workout, weighted by their open muscles (`trainedMuscles`, shared with
-  the coverage chips); nearness to the last machine (else the entrance,
+  stays a tap on the action button. The draw: machines not trained yet
+  TODAY (this workout plus the workouts finished today), narrowed to the
+  picker's muscle filter while that leaves one, weighted by their open
+  muscles (`trainedMuscles`, shared with the coverage chips); nearness to the last machine (else the entrance,
   else the floor's middle) adds under one muscle's weight, so it only tips
   the odds between equals; with every muscle trained it is a plain random
   pick among the untrained machines.

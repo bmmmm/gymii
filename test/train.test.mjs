@@ -1407,7 +1407,9 @@ const withPicker = (fn) => {
   g.machines.push(mm('d1', 1, 0, ['Chest']), mm('d2', 2, 6, ['Quads']), mm('d3', 3, 50, ['Triceps', 'Chest']),
     mm('d4', 4, 10, ['Chest']));
   store.saveLayout(g);
-  const done = { entries: [{ machineId: 'd4', sets: [{ reps: 10, weight: 40 }] }], currentMachineId: 'd4' };
+  // the overview's real state: no current machine, the last visit says where you stand
+  const done = { entries: [{ machineId: 'd4', sets: [{ reps: 10, weight: 40 }] }], currentMachineId: null,
+    visits: [{ machineId: 'd4', in: 0, out: 1 }] };
   // a sweep of evenly spaced draws stands in for many taps
   const tally = (active) => {
     const n = {};
@@ -1430,6 +1432,35 @@ const withPicker = (fn) => {
   assert.deepEqual(tally(trainedAll), { 4: 1000 }, 'all muscles trained: the one machine left');
   const none = tally(null);
   assert.ok(Object.keys(none).length === 4, `no workout yet: every machine can come up — ${JSON.stringify(none)}`);
+  // "open today" counts this morning's finished workout too
+  const earlier = surpriseMachine(g, null, { rand: () => 0, earlier: done.entries });
+  assert.equal(earlier.num, 2, 'Chest trained earlier today: #1 is not suggested, #2 (Quads) is');
+  // the picker's muscle filter narrows the draw while it has something left
+  assert.ok([0, 0.5, 0.99].every((r) => surpriseMachine(g, done, { rand: () => r, muscle: 'Triceps' }).num === 3),
+    'a Triceps filter: the Triceps machine');
+  // a template machine without a position must not poison the weights
+  const loose = { ...g, machines: [...g.machines, { id: 'd5', num: 5, label: 'M5', settingsFields: [], muscles: ['Lats'] }] };
+  assert.ok([0, 0.3, 0.7, 0.999].every((r) => surpriseMachine(loose, done, { rand: () => r })),
+    'a machine with no geometry still leaves a draw that returns a machine');
+  // the overview's picker hands its workout to the draw
+  store.saveActive({ v: 2, id: 'w-dice', startedAt: Date.now(), plan: [{ machineId: 'd4', exercise: null }],
+    currentMachineId: null, currentExercise: null, visits: done.visits,
+    entries: [{ machineId: 'd4', num: 4, label: 'M4', settings: {}, sets: [{ reps: 10, weight: 40 }] }] });
+  byId.clear();
+  {
+    const surprise = stubEl();
+    withPicker((picker) => {
+      const mode = picker.querySelector('.pick-mode');
+      const qs = mode.querySelector;
+      mode.querySelector = (sel) => (sel === '.pick-surprise' ? surprise : qs.call(mode, sel));
+      renderTrain(root);
+      const realRand = Math.random;
+      Math.random = () => 0;
+      try { surprise.listeners.click(); } finally { Math.random = realRand; }
+      assert.equal(picker.parts.get('.pick-num').value, '2', 'mid-workout the Chest machines are out: #2 (Quads)');
+    });
+    assert.equal(store.getActive().currentMachineId, null, 'and the workout did not move to it');
+  }
   // the chip only suggests: it fills the number and says why, it never starts
   store.clearActive();
   goToStart();
@@ -1447,6 +1478,13 @@ const withPicker = (fn) => {
     assert.equal(picker.parts.get('.pick-num').value, '1', 'the draw fills the number field (#1 trains Chest, open)');
     assert.ok(picker.parts.get('.pick-err').textContent.startsWith('🎲 #1 M1 — Chest still open today.'),
       'and the line says what it trains that is still open');
+    // a workout finished earlier today counts: Chest is done, so is #1
+    store.saveWorkouts([{ id: 'am', startedAt: Date.now() - 60000, finishedAt: Date.now(),
+      entries: [{ machineId: 'd4', num: 4, label: 'M4', settings: {}, sets: [{ reps: 10, weight: 40 }] }] }]);
+    Math.random = () => 0;
+    try { surprise.listeners.click(); } finally { Math.random = realRand; }
+    assert.equal(picker.parts.get('.pick-num').value, '2', 'this morning\'s Chest session counts as trained today');
+    store.saveWorkouts([]);
     picked = store.getActive() ? 1 : 0;
   });
   assert.equal(picked, 0, 'no workout was started — a suggestion, never a decision');
