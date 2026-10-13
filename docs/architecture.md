@@ -569,8 +569,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   field, it re-renders the card too (a text field's `change` saves without
   re-rendering; renderProps never calls save(), so this cannot recurse). An
   edit to a machine another device deleted meanwhile brings it back — the
-  edit wins (user decision 2026-10-13). Undo and redo read the stored layout IN THE TAP too and
-  write only their parts, objects key by key (`applySide`): a machine
+  edit wins (user decision 2026-10-13). Undo and redo read the stored
+  layout IN THE TAP too and write only their parts, objects key by key (`applySide`): a machine
   another writer added since survives, a key it changed survives unless the
   edit changed that key, a machine it deleted stays deleted, and an undone
   delete comes back at its old index. A save that changes nothing writes
@@ -978,12 +978,17 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   take the shortest step to the centre; the walk starts at the rounded
   centre only where that point is on the floor with no wall to the true
   centre, else from the machine's ring the same way, so no walk joins two
-  rooms through a partition — and with a good centre also from the ring
-  points a wall separates from the true centre, so a machine cut by a
-  partition is left into both rooms as it is reached from both (walk(A, B)
-  and walk(B, A) agree on reachability; a fuzz of 34 456 editor-shaped pairs
-  had 1 133 one-sided before, 0 after; no other walk changes); `walkableGrid` keeps the grid to 1–400 units,
-  else no walk; `floodCount` and `floodSettled` let the tests pin one flood
+  rooms through a partition (a true centre ON a wall is no good centre
+  either) — and with a good centre also from the ring points a wall
+  separates from the true centre, so a machine cut by a partition is left
+  into both rooms as it is reached from both. Measured on editor-shaped
+  floors with axis-aligned partitions and doors: 1 133 of 34 456 pairs
+  walked one way only before, 0 after; walks from a machine no wall enters
+  are unchanged, one a wall stub enters can get shorter. Diagonal walls
+  still leave a few one-sided pairs (about 0.2 %, review fuzz), and a cut
+  ring point on the seam between the start and a flush neighbour can seed
+  a walk no other walk reaches; `walkableGrid` keeps the grid to 1–400
+  units, else no walk; `floodCount` and `floodSettled` let the tests pin one flood
   per log screen and its early stop; the
   floor is rasterised once per geometry on a half-unit grid, walks are
   memoised per floor and pair (`walksCached`); null when no way exists; the

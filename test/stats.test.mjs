@@ -886,6 +886,14 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     const legs = [[M, Lm], [Lm, M], [M, Rm], [Rm, M]].map(([a, b]) => stats.walkLength(cut, a, b));
     assert.ok(legs.every((d) => d != null), `a cut machine walks to and from both rooms (${legs.map((d) => d?.toFixed(2))})`);
     assert.equal(stats.walkLength(cut, Lm, Rm), null, 'the rooms themselves stay apart');
+    // a true centre exactly ON a (diagonal) wall: no ring point is "cut" from
+    // it, so it is no good centre — the whole ring starts, both sides
+    const diag = { id: 'g', kind: 'line', x: -2, y: -3, w: 24, h: 12 };
+    const On = box('On', 8, 1, 2, 3); // centre (9, 2.5) lies on the wall
+    const Bo = box('Bo', 15, 0);
+    const slope = { grid: { w: 20, h: 20 }, outline: [], shapes: [diag], machines: [On, Bo] };
+    const both = [stats.walkLength(slope, On, Bo), stats.walkLength(slope, Bo, On)];
+    assert.ok(both.every((d) => d != null), `a centre on a wall walks both ways (${both})`);
   }
   // …and a fuzz against an exact rule: a doorless partition past both edges
   // splits the floor in two rooms, so no walk joins machines on different

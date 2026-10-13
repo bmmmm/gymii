@@ -256,3 +256,14 @@ reached from its floor side; an editor edit beats another device's delete
 cluster; a machine entirely outside the outline gets no walk (an editor
 error); two identical blocks (same target) stay one slot. The half-unit
 raster's tolerances (wall ends, slits, 1-unit lanes) are accepted.
+
+### Review leftovers of 2026-10-13m (reviewer P2s, built on request)
+
+- **Routing, diagonal walls.** With a diagonal partition a few pairs still
+  walk one way only (about 0.2 % in the review fuzz), and a cut ring point
+  on the zero-width seam between the start and a flush neighbour can seed
+  a walk that no walk the other way reaches. Axis-aligned floors: none.
+- **Gym editor, tap during a re-render.** When another writer changed the
+  open machine since the last save, a text field's `change` (fired by the
+  tap on the next control) re-renders the card before that tap lands —
+  the tap is lost or the keyboard drops once. Rare; no data is wrong.

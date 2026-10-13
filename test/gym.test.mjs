@@ -905,6 +905,14 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   last(label, 'change')();
   assert.equal(machineAt('c1').label, 'Cable tower', 'the edit is saved');
   assert.ok(props.innerHTML.includes('data-value="Thick rope"'), 'and the card shows the grip that came in');
+  // a gym field another writer changed (the brand the card falls back to) counts too
+  const pulled = store.getLayout();
+  pulled.meta = { ...(pulled.meta ?? {}), brand: 'Synced brand' };
+  store.restoreLayout(pulled);
+  assert.ok(!props.innerHTML.includes('Synced brand'), 'the card was drawn before the brand came in');
+  label.value = 'Cable column';
+  last(label, 'change')();
+  assert.ok(props.innerHTML.includes('Synced brand'), 'a gym field taken in re-renders the card too');
 }
 
 console.log('gym editor: all assertions passed');

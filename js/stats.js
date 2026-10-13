@@ -412,18 +412,22 @@ export function walksFrom(layout, from, targets) {
   // into the other room from there; a machine flush against the rim rounds
   // onto the rim, one in a corner of the outline past it. Then the walk
   // starts from every free point of its ring, each at its straight step
-  // from the centre: a machine is left the way it is reached. With a good
-  // centre the ring points a wall separates from the true centre start too:
-  // a machine cut by a partition is reached from both rooms, so it is left
-  // into both (walk(A, B) and walk(B, A) agree on reachability); every other
-  // ring point is left through the centre, so no other walk changes.
+  // from the centre: a machine is left the way it is reached. A true centre
+  // ON a wall is no good centre either. With a good centre the ring points
+  // a wall separates from the true centre start too: a machine cut by a
+  // partition is reached from both rooms, so it is left into both. Walks
+  // from a machine no wall enters are unchanged; one a wall stub enters can
+  // get shorter. Measured on editor floors: no one-sided pair left with
+  // axis-aligned walls; diagonal walls and seams with flush neighbours still
+  // leave a few (docs/architecture.md § stats.js).
   const fx = from.x + from.w / 2;
   const fy = from.y + from.h / 2;
   const sx = Math.round(fx);
   const sy = Math.round(fy);
   const free = (x, y) => x >= 0 && y >= 0 && x <= W && y <= H && !blocked(2 * x, 2 * y);
   const cut = (x, y) => walls.some(([a, b]) => crosses({ x, y }, { x: fx, y: fy }, a, b));
-  const centre = free(sx, sy) && !cut(sx, sy);
+  const centre = free(sx, sy) && !cut(sx, sy)
+    && !walls.some(([a, b]) => onSegment({ x: fx, y: fy }, a, b));
   const seeds = ring(from).filter(([x, y]) => free(x, y) && (!centre || cut(x, y))).map(([x, y, d]) => [d, x, y]);
   if (centre) seeds.push([0, sx, sy]);
   if (!open.size || !seeds.length) return out;
