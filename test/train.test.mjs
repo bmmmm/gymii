@@ -1042,7 +1042,13 @@ store.saveWorkouts([]);
 // and ONLY that exercise), #1 busy on this weekday (busy: the #1 log
 // screen, on that weekday only), and the walk back (route: the plan row
 // says "reorder?"; the builder's line is pinned in plan.test.mjs).
-{
+// The clock is pinned (Monday 2026-10-12, 18:30 local): the busy hint
+// depends on the weekday AND the hour, and a run across midnight or in the
+// small hours must not decide the outcome.
+const hintsRealNow = Date.now;
+let hintsNow = new Date(2026, 9, 12, 18, 30).getTime();
+Date.now = () => hintsNow;
+try {
   const before = store.getLayout(); // earlier blocks reshaped the gym
   const g3 = store.newLayout('Hints gym');
   g3.machines.push({ id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
@@ -1053,7 +1059,7 @@ store.saveWorkouts([]);
   g3.machines.push({ id: 'm3', num: 3, label: 'Row', x: 12, y: 0, w: 4, h: 3, settingsFields: [] });
   store.saveLayout(g3);
   const atDay = (back, h, m = 0) => {
-    const d = new Date();
+    const d = new Date(Date.now());
     d.setDate(d.getDate() - back);
     d.setHours(h, m, 0, 0);
     return d.getTime();
@@ -1095,9 +1101,16 @@ store.saveWorkouts([]);
   assert.ok(!curls.includes('Usually busy'), '#1\'s busy hint is not on the curls screen');
   assert.ok(!logAt('db', 'Shoulder press').includes('Target beaten'),
     'the same machine, another exercise: no hint — it would name the wrong load');
-  const weekday = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
-  assert.ok(logAt('m1', null).includes(`<p class="hint head-hint"><span>Usually busy ${weekday}s 18–19 h — start elsewhere.</span></p>`),
+  assert.ok(logAt('m1', null).includes('<p class="hint head-hint"><span>Usually busy Mondays 18–19 h — start elsewhere.</span></p>'),
     'the busy hint on its weekday, from your own marks: no link');
+  // …and only around the window it names: an hour either side
+  const busyAt = (h, m) => {
+    hintsNow = new Date(2026, 9, 12, h, m).getTime();
+    return logAt('m1', null).includes('Usually busy');
+  };
+  assert.deepEqual([busyAt(9, 0), busyAt(16, 59), busyAt(17, 0), busyAt(20, 59), busyAt(21, 0)],
+    [false, false, true, true, false], 'Monday morning hears nothing of the Monday-evening crowd');
+  hintsNow = new Date(2026, 9, 12, 18, 30).getTime();
   assert.ok(!logAt('m1', null).includes('Target beaten'), 'no progress at #1: 10 × 40 is under target');
   store.saveWorkouts([pull('h1', 22), pull('h2', 15), pull('h3', 8)]); // another weekday
   assert.ok(!logAt('m1', null).includes('Usually busy'), 'not today: the busy hint waits for its weekday');
@@ -1115,6 +1128,8 @@ store.saveWorkouts([]);
   store.savePlans([]);
   store.saveWorkouts([]);
   store.saveLayout(before);
+} finally {
+  Date.now = hintsRealNow;
 }
 
 // --- the log screen reads what its fields SHOW (fieldValue) ---

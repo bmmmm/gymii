@@ -141,7 +141,9 @@ assert.deepEqual(overviewOrder.slice().sort((a, b) => a - b), overviewOrder,
 assert.ok(!root.innerHTML.includes('id="workout-list"'), 'the full list is not on the overview');
 assert.ok(root.innerHTML.includes('All workouts (3) ›'), 'the way in counts what it leads to');
 openWorkouts();
-const workoutsOrder = order(['Training days', 'Workouts', 'Log a past workout']);
+// the list card has no h2 of its own: the screen's h1 already says "Workouts"
+const workoutsOrder = [...order(['Training days']), root.innerHTML.indexOf('id="workout-list"'),
+  ...order(['Log a past workout'])];
 assert.ok(workoutsOrder.every((i) => i > 0), 'every Workouts-screen card renders');
 assert.deepEqual(workoutsOrder.slice().sort((a, b) => a - b), workoutsOrder,
   'the Workouts screen: training days, the list, log a past workout');
@@ -163,14 +165,15 @@ assert.ok(!chips().includes('#3 Lat pulldown'),
   'machine lists follow the filter, not just the workout list');
 assert.ok(root.innerHTML.includes('All workouts (2) ›'), 'and so does the count');
 openWorkouts();
-assert.ok(root.innerHTML.includes('Workouts — Leg day'), 'the heading names the active filter');
+assert.ok(root.innerHTML.includes('<p class="muted list-filter">Showing: Leg day</p>'), 'the list names the active filter');
+assert.equal(root.innerHTML.split('>Workouts<').length - 1, 1, 'and says "Workouts" once: the h1, no h2 under it');
 assert.ok(root.innerHTML.includes('id="name-filter"'), 'the name chips sit on this screen too');
 
 // the filter clears itself when its last workout loses that name
 store.saveWorkouts(store.getWorkouts().map((w) => (w.name === 'Leg day' ? { ...w, name: 'Legs' } : w)));
 render();
 assert.ok(onWorkouts(), 'a re-render keeps the screen');
-assert.ok(root.innerHTML.includes('<h2>Workouts</h2>'), 'a filter with nothing left resets');
+assert.ok(!root.innerHTML.includes('list-filter'), 'a filter with nothing left resets');
 backToOverview();
 assert.ok(chips().includes('#3 Lat pulldown'), 'and the full view comes back');
 
@@ -338,7 +341,10 @@ render();
 root.querySelector('#past-date').value = '2026-08-02';
 root.querySelector('#past-time').value = '19:30';
 root.querySelector('#past-text').value = '#14 Leg press 3x10 90\nno such machine 3x10';
+let pastScroll = null;
+root.querySelector('#past-msg').scrollIntoView = (o) => { pastScroll = o; };
 root.querySelector('#past-log').listeners.click();
+assert.deepEqual(pastScroll, { block: 'center' }, 'the notice about skipped lines is brought back on screen');
 
 const logged = store.getWorkouts().find((w) => new Date(w.startedAt).getDate() === 2);
 assert.ok(logged, 'the past workout is stored');
@@ -382,13 +388,17 @@ assert.ok(root.innerHTML.includes('bar-fill'), 'rows carry usage bars');
 
 // tapping a row narrows the WHOLE view, like the name filter does
 const pressed = (mu) => new RegExp(`data-muscle="${mu}" aria-pressed="true"`).test(root.innerHTML);
+let rowScroll = null;
+byId.set('.muscle-row[data-muscle="Lats"]', stubEl({ scrollIntoView(o) { rowScroll = o; } }));
 root.querySelector('#muscle-list').listeners.click(clickOn('.muscle-row', { muscle: 'Lats' }));
 assert.ok(onOverview() && pressed('Lats'), 'the row shows its filter is on');
+assert.deepEqual(rowScroll, { block: 'center' },
+  'the tapped row is kept under the thumb — Muscles is the last card, the view resizes above it');
 assert.ok(!chips().includes('#14 Leg press'),
   'machine selects follow the muscle filter too');
 assert.ok(root.innerHTML.includes('All muscles'), 'an explicit way out renders');
 openWorkouts();
-assert.ok(root.innerHTML.includes('Workouts — Lats'), 'the list heading names the muscle');
+assert.ok(root.innerHTML.includes('Showing: Lats'), 'the list names the muscle');
 backToOverview();
 
 // the same row again clears it
@@ -434,7 +444,7 @@ render();
 // editing, or this test passes without a filter in play at all (a re-tap
 // here would TOGGLE it off and make the assertion below vacuous)
 openWorkouts();
-assert.ok(root.innerHTML.includes('Workouts — Quads'),
+assert.ok(root.innerHTML.includes('Showing: Quads'),
   'the muscle filter is active going into the edit');
 list().listeners.click(clickOn('.edit-w', { wid: 'mw3' }));
 list().listeners.click(clickOn('.set-add', { ei: '0' }));
@@ -575,10 +585,18 @@ assert.ok(/Nothing logged that week\./.test(root.querySelector('#week-workouts')
 weekChart().onpointerdown({ clientX: barX(10), pointerId: 1 });
 weekChart().onpointerup({ clientX: barX(10) });
 
-// a save from the week's own list re-renders without `entry`: the week stays
-root.querySelector('#week-list').listeners.click(clickOn('.edit-w', { wid: 'wk3' }));
-root.querySelector('#week-list').listeners.click(clickOn('.edit-save'));
-assert.ok(onOverview() && weekTitle().startsWith('Week of '), 'a save keeps the picked week');
+// the week's list is read-only — a bar or tile tap rebuilds it, and an
+// edit draft in it died unannounced. "Edit ›" opens the editor on the
+// Workouts screen, which nothing redraws under it.
+assert.ok(!weekList().includes('edit-w') && !weekList().includes('delete-w'), 'no editor and no delete in the week list');
+assert.ok(weekList().includes('class="btn btn-inline edit-open" data-wid="wk3">Edit ›</button>'), 'an "Edit ›" instead');
+root.querySelector('#week-list').listeners.click(clickOn('.edit-open', { wid: 'wk3' }));
+assert.ok(onWorkouts(), '"Edit ›" goes to the Workouts screen');
+assert.ok(list().innerHTML.includes('Editing —') && !list().innerHTML.includes('repeat-w" data-wid="wk3"'),
+  'with that workout open in its editor');
+list().listeners.click(clickOn('.edit-save'));
+backToOverview();
+assert.ok(weekTitle().startsWith('Week of '), 'and the picked week is still picked');
 assert.deepEqual(listed(), ['wk3']);
 enter();
 assert.equal(weekTitle(), 'This week', 'a tab tap goes back to this week');
@@ -594,6 +612,11 @@ assert.ok(/aria-label="Volume per week/.test(weekChart().innerHTML), 'the metric
 assert.deepEqual(tile('volume'), ['2,500 kg', 'vs 500 kg the week before']);
 root.querySelector('#week-tiles').listeners.click(clickOn('.tile', { metric: 'minutes' }));
 assert.deepEqual(tile('minutes'), ['2:00 h', 'vs 45 min the week before'], 'time reads in hours from 60 min');
+const barLabel = () => weekChart().innerHTML.match(/class="c-label"[^>]*>([^<]*)</)?.[1];
+assert.equal(barLabel(), '2:00 h', 'the selected bar says what its tile says, not "120 min"');
+root.querySelector('#week-tiles').listeners.click(clickOn('.tile', { metric: 'volume' }));
+assert.equal(barLabel(), '2,500 kg', 'one number format for both: "2,500 kg", not "2500 kg"');
+root.querySelector('#week-tiles').listeners.click(clickOn('.tile', { metric: 'minutes' }));
 
 // --- Hints: an instruction with a ↗ to its study, where the user acts ---
 // Weekly on one weekday, 49 … 0 days back at 18:00: Chest press 14 × 50
@@ -651,6 +674,16 @@ assert.ok(root.querySelector('#chart-note').innerHTML.includes('href="https://pm
 tapMachine(K('m3'));
 assert.equal(root.querySelector('#chart-note').innerHTML, '', 'the same machine, another exercise: no note');
 
+// a filter narrows what is LISTED, never what the hints read: "1 strength
+// day a week" is about all of the training, not about one routine
+store.saveWorkouts(store.getWorkouts().map((w) => (w.id === 'i7' ? { ...w, name: 'Solo' } : w)));
+render();
+root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: 'Solo' }));
+assert.ok(/class="chip sel"\s+data-name="Solo"/.test(root.innerHTML), 'the filter is on');
+assert.ok(hint('Aim for 2 strength days a week — 1 over the last 4 weeks.'),
+  'a filter that leaves ONE workout still shows the hints over all of them');
+root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: '' }));
+
 // nothing to say, nothing shown: under three workouts no rule runs
 store.saveWorkouts(store.getWorkouts().slice(-2));
 render();
@@ -670,12 +703,16 @@ const pathChips = () => root.querySelector('#path-chips').innerHTML;
 const pathStats = () => root.querySelector('#path-stats').innerHTML;
 const t0 = dayAt(3, 17);
 const min = 60000;
-store.saveWorkouts([{ id: 'bare', startedAt: dayAt(4, 17), finishedAt: dayAt(4, 18),
+store.saveWorkouts([{ id: 'bare', name: 'Typed in', startedAt: dayAt(4, 17), finishedAt: dayAt(4, 18),
   entries: [entry('m1', 14, 'Leg press', sets(2)), entry('m2', 3, 'Lat pulldown', sets(2))] }]);
 enter();
 assert.ok(/<h2>Walking paths<\/h2>\s*<p class="muted">Shows the route you walked/.test(root.innerHTML),
   'without a single `at` the card explains what it needs');
 assert.ok(!root.innerHTML.includes('id="path-map"'), 'and draws no map');
+root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: 'Typed in' }));
+assert.ok(root.innerHTML.includes('<p class="muted">Shows the route you walked'),
+  'with no live-logged workout at all, a filter is not to blame');
+root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: '' }));
 
 // sets with `at`: Leg press → Lat pulldown → Chest press
 const stamped = {
@@ -695,6 +732,13 @@ assert.ok(!pathChips().includes('data-wid="all"'), 'one route: no "All" chip');
 assert.ok(/class="path-leg" data-from="m1" data-to="m2"/.test(pathMap())
   && /class="path-leg" data-from="m2" data-to="m3"/.test(pathMap()), 'the map draws its legs');
 assert.ok(pathStats().includes('3 machines · 2 switches · 0 back-tracks'), 'the route in numbers');
+// a name filter that hides every live-logged workout: the text blames the filter
+render();
+root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: 'Typed in' }));
+assert.ok(/<h2>Walking paths<\/h2>\s*<p class="muted">No live-logged workout under this name\.<\/p>/.test(root.innerHTML),
+  'the filter took the routes away, not the back-logging');
+root.querySelector('#name-filter').listeners.click(clickOn('.chip', { name: '' }));
+assert.ok(root.innerHTML.includes('id="path-map"'), 'and they come back with the filter off');
 assert.ok(pathStats().includes('#14 9 min → #3 6 min → #7 10 min'),
   'and where the time went: stop to stop, the last one to the finish');
 

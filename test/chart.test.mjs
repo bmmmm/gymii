@@ -232,6 +232,10 @@ assert.ok(c.innerHTML.includes('class="c-bar sel zero" data-key="w4"'), 'selecte
 assert.ok(c.innerHTML.includes('>0</text>'), 'a selected zero week says 0');
 
 c = box();
+barChart(c, weeks, { selectedKey: 'w4', format: (v) => `<${v} h>` });
+assert.ok(c.innerHTML.includes('>&lt;0 h&gt;</text>'), 'a caller-supplied format writes the selected value, escaped');
+
+c = box();
 barChart(c, weeks);
 barChart(c, []);
 assert.ok(c.innerHTML.includes('No data yet.') && c.onpointerdown === null, 'no bars: text, no handlers');

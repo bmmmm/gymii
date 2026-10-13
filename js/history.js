@@ -6,7 +6,7 @@ import {
 import {
   esc, fmtDate, fmtDay, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
   dateValue, timeValue, machineChain, keepInView, minsBetween, fmtDuration,
-  parseDuration, parseDistance, hintHtml, variantStr, fieldValue,
+  parseDuration, parseDistance, hintHtml, variantStr, fieldValue, keepFocus, fmtMetric,
 } from './ui.js';
 import { lineChart, barChart } from './chart.js';
 import {
@@ -180,8 +180,8 @@ function renderWorkoutsScreen(root, ctx) {
     ${nameChipsHtml(ctx.named)}
     ${heatmapCardHtml(ctx)}
     <section class="card">
-      <h2>Workouts${nameFilter ? ` — ${esc(nameFilter)}` : ''}${
-        muscleFilter ? ` — ${esc(muscleFilter)}` : ''}</h2>
+      ${nameFilter || muscleFilter ? `<p class="muted list-filter">Showing: ${
+    [nameFilter, muscleFilter].filter(Boolean).map(esc).join(' · ')}</p>` : ''}
       <div id="workout-list"></div>
     </section>
     ${pastCardHtml()}`;
@@ -210,7 +210,7 @@ function wireNameFilter(root) {
     const chip = e.target.closest('.chip');
     if (!chip) return;
     nameFilter = chip.dataset.name;
-    renderHistory(root);
+    keepFocus(root, () => renderHistory(root));
   });
 }
 
@@ -257,7 +257,10 @@ const muscleCard = {
       if (!row) return;
       const m = row.dataset.muscle;
       muscleFilter = m && m !== muscleFilter ? m : '';
-      renderHistory(root);
+      keepFocus(root, () => renderHistory(root));
+      // Muscles is the last card: the view shrinks or grows above the row,
+      // and the clamp would put the next tap on another row
+      keepInView(root, `.muscle-row[data-muscle="${m.replace(/["\\]/g, '\\$&')}"]`);
     });
   },
 };
@@ -272,9 +275,6 @@ const METRICS = [['workouts', 'Workouts'], ['sets', 'Sets'], ['volume', 'Volume'
 const metricOf = (s) => (METRICS.some(([k]) => k === s.historyMetric) ? s.historyMetric : 'sets');
 const metricValue = (b, metric) => (metric === 'volume' || metric === 'minutes'
   ? Math.round(b[metric]) : b[metric]); // stats.js hands back raw floats
-const fmtMinutes = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} h`);
-const fmtMetric = (v, metric, unit) => (metric === 'volume' ? `${v.toLocaleString('en-GB')} ${unit}`
-  : metric === 'minutes' ? fmtMinutes(v) : String(v));
 // "8 Sep": a week's Monday — "Week of" already says which weekday it is
 const dayMonth = (t) => fmtDay(t).replace(/^\S+ /, '');
 
@@ -332,7 +332,7 @@ const weekCard = {
       // the node, and a reused one would collect a set per picked week
       holder.innerHTML = items.length ? '<div id="week-list"></div>'
         : `<p class="muted" id="week-list">Nothing logged ${week.isNow ? 'this' : 'that'} week.</p>`;
-      if (items.length) wireWorkoutList(root, root.querySelector('#week-list'), items, s, layout);
+      if (items.length) wireWorkoutList(root, root.querySelector('#week-list'), items, s, layout, { readOnly: true });
     };
     const drawWeek = () => {
       const metric = metricOf(getSettings());
@@ -341,7 +341,8 @@ const weekCard = {
       barChart(chartEl, bars.map((b) => ({
         key: String(b.weekStart.getTime()), label: dayMonth(b.weekStart), v: metricValue(b, metric),
       })), {
-        unit: metric === 'volume' ? unit : metric === 'minutes' ? 'min' : '',
+        // the selected bar reads exactly like its tile ("2:29 h", "3,873 kg")
+        format: (v) => fmtMetric(v, metric, unit),
         label: `${title} per week, last ${WEEKS} weeks`,
         selectedKey: pickedWeek == null ? null : String(pickedWeek),
         onSelect: (bar) => {
@@ -356,7 +357,7 @@ const weekCard = {
       const tile = e.target.closest('.tile');
       if (!tile) return;
       saveSettings({ ...getSettings(), historyMetric: tile.dataset.metric });
-      drawWeek();
+      keepFocus(root, drawWeek);
     });
     root.querySelector('#open-workouts').addEventListener('click', () => {
       screen = 'workouts';
@@ -514,14 +515,14 @@ const progressCard = {
         pickedMachine = chip.dataset.key;
         pickedT = null; // a point of another machine means nothing here
       }
-      drawProgress();
+      keepFocus(root, drawProgress);
       if (keep != null) chipsEl.scrollLeft = keep;
     });
     rangeEl.addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
       if (!chip) return;
       saveSettings({ ...getSettings(), historyRange: chip.dataset.range });
-      drawProgress();
+      keepFocus(root, drawProgress);
     });
     // "Open workout ›" — the same workout, with its sets and its editor
     pickEl.addEventListener('click', (e) => {
@@ -548,6 +549,13 @@ const PATH_EMPTY = 'Shows the route you walked through the gym, machine by machi
 // [{w, p}] oldest first; computed once per render (html and wire share it)
 const pathsOf = (ctx) => (ctx.paths ??= ctx.layout
   ? ctx.workouts.map((w) => ({ w, p: workoutPath(w, ctx.layout) })).filter((x) => x.p) : []);
+// No route to draw: blame the filter when it is the filter — the sets were
+// logged live, just not under this name (or muscle).
+const pathEmpty = (ctx) => {
+  if (!(nameFilter || muscleFilter) || !ctx.all.some((w) => workoutPath(w, ctx.layout))) return PATH_EMPTY;
+  return nameFilter ? 'No live-logged workout under this name.'
+    : 'No live-logged workout trained this muscle.';
+};
 const routeLen = (p) => p.legs.reduce((n, l) => n + l.len, 0);
 const median = (xs) => {
   const a = [...xs].sort((x, y) => x - y);
@@ -563,7 +571,7 @@ const pathCard = {
       ${pathsOf(ctx).length ? `
       <div class="chip-select scroll" id="path-chips"></div>
       <div class="map-wrap"><svg id="path-map" role="img"></svg></div>
-      <div id="path-stats"></div>` : `<p class="muted">${PATH_EMPTY}</p>`}
+      <div id="path-stats"></div>` : `<p class="muted">${esc(pathEmpty(ctx))}</p>`}
     </section>` : ''),
   wire(root, ctx) {
     const paths = pathsOf(ctx);
@@ -627,7 +635,7 @@ const pathCard = {
       const chip = e.target.closest('.chip');
       if (!chip) return;
       pathWorkoutId = chip.dataset.wid;
-      drawPath();
+      keepFocus(root, drawPath);
     });
     drawPath();
   },
@@ -757,19 +765,23 @@ function wireHeatmap(root, { workouts, s, unit }) {
 // its details can be checked and named while the workout is still in mind.
 // Shared by every list of workouts History shows; a save or a delete
 // re-renders the whole view (the screen and the module state survive).
-function wireWorkoutList(root, list, items, s, layout) {
-  let editDraft = openEditId
+// `readOnly` (the overview's week list): no editor, no delete — a bar or
+// tile tap rebuilds that list, and an open draft would die with it
+// unannounced. Its "Edit ›" opens the workout's editor on the Workouts
+// screen instead, which nothing else redraws under it.
+function wireWorkoutList(root, list, items, s, layout, { readOnly = false } = {}) {
+  let editDraft = !readOnly && openEditId
     ? JSON.parse(JSON.stringify(items.find((w) => w.id === openEditId) ?? null)) : null;
-  openEditId = null;
-  const focusId = focusWorkoutId; // "Open workout ›": opened on THIS render only
-  focusWorkoutId = null;
+  if (!readOnly) openEditId = null;
+  const focusId = readOnly ? null : focusWorkoutId; // "Open workout ›": opened on THIS render only
+  if (!readOnly) focusWorkoutId = null;
   // why a grip chip did nothing — { ei, text }, shown for ONE render
   let gripMsg = null;
   const renderList = (openId = null) => {
     // reachable only by combining the name and muscle filters
     list.innerHTML = items.length ? items.slice().reverse()
       .map((w) => (editDraft?.id === w.id ? editWorkoutHtml(editDraft, s, layout, gripMsg)
-        : workoutHtml(w, s, w.id === openId)))
+        : workoutHtml(w, s, w.id === openId, readOnly)))
       .join('') : '<p class="muted">No workouts match this filter.</p>';
     gripMsg = null;
   };
@@ -789,6 +801,15 @@ function wireWorkoutList(root, list, items, s, layout) {
       if (!workout) return;
       startWorkoutFrom(workout);
       location.hash = '#train';
+      return;
+    }
+
+    const editOpen = e.target.closest('.edit-open');
+    if (editOpen) {
+      openEditId = editOpen.dataset.wid;
+      focusWorkoutId = editOpen.dataset.wid; // scrolled to, like "Open workout ›"
+      screen = 'workouts';
+      renderHistory(root);
       return;
     }
 
@@ -934,7 +955,7 @@ const minsOf = (w) => // finishedAt can be absent in imported data
 
 const entryTitle = (e) => `#${esc(e.num)} ${esc(e.label)}${variantStr(e) ? ` · ${esc(variantStr(e))}` : ''}`;
 
-function workoutHtml(w, s, open = false) {
+function workoutHtml(w, s, open = false, readOnly = false) {
   const sets = setCount(w);
   const chain = machineChain(w);
   return `<details class="workout"${open ? ' open' : ''}>
@@ -951,9 +972,10 @@ function workoutHtml(w, s, open = false) {
         <div class="sets">${e.sets.map((st) => setStr(st, s, !!e.bodyweight)).join(', ')}${settingsStr(e)}</div>
       </div>`).join('')}
     <button class="btn repeat-w" data-wid="${esc(w.id)}">Repeat this workout</button>
-    <div class="row">
+    <div class="row">${readOnly ? `
+      <button class="btn btn-inline edit-open" data-wid="${esc(w.id)}">Edit ›</button>` : `
       <button class="btn btn-inline edit-w" data-wid="${esc(w.id)}">Edit</button>
-      <button class="btn btn-inline btn-danger delete-w" data-wid="${esc(w.id)}">Delete</button>
+      <button class="btn btn-inline btn-danger delete-w" data-wid="${esc(w.id)}">Delete</button>`}
     </div>
   </details>`;
 }
@@ -1000,6 +1022,8 @@ function wirePastLog(root, s) {
       if (skipped.length) {
         root.querySelector('#past-msg').textContent = `Logged — ${plural(skipped.length, 'line')}
           had no machine gymii could find (${skipped.join(', ')}).`;
+        // the opened editor above pushed the notice off-screen
+        keepInView(root, '#past-msg');
       }
     } catch (err) {
       msg.textContent = err.message;

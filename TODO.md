@@ -13,47 +13,8 @@ workout now records machine visits (`visits`, with `busy` marks from the
 date editor shifts set and visit timestamps; the demo gym carries stamps,
 visits and ratings for its last four weeks.
 
-### Hints — open (review findings 2026-10-01, built on request)
-
-- The busy hint filters on the weekday only: marks on Mondays 17–19 h show
-  the line on a Monday-morning workout too. It would need `h0`/`h1` on the
-  insight and a window check in `renderLog`.
-- `insights()` runs on every History render (the Workouts screen never
-  reads it), twice per logged set (log screen + overlay) and in
-  `planListCard` even when no plan has a name — 3 ms warm at 29 workouts,
-  ~100 ms cold at 435. A memo keyed on the workout list, if it ever shows.
-- Unpinned: that History computes hints over `all`, never the filtered
-  list; the overlay click exemption for the hint's ↗ (`button, a`); the
-  train-test busy fixture reads the weekday at three instants (a run across
-  local midnight could fail, once).
-
 ### History — open (review findings, built on request)
 
-- The overview's week list carries the full editor: a bar or tile tap
-  rebuilds it and drops an open edit draft silently. Either lock the week
-  list while a draft is open or render it read-only (edit on the Workouts
-  screen).
-- Tiles and chip rows re-render via innerHTML on their own click, so
-  keyboard focus drops to `body` (touch is unaffected). Re-focus by id after
-  the redraw, as `preserveFocus` does for fields.
-- Tile vs selected-bar number formats differ ("2:29 h" / "3,873 kg" vs
-  "149 min" / "3873 kg") — one formatter for both.
-- `<h1>Workouts</h1>` sits directly above the list card's `<h2>Workouts</h2>`
-  on the Workouts screen (both test-pinned; decide which one goes).
-- The path card's empty text blames back-logged sets even when only a name
-  filter removed every stamped workout.
-- Pre-existing, now reachable from the overview: a muscle-row tap
-  re-renders without `keepInView` and, with Muscles last on the page, the
-  clamp moves a second tap onto another row; after "Log it" the `#past-msg`
-  notice ends up off-screen.
-- `closeVisits` drops a visit under 15 s even when sets were logged during
-  it (a burst-logger loses that machine from the route; stamped sets cannot
-  fill in because visits win whenever any exist). A workout started before
-  the visits deploy and finished after it has a partial route, one-off.
-- `saveSettings` from a range chip or metric tile stamps `settings.updatedAt`
-  (device-local keys ride the shared stamp — the existing mapColors/timerDim
-  pattern, now on the most-browsed screen); a stale device can win the user
-  settings merge. Per-key stamps would fix the class.
 - Plan "Offen": `layout.meta.scale` → metres in the path card; wall-aware
   routing; `settings.bodyKg` → kcal; primary/secondary muscle weighting;
   a real next-machine recommender on top of rules 6–8; `visits` in the AI

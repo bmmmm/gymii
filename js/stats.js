@@ -575,6 +575,10 @@ function busyRule(ws, layout, now) {
       source: 'own',
       machineId,
       weekday: day,
+      // the window the text names — the log screen shows the line only
+      // around it, not on that weekday's morning
+      h0,
+      h1,
     })];
   });
 }
@@ -606,8 +610,25 @@ function plateauRule(ws, settings, now) {
 // plus a 0–9 magnitude, ties on the text. No cap and no one-per-machine
 // pick: each screen shows only the rows about the thing on it, so a cap
 // would silence the third machine. Nothing with fewer than three workouts.
+// MEMOISED on everything a rule reads — the workouts, the layout, the unit
+// and weight step, the plans and the DAY of `now` (every rule counts whole
+// days). Callers re-read storage on every render, so a reference would
+// never repeat; the serialised input does, and comparing it costs a
+// fraction of the rules (measured: 435 workouts, 4.3 ms warm per call vs
+// 0.9 ms to serialise). One entry is enough: the screens that ask twice in
+// a row (log screen, then the rest overlay) ask the same question.
+let memo = null;
 export function insights(workouts, layout, settings, { now = Date.now(), plans = [] } = {}) {
   if (workouts.length < 3) return [];
+  const key = [startOfDay(now).getTime(), settings?.unit, settings?.weightStep,
+    JSON.stringify(layout ?? null), JSON.stringify(plans), JSON.stringify(workouts)].join('|');
+  if (memo?.key === key) return memo.value;
+  const value = rules(workouts, layout, settings, now, plans);
+  memo = { key, value };
+  return value;
+}
+
+function rules(workouts, layout, settings, now, plans) {
   const ws = byStart(workouts);
   return [
     ...progressRule(ws, settings, plans, now),

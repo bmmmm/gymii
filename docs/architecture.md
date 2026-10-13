@@ -55,9 +55,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   so a changed ORDER — the route itself — would look like no change.
   `switchMachine(active, machineId, exercise, {busy, now, grip})` is THE one way
   to change the current machine (it closes the open visit and opens the
-  next); `closeVisits(visits, now)` runs in `finishWorkout()`, closes the
+  next); `closeVisits(visits, now, entries)` runs in `finishWorkout()`, closes the
   open one at the finish and drops tap-throughs under 15 s unless they carry
-  `busy`; `rateLastSet(active, rir)` rates the newest `at`-stamped non-cardio
+  `busy` or a set stamped at that machine inside them (a burst-logger's
+  stop stays in the route; the demo calls it without entries); `rateLastSet(active, rir)` rates the newest `at`-stamped non-cardio
   set (the same value again clears it); `shiftWorkout(w, delta)` moves every
   timestamp a workout holds — `startedAt`, `finishedAt`, each set's `at`,
   each visit's `in`/`out` — so the gaps between them survive a date edit
@@ -714,7 +715,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
 - `js/history.js` — two screens in one module, switched by module state like
   train.js (no hash sub-routes; `#history` stays one route). The OVERVIEW is
   what a glance needs: This week (tiles, a bar chart of the last 12 weeks,
-  that week's workouts, the frequency hint between tiles and bars) →
+  that week's workouts READ-ONLY — repeat, and "Edit ›" into the editor on
+  the Workouts screen — and the frequency hint between tiles and bars) →
   Progress (machine chips, range chips, `lineChart`, the plateau hint of
   the picked machine AND exercise in `#chart-note`) → Walking paths (the
   route of one workout, or all of them weighted, on the floor map) →
@@ -729,8 +731,18 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   week, path workout, heatmap month and machine, picked point, the expanded
   chip row, a pending `focusWorkoutId`); every other call — save, delete,
   filter change — omits it, so the screen, the picked machine/week/route
-  and the heatmap stay put (an edit draft open in the overview's week list
-  does NOT survive a bar or tile tap — those rebuild the list). Module
+  and the heatmap stay put. The week list has no editor because a bar or
+  tile tap rebuilds it: a draft open there died unannounced
+  (`wireWorkoutList(…, { readOnly: true })` neither renders nor consumes an
+  editor). A tile, chip or muscle row that redraws its own container goes
+  through ui.js's `keepFocus`, so keyboard focus lands on the control's
+  successor instead of `<body>`; a muscle-row tap also `keepInView`s the
+  row (Muscles is the last card, the view resizes above it), and "Log it"
+  brings a `#past-msg` about skipped lines back on screen. The selected
+  bar and its tile share ui.js's `fmtMetric` ("2:29 h", "3,873 kg"). The
+  Workouts screen says "Workouts" once (its h1); an active filter shows as
+  a "Showing: …" line on the list card. The path card's empty text blames
+  a name or muscle filter when that is what hid every route. Module
   state surviving those re-renders: `screen`, `lastScreen`, `nameFilter`,
   `muscleFilter`, `pickedMachine` (a `seriesKey` — the JSON triple), `pickedT`,
   `pickedWeek`, `pathWorkoutId` (null = the latest, `'all'` = weighted),

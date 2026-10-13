@@ -177,6 +177,11 @@ test('the rest overlay carries the rest hint with its 44px ↗', async ({ page }
   expect(box.width).toBeGreaterThanOrEqual(44);
   expect(box.height).toBeGreaterThanOrEqual(44);
   await expect(hint.locator('a')).toHaveAttribute('href', /PMC11349676/);
+  // the ↗ opens the study in a new tab — the rest screen stays (the
+  // backdrop's close skips `button, a`)
+  const [study] = await Promise.all([page.waitForEvent('popup'), hint.locator('a').click()]);
+  await study.close();
+  await expect(page.locator('.overlay'), 'tapping the ↗ is no backdrop tap').toBeVisible();
 });
 
 // The rest overlay lives on body and survives a route change. Browser Back

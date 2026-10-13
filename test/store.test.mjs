@@ -884,6 +884,25 @@ assert.deepEqual(store.closeVisits([
   { machineId: 'm2', in: 18000, out: 40000 },
 ], 'a short busy visit is kept, exactly 15 s is a stop, the open one closes at now');
 assert.ok(!('out' in openVisit), 'closeVisits leaves its input untouched');
+// a short stop where a set was logged is a stop: a burst-logger keeps the machine in the route
+{
+  const burst = [{ machineId: 'm1', in: 0, out: 9000 }, { machineId: 'm2', in: 9000, out: 12000 }];
+  const logged = [{ machineId: 'm1', sets: [{ reps: 10, weight: 40, at: 8000 }, { reps: 10, weight: 40, at: 10000 }] },
+    { machineId: 'm2', sets: [{ reps: 10, weight: 40, at: 5000 }, { reps: 10, weight: 40, at: 20000 }, { reps: 10, weight: 40 }] }];
+  assert.deepEqual(store.closeVisits(burst, 30000, logged), [{ machineId: 'm1', in: 0, out: 9000 }],
+    'a set stamped inside the 9 s visit keeps it; m2\'s sets came before and after its visit, an unstamped one counts for nothing, and m1\'s set during it is m1\'s');
+  // finishWorkout hands the workout's entries in
+  store.saveWorkouts([]);
+  const t = Date.now();
+  store.finishWorkout({ v: 2, id: 'burst', startedAt: t - 60000, currentMachineId: null,
+    plan: [], visits: [{ machineId: 'm1', in: t - 10000, out: t - 2000 }],
+    entries: [{ machineId: 'm1', num: 1, label: 'Row', settings: {}, sets: [{ reps: 10, weight: 40, at: t - 5000 }] }] });
+  assert.equal(store.getWorkouts().find((w) => w.id === 'burst')?.visits?.length, 1, 'a finished burst keeps its 8 s stop');
+  store.saveWorkouts([]);
+  assert.deepEqual(store.closeVisits([{ machineId: 'm1', in: 0, out: 8000 }], 30000, logged),
+    [{ machineId: 'm1', in: 0, out: 8000 }], 'a set at the very end of the visit is inside it');
+  assert.strictEqual(store.closeVisits(burst, 30000), undefined, 'without the entries the old rule holds');
+}
 
 const rated = { entries: [
   { machineId: 'm1', sets: [{ reps: 10, weight: 40, at: 100 }, { reps: 8, weight: 45, at: 300 }] },

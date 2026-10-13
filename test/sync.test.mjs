@@ -1004,4 +1004,36 @@ try {
   secureContext();
 }
 
+// --- device-local settings never ride the shared stamp ---
+// A stale device taps a History range chip AFTER another device changed
+// the weight step: before, that tap re-stamped every setting and the stale
+// weight step won the merge.
+{
+  const merge = await import(new URL('../js/merge.js', import.meta.url).href);
+  const realNow = Date.now;
+  let clock = 1_900_000_000_000;
+  Date.now = () => clock;
+  try {
+    store.saveSettings({ ...store.getSettings(), weightStep: 2.5 });
+    const stale = store.getSettings().updatedAt;
+    assert.equal(stale, clock, 'a user setting stamps');
+    const remote = { ...store.getSettings(), weightStep: 5, updatedAt: clock + 1000 }; // the other device
+    clock += 2000;
+    store.saveSettings({ ...store.getSettings(), historyRange: '4w', historyMetric: 'volume' });
+    assert.equal(store.getSettings().updatedAt, stale, 'a device-local key saves under the stamp it had');
+    assert.equal(store.getSettings().historyRange, '4w', 'and is saved all the same');
+    assert.equal(merge.mergeSettings(store.getSettings(), remote).merged.weightStep, 5,
+      'so the newer weight step from the other device wins the merge');
+    const changed = { unit: 'lbs', weightStep: 7.5, restSeconds: 120, aiPrompt: 'Mine.' };
+    for (const k of merge.USER_SETTINGS) {
+      clock += 1000;
+      store.saveSettings({ ...store.getSettings(), [k]: changed[k] });
+      assert.equal(store.getSettings().updatedAt, clock, `${k} is a user setting: it still stamps`);
+    }
+    store.saveSettings({ ...store.getSettings(), unit: 'kg', aiPrompt: undefined });
+  } finally {
+    Date.now = realNow;
+  }
+}
+
 console.log('sync client: all assertions passed');

@@ -335,8 +335,10 @@ function planListCard(layout, plans, workouts) {
   const sortedPlans = sortPlansToday(plans);
   // plans whose workouts keep walking back to a machine (stats.js route
   // rule) — a word on the row, the builder has the line and its ↗
-  const toReorder = new Set(insights(workouts, layout, getSettings(), { plans })
-    .filter((it) => it.kind === 'route' && it.workout).map((it) => it.workout));
+  // (only a NAMED plan can be one: no name, no rules run at all)
+  const toReorder = new Set(plans.some((p) => p.name)
+    ? insights(workouts, layout, getSettings(), { plans })
+      .filter((it) => it.kind === 'route' && it.workout).map((it) => it.workout) : []);
   const html = `
     <section class="card">
       <h2>Planned workouts</h2>
@@ -1402,12 +1404,16 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     && !!last.bodyweight === !!entry?.bodyweight ? last : null;
   // What to do at THIS machine and exercise (stats.js): the progress
   // hint for exactly this pair — a hint about the machine's other exercise
-  // would name the wrong load — and the busy hint on its weekday only.
-  const today = new Date().getDay();
+  // would name the wrong load — and the busy hint on its weekday, within
+  // an hour of the window it names (a Monday-evening crowd says nothing
+  // about Monday morning). Date.now, so a test can pin the clock.
+  const here = new Date(Date.now());
+  const hour = here.getHours();
   const hints = insights(getWorkouts(), layout, s, { plans: getPlans() }).filter((it) =>
     it.machineId === machine.id && (it.kind === 'progress'
       ? (it.exercise ?? null) === (exercise ?? null) && (it.grip ?? null) === grip
-      : it.kind === 'busy' && it.weekday === today));
+      : it.kind === 'busy' && it.weekday === here.getDay()
+        && hour >= it.h0 - 1 && hour <= it.h1 + 1));
   // Plan target for this slot — dropped when its shape no longer matches
   // the machine's type (flag toggled since the plan was made).
   const rawTarget = pickPending ? null : planTargetFor(active, machine.id, exercise, grip);

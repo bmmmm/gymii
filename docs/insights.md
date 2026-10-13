@@ -14,7 +14,7 @@ Every row carries `kind`, `text`, `score`, a `source` key into `SOURCES`
 and its target: `machineId` + `exercise` + `grip` (progress, plateau — `null`
 for a whole-machine or gripless entry; the log screen and the Progress chart
 match on ALL THREE, because a rope and a V-bar are separate progressions),
-`machineId` + `weekday` (busy), `machineId` + `workout` (route — the name
+`machineId` + `weekday` + `h0`/`h1` (busy — the hours the text names), `machineId` + `workout` (route — the name
 those workouts go by most often, `null` when they have none), or `muscle`.
 The text names no subject: the screen it sits on does. `SOURCES.own` ("Your
 own logged workouts") has `url: null`, so route and busy render no link.
@@ -24,7 +24,7 @@ own logged workouts") has `url: null`, so route and busy render no link.
 | kind | where | only when |
 |---|---|---|
 | progress | Train log screen, below the machine head (train.js `renderLog`) | the machine, exercise AND grip on screen |
-| busy | Train log screen, below the machine head | the machine on screen, on `weekday` (today) |
+| busy | Train log screen, below the machine head | the machine on screen, on `weekday` (today), from an hour before `h0` to an hour after `h1` |
 | rest | the rest overlay, under "Next:" (train.js `openRestOverlay`) | — |
 | plateau | History → Progress, `#chart-note` under the chart | the picked machine, exercise AND grip |
 | muscle-gap, muscle-volume | History → Muscles, a line under the muscle's row | — |
@@ -33,7 +33,14 @@ own logged workouts") has `url: null`, so route and busy render no link.
 
 History computes the list once per render over EVERY workout (never the
 filtered list: "1.5 strength days a week" says nothing about one routine);
-train.js and plan.js compute it per render of their screen.
+train.js and plan.js compute it per render of their screen (the start
+screen's plan list only when a plan has a name — only a named plan can carry
+a route hint). `insights()` is MEMOISED on its serialised input (workouts,
+layout, plans, unit, weight step) and the day of `now`: every render
+re-reads storage, so references never repeat, but the content does —
+measured at 435 workouts, 4.1 ms → 0.85 ms per call on a hit (node, M-series;
+cold 18 ms either way), and the log screen and the rest overlay ask the same
+question back to back.
 
 ## Order
 

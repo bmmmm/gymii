@@ -317,6 +317,35 @@ assert.equal(seen.focused, 1, 'focus only when asked for');
 ui.keepInView(viewRoot, '#missing'); // a selector that renders nothing must not throw
 ui.keepInView({}, '#there'); // nor a root without querySelector
 
+// --- keepFocus: a chip row that redraws itself keeps keyboard focus ---
+{
+  const asked = [];
+  const focused = [];
+  const chip = (dataset) => ({ dataset, focus(o) { focused.push([dataset, o]); } });
+  const row = { id: 'machine-chips' };
+  const old = { ...chip({ key: '["m1","Pull \\"wide\\"",null]', moreLabel: 'x' }),
+    parentElement: { closest: (sel) => (sel === '[id]' ? row : null) } };
+  const successor = chip({ key: 'new' });
+  const root = {
+    contains: (el) => el === old,
+    querySelector: (sel) => { asked.push(sel); return successor; },
+  };
+  document.activeElement = old;
+  let rendered = 0;
+  ui.keepFocus(root, () => { rendered += 1; });
+  assert.equal(rendered, 1, 'the redraw runs once');
+  assert.deepEqual(asked, ['#machine-chips [data-key="[\\"m1\\",\\"Pull \\\\\\"wide\\\\\\"\\",null]"][data-more-label="x"]'],
+    'the successor is found by its row and its data attributes, quotes escaped, camelCase dashed');
+  assert.deepEqual(focused, [[{ key: 'new' }, { preventScroll: true }]], 'and focused without a scroll');
+  // focus outside the root, or on the root's own body: nothing to restore
+  document.activeElement = { dataset: { key: 'k' }, parentElement: { closest: () => row } };
+  asked.length = 0;
+  ui.keepFocus(root, () => {});
+  assert.deepEqual(asked, [], 'focus elsewhere on the page is none of this redraw\'s business');
+  delete document.activeElement;
+  ui.keepFocus(root, () => {}); // no active element at all must not throw
+}
+
 // ---------------------------------------------------------------------------
 // The timer sounds — moved here from store.test.mjs, where they only ever
 // sat because ui.js had no file. What stays there is the COUPLING: that the

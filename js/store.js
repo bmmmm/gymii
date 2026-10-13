@@ -2,6 +2,7 @@
 // inside each object so future schema migrations have something to check.
 
 import { sameSeries } from './stats.js'; // stats.js imports nothing: no cycle
+import { USER_SETTINGS } from './merge.js'; // so does merge.js
 
 const KEYS = {
   gyms: 'gymii.gyms',
@@ -905,17 +906,23 @@ export function switchMachine(active, machineId, exercise = null, { busy = null,
 }
 
 // A visit shorter than this was a tap through, not a stop — unless it
-// carries `busy`, which is a signal of its own however short the stay.
+// carries `busy`, which is a signal of its own however short the stay, or
+// a set was logged there during it (a burst-logger's stop is still a stop).
 const MIN_VISIT_MS = 15000;
 
 // The visits a finished workout keeps: the open one closed at `now`, tap
 // throughs dropped; undefined when nothing is left (absent, never empty).
+// `entries` (the workout's) rescue a short visit with a set stamped at
+// that machine inside it — without them the machine fell out of the route,
+// and stamped sets cannot fill the gap: visits win whenever any exist.
 // Pure — never touches the input (closed visits come back by reference).
-export function closeVisits(visits, now) {
+export function closeVisits(visits, now, entries = []) {
   if (!Array.isArray(visits)) return undefined;
+  const loggedIn = (v) => entries.some((e) => e.machineId === v.machineId
+    && e.sets.some((st) => Number.isFinite(st.at) && st.at >= v.in && st.at <= v.out));
   const kept = visits
     .map((v) => (v.out == null ? { ...v, out: now } : v))
-    .filter((v) => v.busy || v.out - v.in >= MIN_VISIT_MS);
+    .filter((v) => v.busy || v.out - v.in >= MIN_VISIT_MS || loggedIn(v));
   return kept.length ? kept : undefined;
 }
 
@@ -960,7 +967,7 @@ export function finishWorkout(active) {
     return null;
   }
   const now = Date.now();
-  const visits = closeVisits(active.visits, now);
+  const visits = closeVisits(active.visits, now, entries);
   const workout = {
     id: active.id,
     startedAt: active.startedAt,
@@ -1184,8 +1191,15 @@ export function workoutsWithMuscle(workouts, layout, muscle) {
     w.entries.some((e) => muscles.get(e.machineId)?.includes(muscle)));
 }
 
+// The stamp is the USER settings' clock (merge.js USER_SETTINGS) — the one
+// a sync merge compares. A device-local key (historyRange, historyMetric,
+// pickerMap, timerDim, …) saves under the stamp it already had: a range
+// chip tapped on a stale device must not outrank a weight step another
+// device changed since.
 export function saveSettings(settings) {
-  write(KEYS.settings, { ...settings, updatedAt: Date.now() });
+  const before = getSettings();
+  const shared = USER_SETTINGS.some((k) => JSON.stringify(settings[k]) !== JSON.stringify(before[k]));
+  write(KEYS.settings, { ...settings, updatedAt: shared ? Date.now() : before.updatedAt });
   touched();
 }
 

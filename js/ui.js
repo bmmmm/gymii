@@ -220,6 +220,13 @@ export const esc = (s) =>
 // "3 sets", "1 workout" — count plus s-pluralized noun, in one spelling.
 export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+// One number format for a weekly metric (History's 'workouts' | 'sets' |
+// 'volume' | 'minutes'): the This-week tile and the selected bar say the
+// same thing — "2:29 h", "3,873 kg", "12". Minutes read in hours from 60.
+export const fmtMinutes = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} h`);
+export const fmtMetric = (v, metric, unit) => (metric === 'volume' ? `${v.toLocaleString('en-GB')} ${unit}`
+  : metric === 'minutes' ? fmtMinutes(v) : String(v));
+
 // "5 min ago", "2 h ago", "4 days ago" — how long since a moment, rounded
 // DOWN (a day is only "1 day" once it has fully passed). A future moment —
 // a server clock ahead of this one — reads as "just now".
@@ -388,6 +395,26 @@ export function preserveFocus(root, render) {
   // setSelectionRange throws on inputs that don't support selection (email,
   // number); the focus alone is the part that matters.
   try { next.setSelectionRange(keep.start, keep.end); } catch { /* not selectable */ }
+}
+
+// A chip row or tile grid that redraws itself on its own click drops
+// keyboard focus to <body> — touch never notices, a keyboard user starts
+// over at the top of the page. The focused control is remembered by the id
+// of its nearest [id] ancestor plus its data-* attributes, and the control
+// that took its place gets the focus back — without scrolling: where the
+// screen sits is keepInView's business.
+export function keepFocus(root, render) {
+  if (typeof document === 'undefined') return render();
+  const el = document.activeElement;
+  const box = el && root?.contains?.(el) ? el.parentElement?.closest?.('[id]') : null;
+  const data = box ? Object.entries(el.dataset ?? {}) : [];
+  render();
+  if (!box?.id || !data.length) return;
+  const attr = (k) => k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+  const quoted = (v) => String(v).replace(/["\\]/g, '\\$&');
+  const next = root.querySelector?.(`#${box.id} ${data
+    .map(([k, v]) => `[data-${attr(k)}="${quoted(v)}"]`).join('')}`);
+  if (next && next !== el) next.focus?.({ preventScroll: true });
 }
 
 // --- rest-timer sound ---

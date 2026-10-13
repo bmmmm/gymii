@@ -144,7 +144,10 @@ settings, plus the sync-relevant sidecars:
   crypto works (`crypto-available`). The server treats both shapes as the
   same opaque JSON.
 - `userSettings` carries ONLY the user-scoped fields (`USER_SETTINGS` in
-  `js/merge.js`); device-scoped settings never leave the device.
+  `js/merge.js`); device-scoped settings never leave the device — and never
+  move its `updatedAt` either: `saveSettings` stamps only when a user field
+  changed, so a History range chip tapped on a stale device cannot outrank
+  a weight step another device set since. The wire format is unchanged.
 - **Unit normalization**: weights/distances are stored in the display unit,
   so before merging, a client whose `unit` differs from the blob's converts
   the losing side via the existing `convertWeight`/`convertDistance`

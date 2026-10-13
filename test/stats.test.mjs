@@ -433,6 +433,7 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   assert.equal(b?.text, 'Usually busy Mondays 17–19 h — start elsewhere.');
   assert.equal(b.machineId, 'm8');
   assert.equal(b.weekday, 1, 'Monday, for the log screen to show it on Mondays only');
+  assert.deepEqual([b.h0, b.h1], [17, 19], 'and the window it names, for the log screen to show it around then only');
   assert.equal(b.source, 'own');
   assert.equal(find([mon(16, 17, 10), mon(9, 17, 40), busyW(day(2, 18, 30), null)], 'busy'), undefined,
     'busy: 2 marks are one short');
@@ -482,6 +483,27 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   assert.deepEqual(ranked.map((i) => [i.kind, i.machineId]),
     [['progress', 'm1'], ['progress', 'm2'], ['progress', 'm3']], 'no cap: a third machine is not silenced');
   assert.deepEqual(stats.insights(trio.slice(1), LAYOUT, KG, { now: NOW }), [], 'fewer than 3 workouts: nothing');
+
+  // memoised on the serialised input: a fresh copy of the same data (what
+  // every render's getWorkouts() hands over) is answered from the memo…
+  const copy = (x) => JSON.parse(JSON.stringify(x));
+  const first = stats.insights(trio, LAYOUT, KG, { now: NOW });
+  assert.strictEqual(stats.insights(copy(trio), copy(LAYOUT), { ...KG }, { now: NOW + 3600e3 }), first,
+    'same workouts, layout, settings, plans and day: the remembered answer');
+  // …and every input it reads makes a fresh one
+  const fresh = [
+    ['a new workout', () => stats.insights([...trio, W(day(0), [E('m1', [S(5, 20)])])], LAYOUT, KG, { now: NOW })],
+    ['an edited set', () => stats.insights([...trio.slice(0, 2), W(trio[2].startedAt, [E('m1', [S(13, 40)])])], LAYOUT, KG, { now: NOW })],
+    ['another layout', () => stats.insights(trio, { ...LAYOUT, machines: LAYOUT.machines.slice(1) }, KG, { now: NOW })],
+    ['another unit', () => stats.insights(trio, LAYOUT, { ...KG, unit: 'lbs' }, { now: NOW })],
+    ['another weight step', () => stats.insights(trio, LAYOUT, { ...KG, weightStep: 5 }, { now: NOW })],
+    ['other plans', () => stats.insights(trio, LAYOUT, KG, { now: NOW, plans: [{ id: 'x', items: [] }] })],
+    ['the next day', () => stats.insights(trio, LAYOUT, KG, { now: NOW + 864e5 })],
+  ];
+  for (const [what, ask] of fresh) {
+    const held = stats.insights(trio, LAYOUT, KG, { now: NOW }); // the memo holds this question again
+    assert.notStrictEqual(ask(), held, `${what}: a fresh answer`);
+  }
 
   // one machine, two findings: progress (50) sorts before plateau (40),
   // and both come back — they sit on different screens
