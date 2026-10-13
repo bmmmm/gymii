@@ -371,6 +371,57 @@ assert.equal(ui.cssStr('Push "A"\\\nday'), 'Push \\"A\\"\\\\\\a day',
   ui.keepFocus(root, () => {}); // no active element at all must not throw
 }
 
+// a control that vanishes in its own click ("+N more", "All muscles"): no
+// successor by data-*, so the control at its old position takes the focus
+{
+  const focused = [];
+  const ctl = (name, dataset = {}) => ({ name, dataset, focus(o) { focused.push([name, o]); } });
+  const run = (before, activeIdx, after, { selectors } = {}) => {
+    focused.length = 0;
+    const active = before[activeIdx];
+    let list = before;
+    const row = { id: 'chips', querySelectorAll: () => list };
+    active.parentElement = { closest: () => row };
+    const root = {
+      contains: (el) => el === active,
+      querySelector: (sel) => {
+        selectors?.push(sel);
+        return sel === '#chips' ? row : null; // the exact data-* successor is gone
+      },
+    };
+    document.activeElement = active;
+    ui.keepFocus(root, () => { list = after; });
+    delete document.activeElement;
+    return focused.map(([name, o]) => [name, o.preventScroll]);
+  };
+  const more = ctl('more', { more: '1' });
+  assert.deepEqual(
+    run([ctl('a', { key: 'a' }), ctl('b', { key: 'b' }), more], 2,
+      [ctl('a2'), ctl('b2'), ctl('c2'), ctl('d2')]),
+    [['c2', true]], '"+N more" is gone: the first chip it revealed (same position) takes the focus, unscrolled');
+  assert.deepEqual(
+    run([ctl('all', { muscle: '' }), ctl('q', { muscle: 'Quads' })], 0, [ctl('q2'), ctl('l2')]),
+    [['q2', true]], '"All muscles" is gone: the list\'s first row takes the focus');
+  assert.deepEqual(
+    run([ctl('a', { key: 'a' }), ctl('b', { key: 'b' }), ctl('z', { key: 'z' })], 2, [ctl('a2')]),
+    [['a2', true]], 'a shorter row clamps to its last control');
+  assert.deepEqual(
+    run([ctl('a', { key: 'a' }), ctl('z', { key: 'z' })], 1, []),
+    [], 'an emptied row has no stand-in, and nothing throws');
+  assert.deepEqual(
+    run([ctl('a', { key: 'a' }), ctl('z', { key: 'z' })], 1, [ctl('a2'), ctl('z2')]),
+    [['z2', true]], 'same position, same-sized row');
+  // an exact successor still wins over the positional stand-in
+  const exact = ctl('exact', { key: 'k' });
+  const old = ctl('old', { key: 'k' });
+  old.parentElement = { closest: () => ({ id: 'chips', querySelectorAll: () => [old] }) };
+  focused.length = 0;
+  document.activeElement = old;
+  ui.keepFocus({ contains: () => true, querySelector: (sel) => (sel.includes('[data-key') ? exact : null) }, () => {});
+  delete document.activeElement;
+  assert.deepEqual(focused.map(([n]) => n), ['exact'], 'a data-* successor beats the positional one');
+}
+
 // ---------------------------------------------------------------------------
 // The timer sounds — moved here from store.test.mjs, where they only ever
 // sat because ui.js had no file. What stays there is the COUPLING: that the
