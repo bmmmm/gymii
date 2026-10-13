@@ -906,6 +906,24 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     const graze = { grid: { w: 20, h: 17 }, outline: [], shapes: [stub], machines: [Ed, Lo] };
     const pastEnd = [stats.walkLength(graze, Ed, Lo), stats.walkLength(graze, Lo, Ed)];
     assert.ok(pastEnd.every((d) => d != null), `a machine at a wall's end is reached and left past it (${pastEnd.map((d) => d?.toFixed(2))})`);
+    // …but a JOINT of two segments is a wall: a doorless room drawn as four
+    // walls with a machine flush in its corner, and a partition drawn in two
+    // strokes — the straight step from the ring point outside touches both
+    // segments at their ends only, so `crosses` sees no crossing and the
+    // joints have to be named (review 2026-10-13: for a moment nothing did)
+    const roomWalls = [[10, 10, 10, 0], [20, 10, 0, 10], [20, 20, -10, 0], [10, 20, 0, -10]]
+      .map(([x, y, w, h], k) => ({ id: `r${k}`, kind: 'line', x, y, w, h }));
+    const In = box('In', 10, 10); // flush in the room's corner
+    const Out = box('Out', 2, 2);
+    const room = { grid: { w: 30, h: 30 }, outline: [], shapes: roomWalls, machines: [In, Out] };
+    assert.equal(stats.walkLength(room, Out, In), null, 'no walk into a doorless room through its corner');
+    assert.equal(stats.walkLength(room, In, Out), null, 'nor out of it');
+    const strokes = [{ id: 'p1', kind: 'line', x: -1, y: 10, w: 11, h: 0 }, { id: 'p2', kind: 'line', x: 10, y: 10, w: 11, h: 0 }];
+    const Un = box('Un', 9, 10); // flush under the joint at (10, 10)
+    const Ov = box('Ov', 9, 2);
+    const twoStrokes = { grid: { w: 20, h: 20 }, outline: [], shapes: strokes, machines: [Un, Ov] };
+    assert.equal(stats.walkLength(twoStrokes, Ov, Un), null, 'no walk through the joint of a partition drawn in two strokes');
+    assert.equal(stats.walkLength(twoStrokes, Un, Ov), null, 'either way');
   }
   // …and a fuzz against an exact rule: a doorless partition past both edges
   // splits the floor in two rooms, so no walk joins machines on different
@@ -924,7 +942,12 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
       const span = horiz ? H : W;
       const k = rnd();
       const p = k < 0.4 ? 2 + Math.floor(rnd() * (span - 3)) : k < 0.7 ? 2.5 + Math.floor(rnd() * (span - 4)) : tenth(2, span - 2);
-      const wallP = horiz ? { id: 'p', kind: 'line', x: -1, y: p, w: W + 2, h: 0 } : { id: 'p', kind: 'line', x: p, y: -1, w: 0, h: H + 2 };
+      // drawn in two strokes, their joint at a half unit somewhere along it:
+      // a joint is where a step slipped through once (review 2026-10-13)
+      const joint = Math.round(rnd() * 2 * (horiz ? W : H)) / 2;
+      const wallP = horiz
+        ? [{ id: 'p1', kind: 'line', x: -1, y: p, w: joint + 1, h: 0 }, { id: 'p2', kind: 'line', x: joint, y: p, w: W + 1 - joint, h: 0 }]
+        : [{ id: 'p1', kind: 'line', x: p, y: -1, w: 0, h: joint + 1 }, { id: 'p2', kind: 'line', x: p, y: joint, w: 0, h: H + 1 - joint }];
       const ms = [];
       for (let tries = 0; ms.length < 6 && tries < 40; tries++) {
         const w = rnd() < 0.3 ? [0.5, 1, 1.5][Math.floor(rnd() * 3)] : tenth(0.3, 4);
@@ -941,7 +964,7 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
           || ms.some((o) => x < o.x + o.w && o.x < x + w && y < o.y + o.h && o.y < y + h)) continue;
         ms.push({ ...box(`m${ms.length}`, x, y, w, h), before });
       }
-      const layout = { grid: { w: W, h: H }, outline: [], shapes: [wallP], machines: ms };
+      const layout = { grid: { w: W, h: H }, outline: [], shapes: wallP, machines: ms };
       ms.forEach((A) => {
         const walks = stats.walksFrom(layout, A, ms.filter((B) => B.before !== A.before));
         walks.forEach((d, id) => {

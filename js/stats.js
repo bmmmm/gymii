@@ -206,8 +206,12 @@ const onSegment = (p, a, b) => Math.abs((b.x - a.x) * (p.y - a.y) - (b.y - a.y) 
   && p.x >= Math.min(a.x, b.x) - 1e-9 && p.x <= Math.max(a.x, b.x) + 1e-9
   && p.y >= Math.min(a.y, b.y) - 1e-9 && p.y <= Math.max(a.y, b.y) + 1e-9;
 // strict on both sides, with onSegment's tolerance: a step through a wall's
-// END touches it (no crossing), and a rounding rest of 1e-15 must not say
-// otherwise — it did, and a machine at a wall's end was reached one way only
+// END touches it (no crossing — a JOINT of two walls is `wallBetween`'s
+// business), and a rounding rest of 1e-15 must not say otherwise — it did,
+// and a machine at a wall's end was reached one way only. The product of
+// two cross products scales with length⁴; on a grid of at most 400 units
+// (walkableGrid) the rest stays near 1e-10 and a crossing missed would be
+// within 1e-8 units of a wall's end.
 const crosses = (p1, p2, p3, p4) => {
   const d = (a, b, c) => (c.x - a.x) * (b.y - a.y) - (b.x - a.x) * (c.y - a.y);
   return d(p3, p4, p1) * d(p3, p4, p2) < -1e-9 && d(p1, p2, p3) * d(p1, p2, p4) < -1e-9;
@@ -255,6 +259,16 @@ function walkFloor(layout) {
     .filter((s) => s.kind === 'fixture' && !WALL_FIXTURES.has(s.fixture))]
     .filter((it) => [it.x, it.y, it.w, it.h].every(finite));
   const walls = wallSegments(layout);
+  // joints: a segment's end that another segment shares or runs through (a
+  // room's corner, a partition in two strokes, a stub ending on a wall). A
+  // step exactly through one touches each wall at its end only, so
+  // `crosses` sees nothing; the flood's raster caught it on the half-unit
+  // grid alone (a template's walls sit at tenths), the straight step's not
+  // at all once it read walls exactly (review 2026-10-13). `wallBetween`
+  // asks for them by name, for the flood's steps and the straight step.
+  const joints = walls.flatMap(([a, b]) => [a, b])
+    .filter((e, k, all) => walls.some(([a, b]) => !(a === e || b === e) && onSegment(e, a, b))
+      && all.findIndex((o) => Math.abs(o.x - e.x) < 1e-9 && Math.abs(o.y - e.y) < 1e-9) === k);
   const CW = 2 * W + 1;
   const n = CW * (2 * H + 1);
   const inA = new Int32Array(n).fill(-1);
@@ -309,7 +323,7 @@ function walkFloor(layout) {
       }
     }
   });
-  return { W, H, CW, solids, walls, inA, inB, edgeA, edgeB, edgeC, offFloor, onWall, anyBlock, nearWall };
+  return { W, H, CW, solids, walls, joints, inA, inB, edgeA, edgeB, edgeC, offFloor, onWall, anyBlock, nearWall };
 }
 let floorMemo = { key: null, floor: null };
 // how many floods ran — the tests pin one per log screen (a flood per stop
@@ -338,7 +352,8 @@ function floorOf(layout) {
 export function walksFrom(layout, from, targets) {
   const out = new Map(targets.map((t) => [t.id, null]));
   if (!walkableGrid(layout) || !from || ![from.x, from.y, from.w, from.h].every(finite)) return out;
-  const { W, H, CW, solids, walls, inA, inB, edgeA, edgeB, edgeC, offFloor, onWall, anyBlock, nearWall } = floorOf(layout);
+  const { W, H, CW, solids, walls, joints, inA, inB, edgeA, edgeB, edgeC, offFloor, onWall, anyBlock, nearWall } = floorOf(layout);
+  const wallBetween = (p1, p2) => walls.some(([a, b]) => crosses(p1, p2, a, b)) || joints.some((j) => onSegment(j, p1, p2));
   const own = solids.findIndex((it) => it.id === from.id);
   const other = (v) => v !== -1 && v !== own;
   // a half-grid point is blocked off the floor, strictly inside another
@@ -354,9 +369,10 @@ export function walksFrom(layout, from, targets) {
   // target's centre is clear up to a quarter unit into the target's box —
   // no wall crossed, nothing off the floor or inside another solid on the
   // way (read off the raster every half unit): a machine flush against a
-  // wall or behind a mirror is not "reached" from the other side. Walls by
-  // `crosses` alone (a half-unit sample that rounds onto a wall's END is no
-  // wall; the flood's steps keep their midpoint rule). What lies
+  // wall or behind a mirror is not "reached" from the other side. Walls are
+  // `wallBetween`'s (exact: `crosses`, plus the joints), not the raster's —
+  // a half-unit sample that rounds onto a wall's end, or onto a corner the
+  // step passes outside, is no wall. What lies
   // deeper is the machine itself — a wall drawn through it or a centre past
   // the outline blocks nothing (user decision 2026-10-13: a machine cut by a
   // wall stays reachable from its floor side, and one the editor pushed a
@@ -370,7 +386,7 @@ export function walksFrom(layout, from, targets) {
     const f = len ? Math.min(1, Math.max(into(px, cx, t.x, t.x + t.w), into(py, cy, t.y, t.y + t.h)) + 0.25 / len) : 0;
     const ex = px + (cx - px) * f;
     const ey = py + (cy - py) * f;
-    if (walls.some(([a, b]) => crosses({ x: px, y: py }, { x: ex, y: ey }, a, b))) return false;
+    if (wallBetween({ x: px, y: py }, { x: ex, y: ey })) return false;
     const tk = solids.findIndex((it) => it.id === t.id);
     const steps = Math.max(1, Math.ceil(len * f * 2));
     for (let s = 1; s < steps; s++) {
@@ -434,7 +450,7 @@ export function walksFrom(layout, from, targets) {
   const sx = Math.round(fx);
   const sy = Math.round(fy);
   const free = (x, y) => x >= 0 && y >= 0 && x <= W && y <= H && !blocked(2 * x, 2 * y);
-  const cut = (x, y) => walls.some(([a, b]) => crosses({ x, y }, { x: fx, y: fy }, a, b));
+  const cut = (x, y) => wallBetween({ x, y }, { x: fx, y: fy });
   const centre = free(sx, sy) && !cut(sx, sy)
     && !walls.some(([a, b]) => onSegment({ x: fx, y: fy }, a, b));
   const seeds = ring(from).filter(([x, y]) => free(x, y) && (!centre || cut(x, y))).map(([x, y, d]) => [d, x, y]);
@@ -503,7 +519,7 @@ export function walksFrom(layout, from, targets) {
         const ny = y + dy;
         if ((!dx && !dy) || nx < 0 || ny < 0 || nx > W || ny > H) continue;
         if (blocked(2 * nx, 2 * ny) || blocked(2 * x + dx, 2 * y + dy)) continue; // point, then the step's midpoint
-        if (nearWall[k] && walls.some(([a, b]) => crosses({ x, y }, { x: nx, y: ny }, a, b))) continue;
+        if (nearWall[k] && wallBetween({ x, y }, { x: nx, y: ny })) continue;
         const nk = key(nx, ny);
         if (done[nk]) continue;
         const ng = d + (dx && dy ? Math.SQRT2 : 1);

@@ -276,10 +276,16 @@ export function renderGym(root) {
   // detach the control that tap is about to click, or the field it is
   // about to focus (the tap is lost, the keyboard drops). The refresh a
   // foreign change asks for therefore waits for the gesture to end: with a
-  // pointer held, until after its pointerup; otherwise until the current
-  // event sequence is through (touch raises pointerup BEFORE the
-  // synthesized mousedown that moves the focus, a mouse after it). Any
-  // explicit renderProps() in between satisfies it.
+  // pointer held on the card, until after its pointerup; otherwise until
+  // the current event sequence is through (touch raises pointerup BEFORE
+  // the synthesized mousedown that moves the focus, a mouse after it). Any
+  // explicit renderProps() in between satisfies it. Only a tap ON the card
+  // can hit a node the re-render detaches, so the pointer is watched from
+  // `props` (which dies with this mount — `root` is the app's persistent
+  // #view, and a listener there would outlive the editor), and its release
+  // from `window` for the gesture only, so a mouse let go outside the card
+  // still ends it.
+  const releaseTarget = typeof window === 'undefined' ? props : window;
   let pointerHeld = false;
   let cardRefreshDue = false;
   const refreshCard = () => { if (cardRefreshDue) renderProps(); };
@@ -289,11 +295,15 @@ export function renderGym(root) {
   };
   const pointerReleased = () => {
     pointerHeld = false;
+    releaseTarget.removeEventListener('pointerup', pointerReleased);
+    releaseTarget.removeEventListener('pointercancel', pointerReleased);
     if (cardRefreshDue) setTimeout(refreshCard, 0);
   };
-  root.addEventListener('pointerdown', () => { pointerHeld = true; }, true);
-  root.addEventListener('pointerup', pointerReleased);
-  root.addEventListener('pointercancel', pointerReleased);
+  props.addEventListener('pointerdown', () => {
+    pointerHeld = true;
+    releaseTarget.addEventListener('pointerup', pointerReleased);
+    releaseTarget.addEventListener('pointercancel', pointerReleased);
+  }, true);
 
   // every gym mutation goes through save(): persist + record what changed
   const save = () => {

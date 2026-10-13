@@ -572,11 +572,15 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   the NEXT tap's pointerdown (the focus moves there), and a card replaced
   right then detaches the control that tap is about to click or the field
   it is about to focus (tap lost, keyboard dropped). `requestCardRefresh`
-  waits for pointerup on `root` while a pointer is held (a mouse), else for
-  the end of the current event sequence via `setTimeout(0)` (touch raises
-  pointerup BEFORE the synthesized mousedown that blurs the field); any
-  explicit renderProps() in between satisfies it, so a chip tap that draws
-  the card anyway causes no second render. An
+  waits for the pointerup while a pointer is held on the card (a mouse),
+  else for the end of the current event sequence via `setTimeout(0)`
+  (touch raises pointerup BEFORE the synthesized mousedown that blurs the
+  field); any explicit renderProps() in between satisfies it, so a chip
+  tap that draws the card anyway causes no second render. The pointer is
+  watched on `props` (it dies with the mount; `root` is the persistent
+  #view, where a listener would outlive the editor and pile up per visit)
+  and its release on `window` for the gesture only, so a mouse released
+  outside the card still ends it. An
   edit to a machine another device deleted meanwhile brings it back — the
   edit wins (user decision 2026-10-13). Undo and redo read the stored
   layout IN THE TAP too and write only their parts, objects key by key (`applySide`): a machine
@@ -993,15 +997,21 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   into both rooms as it is reached from both. Measured on editor-shaped
   floors with axis-aligned partitions and doors: 1 133 of 34 456 pairs
   walked one way only before, 0 after; walks from a machine no wall enters
-  are unchanged, one a wall stub enters can get shorter. `crosses` is
-  strict with onSegment's 1e-9 tolerance (a step through a wall's END
-  touches it, and a rounding rest of 1e-15 once made that a crossing), and
-  the straight step reads walls from `crosses` alone, not from the raster
-  (a half-unit sample rounding onto a wall's end blocked a machine that
-  was left past that end) — measured against the build before on
-  editor-shaped floors with flush pairs and wall stubs with doors
-  (3 × 11 250 pairs): 0.5–0.8 % of walks shorter, none lost, one-sided
-  pairs 11→4, 30→24, 11→4. What is left one-sided is structural: a walk
+  are unchanged, one a wall stub enters can get shorter. A wall between
+  two points is `wallBetween`: `crosses`, strict with onSegment's 1e-9
+  tolerance (a step through a wall's END touches it, and a rounding rest
+  of 1e-15 once made that a crossing), plus the `joints` — a segment's end
+  another segment shares or runs through (a room's corner, a partition in
+  two strokes, a stub ending on a wall), which a step passes touching both
+  walls at their ends only, so `crosses` alone lets it through (the flood's
+  half-unit raster caught such a joint only on the half grid; a template's
+  walls sit at tenths). The straight step reads walls from `wallBetween`
+  alone, not from the raster (a half-unit sample rounding onto a wall's end
+  blocked a machine that was left past that end). Measured against the
+  build before on editor-shaped floors with flush pairs and single-stroke
+  wall stubs with doors (3 × 11 250 pairs): 0.5–0.8 % of walks shorter,
+  7–13 per 22 500 newly found, none lost, one-sided pairs 11→4, 30→24,
+  11→4. What is left one-sided is structural: a walk
   LEAVES through the start's own body (its edges and seam points are free
   for it) but ARRIVES by a straight step, so a seam point with a flush
   neighbour or the corner three machines share can be left and not reached
