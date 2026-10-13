@@ -565,7 +565,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `foreignOnly(layoutDiff(lastSaved, stored), changes)` applied with
   `applySide`), so the first edit after a pull no longer tombstones a
   machine the pull brought in; the edit's own keys win and its undo entry
-  stays its own. Undo and redo read the stored layout IN THE TAP too and
+  stays its own. When what it took in touches the open machine or a gym
+  field, it re-renders the card too (a text field's `change` saves without
+  re-rendering; renderProps never calls save(), so this cannot recurse). An
+  edit to a machine another device deleted meanwhile brings it back — the
+  edit wins (user decision 2026-10-13). Undo and redo read the stored layout IN THE TAP too and
   write only their parts, objects key by key (`applySide`): a machine
   another writer added since survives, a key it changed survives unless the
   edit changed that key, a machine it deleted stays deleted, and an undone

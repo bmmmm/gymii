@@ -286,8 +286,13 @@ export function renderGym(root) {
     // keys. This edit's own keys win; the undo entry stays this edit alone.
     const stored = getLayout();
     if (stored && !same(stored, lastSaved)) {
-      applySide(layout, foreignOnly(layoutDiff(lastSaved, stored), changes), 'after');
+      const foreign = foreignOnly(layoutDiff(lastSaved, stored), changes);
+      applySide(layout, foreign, 'after');
       redraw();
+      // the open card shows it too (a grip synced onto it, the gym's brand)
+      // — many handlers re-render it anyway, a text field's `change` does not;
+      // renderProps never calls save(), so this cannot recurse
+      if (foreign.some((c) => c.field || c.id === selectedId)) renderProps();
     }
     saveLayout(layout);
     lastSaved = clone(layout);

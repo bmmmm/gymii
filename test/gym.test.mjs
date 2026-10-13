@@ -891,4 +891,20 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
     'later chip taps do not write the already-saved text over a rename that synced in');
 }
 
+// --- a save that takes in another writer's change re-renders the open card ---
+// A text field's `change` saves without re-rendering, so the grip a sync
+// brought onto the open machine stayed off its card until the next chip tap.
+{
+  const { root, props } = gymWithProps([{ ...mk('c1', 1, 10, 10), label: 'Cable' }]);
+  fire(root.floor, 'pointerdown', { ...at(12, 11), target: onItem('c1') });
+  fire(root.floor, 'pointerup');
+  store.addMachineVariant('c1', { grips: ['Thick rope'] }); // synced in while the card is open
+  assert.ok(!props.innerHTML.includes('Thick rope'), 'the card was drawn before');
+  const label = props.querySelector('#m-label');
+  label.value = 'Cable tower';
+  last(label, 'change')();
+  assert.equal(machineAt('c1').label, 'Cable tower', 'the edit is saved');
+  assert.ok(props.innerHTML.includes('data-value="Thick rope"'), 'and the card shows the grip that came in');
+}
+
 console.log('gym editor: all assertions passed');
