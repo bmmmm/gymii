@@ -493,6 +493,9 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   assert.ok(/class="chip sm secondary" data-muscle="Lats"\s+aria-pressed="mixed"/.test(props.innerHTML)
     && props.innerHTML.includes('Lats ½ ✕') && !props.innerHTML.includes('Chest ✕'),
     'drawn dashed with "½ ✕"; a primary chip carries no ✕ — its tap does not remove it');
+  assert.ok(/data-muscle="Lats"\s+aria-pressed="mixed" aria-label="Lats">/.test(props.innerHTML)
+    && /data-muscle="Chest"\s+aria-pressed="true" aria-label="Chest">/.test(props.innerHTML),
+    'the state is said once, by aria-pressed — the name is the muscle\'s, whatever its state');
   assert.deepEqual(focused.splice(0), [['Lats', { preventScroll: true }]], 'the focus stays on its muscle');
   tapChip('Lats'); // secondary → gone; Traps moves into its place
   assert.equal('secondaryMuscles' in machineAt('m1'), false, 'a secondary muscle tapped is removed — the list goes when empty');
@@ -719,6 +722,124 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
   ['Rope', 'V-bar', 'Wide bar'].forEach((g) => last(props.querySelector('#m-grips'), 'click')(chipTap(g)));
   assert.equal('grips' in store.getLayout().machines.find((m) => m.id === 'm1'), false,
     'an emptied list is deleted, not stored empty');
+}
+
+// --- staged text: whichever control saves first, a field is written as its own `change` writes it ---
+// A text field commits on `change` (blur or Enter), and iOS does not blur it
+// when a chip next to it is tapped — so the chip's save() runs first. That
+// save must not persist the half-typed text as it stands: '' as a label,
+// blanks as a model, an untrimmed link.
+{
+  const { root, props } = gymWithProps([{ ...mk('m1', 1, 10, 10), label: 'Chest press', model: 'XR' }]);
+  fire(root.floor, 'pointerdown', { ...at(12, 11), target: onItem('m1') });
+  fire(root.floor, 'pointerup');
+  const type = (sel, v) => {
+    props.querySelector(sel).value = v;
+    last(props.querySelector(sel), 'input')();
+  };
+  const undo = () => root.querySelector('#undo').listeners.click[0]();
+  type('#m-label', '');
+  type('#m-model', '   ');
+  type('#m-doc', ' https://example.org/manual ');
+  last(props.querySelector('#m-cardio'), 'click')(); // no blur, so no `change` yet
+  let m1 = machineAt('m1');
+  assert.equal(m1.cardio, true, 'the chip did its own job');
+  assert.equal(m1.label, 'Machine 1', 'an emptied label is saved as its fallback, never as ""');
+  assert.equal('model' in m1, false, 'an emptied model is saved absent, never as blanks');
+  assert.equal(m1.docUrl, 'https://example.org/manual', 'the doc link is saved trimmed');
+  assert.ok(/id="m-label" type="text"\s+value=""/.test(props.innerHTML),
+    'the re-rendered field still shows what was typed — no fallback printed into it mid-edit');
+  type('#m-label', '  Pec deck ');
+  last(props.querySelector('#m-bodyweight'), 'click')();
+  assert.equal(machineAt('m1').label, 'Pec deck', 'typed text is saved trimmed');
+  assert.ok(props.innerHTML.includes('value="  Pec deck "'),
+    'and shown with its spaces, so the next word does not glue onto the last');
+  // the blur comes later and writes what the chip's save already wrote
+  ['#m-label', '#m-model', '#m-doc'].forEach((sel) => last(props.querySelector(sel), 'change')());
+  assert.equal(props.querySelector('#m-label').value, 'Pec deck', 'the blur shows the trimmed label');
+  undo();
+  m1 = machineAt('m1');
+  assert.deepEqual([m1.label, m1.cardio, 'bodyweight' in m1], ['Machine 1', true, false],
+    'one undo takes back the second chip tap, with the label it saved');
+  undo();
+  m1 = machineAt('m1');
+  assert.deepEqual([m1.label, m1.model, 'cardio' in m1, m1.docUrl ?? ''], ['Chest press', 'XR', false, ''],
+    'the second takes back the first, with the fields it saved');
+  assert.equal(root.querySelector('#undo').disabled, true,
+    'two chip taps, two undo entries: the blurs writing the same text again added none');
+}
+
+// --- the list editor's staged label and model follow the same rule ---
+{
+  const { root, props } = gymWithProps([{ ...mk('m1', 1, 2, 2), label: 'Chest press', model: 'XR' }]);
+  last(props.querySelector('#edit-machines'), 'click')();
+  const list = props.querySelector('#machine-list');
+  const row = { dataset: { id: 'm1' } };
+  const field = (name, value) => ({ closest: (sel) => (sel === '.mrow' ? row : null), dataset: { field: name }, value });
+  const labelEl = field('label', '');
+  const modelEl = field('model', ' ');
+  last(list, 'input')({ target: labelEl });
+  last(list, 'input')({ target: modelEl });
+  last(list, 'change')({ target: field('type', 'cardio') }); // another control of the row saves first
+  assert.equal(machineAt('m1').label, 'Machine 1', 'the list\'s emptied label is saved as its fallback');
+  assert.equal('model' in machineAt('m1'), false, 'and its emptied model absent');
+  last(list, 'change')({ target: field('muscle', 'Lats') }); // a re-render, still mid-edit
+  assert.ok(/id="ml-label-m1"[^>]*value=""/.test(props.innerHTML)
+    && /id="ml-model-m1"[^>]*value=" "/.test(props.innerHTML), 'both fields still show what was typed');
+  last(list, 'change')({ target: labelEl });
+  last(list, 'change')({ target: modelEl });
+  assert.deepEqual([labelEl.value, modelEl.value], ['Machine 1', ''], 'the blur shows what was saved');
+  last(list, 'input')({ target: field('label', 'Half-typ') }); // still typing when undo is tapped
+  root.querySelector('#undo').listeners.click[0]();
+  root.querySelector('#undo').listeners.click[0]();
+  assert.deepEqual([machineAt('m1').label, machineAt('m1').model, 'cardio' in machineAt('m1')],
+    ['Chest press', 'XR', false], 'two undos take both saves back');
+  assert.ok(/id="ml-label-m1"[^>]*value="Chest press"/.test(props.innerHTML),
+    'and the row shows the label undo brought back — the half-typed text belonged to the state it left');
+  assert.equal(root.querySelector('#undo').disabled, true, 'and there were only two — the blurs added none');
+}
+
+// --- undo and redo read the layout IN THE TAP: another writer's work survives them ---
+// An undo used to write a whole-layout snapshot back — a render-time copy
+// (store.js, ensureMachine): saveLayout tombstones every id such a copy
+// lacks, so a machine a sync pull brought in meanwhile died on every
+// device, and a grip Train taught another machine was reverted.
+{
+  const { root, props } = gymWithProps([mk('m1', 1, 10, 10), mk('m2', 2, 30, 10)]);
+  fire(root.floor, 'pointerdown', { ...at(12, 11), target: onItem('m1') });
+  fire(root.floor, 'pointerup');
+  last(props.querySelector('#m-bodyweight'), 'click')(); // the edit to take back
+  // meanwhile, other writers: Train teaches m2 a grip, a sync pull brings #3
+  store.addMachineVariant('m2', { grips: ['Rope'] });
+  const pulled = store.getLayout();
+  // an id no earlier block used: each gymWithProps tombstones the last gym's ids
+  pulled.machines.push({ ...mk('pulled', 3, 40, 10), label: 'Synced in' });
+  store.restoreLayout(pulled);
+  const undo = () => root.querySelector('#undo').listeners.click[0]();
+  const redo = () => root.querySelector('#redo').listeners.click[0]();
+  const others = () => [machineAt('m2').grips, machineAt('pulled')?.label,
+    store.getTombstones().machines.some((t) => t.id === 'pulled')];
+  undo();
+  assert.equal('bodyweight' in machineAt('m1'), false, 'undo takes the edit back');
+  assert.deepEqual(others(), [['Rope'], 'Synced in', false],
+    'and nothing else: m2 keeps its grip, the machine that synced in is neither gone nor tombstoned');
+  redo();
+  assert.equal(machineAt('m1').bodyweight, true, 'redo puts the edit back');
+  assert.deepEqual(others(), [['Rope'], 'Synced in', false], 'and leaves the others alone too');
+  // another writer changed the SAME machine: only the field the edit changed goes back
+  store.addMachineVariant('m1', { grips: ['V-bar'] });
+  undo();
+  assert.deepEqual([machineAt('m1').grips, 'bodyweight' in machineAt('m1')], [['V-bar'], false],
+    'undoing the type leaves the grip taught to that machine since');
+  // a machine another device deleted since stays deleted — an undo of an
+  // edit to it is no reason to bring it back
+  redo();
+  const gone = store.getLayout();
+  gone.machines = gone.machines.filter((m) => m.id !== 'm1');
+  store.restoreLayout(gone);
+  undo();
+  assert.equal(machineAt('m1'), undefined, 'undo does not resurrect a machine deleted elsewhere');
+  assert.equal(machineAt('pulled')?.label, 'Synced in', 'and still keeps the one that synced in');
 }
 
 console.log('gym editor: all assertions passed');
