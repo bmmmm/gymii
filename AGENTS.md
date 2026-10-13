@@ -21,8 +21,9 @@ it before writing or changing a test.
 - Logic tests: `for f in test/*.test.mjs; do node "$f"; done` (CI runs the
   glob). `test/helpers/localstorage.mjs` must be a test's FIRST import. The
   stub DOM hands back EVERY selector — drive view switches explicitly.
-- Browser smoke: `pnpm run smoke` (setup in docs/testing.md; `serve.py`
-  cannot bind a port in the sandbox). A new browser spec goes in `smoke/`
+- Browser smoke: `pnpm run smoke` with the sandbox OFF — Chromium's launch
+  (mach-port check-in) and `serve.py`'s port both die in it; setup in
+  docs/testing.md. A new browser spec goes in `smoke/`
   as `*.spec.mjs`, NEVER in `test/`. A spec that flakes twice in a month is
   rewritten or deleted. `grep -rn` needs `--exclude-dir=node_modules`.
 - Dependabot: adopt locally via `pnpm add -D @playwright/test@latest`
