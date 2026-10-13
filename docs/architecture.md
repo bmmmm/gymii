@@ -404,8 +404,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   overlay renders without the stylesheet; there is deliberately NO
   `<marker>` (`url(#id)` collides when two maps share a page) — the
   arrowhead is a plain polygon. In path mode machines drop custom colours,
-  as in usage mode, and those off the path dim. Its only import is `esc` from ui.js —
-  keep it free of store/gym imports so the cycle cannot reappear. Every id
+  as in usage mode, and those off the path dim. It imports `esc` from ui.js and the
+  placement geometry from store.js (which imports only stats.js) — keep it
+  free of gym/train/plan imports so the cycle cannot reappear. Every id
   interpolated into an attribute goes through `esc()`, and so do colors
   and machine numbers; geometry is drawn from a `Number()` copy
   (`numericGeometry`): ids arrive from community template FILES off the
@@ -692,7 +693,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   gym visit first. It places through `freeSpot` (a row of five from the top
   left as the preferred spot): the old modulo stacked a new machine onto
   whatever already stood there, and on a packed floor it may overlap but
-  never land on another solid item's exact spot.
+  — as long as the grid holds the item at all — never lands on another
+  solid item's exact spot.
 - `js/plan.js` — the plan builder: muscle-filtered machine picking, per-item
   targets, reorder, weekday chips, and the route hint of the plan this
   name's workouts walk (above the items it reorders). It renders INSIDE the Train tab via

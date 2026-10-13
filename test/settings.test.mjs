@@ -160,8 +160,13 @@ assert.ok(root.innerHTML.includes('<h2>Sync</h2>'), 'a real gym gets the card');
   };
   assert.equal(stepChange('2,5'), 2.5, 'a comma is the decimal mark');
   assert.equal(store.getSettings().weightStep, 2.5, 'and 2.5 is what is stored');
+  assert.equal(stepChange('abc'), 2.5, 'unreadable text keeps the step it had');
+  {
+    const target = { value: '', dataset: { prevValue: '2.5' } }; // armed, emptied, left
+    byId.get('#weight-step').listeners.change({ target });
+    assert.equal(store.getSettings().weightStep, 2.5, 'an armed field left empty keeps its step');
+  }
   assert.equal(stepChange('0'), 0.5, 'a typed 0 lands on the minimum');
-  assert.equal(stepChange('abc'), 0.5, 'unreadable text too');
   store.saveSettings({ ...store.getSettings(), weightStep: keep });
   renderSettings(root);
 }

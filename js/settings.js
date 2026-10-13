@@ -477,10 +477,11 @@ function renderSettingsView(root) {
   });
 
   root.querySelector('#weight-step').addEventListener('change', (e) => {
-    // 0.5 min matches the stepper's data-min and setUnit's clamp; the ||
-    // catches unreadable text AND a typed 0, so both land on the minimum,
-    // not the default. A decimal text field: "2,5" is 2.5, never 25.
-    const v = Math.max(0.5, parseDistance(fieldValue(e.target), false) || 0.5);
+    // A decimal text field: "2,5" is 2.5, never 25. Unreadable text keeps
+    // the step it had (the rule of every decimal field); 0.5 min matches
+    // the stepper's data-min and setUnit's clamp, so a typed 0 lands there.
+    const typed = parseDistance(fieldValue(e.target), false);
+    const v = typed == null ? getSettings().weightStep : Math.max(0.5, typed || 0.5);
     e.target.value = v;
     saveSettings({ ...getSettings(), weightStep: v });
   });
