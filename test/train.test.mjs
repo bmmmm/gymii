@@ -1749,6 +1749,33 @@ const withPicker = (fn) => {
   byId.get('#exercise-chips').listeners.click({ target: { closest: () => ({ dataset: { exercise: 'Pushdown' } }) } });
   assert.strictEqual(store.getActive().currentGrip, null, 'tapping the exercise already on screen keeps the choice');
 
+  // "+ Grip": a machine nobody gave grips still switches one by button —
+  // the machine learns it and it is selected at once
+  store.saveActive({ v: 2, id: 'w-grip', startedAt: Date.now(), plan: [{ machineId: 'm1', exercise: null }],
+    currentMachineId: 'm1', entries: [] });
+  byId.clear();
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('id="grip-add"') && !root.innerHTML.includes('id="grip-chips"'),
+    'a gripless machine shows a lone + Grip chip, no Grip card');
+  assert.ok(!root.innerHTML.includes('id="grip-new"'), 'its picker starts closed');
+  byId.get('#grip-add').listeners.click();
+  assert.ok(/id="grip-new"[\s\S]*data-grip="Rope"/.test(root.innerHTML), 'the tap opens the common grips');
+  byId.get('#grip-new').listeners.click({ target: { closest: () => ({ dataset: { grip: 'Rope' } }) } });
+  assert.deepEqual(store.getLayout().machines.find((m) => m.id === 'm1').grips, ['Rope'], 'the machine learns the grip');
+  assert.equal(store.getActive().currentGrip, 'Rope', 'and it is the grip on screen at once');
+  assert.equal(selected(), 'Rope', 'its chip shows selected');
+  assert.ok(!root.innerHTML.includes('id="grip-new"'), 'the picker closes after the pick');
+  assert.ok(!/id="grip-new"[\s\S]*data-grip="Rope"/.test((byId.get('#grip-add').listeners.click(), root.innerHTML)),
+    'a grip the machine knows is not offered again');
+  byId.get('#grip-custom').value = ' Wide  [bar] ';
+  byId.get('#grip-custom-add').listeners.click();
+  assert.deepEqual(store.getLayout().machines.find((m) => m.id === 'm1').grips, ['Rope', 'Wide bar'],
+    'a typed grip loses its brackets — "[…]" names the grip in a plan line');
+  assert.equal(store.getActive().currentGrip, 'Wide bar', 'and is selected too');
+  const reset = store.getLayout();
+  delete reset.machines.find((m) => m.id === 'm1').grips;
+  store.saveLayout(reset);
+
   // a wildcard slot counts both grips; two grip slots walk Next between them
   start([{ machineId: 'ct', exercise: 'Pushdown', grip: 'Rope' }, { machineId: 'ct', exercise: 'Pushdown', grip: 'V-bar' },
     { machineId: 'm1', exercise: null }]);

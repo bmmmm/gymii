@@ -893,6 +893,12 @@ details.name-edit .row { margin-bottom: 12px; }
 /* One-line locker ask on the first machine's log screen */
 .locker-ask { margin: 12px 0; }
 .locker-ask .btn-inline { flex: 0 0 auto; }
+/* "+ Grip" on the log screen: a lone chip where the Grip card would sit, and
+   the card's picker for grips the machine does not know yet */
+.grip-add-row { margin: 12px 0; }
+.grip-new { margin: 12px 0 8px; }
+#grip-chips + .grip-new { padding-top: 12px; border-top: 1px solid var(--border); }
+.card .grip-new + .row .btn-inline { flex: 0 0 auto; }
 
 /* --- history --- */
 

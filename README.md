@@ -31,7 +31,8 @@ ever sees ciphertext.
   stronger, and you say whether you're after less assist or more reps
   (until you do, gymii reads it from your history), free-weight
   areas keep separate histories per named exercise, and a cable tower one
-  per grip (rope, V-bar — `[Rope]` in a typed plan line). Stuck for what's
+  per grip (rope, V-bar — `[Rope]` in a typed plan line; "+ Grip" on the
+  machine's screen adds one mid-workout and switches to it). Stuck for what's
   next? 🎲 in the picker suggests a machine for a muscle you haven't hit
   today — it only fills in the number, you still decide. 📍 shows where the next
   machine stands, a busy one gets the closest open alternative, an open

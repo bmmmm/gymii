@@ -552,7 +552,13 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   chip tapped again), dies with the workout via `finishWorkout`'s
   allow-list. A grip the plan does not cover grows a slot after its
   siblings, like a fresh exercise; a grip switch is a new entry with its
-  own prefill. Overview hub, per-machine
+  own prefill. "+ Grip" (every non-cardio log screen — a lone chip where
+  the machine has no grips, else the Grip card's last chip) opens
+  `COMMON_GRIPS` minus the machine's own plus an "Other grip…" field; a
+  pick goes through `addMachineVariant` and becomes `currentGrip` in the
+  same tap, so a grip never needs a detour through the gym editor. The
+  open picker is module state keyed by machine id (`gripPicker`), so
+  leaving the machine closes it. Overview hub, per-machine
   `restSeconds` (changed mid-workout it lands on the WORKOUT, see the rest
   paragraph below), locker number, two-tap finish guard on TWO surfaces —
   the overview's Finish button and 🏁 in the machine header, because the

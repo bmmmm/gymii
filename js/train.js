@@ -3,7 +3,7 @@ import {
   lastEntryFor, lastGripFor, getWorkouts, getPlans, savePlan, planFromText, uid,
   usageByMachine, layoutMuscles, distUnit, newLayout, addMachine, nextNum,
   ensureMachine, addMachineVariant, bindItemTo, machineTrainedWhole, newEntry, nameChipsFor, todayStatus, skipPlanDay, machineBrand,
-  newestStampedSet, setAssistGoal,
+  newestStampedSet, setAssistGoal, COMMON_GRIPS,
   switchMachine, rateLastSet,
 } from './store.js';
 import { drawLayout, usagePayload, findMachineByNum } from './map.js';
@@ -60,6 +60,9 @@ export function goToPlans() { screen = 'plans'; }
 // starts (machine pick, plan button, repeat, quick start), so the number
 // lives on the workout itself from its first second.
 let pendingLocker = '';
+// The machine whose "+ Grip" picker on the log screen is open (null = none);
+// leaving the machine closes it, since the id no longer matches.
+let gripPicker = null;
 
 // One plan item per (machine, exercise) pair of a past workout, deduped —
 // the seed for "turn this routine into a plan". Targets are NOT set here;
@@ -1633,6 +1636,8 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   const rated = newestStampedSet(active);
   const rirHere = restSeconds === 0 && !cardio && rated?.entry === entry;
 
+  const gripPickOpen = gripPicker === machine.id;
+
   root.innerHTML = `
     <button type="button" id="log-back" class="back-row">‹ Workout</button>
     ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
@@ -1690,7 +1695,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
       ${pickPending ? '<p class="muted">Pick an exercise to start logging.</p>' : ''}
     </section>` : ''}
 
-    ${!pickPending && grips.length ? `
+    ${!pickPending && !cardio && (grips.length || gripPickOpen) ? `
     <section class="card">
       <h2>Grip</h2>
       <div class="chip-select" id="grip-chips">
@@ -1699,8 +1704,22 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     return `<button type="button" class="chip${g === grip ? ' sel' : ''}${done ? ' done' : ''}"
           data-grip="${esc(g)}">${esc(g)}</button>`;
   }).join('')}
+        <button type="button" class="chip${gripPickOpen ? ' sel' : ''}" id="grip-add"
+          aria-expanded="${gripPickOpen}">+ Grip</button>
       </div>
-    </section>` : ''}
+      ${gripPickOpen ? `
+      <div class="chip-select grip-new" id="grip-new">
+        ${COMMON_GRIPS.filter((g) => !grips.includes(g)).map((g) => `<button type="button" class="chip"
+          data-grip="${esc(g)}">${esc(g)}</button>`).join('')}
+      </div>
+      <div class="row">
+        <input id="grip-custom" type="text" enterkeyhint="done" placeholder="Other grip…">
+        <button type="button" id="grip-custom-add" class="btn btn-inline">Add</button>
+      </div>` : ''}
+    </section>` : !pickPending && !cardio ? `
+    <div class="grip-add-row">
+      <button type="button" class="chip" id="grip-add" aria-expanded="false">+ Grip</button>
+    </div>` : ''}
 
     ${goal ? `
     <section class="card">
@@ -1803,10 +1822,37 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // too, kept as null so it is not re-resolved on the next render.
   root.querySelector('#grip-chips')?.addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
-    if (!chip) return;
+    if (!chip || chip.id === 'grip-add') return;
     active.currentGrip = chip.dataset.grip === grip ? null : chip.dataset.grip;
     saveLog(active);
     renderTrain(root);
+  });
+
+  // "+ Grip": a machine nobody gave grips in the editor still gets one
+  // mid-workout — the chosen grip is taught to the machine (like a fresh
+  // exercise at bind time) and selected at once, so the switch is one tap.
+  root.querySelector('#grip-add')?.addEventListener('click', () => {
+    gripPicker = gripPickOpen ? null : machine.id;
+    renderTrain(root);
+  });
+  const takeGrip = (raw) => {
+    // "[…]" is how a plan line names the grip, so a name may not hold one
+    const g = raw.replace(/[[\]]/g, '').replace(/\s+/g, ' ').trim();
+    if (!g) return;
+    addMachineVariant(machine.id, { grips: [g] });
+    gripPicker = null;
+    active.currentGrip = g;
+    saveLog(active);
+    renderTrain(root);
+  };
+  root.querySelector('#grip-new')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (chip) takeGrip(chip.dataset.grip);
+  });
+  root.querySelector('#grip-custom-add')?.addEventListener('click', () =>
+    takeGrip(root.querySelector('#grip-custom').value));
+  root.querySelector('#grip-custom')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') takeGrip(e.target.value);
   });
 
   // The goal is the machine's (one gym, one counterweight); the chosen chip
