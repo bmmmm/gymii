@@ -749,7 +749,7 @@ const finishedToday = (now = Date.now()) => {
 // 🎲 "Surprise me": a machine not trained yet this workout, drawn at random
 // with each candidate weighted by how many of its muscles are still open
 // today; nearness to where you stand (the last machine, else the entrance,
-// else the floor's middle — centres as in nearbyAlternative) adds less
+// else the floor's middle — straight lines between centres) adds less
 // than one open muscle, so it only tips the odds between equals. With every
 // muscle trained (or none tagged) it is a plain random pick among the
 // machines not trained today. `rand` is injectable so tests replay a draw.

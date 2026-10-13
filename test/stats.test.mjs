@@ -702,6 +702,10 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     const F = box('F', 5, 6);
     const T = box('T', 5, 10);
     assert.equal(stats.walkLength(two([partition]), F, T), null, 'no door anywhere: unreachable, not "4 away"');
+    const above = box('A', 5, 8); // flush ABOVE the partition, walked to from below
+    const below = box('B', 5, 12);
+    assert.equal(stats.walkLength({ grid: { w: 20, h: 20 }, outline: [], shapes: [partition], machines: [above, below] },
+      below, above), null, 'nor from the other side');
     const farDoor = { id: 'fd', kind: 'fixture', fixture: 'door', x: 16.8, y: 9.4, w: 2.4, h: 1.2 };
     const viaDoor = stats.walkLength(two([partition, farDoor]), F, T);
     assert.ok(viaDoor > 15, `through the door at the far end: the long way (${viaDoor?.toFixed(1)})`);
@@ -723,6 +727,27 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
       { x: 0, y: 9.6 }, { x: 15, y: 9.6 }, { x: 15, y: 9.4 }, { x: 0, y: 9.4 }];
     const roundSlit = stats.walkLength({ grid: { w: 20, h: 20 }, outline: slit, shapes: [], machines: [F, T] }, F, T);
     assert.ok(roundSlit > 15, `a slit of the outline in front of it: walked round its end (${roundSlit?.toFixed(1)})`);
+    // only the step up to the target's box counts: beyond it lies the machine itself
+    const cut = { id: 'cw', kind: 'line', x: 0, y: 10.5, w: 20, h: 0 };
+    assert.equal(stats.walkLength({ grid: { w: 20, h: 20 }, outline: [], shapes: [cut], machines: [F, T] }, F, T), 4,
+      'a wall drawn through a machine: reached from the side it is walked to');
+    const T3 = box('T', 5, 10, 2, 3);
+    const short = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 11 }, { x: 0, y: 11 }];
+    assert.equal(stats.walkLength({ grid: { w: 20, h: 20 }, outline: short, shapes: [], machines: [F, T3] }, F, T3), 4.5,
+      'a machine whose centre lies past the outline: reached from the floor');
+    const L = box('L', 3, 6);
+    const R = box('R', 5, 6);
+    assert.equal(stats.walkLength({ grid: { w: 20, h: 20 }, outline: [], shapes: [], machines: [L, R] }, L, R), 2,
+      'flush neighbours: the step from inside the start machine is clear');
+    const off = box('O', 5.3, 6); // off the grid: the step's last sample rounds into the target itself
+    const walked = stats.walkLength({ grid: { w: 20, h: 20 }, outline: [], shapes: [], machines: [box('S', 1, 6), off] },
+      box('S', 1, 6), off);
+    assert.ok(Math.abs(walked - 4.3) < 1e-9, `the target's own box is no obstacle (${walked})`);
+    // a file's machine of absurd size costs no more than its ring on the grid
+    const huge = { id: 'H', x: -1e8, y: 12, w: 1e8 + 4, h: 3 };
+    const t0 = performance.now();
+    stats.walkLength({ grid: { w: 20, h: 20 }, outline: [], shapes: [], machines: [F, huge] }, F, huge);
+    assert.ok(performance.now() - t0 < 1000, `a huge machine: no hang (${(performance.now() - t0).toFixed(0)} ms)`);
   }
   // a grid only a file could carry is no floor to walk — never a crash
   assert.equal(stats.walkLength({ grid: { w: -40, h: 30 }, outline: [], shapes: [], machines: [a, b] }, a, b), null,

@@ -237,11 +237,13 @@ function wallSegments(layout) {
       return parts;
     });
 }
+// a grid a floor can be walked on: 1 to 400 units each way (a file can
+// carry any number, and the raster's arrays grow with it)
+export const walkableGrid = (layout) => [layout?.grid?.w, layout?.grid?.h]
+  .every((v) => finite(v) && v >= 1 && v <= 400);
 // The floor rasterised at half units: for every point (2x, 2y) the solids
 // it lies strictly inside and on whose boundary it lies — at most two of
 // each kept, which is all the blocking test needs.
-export const walkableGrid = (layout) => [layout?.grid?.w, layout?.grid?.h]
-  .every((v) => finite(v) && v >= 1 && v <= 400);
 function walkFloor(layout) {
   const W = Math.round(layout.grid?.w ?? 0);
   const H = Math.round(layout.grid?.h ?? 0);
@@ -299,6 +301,10 @@ function walkFloor(layout) {
   return { W, H, CW, solids, walls, inA, inB, edgeA, edgeB, edgeC, offFloor, anyBlock, nearWall };
 }
 let floorMemo = { key: null, floor: null };
+// how many floods ran — the tests pin one per log screen (a flood per stop
+// would answer the same and cost the walk once per machine)
+let floods = 0;
+export const floodCount = () => floods;
 const floorKey = (layout) => JSON.stringify([layout.grid, layout.outline,
   (layout.shapes ?? []).map((s) => [s.kind, s.fixture, s.x, s.y, s.w, s.h]),
   (layout.machines ?? []).map((m) => [m.id, m.x, m.y, m.w, m.h])]);
@@ -313,8 +319,7 @@ function floorOf(layout) {
 // free point on or next to its box — where you stand to use it — plus the
 // straight step from there to its centre. Stops as soon as every target is
 // answered; an unreachable one leaves its null. → Map(id → length | null).
-export function walksFrom(layout, from, rawTargets) {
-  const targets = [...new Map(rawTargets.map((t) => [t.id, t])).values()]; // one flood answers each id once
+export function walksFrom(layout, from, targets) {
   const out = new Map(targets.map((t) => [t.id, null]));
   if (!walkableGrid(layout) || !from || ![from.x, from.y, from.w, from.h].every(finite)) return out;
   const { W, H, CW, solids, walls, inA, inB, edgeA, edgeB, edgeC, offFloor, anyBlock, nearWall } = floorOf(layout);
@@ -329,19 +334,27 @@ export function walksFrom(layout, from, rawTargets) {
       || (other(edgeA[c]) + other(edgeB[c]) + other(edgeC[c])) >= 2;
   };
   const key = (x, y) => y * (W + 1) + x;
-  // A ring point counts only if the straight step from it to the target's
-  // centre is clear — no wall crossed, nothing off the floor or inside
-  // another solid on the way (read off the raster every half unit): a
-  // machine flush against a wall or behind a mirror is not "reached" from
-  // the other side.
+  // A ring point counts only if the straight step from it towards the
+  // target's centre is clear up to a quarter unit into the target's box —
+  // no wall crossed, nothing off the floor or inside another solid on the
+  // way (read off the raster every half unit): a machine flush against a
+  // wall or behind a mirror is not "reached" from the other side. What lies
+  // deeper is the machine itself — a wall drawn through it or a centre past
+  // the outline blocks nothing — and the step stays short however large a
+  // file's machine is.
+  const into = (p, c, lo, hi) => (p < lo ? (lo - p) / (c - p) : p > hi ? (hi - p) / (c - p) : 0);
   const clearStep = (px, py, t, cx, cy) => {
-    if (walls.some(([a, b]) => crosses({ x: px, y: py }, { x: cx, y: cy }, a, b))) return false;
+    const len = Math.hypot(cx - px, cy - py);
+    const f = len ? Math.min(1, Math.max(into(px, cx, t.x, t.x + t.w), into(py, cy, t.y, t.y + t.h)) + 0.25 / len) : 0;
+    const ex = px + (cx - px) * f;
+    const ey = py + (cy - py) * f;
+    if (walls.some(([a, b]) => crosses({ x: px, y: py }, { x: ex, y: ey }, a, b))) return false;
     const tk = solids.findIndex((it) => it.id === t.id);
-    const steps = Math.max(1, Math.ceil(Math.hypot(cx - px, cy - py) * 2));
+    const steps = Math.max(1, Math.ceil(len * f * 2));
     for (let s = 1; s < steps; s++) {
-      const i = Math.round(2 * (px + ((cx - px) * s) / steps));
-      const j = Math.round(2 * (py + ((cy - py) * s) / steps));
-      if (i < 0 || j < 0 || i > 2 * W || j > 2 * H) continue;
+      const i = Math.round(2 * (px + ((ex - px) * s) / steps));
+      const j = Math.round(2 * (py + ((ey - py) * s) / steps));
+      if (i < 0 || j < 0 || i > 2 * W || j > 2 * H) break; // left the grid: it never comes back
       const c = j * CW + i;
       if (!anyBlock[c]) continue;
       if (offFloor[c] === 1) return false;
@@ -351,7 +364,7 @@ export function walksFrom(layout, from, rawTargets) {
   };
   // every target's ring: the points on or one step outside its box
   const goals = new Map();
-  let open = 0;
+  const open = new Set(); // ids, so a target listed twice is still answered once
   targets.forEach((t) => {
     if (![t.x, t.y, t.w, t.h].every(finite)) return;
     const cx = t.x + t.w / 2;
@@ -368,11 +381,12 @@ export function walksFrom(layout, from, rawTargets) {
         any = true;
       }
     }
-    if (any) open += 1;
+    if (any) open.add(t.id);
   });
   const sx = Math.round(from.x + from.w / 2);
   const sy = Math.round(from.y + from.h / 2);
-  if (!open || sx < 0 || sy < 0 || sx > W || sy > H) return out;
+  if (!open.size || sx < 0 || sy < 0 || sx > W || sy > H) return out;
+  floods += 1;
   const answered = new Set();
   const g = new Float64Array((W + 1) * (H + 1)).fill(Infinity);
   g[key(sx, sy)] = 0;
@@ -405,7 +419,7 @@ export function walksFrom(layout, from, rawTargets) {
     }
     return top;
   };
-  while (heap.length && answered.size < open) {
+  while (heap.length && answered.size < open.size) {
     const [d, x, y] = pop();
     const k = key(x, y);
     if (done[k]) continue;
@@ -586,8 +600,8 @@ const centre = (item) => ({ x: item.x + item.w / 2, y: item.y + item.h / 2 });
 const dist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
 
 // The route walked through the gym: machine centres in visit order. Legs are
-// straight lines in grid units (walls ignored, like train.js's
-// nearbyAlternative) — relative, never metres. Machines no longer in the
+// straight lines in grid units (walls ignored — the card keeps straight
+// legs, a user decision; walksFrom is the walk) — relative, never metres. Machines no longer in the
 // layout drop out before collapsing. The first leg starts at the entrance
 // nearest the first machine (`from: null`) when the layout has one.
 // null when fewer than two stops remain.

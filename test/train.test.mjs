@@ -2152,9 +2152,15 @@ const withPicker = (fn) => {
   open.machines[2].muscles = ['Chest']; // and the recovery malus makes the rack the better stop
   store.saveLayout(open);
   byId.clear();
+  const { floodCount } = await import(new URL('../js/stats.js', import.meta.url).href);
+  const floods = floodCount();
   renderTrain(root);
   assert.ok(root.innerHTML.includes('Busy? #3'), 'without the wall the near machine is "Busy?"');
   assert.ok(root.innerHTML.includes('Closer: #4 Dumbbell rack · Biceps curls'), 'the line names the exercise too');
+  assert.equal(floodCount() - floods, 1, 'one flood answers "Busy?" and "Closer:" for every machine');
+  byId.clear();
+  renderTrain(root);
+  assert.equal(floodCount() - floods, 1, 'and a re-render reads the memo');
   // a negative grid (only a file can carry one): centres, never a crash
   const bad = store.getLayout();
   bad.grid = { w: -40, h: 30 };

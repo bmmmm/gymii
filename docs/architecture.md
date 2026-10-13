@@ -717,7 +717,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   the running workout.
   `nearbyAlternative()` renders a "Busy? #N … is nearby" button under the
   next-row: the closest OTHER open machine by the WALK (stats.js
-  `walksCached`, one flood for all candidates, around walls and machines; a
+  `walksCached`, one flood for every machine of the layout, around walls
+  and machines, which the "Closer:" line then reads from the memo; a
   machine no way leads to is none; straight lines only without a walkable
   floor grid (`walkableGrid`); current + plan-next
   excluded) as the busy-machine escape hatch —
@@ -896,8 +897,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   neighbours — the outline, interior walls, machines and free-standing
   fixtures block, two touching items are a barrier, a door or entrance in an
   interior wall opens it, a target is reached on or next to its box from a
-  point whose straight step to its centre crosses no wall, outline slit or
-  other solid; `walkableGrid` keeps the grid to 1–400 units, else no walk; the
+  point whose straight step towards its centre crosses — up to a quarter
+  unit into the box, the machine itself is no obstacle — no wall, outline
+  slit or other solid; `walkableGrid` keeps the grid to 1–400 units, else
+  no walk; `floodCount` lets the tests pin one flood per log screen; the
   floor is rasterised once per geometry on a half-unit grid, walks are
   memoised per floor and pair (`walksCached`); null when no way exists; the
   walking-path card keeps its straight legs, user decision) with the

@@ -275,3 +275,12 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   `aria-pressed`.
 - **Gym editor.** The undo copy is the same stale-layout class the
   2026-10-12 audit fixed elsewhere (`saveLayout` from a render-time copy).
+- **Routing.** The floor is rasterised at half units, so geometry off that
+  grid can leak or close: a wall ending exactly on the grid's edge is
+  passed round its end, a slit of the outline thinner than half a unit is
+  no slit, and in a 1-unit corridor a ring step can round onto a wall's end
+  (the machine reads unreachable). An outline door within half a unit of a
+  partition's end opens the partition. A start machine outside the outline
+  is walled in (Busy? then offers nothing). The start is the machine's
+  rounded centre: a 1-deep machine from a file, flush above or left of a
+  partition, starts ON it and walks through — A→B and B→A can differ.
