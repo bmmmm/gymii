@@ -1059,7 +1059,8 @@ function plateauRule(ws, settings, now, layout = null, plans = []) {
 // of the earlier ones, trained in the last 21 days. Reps compare within ONE
 // assist step — 14 reps with 30 kg of help say nothing about 10 with 25 kg —
 // so the endurance record counts only the workouts at the latest one's least
-// assist, and a new step starts the count afresh.
+// assist (not necessarily in a row: a block at another step in between
+// does not reset it).
 function assistPlateau(series, goal, unit, now) {
   const all = series.filter((p) => p.kind === 'assisted');
   const step = all[all.length - 1]?.top.weight;

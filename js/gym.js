@@ -250,7 +250,9 @@ export function renderGym(root) {
     model: (m, v) => { if (v) m.model = v; else delete m.model; return v; },
     docUrl: (m, v) => { m.docUrl = v; return v; },
   };
-  const stageText = (m, field, text) => staged.set(`${m.id}:${field}`, { m, field, text });
+  // `saved`: save() already wrote this text — written again it would undo
+  // whatever another writer stored for that key since (a sync rename)
+  const stageText = (m, field, text) => staged.set(`${m.id}:${field}`, { m, field, text, saved: false });
   const stagedText = (m, field, value) => staged.get(`${m.id}:${field}`)?.text ?? value;
   const commitText = (m, field, text) => {
     staged.delete(`${m.id}:${field}`);
@@ -271,7 +273,11 @@ export function renderGym(root) {
 
   // every gym mutation goes through save(): persist + record what changed
   const save = () => {
-    staged.forEach(({ m, field, text }) => MACHINE_TEXT[field](m, text.trim()));
+    staged.forEach((e) => {
+      if (e.saved) return;
+      MACHINE_TEXT[e.field](e.m, e.text.trim());
+      e.saved = true;
+    });
     const changes = layoutDiff(lastSaved, layout);
     if (!changes.length) return; // no write, and no undo step that does nothing
     // `layout` is this editor's render-time copy: what another writer

@@ -864,4 +864,22 @@ const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) 
     [false, ['Rope'], 'Synced in'], 'undo takes back the edit alone');
 }
 
+// --- staged text is written once: a later save does not undo a sync rename ---
+{
+  const { root, props } = gymWithProps([{ ...mk('r1', 1, 10, 10), label: 'Chest press' }]);
+  fire(root.floor, 'pointerdown', { ...at(12, 11), target: onItem('r1') });
+  fire(root.floor, 'pointerup');
+  props.querySelector('#m-label').value = 'Pec deck';
+  last(props.querySelector('#m-label'), 'input')();
+  last(props.querySelector('#m-cardio'), 'click')(); // no blur: the chip's save writes the label
+  assert.equal(machineAt('r1').label, 'Pec deck', 'the waiting label is saved with the chip');
+  const pulled = store.getLayout();
+  pulled.machines.find((m) => m.id === 'r1').label = 'Renamed elsewhere';
+  store.restoreLayout(pulled);
+  last(props.querySelector('#m-bodyweight'), 'click')();
+  last(props.querySelector('#m-bodyweight'), 'click')();
+  assert.equal(machineAt('r1').label, 'Renamed elsewhere',
+    'later chip taps do not write the already-saved text over a rename that synced in');
+}
+
 console.log('gym editor: all assertions passed');

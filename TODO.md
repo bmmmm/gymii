@@ -258,6 +258,15 @@ by a wall is reached from its floor side.
   target) stay one slot — on purpose.
 - **Grips.** A typed grip in the gym EDITOR is deduplicated by exact match
   only (the log screen's "+ Grip" matches case-insensitively).
+- **Gym editor.** An edit to a machine another device deleted meanwhile
+  brings it back on every device (the edit's re-stamp beats the
+  tombstone) — the editor's save() lets this edit win; the other choice
+  would drop the edit silently. A save that takes in another writer's
+  change redraws the map but not the open card; most chip handlers
+  re-render it anyway.
+- **AI export.** test/ai.test.mjs's "still valid JSON" assertion compares
+  the parse with itself; the other `JSON.parse(buildAiExport())` calls are
+  what really pins validity.
 - **Hints.** Busy marks on either side of midnight fall into different
   weekday groups and never cluster.
 - **Routing.** The floor is rasterised at half units, so geometry off that
@@ -270,7 +279,8 @@ by a wall is reached from its floor side.
   wall, so a passage of the outline exactly 1 unit wide is closed. An
   outline door within half a unit of a partition's end opens the partition.
   A machine cut by a partition is reached from both rooms but left only
-  into its centre's room (104 one-way pairs in the editor fuzz); starting
-  from both rooms would mirror the wall decision. A machine entirely
+  into its centre's room — unless its rounded centre lands ON the
+  partition, then into both (104 one-way pairs in the editor fuzz);
+  starting from both rooms would mirror the wall decision. A machine entirely
   outside the outline gets no walk, so Busy? offers nothing from it — a
   product question for train.js.
