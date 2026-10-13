@@ -1114,6 +1114,15 @@ try {
   assert.ok(!logAt('m1', null).includes('Target beaten'), 'no progress at #1: 10 × 40 is under target');
   store.saveWorkouts([pull('h1', 22), pull('h2', 15), pull('h3', 8)]); // another weekday
   assert.ok(!logAt('m1', null).includes('Usually busy'), 'not today: the busy hint waits for its weekday');
+  // a late crowd (Mondays 23–24 h) still counts just after midnight on Tuesday
+  store.saveWorkouts([pull('h1', 21, 5 * 3600e3), pull('h2', 14, 5 * 3600e3), pull('h3', 7, 5 * 3600e3)]);
+  const lateAt = (d, h, m) => {
+    hintsNow = new Date(2026, 9, d, h, m).getTime();
+    return logAt('m1', null).includes('Usually busy');
+  };
+  assert.deepEqual([lateAt(12, 21, 59), lateAt(12, 22, 0), lateAt(13, 0, 30), lateAt(13, 1, 0)],
+    [false, true, true, false], 'the window reaches across midnight into the next weekday');
+  hintsNow = new Date(2026, 9, 12, 18, 30).getTime();
   store.saveWorkouts([pull('h1', 21), pull('h2', 14), pull('h3', 7)]);
   store.clearActive();
 

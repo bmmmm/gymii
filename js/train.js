@@ -17,7 +17,7 @@ import {
   variantStr, entryKind,
 } from './ui.js';
 import { ensurePersisted } from './persist.js';
-import { insights, sameSeries, assistGoalAt, closerStop, walkSaving, walksCached, walkableGrid } from './stats.js';
+import { insights, inBusyWindow, sameSeries, assistGoalAt, closerStop, walkSaving, walksCached, walkableGrid } from './stats.js';
 
 // Active workout shape:
 //   { v: 2, id, startedAt, plan: [{machineId, exercise|null, target?}…],
@@ -1557,18 +1557,16 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   const lastSets = last && entryKind(last) === type ? last : null;
   // What to do at THIS machine and exercise (stats.js): the progress
   // hint for exactly this pair — a hint about the machine's other exercise
-  // would name the wrong load — and the busy hint on its weekday, from an
-  // hour before the window it names to an hour after it (h1 is the
-  // window's END hour: "18–19 h" shows 17:00–19:59; a Monday-evening crowd
+  // would name the wrong load — and the busy hint while stats.js's
+  // inBusyWindow says it applies: an hour either side of the window it
+  // names, across midnight into the next weekday (a Monday-evening crowd
   // says nothing about Monday morning). Date.now, so a test can pin the clock.
   const here = new Date(Date.now());
-  const hour = here.getHours();
   const allHints = insights(getWorkouts(), layout, s, { plans: getPlans() });
   const hints = allHints.filter((it) =>
     it.machineId === machine.id && (it.kind === 'progress'
       ? (it.exercise ?? null) === (exercise ?? null) && (it.grip ?? null) === grip
-      : it.kind === 'busy' && it.weekday === here.getDay()
-        && hour >= it.h0 - 1 && hour <= it.h1));
+      : it.kind === 'busy' && inBusyWindow(it, here)));
   // Plan target for this slot — dropped when its shape no longer matches
   // the machine's type (flag toggled since the plan was made).
   const rawTarget = pickPending ? null : planTargetFor(active, machine.id, exercise, grip);
@@ -1634,8 +1632,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     // busy: usually at this hour (rule 7), or marked busy in THIS workout
     // — "Busy?" skipped it minutes ago, it comes back by the wrap-around
     const busyNow = new Set([
-      ...allHints.filter((it) => it.kind === 'busy' && it.weekday === here.getDay()
-        && hour >= it.h0 - 1 && hour <= it.h1).map((it) => it.machineId),
+      ...allHints.filter((it) => it.kind === 'busy' && inBusyWindow(it, here)).map((it) => it.machineId),
       ...(active.visits ?? []).map((v) => v.busy).filter(Boolean),
     ]);
     const best = closerStop({ layout, from: machine, next: nextMachine, candidates, busyNow });
