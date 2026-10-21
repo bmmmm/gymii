@@ -353,6 +353,16 @@ function renderSettingsView(root) {
           <button type="button" class="step-up" aria-label="increase">+</button>
         </div>
       </label>
+      <label class="field"><span>Sets per exercise</span>
+        <div class="stepper" data-step="1" data-min="1">
+          <button type="button" class="step-down" aria-label="decrease">−</button>
+          <input id="default-sets" type="number" inputmode="numeric" value="${esc(s.defaultSets)}">
+          <button type="button" class="step-up" aria-label="increase">+</button>
+        </div>
+      </label>
+      <p class="muted">How many sets count a machine as done and move "Next" on. A
+        machine (or one of its exercises) can keep its own number — on its card in
+        the Gym, or with "Keep … sets" under the Sets planned stepper while you train.</p>
       <div class="field-block"><span>Timer sound — tap to hear it</span>
         <div class="chip-select" id="sound-chips">
           ${Object.entries(TIMER_SOUNDS).map(([key, snd]) => `<button type="button"
@@ -484,6 +494,15 @@ function renderSettingsView(root) {
     const v = Math.max(0, Math.round(parseFloat(e.target.value) || 0));
     e.target.value = v;
     saveSettings({ ...getSettings(), restSeconds: v });
+  });
+
+  // a whole number from 1 up; unreadable text keeps the value it had (an
+  // armed field left empty reads through fieldValue like the weight step)
+  root.querySelector('#default-sets').addEventListener('change', (e) => {
+    const n = Math.round(parseFloat(fieldValue(e.target)));
+    const v = Number.isFinite(n) ? Math.max(1, n) : getSettings().defaultSets;
+    e.target.value = v;
+    saveSettings({ ...getSettings(), defaultSets: v });
   });
 
   root.querySelector('#weight-step').addEventListener('change', (e) => {
