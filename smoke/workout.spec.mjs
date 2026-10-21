@@ -245,6 +245,8 @@ test('a grip switch logs a second entry, and History names both grips', async ({
   await page.locator('#open-workouts').click();
   const latest = page.locator('#workout-list .workout').first();
   await latest.click();
-  await expect(latest).toContainText('#9 Cable tower · Triceps pushdown · Rope');
-  await expect(latest).toContainText('#9 Cable tower · Triceps pushdown · V-bar');
+  // the machine's icon sits between the number and the label (decorative,
+  // so the pin tolerates whichever glyph the cable tower resolves to)
+  await expect(latest).toContainText(/#9 \S+ Cable tower · Triceps pushdown · Rope/);
+  await expect(latest).toContainText(/#9 \S+ Cable tower · Triceps pushdown · V-bar/);
 });
