@@ -1056,4 +1056,22 @@ assert.deepEqual(store.parsePlanLine('Leg press 3x8 – 12 80', s).target, { set
   store.saveWorkouts([]);
 }
 
+// --- the machine icon after a builder row's badge; an unbound line has none to show ---
+{
+  const g = store.newLayout('Icon builder gym');
+  g.machines.push({ id: 'ib', num: 5, label: 'Upright bike', x: 0, y: 0, w: 4, h: 3, settingsFields: [], cardio: true });
+  store.saveLayout(g);
+  byId.clear();
+  byId.set('#plan-text', null);
+  renderPlanBuilder(root, { seed: [
+    { machineId: 'ib', exercise: null },
+    { machineId: null, exercise: null, name: 'Face pull', target: { sets: 3, reps: 12 } },
+  ] }, () => {});
+  const h = root.innerHTML;
+  assert.ok(/class="machine-badge sm">5<\/span>\s*<span class="machine-icon" aria-hidden="true">🚴<\/span>\s*<span class="plan-label">Upright bike/.test(h),
+    'a bound item: badge, icon, label');
+  assert.ok(/class="machine-badge sm">\?<\/span>\s*<span class="plan-label">Face pull/.test(h),
+    'an unbound item: the ? badge and the name, no icon for a machine that is not there yet');
+}
+
 console.log('workout plans: all assertions passed');

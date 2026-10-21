@@ -438,4 +438,48 @@ assert.equal(legsOf(pInjSvg.innerHTML).length, 2, 'both injected legs drew');
 assert.ok(!pInjSvg.innerHTML.includes('onclick="'), 'a quote in a leg id must not break out of the attribute');
 assert.ok(pInjSvg.innerHTML.includes('data-from="x&quot; onclick=&quot;boom"'), 'it is escaped instead');
 
+// --- the machine's icon in the box's top-left corner: room for it, in every mode ---
+{
+  const g = store.newLayout('Icon gym');
+  g.machines.push(
+    { id: 'big', num: 1, label: 'Leg press', x: 0, y: 0, w: 5, h: 4, settingsFields: [], muscles: ['Quads'] },
+    { id: 'tiny', num: 2, label: 'Rower', x: 10, y: 0, w: 2, h: 2, settingsFields: [], cardio: true },
+    { id: 'edge', num: 3, label: 'Rower', x: 20, y: 0, w: 3, h: 3, settingsFields: [], cardio: true },
+    { id: 'flat', num: 4, label: 'Chest press', x: 30, y: 0, w: 5, h: 2, settingsFields: [], muscles: ['Chest'] },
+  );
+  // the <text> of one machine's own group, with its content — anchored on
+  // the group, not the first data-id: a small machine's tap pad carries the
+  // same id and is painted before the machines
+  const glyphOf = (html, id) => {
+    const group = html.match(new RegExp(`<g class="machine[^"]*" data-id="${id}"[^>]*>([\\s\\S]*?)</g>`));
+    const m = group?.[1].match(/<text class="machine-glyph"([^>]*)>([^<]*)<\/text>/);
+    return m ? { attrs: m[1], icon: m[2] } : null;
+  };
+  const svg = fakeSvg();
+  drawLayout(svg, g, {});
+  const big = glyphOf(svg.innerHTML, 'big');
+  assert.equal(big?.icon, '🦵', 'a 5×4 box carries its icon');
+  assert.ok(close(num(big.attrs, 'font-size'), 1.21), '0.55 × the number\'s 2.2');
+  assert.ok(close(num(big.attrs, 'x'), 0.3) && close(num(big.attrs, 'y'), 0.3), 'in the top-left corner');
+  assert.equal(attr(big.attrs, 'pointer-events'), 'none', 'it never catches a tap');
+  assert.equal(glyphOf(svg.innerHTML, 'tiny'), null, 'a 2×2 box has no room beside its number');
+  assert.ok(tagsWith(svg.innerHTML, 'machine-num').length === 4, 'every number is still drawn');
+  assert.equal(glyphOf(svg.innerHTML, 'edge')?.icon, '🚣', '3×3 is the smallest box that takes one');
+  assert.equal(glyphOf(svg.innerHTML, 'flat'), null, 'and 5×2 is too flat — both sides count');
+  assert.ok(!svg.innerHTML.includes('machine-icon'), 'the svg text is .machine-glyph, never the span\'s 18px class');
+  // every mode: usage, path, highlight, editor
+  const modes = {
+    usage: { usage: usagePayload(new Map([['big', 4]])) },
+    path: { path: { start: null, stops: [{ machineId: 'big' }], legs: [] } },
+    highlight: { highlightId: 'tiny' },
+    editor: { editor: true, selectedId: 'big', unlockedId: 'big' },
+  };
+  Object.entries(modes).forEach(([mode, opts]) => {
+    const s = fakeSvg();
+    drawLayout(s, g, opts);
+    assert.equal(glyphOf(s.innerHTML, 'big')?.icon, '🦵', `${mode} mode keeps the icon`);
+    assert.equal(glyphOf(s.innerHTML, 'tiny'), null, `${mode} mode: still none on the 2×2 box`);
+  });
+}
+
 console.log('map renderer + geometry + collision: all assertions passed');

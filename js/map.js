@@ -5,7 +5,7 @@
 // editor: the dependency runs one way, gym.js -> map.js. The solid-item
 // placement geometry lives in store.js, whose addMachine places machines
 // too (quick start, the picker's create-on-miss) — one rule, two callers.
-import { esc } from './ui.js';
+import { esc, machineIcon } from './ui.js';
 import { WALL_SNAPPED, overlapsSolid, isSolid, SNAP } from './store.js';
 
 export { WALL_SNAPPED, overlapsSolid, freeSpot } from './store.js';
@@ -312,10 +312,18 @@ function machineSvg(m, usage = null, highlightId = null, pathIds = null) {
   if (locate) box += `${box ? ';' : ''}stroke:#fff`;
   const dim = (highlightId != null && !locate) || (pathIds && !pathIds.has(m.id))
     ? ' opacity="0.35"' : '';
+  // The machine's icon (ui.js machineIcon, a constant glyph) in the box's
+  // top-left corner, in every mode — but only where the box has room for
+  // it beside the number: at least 3 units on both sides. Its own class,
+  // .machine-glyph, NOT the span's .machine-icon: that rule's 18px
+  // font-size would size an SVG text in user units.
+  const glyph = m.w >= 3 && m.h >= 3
+    ? `<text class="machine-glyph" x="${m.x + 0.3}" y="${m.y + 0.3}" font-size="${Math.round(fs * 55) / 100}"
+      dominant-baseline="hanging" pointer-events="none">${machineIcon(m)}</text>` : '';
   return `<g class="machine${locate ? ' locate' : ''}" data-id="${esc(m.id)}"${dim}>
     <rect class="machine-box" x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" rx="0.4"${box ? ` style="${box}"` : ''}/>
     <text class="machine-num" x="${m.x + m.w / 2}" y="${m.y + m.h / 2}" font-size="${fs}"
-      text-anchor="middle" dominant-baseline="central" pointer-events="none"${numStyle}>${esc(m.num)}</text>
+      text-anchor="middle" dominant-baseline="central" pointer-events="none"${numStyle}>${esc(m.num)}</text>${glyph}
   </g>`;
 }
 

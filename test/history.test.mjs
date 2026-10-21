@@ -1042,4 +1042,27 @@ mem.set(layoutKey, savedLayout);
   store.saveWorkouts([]);
 }
 
+// --- the machine icon after the number on every entry line, in the list and in the editor ---
+{
+  const g = store.newLayout('Icon history gym');
+  g.machines.push({ id: 'ih', num: 14, label: 'Leg press', x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Quads'] });
+  store.saveLayout(g);
+  store.saveWorkouts([{
+    id: 'wi', startedAt: Date.now() - 864e5, finishedAt: Date.now() - 864e5 + 3600e3,
+    entries: [
+      entry('ih', 14, 'Leg press', [{ reps: 10, weight: 80 }]),
+      { ...entry('gone', 9, 'Old airdyne', [{ distance: 2, seconds: 600 }]), cardio: true },
+    ],
+  }]);
+  enter();
+  openWorkouts();
+  const icon = (glyph) => `<span class="machine-icon" aria-hidden="true">${glyph}</span>`;
+  assert.ok(list().innerHTML.includes(`#14 ${icon('🦵')} Leg press`), 'the list line reads the LIVE machine\'s muscles');
+  assert.ok(list().innerHTML.includes(`#9 ${icon('❤️')} Old airdyne`), 'a machine gone from the gym: the entry\'s own flags');
+  list().listeners.click(clickOn('.edit-w', { wid: 'wi' }));
+  assert.ok(list().innerHTML.includes('class="edit-date"'), 'the editor is open');
+  assert.ok(list().innerHTML.includes(`#14 ${icon('🦵')} Leg press`), 'the editor\'s entry title carries it too');
+  store.saveWorkouts([]);
+}
+
 console.log('history: all assertions passed');

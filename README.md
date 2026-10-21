@@ -24,6 +24,10 @@ ever sees ciphertext.
   number lights it up on the plan. One tap away from the Train hub. Optional:
   draw it once your gym is in there and gymii can point you at the next
   machine.
+- 🦵 **Icons** — every machine carries a glyph for its first muscle's region
+  (🫁 chest, 🧗 back, 🦵 legs …) or its cardio type (🚣 rower, 🚴 bike,
+  🏃 treadmill …), in every list, on the log screen and in its box on the
+  floor plan — nothing to set up, it follows the muscle tags.
 - 💪 **Train** — repeat a past workout in order, or roam by number, map tap or
   muscle. Last workout's numbers prefill every set. Cardio machines log
   distance + time, bodyweight machines reps + extra weight, assisted ones
