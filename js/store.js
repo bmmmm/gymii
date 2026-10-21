@@ -1149,7 +1149,7 @@ export function setUnit(unit) {
 }
 
 // Sorted list of every muscle assigned across the layout's machines — feeds
-// the picker's filter, the overview's coverage chips and the plan builder.
+// the picker's filter, the overview's "Muscles today" rows and the plan builder.
 export const layoutMuscles = (layout) => [...new Set(layout.machines
   .flatMap((m) => [...(m.muscles || []), ...(m.secondaryMuscles || [])]))]
   .sort((a, b) => a.localeCompare(b));

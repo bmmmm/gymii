@@ -1,5 +1,35 @@
 # TODO
 
+Shipped 2026-10-21 (`2026-10-21`), orchestrated (a foundation commit, then
+four agents in parallel worktrees — icons, set goals + Next, muscle bars,
+cardio levels — merged B, D, C, A with the test-file tails resolved by
+hand; brief in docs/plan-2026-10-21.md): every machine carries a glyph for
+its first muscle's region or its cardio type (ui.js `machineIcon`, in every
+list, on the log head and in its box on the floor map); every slot counts
+against a SET GOAL — `settings.defaultSets` (3, synced) → the machine's
+"Sets per visit" (Gym card) → per exercise, resolved by store's
+`setGoalFor`, so "✓ Log set 2/3", the Next takeover and the overview's
+"1/3 sets" / "2 of 5 done" work in free workouts too, with a "Sets planned"
+stepper and a "Keep N sets for #7 · Curl" link on the log screen; a machine
+merely opened is a `free` slot that "Next" skips while it has no set, and
+with nothing left in the plan the log screen suggests what to try next
+(`suggestNext`: the usual successor from history, else the most open
+muscles, nearer on a tie — "Try next: #4 Leg curl →"); "Muscles today" is
+bar rows (sets per muscle, a secondary ½, "4 of 9 muscles trained", the
+same count on the overview button); a cardio set takes a `level` (log
+stepper, History editor, `Rower 20min L5` in a plan line, the fourth tuple
+element of a cardio set in the AI export). Also: the picker's 🎲 chip is a
+44px box on a narrow emoji font (Linux Chromium measured it 38px).
+
+### 2026-10-21 — left open (small, on request)
+
+- "Busy?" and "Closer:" still consider a free slot with no set (only
+  `nextOpenSlot` skips it).
+- A new builder line does not inherit the last set's cardio `level`
+  (`targetDefaults`); the Text view sets it.
+- The 14-row "Muscles today" card is long on a gym that tags every muscle;
+  trained-first ordering or folding the open rows is a user call.
+
 Shipped 2026-10-01 (`2026-10-01b` + `2026-10-01c`): the History redesign —
 an overview (This week tiles + twelve weekly bars, a draggable Progress
 chart with machine and range chips, the Walking paths card on the floor

@@ -717,6 +717,9 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 /* inline history edit: compact weight/reps inputs inside a set row */
 .edit-set { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-items: center; color: var(--muted); }
 .edit-set input { width: 60px; text-align: center; }
+/* a cardio row in the editor wraps its level field onto a second line at
+   390px — fine, but the "Set 1" label must not break into two words over it */
+.set-row > span:first-child { white-space: nowrap; }
 
 /* exercise chips: mark movements already logged this session */
 .chip.done::after { content: ' ✓'; }

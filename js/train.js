@@ -743,7 +743,9 @@ function renderOnboarding(root, message) {
 
 // Muscles of every machine with ≥1 set in these entries, read live from
 // the layout (entries don't snapshot muscles; deleted machines contribute
-// none). The overview's coverage chips and the 🎲 pick share it.
+// none). The 🎲 pick and suggestNext's open-muscle fallback share it (the
+// overview's "Muscles today" rows count sets per muscle instead,
+// muscleProgress).
 function trainedMuscles(active, layout, earlier = []) {
   return new Set([...(active?.entries ?? []), ...earlier]
     .filter((e) => e.sets.length)
@@ -963,7 +965,7 @@ function machinePicker(container, layout, onPick, { actionLabel = 'Open', active
 
   applyMapState();
 
-  // small outside API: the overview's muscle-coverage chips drive the
+  // small outside API: the overview's "Muscles today" rows drive the
   // picker's filter ("Legs still open" → tap → leg machines listed here)
   return {
     setMuscle(muscle) {
