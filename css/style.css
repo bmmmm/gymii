@@ -726,6 +726,11 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 }
 
 .chip:active { filter: brightness(1.2); }
+/* a one-glyph chip (the picker's 🎲) is as wide as its emoji plus padding —
+   38px on a Linux Chromium whose emoji font draws narrower than Apple's
+   (measured 2026-10-21 by the smoke suite); the box is the touch target,
+   so it gets the 44px as a real minimum, centred */
+.chip.pick-surprise { min-width: 44px; justify-content: center; }
 
 /* A standalone row in the machine header, not a word inside a sentence —
    so it gets a real 44px box rather than a place on the allowlist. */
