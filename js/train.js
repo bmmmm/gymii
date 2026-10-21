@@ -234,8 +234,9 @@ export function startWorkoutFrom(source, firstMachineId = null) {
     .filter((p, i) => !p.machineId
       || pairs.findIndex((q) => q.machineId && sameSlot(q, p) && sameTarget(q, p)) === i)
     .filter((p) => !p.machineId || !pairs.some((q) => q.machineId && broaderThan(p, q)));
+  // a machine merely started AT is a free slot (see the shape note above)
   if (firstMachineId && !plan.some((p) => p.machineId === firstMachineId)) {
-    plan.push({ machineId: firstMachineId, exercise: null });
+    plan.push({ machineId: firstMachineId, exercise: null, free: true });
   }
   // A plan whose first stop has no machine yet opens on that question
   // instead of on the overview: "which machine is this?" is the only thing
@@ -1253,7 +1254,7 @@ function renderOverview(root, layout, active, message = '') {
 
   const picker = machinePicker(root.querySelector('#picker'), layout, (machineId) => {
     if (!active.plan.some((p) => p.machineId === machineId)) {
-      active.plan.push({ machineId, exercise: null });
+      active.plan.push({ machineId, exercise: null, free: true }); // opened, not committed
     }
     // straight to the machine's first OPEN exercise slot: without one the
     // multi-exercise pick screen named another machine as "Next"
@@ -1481,6 +1482,44 @@ export function nearbyAlternative(active, layout, machine, excludeMachineId = nu
   return best;
 }
 
+// What to try next when the plan has nothing open — a free workout's
+// "Next" (user ask 2026-10-21: it named whatever machine was opened last).
+// Candidates: machines of the layout not trained today — no set in this
+// workout, none in a workout finished today (`earlier`, finishedToday()),
+// not the current machine. The one your history usually walks to from
+// here wins (stats.js transitionCounts, counted once per workout; the
+// highest count); else the one with the most OPEN primary muscles
+// (trainedMuscles — a machine without tags counts as one, the 🎲 rule).
+// Ties go to the shorter walk (walksCached, around walls and machines;
+// straight lines between centres without a floor to walk — walkableGrid;
+// no way there sorts last), then the lower number. null with nothing left
+// to try — the log screen shows "Workout overview →" then, as before. A
+// SUGGESTION, never a plan slot: the tap that takes it grows a `free`
+// slot. Exported for the logic tests.
+export function suggestNext(active, layout, machine, { workouts = [], earlier = [] } = {}) {
+  const trainedIds = new Set([...(active?.entries ?? []), ...earlier]
+    .filter((e) => e.sets.length).map((e) => e.machineId));
+  const candidates = (layout?.machines ?? []).filter((m) => m.id !== machine.id && !trainedIds.has(m.id));
+  if (!candidates.length) return null;
+  // geometry from a hand-made template may be missing: no NaN centres
+  const num = (v, fb) => (Number.isFinite(Number(v)) ? Number(v) : fb);
+  const center = (m) => [num(m.x, 0) + num(m.w, 0) / 2, num(m.y, 0) + num(m.h, 0) / 2];
+  const [fx, fy] = center(machine);
+  const walks = walkableGrid(layout) ? walksCached(layout, machine, candidates) : null;
+  const dist = (m) => (walks ? walks.get(m.id) ?? Infinity : Math.hypot(center(m)[0] - fx, center(m)[1] - fy));
+  const nearer = (a, b) => (dist(a) - dist(b)) || a.num - b.num; // Infinity − Infinity is NaN: by number
+  const best = (score) => {
+    const top = Math.max(...candidates.map(score));
+    return candidates.filter((m) => score(m) === top).sort(nearer)[0];
+  };
+  const counts = transitionCounts(workouts, layout);
+  const follows = (m) => counts.get(`${machine.id}>${m.id}`)?.n ?? 0;
+  if (candidates.some((m) => follows(m) > 0)) return best(follows);
+  const trained = trainedMuscles(active, layout, earlier);
+  const open = (m) => ((m.muscles ?? []).length ? m.muscles.filter((mu) => !trained.has(mu)).length : 1);
+  return best(open);
+}
+
 // The plan target that applies at this logging position, if any.
 const planTargetFor = (active, layout, s, machineId, exercise = null, grip = null) => {
   const idx = planSlotIndex(active, layout, s, machineId, exercise, grip);
@@ -1576,16 +1615,19 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   const { exercises, grips, exercise, grip, pickPending, entry, last } = resolveEntry(machine, active, layout, s);
 
   const machineSlots = active.plan.filter((p) => p.machineId === machine.id);
-  if (!machineSlots.length) { // free workouts grow the plan
-    active.plan.push({ machineId: machine.id, exercise: null });
+  if (!machineSlots.length) { // free workouts grow the plan — a free slot
+    active.plan.push({ machineId: machine.id, exercise: null, free: true });
     saveLog(active);
   } else if (!pickPending && !machineSlots.some((p) => (!p.exercise || p.exercise === exercise)
     && (p.grip == null || p.grip === grip))) {
     // a fresh exercise or grip at a machine whose slots are scoped gets its
     // own slot (after its siblings) so the overview and "Next:" see it; a
-    // broader slot already aggregates it otherwise
+    // broader slot already aggregates it otherwise. It keeps what its
+    // siblings have: free if the machine's first slot is free.
     const lastIdx = active.plan.findLastIndex((p) => p.machineId === machine.id);
-    active.plan.splice(lastIdx + 1, 0, { machineId: machine.id, exercise, ...(grip ? { grip } : {}) });
+    active.plan.splice(lastIdx + 1, 0, {
+      machineId: machine.id, exercise, ...(grip ? { grip } : {}), ...(machineSlots[0].free ? { free: true } : {}),
+    });
     saveLog(active);
   }
 
@@ -1603,7 +1645,8 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // names, across midnight into the next weekday (a Monday-evening crowd
   // says nothing about Monday morning). Date.now, so a test can pin the clock.
   const here = new Date(Date.now());
-  const allHints = insights(getWorkouts(), layout, s, { plans: getPlans() });
+  const workouts = getWorkouts();
+  const allHints = insights(workouts, layout, s, { plans: getPlans() });
   const hints = allHints.filter((it) =>
     it.machineId === machine.id && (it.kind === 'progress'
       ? (it.exercise ?? null) === (exercise ?? null) && (it.grip ?? null) === grip
@@ -1668,21 +1711,26 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   const logLabel = (d) =>
     `✓ Log set${setGoal && !targetDone ? ` ${setPos}/${setGoal}` : ''} — ${setLabel(d)}`;
   const nextSlot = nextOpenSlot(active, layout, s, machine.id, exercise, grip);
+  // The plan has nothing open: a SUGGESTION instead (suggestNext) — what to
+  // try next, on the same Next button, never a plan slot until it is taken
+  const suggested = nextSlot ? null
+    : suggestNext(active, layout, machine, { workouts, earlier: finishedToday() });
   const nextMachine = nextSlot?.machineId
-    ? layout.machines.find((m) => m.id === nextSlot.machineId) : null;
+    ? layout.machines.find((m) => m.id === nextSlot.machineId) : suggested;
   // an unbound next stop is still a next stop — it just asks which
   // machine it is before it can log anything
   const nextUnbound = !nextMachine && nextSlot?.name ? nextSlot : null;
   // offered only when it differs from the plan's next (excludeMachineId) —
   // and never when the next stop is THIS machine: "busy" would be a lie,
-  // and it would land in the record as busy: <this machine>
-  const nearby = nextMachine && nextMachine.id !== machine.id
+  // and it would land in the record as busy: <this machine>. Nor under a
+  // suggestion: "Busy?" and "Closer:" describe a plan's next stop.
+  const nearby = nextMachine && !suggested && nextMachine.id !== machine.id
     ? nearbyAlternative(active, layout, machine, nextMachine.id, s) : null;
   // A closer open stop than "Next" (stats.js closerStop, wall-aware): one
   // line under the Next row, never instead of it. Busy-now machines (rule 7
   // at this weekday and hour) are left out; a muscle of THIS machine costs
   // a little extra (recovery).
-  const closer = nextMachine && nextMachine.id !== machine.id ? (() => {
+  const closer = nextMachine && !suggested && nextMachine.id !== machine.id ? (() => {
     const seen = new Set();
     const candidates = active.plan.flatMap((slot) => {
       if (!slot.machineId || seen.has(slot.machineId) || !slotLive(layout, slot) || slotDone(active, slot, layout, s)) return [];
@@ -1897,7 +1945,8 @@ function renderLog(root, layout, active, reveal = null, message = '') {
 
     ${nextMachine
     ? `<div class="next-row">
-        <button id="next-machine" class="btn ${targetDone ? 'btn-primary' : 'btn-next'} btn-big">Next: #${esc(nextMachine.num)}
+        <button id="next-machine" class="btn ${targetDone ? 'btn-primary' : 'btn-next'} btn-big"${suggested
+      ? ' data-suggested="1"' : ''}>${suggested ? 'Try next' : 'Next'}: #${esc(nextMachine.num)}
           ${esc(nextMachine.label)}${variantStr(nextSlot) ? ` · ${esc(variantStr(nextSlot))}` : ''} →</button>
         <button type="button" id="locate-next" class="btn btn-next btn-big locate-next"
           aria-label="Show the next machine on the map">📍</button>
@@ -2162,8 +2211,8 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   nextUpLabel = pickPending ? ''
     : currentSlot && !slotDone(active, currentSlot, layout, s)
       ? (setGoal ? `set ${setPos}/${setGoal} — ${setLabel(def)}` : setLabel(def))
-      : nextMachine
-        ? `#${nextMachine.num} ${nextMachine.label}${variantStr(nextSlot) ? ` · ${variantStr(nextSlot)}` : ''}`
+      : nextMachine // a suggestion says it is one: "Next: try #4 Rower"
+        ? `${suggested ? 'try ' : ''}#${nextMachine.num} ${nextMachine.label}${variantStr(nextSlot) ? ` · ${variantStr(nextSlot)}` : ''}`
         : nextUnbound?.name ?? '';
 
   // the steppers update the one-tap label live, so the button never lies
@@ -2257,8 +2306,18 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   });
 
   root.querySelector('#next-machine')?.addEventListener('click', () => {
-    // the block "Next" names — of twins, the triple alone opens the first open one
-    switchMachine(active, nextSlot.machineId, nextSlot.exercise, { ...slotGrip(nextSlot), ...planSlot(nextSlot) });
+    if (suggested) {
+      // a suggestion taken grows the plan like the picker does: a free
+      // slot (where you merely stood until a set is logged), unless the
+      // machine already has one
+      if (!active.plan.some((p) => p.machineId === suggested.id)) {
+        active.plan.push({ machineId: suggested.id, exercise: null, free: true });
+      }
+      switchMachine(active, suggested.id, null);
+    } else {
+      // the block "Next" names — of twins, the triple alone opens the first open one
+      switchMachine(active, nextSlot.machineId, nextSlot.exercise, { ...slotGrip(nextSlot), ...planSlot(nextSlot) });
+    }
     saveLog(active);
     renderTrain(root);
   });

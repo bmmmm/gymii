@@ -756,8 +756,16 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   name, so a Next pointing at the later twin opens THAT block, not the first
   open one); any other switch forgets it, and it dies with the workout via
   `finishWorkout`'s allow-list. `nextOpenSlot` skips twins of the slot on screen, so
-  "Next" and "Busy?" point past the machine you stand at;
-  `startWorkoutFrom` drops only exact repeats (same triple AND same
+  "Next" and "Busy?" point past the machine you stand at — and it skips a
+  FREE slot with no set: a slot grown by OPENING a machine (the log
+  screen's push, the overview picker's, `startWorkoutFrom`'s
+  `firstMachineId`, and a grip/exercise sibling spliced in after a free
+  first slot) carries `free: true`, and with nothing logged it is where you
+  merely stood, not a commitment (the overview still lists it as "open";
+  slots built from a source — plan or repeat — carry no marker, and the
+  tests pin both shapes by `deepEqual`). That is the user's ask of
+  2026-10-21: "Next" in a free workout named whatever machine was opened
+  last. `startWorkoutFrom` drops only exact repeats (same triple AND same
   target), so both blocks survive a restart. A plan whose FIRST
   slot has no machine yet starts with `binding: 0` — the workout opens on
   "which machine is this?" rather than on an overview of rows to assign;
@@ -884,10 +892,31 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   the machine "Busy?" already offers; it never replaces Next, stores
   nothing and has no link (own data). Meters are out on purpose (no `layout.meta.scale`), so the
   saving is relative.
+  THE SUGGESTION: when `nextOpenSlot` finds nothing, `suggestNext(active,
+  layout, machine, { workouts, earlier })` (exported for the tests) names
+  what to try next — candidates are the layout's machines not trained
+  today (no set in this workout, none in a workout finished today via
+  `finishedToday()`, not the current machine); the history's usual
+  successor wins (stats.js `transitionCounts(workouts, layout)` from this
+  machine, the highest count), else the candidate with the most OPEN
+  primary muscles (`trainedMuscles`; a machine without tags counts as one,
+  the 🎲 rule — so with every muscle hit it still names the nearest
+  untrained machine); ties by the shorter walk (`walksCached`; straight
+  lines between centres when `walkableGrid(layout)` is false; no way there
+  sorts last), then by `num`; null with nothing left, and the log screen
+  shows "Workout overview →" as before. It renders on the SAME
+  `#next-machine` button as "Try next: #N Label →" with `data-suggested="1"`
+  — no "Busy?" row, no "Closer:" hint (both describe a plan's next stop),
+  the 📍 stays — and takes the primary role when the slot on screen is
+  done, like a plan's Next; its tap pushes `{machineId, exercise: null,
+  free: true}` when the machine has no slot yet and goes through
+  `switchMachine`. The rest overlay's `nextUpLabel` says "try #N Label",
+  so a resting user can tell a suggestion from a plan.
   WALKING ROUTE: every change of the current machine goes through store's
   `switchMachine` — nine call sites (the plan-slot tap, a bind, Busy? and Next pass `slot`): workout start (first machine), the
   plan-slot tap, the machine picker, binding an unbound slot, a machine
-  deleted mid-workout (→ null), the quick-switch chips, Busy?, Next, and the
+  deleted mid-workout (→ null), the quick-switch chips, Busy?, Next (a plan
+  slot, or a suggestion taken — the same handler), and the
   back-to-overview tap (→ null). A bare `active.currentMachineId = …` would
   leave the visit list behind, so none exists.
   REPS IN RESERVE: after a set the rest overlay shows "Reps left?" chips

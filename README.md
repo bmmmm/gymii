@@ -74,6 +74,12 @@ ever sees ciphertext.
   lacks its sets ("1/3 sets", "2 of 5 done"). Changed your mind at the
   machine? The "Sets planned" stepper sets it for today, and one link keeps
   it for the machine or the exercise.
+- 🧭 **A real "Next", plan or no plan** — a machine you only opened is not
+  a commitment: with nothing left in the plan, gymii suggests what to try
+  next ("Try next: #4 Leg curl →") — where your past workouts usually went
+  from here, else the machine with the most muscles still open today, the
+  nearer one on a tie. It's a suggestion: one tap takes it, the overview is
+  always one tap away.
 - 📈 **History** — opens on a weekly dashboard: this week's workouts, sets,
   volume and time against last week, twelve weeks of bars to tap, a
   progress chart per machine you can drag along,

@@ -8,7 +8,7 @@ import { strict as assert } from 'node:assert';
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const {
   startWorkoutFrom, renderTrain, nearbyAlternative, nextSetDefaults, dimDelaySeconds,
-  screenKey, goToHub, goToStart, goToPlans, restLeft, restNextUp, surpriseMachine,
+  screenKey, goToHub, goToStart, goToPlans, restLeft, restNextUp, surpriseMachine, suggestNext,
 } = await import(new URL('../js/train.js', import.meta.url).href);
 
 const gym = store.newLayout('Test gym');
@@ -62,7 +62,8 @@ assert.deepEqual(store.getActive().plan, [{ machineId: 'm1', exercise: null }],
   'entries of deleted machines are skipped');
 startWorkoutFrom(null, 'm1');
 active = store.getActive();
-assert.deepEqual(active.plan, [{ machineId: 'm1', exercise: null }]);
+assert.deepEqual(active.plan, [{ machineId: 'm1', exercise: null, free: true }],
+  'a machine merely started at is a free slot (opened, not committed)');
 assert.equal(active.currentMachineId, 'm1');
 assert.strictEqual(active.currentExercise, null);
 
@@ -2632,6 +2633,125 @@ const withPicker = (fn) => {
 
   store.clearActive();
   store.saveSettings(keepSettings);
+  store.saveWorkouts([]);
+  store.saveLayout(before);
+}
+
+// --- "Next" in a free workout: a free slot with no set is no stop; a suggestion when the plan has nothing open ---
+// The ask (2026-10-21): Next named whatever machine was opened last. A slot
+// grown by opening a machine carries `free: true`; with no set it is where
+// you merely stood (nextOpenSlot skips it, the overview still lists it).
+// With nothing open, suggestNext proposes a machine not trained today: the
+// history's successor, else the most open primary muscles, ties by the walk
+// then the number — on the same Next button, "Try next: #N Label →".
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Free gym');
+  g.machines.push(
+    { id: 'fa', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Chest'] },
+    { id: 'fb', num: 2, label: 'Lat pulldown', x: 6, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Lats'] },
+    { id: 'fc', num: 3, label: 'Leg press', x: 12, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Quads'] },
+    { id: 'fd', num: 4, label: 'Leg curl', x: 18, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Hamstrings', 'Glutes'] },
+    { id: 'fe', num: 5, label: 'Pec deck', x: 40, y: 20, w: 4, h: 3, settingsFields: [], muscles: ['Chest', 'Shoulders'] },
+    { id: 'ff', num: 6, label: 'Dumbbells', x: 24, y: 0, w: 4, h: 3, settingsFields: [], exercises: ['Curl', 'Row'] },
+  );
+  store.saveLayout(g);
+  store.saveWorkouts([]);
+  const layout = store.getLayout();
+  const at = (id) => layout.machines.find((m) => m.id === id);
+  const set = (t = Date.now()) => ({ reps: 10, weight: 40, at: t });
+  const sets3 = () => [set(), set(), set()];
+  const entryAt = (id, sets = sets3()) => ({ machineId: id, num: at(id).num, label: at(id).label, settings: {}, sets });
+  const free = (machineId) => ({ machineId, exercise: null, free: true });
+  const show = (active) => {
+    store.saveActive({ v: 2, startedAt: Date.now() - 60000, currentExercise: null, entries: [], ...active });
+    byId.clear();
+    renderTrain(root);
+    return root.innerHTML;
+  };
+
+  // the ask's scenario: A (3 sets) · B (opened, 0 sets) · C on screen
+  let html = show({ id: 'w-free', plan: [free('fa'), free('fb'), free('fc')], currentMachineId: 'fc',
+    entries: [entryAt('fa')] });
+  assert.ok(!/Next: #2/.test(html), 'B, merely opened, is not "Next"');
+  assert.ok(/id="next-machine" class="btn btn-next btn-big" data-suggested="1">Try next: #4\s+Leg curl →/.test(html),
+    'no history: the machine with the most open primary muscles is suggested, on the Next button');
+  assert.ok(!html.includes('Busy?') && !html.includes('Closer:'), 'no "Busy?" row and no "Closer:" hint under a suggestion');
+  assert.ok(html.includes('id="locate-next"'), 'the 📍 still answers "where is it?"');
+  assert.ok(html.includes('id="change-machine" class="btn">Change machine / overview'), 'the overview stays one tap away');
+  // the overview still lists the free slot
+  html = show({ id: 'w-free', plan: [free('fa'), free('fb'), free('fc')], currentMachineId: null, entries: [entryAt('fa')] });
+  assert.deepEqual([...html.matchAll(/class="plan-status[^"]*">([^<]*)</g)].map((m) => m[1]), ['✓ 3/3 sets', 'open', 'open'],
+    'the overview still lists where you stood');
+  // a free slot WITH a set is a stop like any other
+  html = show({ id: 'w-free2', plan: [free('fa'), free('fb'), free('fc')], currentMachineId: 'fc',
+    entries: [entryAt('fa'), entryAt('fb', [set()])] });
+  assert.ok(/id="next-machine" class="btn btn-next btn-big">Next: #2\s+Lat pulldown →/.test(html),
+    'one set at B: B is a plain "Next" again (1/3, open)');
+  // the suggestion taken: a free slot grows, the walk moves there
+  show({ id: 'w-take', plan: [free('fa'), free('fc')], currentMachineId: 'fc', entries: [entryAt('fa'), entryAt('fc')] });
+  assert.ok(/data-suggested="1">Try next: #4/.test(root.innerHTML));
+  assert.equal(restNextUp(), 'try #4 Leg curl', 'the rest screen promises the suggestion, as one');
+  assert.ok(/id="next-machine" class="btn btn-primary btn-big" data-suggested="1"/.test(root.innerHTML),
+    'C\'s goal met: the suggestion leads, like a plan\'s Next would');
+  byId.get('#next-machine').listeners.click();
+  const taken = store.getActive();
+  assert.equal(taken.currentMachineId, 'fd', 'the tap switches to it');
+  assert.deepEqual(taken.plan.at(-1), { machineId: 'fd', exercise: null, free: true }, 'and grows a free slot for it');
+  assert.ok(taken.visits.at(-1).machineId === 'fd' && !('busy' in taken.visits.at(-1)), 'through switchMachine: a visit, no busy mark');
+  // every machine trained today: no Next button, the overview button instead
+  html = show({ id: 'w-all', plan: [free('fa'), free('fb'), free('fc'), free('fd'), free('fe'), free('ff')], currentMachineId: 'fc',
+    entries: ['fa', 'fb', 'fc', 'fd', 'fe', 'ff'].map((id) => entryAt(id)) });
+  assert.ok(!html.includes('id="next-machine"') && html.includes('class="btn btn-next btn-big">Workout overview →'),
+    'nothing left to try: "Workout overview →" as before');
+
+  // suggestNext itself: candidates, the history's successor, the fallbacks, the tie-breaks
+  const active = { plan: [free('fa'), free('fc')], currentMachineId: 'fc', entries: [entryAt('fa')] };
+  assert.equal(suggestNext(active, layout, at('fc'), {}).id, 'fd', 'most open primary muscles (Hamstrings + Glutes)');
+  assert.equal(suggestNext(active, layout, at('fc'), { earlier: [entryAt('fd')] }).id, 'fb',
+    'trained in a workout finished today is trained: Lats (1 open, 6 away) beats the pec deck (1 open, far)');
+  assert.equal(suggestNext(active, layout, at('fc'), { earlier: [entryAt('fd'), entryAt('fb')] }).id, 'ff',
+    'an untagged machine counts as one open muscle and wins the tie by the shorter walk');
+  const t0 = Date.now() - 86400000 * 3;
+  const habit = (k) => ({
+    id: `h${k}`, startedAt: t0 + k * 1000, finishedAt: t0 + k * 1000 + 600000,
+    entries: [entryAt('fc', [set(t0 + k * 1000 + 1)]), entryAt('fe', [set(t0 + k * 1000 + 2)])],
+  });
+  const workouts = [habit(1), habit(2)];
+  assert.equal(suggestNext(active, layout, at('fc'), { workouts }).id, 'fe',
+    'with history the usual successor wins over the open muscles and the walk');
+  assert.equal(suggestNext(active, layout, at('fc'), { workouts, earlier: [entryAt('fe')] }).id, 'fd',
+    'but only while it is still open today');
+  assert.equal(suggestNext({ ...active, entries: ['fa', 'fb', 'fd', 'fe', 'ff'].map((id) => entryAt(id)) }, layout, at('fc'), {}), null,
+    'nothing untrained: null');
+  assert.equal(suggestNext(active, { ...layout, grid: { w: -40, h: 30 } }, at('fc'), {}).id, 'fd',
+    'a grid that is no floor: straight lines, never a crash');
+  store.saveWorkouts(workouts);
+  html = show({ id: 'w-hist', plan: [free('fa'), free('fc')], currentMachineId: 'fc', entries: [entryAt('fa')] });
+  assert.ok(/Try next: #5\s+Pec deck →/.test(html), 'the screen reads the history too');
+  store.saveWorkouts([]);
+
+  // where free slots come from: the log screen, the picker, a sibling splice — never a source
+  show({ id: 'w-grow', plan: [], currentMachineId: 'fe' });
+  assert.deepEqual(store.getActive().plan, [free('fe')], 'the log screen grows a free slot');
+  show({ id: 'w-grow2', plan: [free('fa')], currentMachineId: null });
+  withPicker((picker) => {
+    renderTrain(root);
+    picker.parts.get('.pick-num').value = '2';
+    picker.parts.get('.pick-go').listeners.click();
+  });
+  assert.deepEqual(store.getActive().plan.at(-1), free('fb'), 'the overview picker grows a free slot');
+  show({ id: 'w-split', plan: [{ machineId: 'ff', exercise: 'Curl', free: true }], currentMachineId: 'ff', currentExercise: 'Row' });
+  assert.deepEqual(store.getActive().plan, [{ machineId: 'ff', exercise: 'Curl', free: true }, { machineId: 'ff', exercise: 'Row', free: true }],
+    'a sibling spliced in after a free slot is free');
+  show({ id: 'w-split2', plan: [{ machineId: 'ff', exercise: 'Curl' }], currentMachineId: 'ff', currentExercise: 'Row' });
+  assert.deepEqual(store.getActive().plan, [{ machineId: 'ff', exercise: 'Curl' }, { machineId: 'ff', exercise: 'Row' }],
+    'after a committed slot it carries no marker');
+  store.clearActive();
+  startWorkoutFrom({ entries: [entryAt('fa'), entryAt('fb')] });
+  assert.deepEqual(store.getActive().plan, [{ machineId: 'fa', exercise: null }, { machineId: 'fb', exercise: null }],
+    'slots from a source (plan or repeat) carry no marker');
+  store.clearActive();
   store.saveWorkouts([]);
   store.saveLayout(before);
 }
