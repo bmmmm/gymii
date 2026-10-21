@@ -264,6 +264,9 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-col
 /* direct children only: a text input INSIDE a stepper (Settings' #weight-step)
    is sized by .stepper input, not by this label-row rule */
 .field > input[type="text"] { flex: 1; max-width: 62%; }
+/* the Gym card's "Sets per visit": a bare number field (empty = inherit),
+   no stepper — a ± could not say "inherit" */
+.field > input[type="number"] { width: 6em; }
 .field > span { flex-shrink: 0; }
 
 .row > .field { flex-direction: column; align-items: stretch; gap: 6px; margin: 0; }
@@ -721,9 +724,9 @@ svg .grid-line { stroke: #ffffff; stroke-opacity: 0.04; stroke-width: 0.05; }
 .next-set { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
 .next-set .spread { align-items: center; }
 .next-set .label { font-size: 14px; color: var(--muted); width: 64px; }
-/* "keep this rest for the machine" — an offer under the stepper it is
-   about, not a row of its own */
-.next-set .rest-keep { align-self: flex-end; font-size: 13px; }
+/* "keep this rest / these sets for the machine" — an offer under the
+   stepper it is about, not a row of its own */
+.next-set .rest-keep, .next-set .sets-keep { align-self: flex-end; font-size: 13px; }
 
 .pick-muscle { margin-top: 10px; }
 

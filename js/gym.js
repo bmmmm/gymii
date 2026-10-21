@@ -1260,6 +1260,12 @@ export function renderGym(root) {
                 class="chip${item.assisted ? ' sel' : ''}">Assisted — reps + counterweight</button>
             </div>
           </div>
+          ${item.cardio ? '' : `
+          <label class="field"><span>Sets per visit</span>
+            <input id="m-sets" type="number" inputmode="numeric" min="1"
+              placeholder="(${esc(getSettings().defaultSets)})" value="${esc(item.targetSets ?? '')}"></label>
+          ${item.exerciseSets ? `<p class="muted">Per exercise: ${Object.entries(item.exerciseSets)
+    .map(([x, n]) => `${esc(x)} ${esc(n)}`).join(' · ')}</p>` : ''}`}
           <div class="field-block"><span>Color on the plan</span>
             <div id="m-color">${colorRow(item.color)}</div>
           </div>
@@ -1313,6 +1319,18 @@ export function renderGym(root) {
         save();
         redraw();
         if (numMsgShown) renderProps();
+      });
+      // "Sets per visit": a whole number from 1 up pins the machine's set
+      // goal (store's `targetSets`); empty — or anything else — inherits the
+      // app default again, so the key is deleted. Hidden for cardio (no goal
+      // there, store's setGoalFor), hence optional. Per-exercise goals are
+      // written on the log screen ("Keep N sets for #7 · Curl"), only read here.
+      props.querySelector('#m-sets')?.addEventListener('change', (e) => {
+        const n = Math.round(parseFloat(e.target.value));
+        if (Number.isFinite(n) && n >= 1) item.targetSets = n;
+        else delete item.targetSets;
+        e.target.value = item.targetSets ?? '';
+        save();
       });
       // Text fields commit on `change` — which only fires on blur or Enter,
       // while a chip tap right next to them re-renders the card. Every
@@ -1423,6 +1441,14 @@ export function renderGym(root) {
         const next = (item.exercises ?? []).filter((x) => x !== chip.dataset.value);
         if (next.length) item.exercises = next;
         else delete item.exercises;
+        // its set goal goes with it (store.js: exerciseSets is locker-style,
+        // absent when empty)
+        if (item.exerciseSets) {
+          const goals = { ...item.exerciseSets };
+          delete goals[chip.dataset.value];
+          if (Object.keys(goals).length) item.exerciseSets = goals;
+          else delete item.exerciseSets;
+        }
         save();
         renderProps();
       });

@@ -569,7 +569,17 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   (`ownBrand`). MUSCLES: one chip row
   per `MUSCLE_REGIONS` entry (`.chip-group`), muscles outside the pick list
   (an imported template's vocabulary) get an "Other" row so they stay
-  toggleable. THE LIST EDITOR (`machineListHtml`/`wireMachineList`, behind
+  toggleable. SET GOAL: the card's "Sets per visit" number field `#m-sets`
+  (type number, a plain field and not a stepper — a ± could not say
+  "inherit") is store's `machine.targetSets`: its placeholder "(3)" is the
+  app default it inherits while empty, a whole number from 1 up pins it,
+  empty (or anything else) deletes the key; committed on `change` through
+  the local `save()` like `#m-num`, hidden for a cardio machine (no goal
+  there). Per-exercise goals (`exerciseSets`, written on the log screen's
+  "Keep N sets for #7 · Curl") are only READ here, as one muted line "Per
+  exercise: Curl 4 · Row 2"; removing an exercise chip prunes its entry
+  and deletes the map when empty (locker-style, like the list itself).
+  The list editor gets nothing of this. THE LIST EDITOR (`machineListHtml`/`wireMachineList`, behind
   the Machines card's "Edit all machines" button, `listOpen` survives map
   round-trips within one renderGym): every machine as one row — number and
   label inputs, Type and Brand `<select>`s (the empty brand option IS the
@@ -643,6 +653,17 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   edit changed that key, a machine it deleted stays deleted, and an undone
   delete comes back at its old index. A save that changes nothing writes
   nothing and records no step.
+- `js/settings.js` — the Settings tab (units, gyms, backups, the Sync card
+  — the sync half is docs/sync-plan.md). `renderSettings()` is wrapped
+  whole in `preserveFocus` (every field in it is covered once). The Workout
+  card's steppers write one settings key each on `change`: the rest timer
+  (`#rest-seconds`, whole seconds from 0) and "Sets per exercise"
+  (`#default-sets`, step 1, min 1 — `settings.defaultSets`, the last level
+  of store's `setGoalFor`, so it syncs like `restSeconds`); a whole number
+  from 1 up, unreadable text keeps the value it had, and the field is read
+  through `fieldValue` like the weight step (an armed field left empty
+  still means what it showed). The weight step is a decimal TEXT field
+  (§ js/history.js, "12,5").
 - `js/train.js` — guided workout; under the log screen's machine head sit
   the hints for THIS machine and exercise (progress) and this weekday
   (busy, via stats.js `inBusyWindow` — an hour either side of the window,
@@ -719,8 +740,42 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   the log screen jump to the two most recently trained OTHER machines (by
   newest set `at`). Slots started from a stored plan carry its target:
   the log header shows it, the first-set prefill uses it (real logged sets
-  then outrank it), and `slotDone` counts sets against `target.sets`, so
-  "Next:" pulls the walk back to unfinished targets. TWINS — bound slots
+  then outrank it). SET GOALS: every slot counts against a goal —
+  `slotGoal(active, slot, layout, s)` = `slot.target?.sets`, else store's
+  `setGoalFor(machine, slot.exercise, s)` (the exercise's, the machine's,
+  the app default of 3) — COMPUTED, never stored (a stored goal would go
+  stale when the setting changes mid-workout, and the tests pin the slot
+  shape by `deepEqual`); null when the slot is unbound, its machine gone,
+  or cardio (a bout is one set, never a tally). `slotDone` = goal ? count ≥
+  goal : count > 0, so "Next:" pulls the walk back to unfinished goals in a
+  free workout as much as in a planned one; every caller of
+  `slotDone`/`slotSetCount` (`nextOpenSlot`, `planSlotIndex`, `twinShare`,
+  `targetTally`, `resolveEntry`, the overview rows and picker, `renderLog`,
+  the rest's `nextUpLabel`, `nearbyAlternative`'s and the Closer line's
+  candidates) passes `layout` and the render's settings. `twinShare` deals
+  unclaimed sets by the goal (one for a slot without one), `targetTally`
+  counts every live slot with a goal (so a free workout's overview line
+  and finish message read "6/9 target sets" too), the overview rows read
+  "1/3 sets" / "✓ 3/3 sets" and the Exercises card header "2 of 5 done".
+  On the log screen `setGoal` IS the slot's goal: the log button counts
+  ("✓ Log set 1/3"), the head line reads "Target: 3 × 10 @ 50 kg · set 1/3"
+  with a plan target and "Goal: 3 sets · set 1/3" (`#goal-line`) without
+  one, and once the goal is met the Next button takes over as the primary
+  action. A goal changed for THIS workout is the "Sets planned" stepper
+  `#set-goal` under Rest (not for cardio): `change` writes
+  `currentSlot.target = { ...target, sets: v }` on the WORKOUT via `saveLog`
+  — a sets-only `{sets}` is a legal target shape (no reps, so no prefill
+  from it; `fullTarget` is what the head line, the prefill and a twin's
+  overview row require), and neither handler re-renders (the + is under the
+  thumb): `paintGoal` refreshes the head line, the log label, the Keep link
+  and the Log set / Next roles in place, like `refreshLogLabel`. The "Keep 4
+  sets for #7 · Curl" link `#sets-keep` (`.linkish`, hidden while the value
+  equals `setGoalFor(machine, exercise, s)`) writes it through store's
+  `setTargetSets` — the exercise's when the slot has one, else the
+  machine's — and a value equal to what the level ABOVE resolves to (the
+  machine's goal for an exercise, the app default for the machine) DELETES
+  that entry instead of pinning it: the rest link's rule, one level deeper,
+  so a later change there still reaches it. TWINS — bound slots
   with the same (machine, exercise, grip) triple, e.g. `#14 Leg press 3x10
   80` plus `3x6 100` — see the same entries. Each logged set belongs to the
   slot on screen when it was logged: the log button records the set's `at`
@@ -744,8 +799,16 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   name, so a Next pointing at the later twin opens THAT block, not the first
   open one); any other switch forgets it, and it dies with the workout via
   `finishWorkout`'s allow-list. `nextOpenSlot` skips twins of the slot on screen, so
-  "Next" and "Busy?" point past the machine you stand at;
-  `startWorkoutFrom` drops only exact repeats (same triple AND same
+  "Next" and "Busy?" point past the machine you stand at — and it skips a
+  FREE slot with no set: a slot grown by OPENING a machine (the log
+  screen's push, the overview picker's, `startWorkoutFrom`'s
+  `firstMachineId`, and a grip/exercise sibling spliced in after a free
+  first slot) carries `free: true`, and with nothing logged it is where you
+  merely stood, not a commitment (the overview still lists it as "open";
+  slots built from a source — plan or repeat — carry no marker, and the
+  tests pin both shapes by `deepEqual`). That is the user's ask of
+  2026-10-21: "Next" in a free workout named whatever machine was opened
+  last. `startWorkoutFrom` drops only exact repeats (same triple AND same
   target), so both blocks survive a restart. A plan whose FIRST
   slot has no machine yet starts with `binding: 0` — the workout opens on
   "which machine is this?" rather than on an overview of rows to assign;
@@ -877,10 +940,31 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   the machine "Busy?" already offers; it never replaces Next, stores
   nothing and has no link (own data). Meters are out on purpose (no `layout.meta.scale`), so the
   saving is relative.
+  THE SUGGESTION: when `nextOpenSlot` finds nothing, `suggestNext(active,
+  layout, machine, { workouts, earlier })` (exported for the tests) names
+  what to try next — candidates are the layout's machines not trained
+  today (no set in this workout, none in a workout finished today via
+  `finishedToday()`, not the current machine); the history's usual
+  successor wins (stats.js `transitionCounts(workouts, layout)` from this
+  machine, the highest count), else the candidate with the most OPEN
+  primary muscles (`trainedMuscles`; a machine without tags counts as one,
+  the 🎲 rule — so with every muscle hit it still names the nearest
+  untrained machine); ties by the shorter walk (`walksCached`; straight
+  lines between centres when `walkableGrid(layout)` is false; no way there
+  sorts last), then by `num`; null with nothing left, and the log screen
+  shows "Workout overview →" as before. It renders on the SAME
+  `#next-machine` button as "Try next: #N Label →" with `data-suggested="1"`
+  — no "Busy?" row, no "Closer:" hint (both describe a plan's next stop),
+  the 📍 stays — and takes the primary role when the slot on screen is
+  done, like a plan's Next; its tap pushes `{machineId, exercise: null,
+  free: true}` when the machine has no slot yet and goes through
+  `switchMachine`. The rest overlay's `nextUpLabel` says "try #N Label",
+  so a resting user can tell a suggestion from a plan.
   WALKING ROUTE: every change of the current machine goes through store's
   `switchMachine` — nine call sites (the plan-slot tap, a bind, Busy? and Next pass `slot`): workout start (first machine), the
   plan-slot tap, the machine picker, binding an unbound slot, a machine
-  deleted mid-workout (→ null), the quick-switch chips, Busy?, Next, and the
+  deleted mid-workout (→ null), the quick-switch chips, Busy?, Next (a plan
+  slot, or a suggestion taken — the same handler), and the
   back-to-overview tap (→ null). A bare `active.currentMachineId = …` would
   leave the visit list behind, so none exists.
   REPS IN RESERVE: after a set the rest overlay shows "Reps left?" chips
@@ -911,9 +995,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   carries the same count as a `.sub` ("4/9 muscles"), so the progress is
   one glance away without leaving the machine; no sub when the gym has no
   muscle tagged (the card hides then too). Set-arithmetic must guard
-  against other shapes (`st.reps * st.weight || 0`); only a `target.sets`
-  target counts sets off (`setGoal`) — a cardio target is one bout, not a
-  tally. Nothing to start = an onboarding screen led by ONE action: type
+  against other shapes (`st.reps * st.weight || 0`); sets are counted off
+  against the slot's goal (`setGoal` = `slotGoal`, see SET GOALS above) —
+  a cardio target is one bout, not a tally, and has no goal. Nothing to
+  start = an onboarding screen led by ONE action: type
   in the plan you already have (`planFromText`), with quick start on a
   line below it and the Gym as a text link. The map is the reward for
   a gym that exists, never the toll gate before it — a saved plan also

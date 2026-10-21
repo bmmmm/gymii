@@ -182,6 +182,29 @@ assert.ok(root.innerHTML.includes('<h2>Sync</h2>'), 'a real gym gets the card');
   store.saveSettings({ ...store.getSettings(), weightStep: keep });
   renderSettings(root);
 }
+
+// "Sets per exercise": the default set goal (store's setGoalFor reads it
+// last), a whole number from 1 up, next to the rest timer
+{
+  assert.ok(/id="rest-seconds"[\s\S]*?id="default-sets" type="number" inputmode="numeric" value="3"/.test(root.innerHTML),
+    'the stepper follows the rest timer and shows the default of 3');
+  const keep = store.getSettings().defaultSets;
+  const setsChange = (value, dataset = {}) => {
+    const target = { value, dataset };
+    byId.get('#default-sets').listeners.change({ target });
+    return target.value;
+  };
+  assert.equal(setsChange('4'), 4);
+  assert.equal(store.getSettings().defaultSets, 4, 'a change is saved');
+  assert.equal(setsChange('2.6'), 3, 'rounded to a whole number');
+  assert.equal(store.getSettings().defaultSets, 3);
+  assert.equal(setsChange('0'), 1, 'a typed 0 lands on the minimum');
+  assert.equal(setsChange('abc'), 1, 'unreadable text keeps the value it had');
+  assert.equal(setsChange('', { prevValue: '5' }), 5, 'an armed field left empty means the value it showed');
+  assert.equal(store.getSettings().defaultSets, 5);
+  store.saveSettings({ ...store.getSettings(), defaultSets: keep });
+  renderSettings(root);
+}
 assert.ok(root.innerHTML.includes('Turn on sync'), 'and it starts in the unconfigured state');
 assert.ok(!root.innerHTML.includes('class="synccode"'),
   'no key on screen before there is one');

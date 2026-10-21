@@ -983,4 +983,44 @@ const openWithSyncedGrip = () => {
   assert.ok(props.innerHTML.includes(`<h2>Machine ${icon('🫁')}</h2>`), 'the chip tap re-renders the card, and the icon follows');
 }
 
+// --- "Sets per visit": the machine's set goal — empty inherits the app default, cardio has none ---
+{
+  const { root, props } = gymWithProps([mk('m1', 1, 10, 10), { ...mk('m2', 2, 30, 10), cardio: true },
+    { ...mk('m3', 3, 50, 10), exercises: ['Curl', 'Row'], exerciseSets: { Curl: 4, Row: 2 } }]);
+  const select = (id, x) => {
+    fire(root.floor, 'pointerdown', { ...at(x, 11), target: onItem(id) });
+    fire(root.floor, 'pointerup');
+  };
+  select('m1', 12);
+  assert.ok(/id="m-sets" type="number" inputmode="numeric"[^>]*placeholder="\(3\)" value=""/.test(props.innerHTML),
+    'the field starts empty, the app default greyed in as its placeholder');
+  const setsEl = { value: '4' };
+  const change = (value) => {
+    setsEl.value = value;
+    last(props.querySelector('#m-sets'), 'change')({ target: setsEl });
+  };
+  change('4');
+  assert.equal(machineAt('m1').targetSets, 4, 'a number pins the machine\'s goal (store: targetSets)');
+  change('2.4');
+  assert.equal(machineAt('m1').targetSets, 2, 'rounded to a whole number');
+  assert.equal(setsEl.value, 2, 'and the field shows the clean value');
+  change('');
+  assert.equal(machineAt('m1').targetSets, undefined, 'empty deletes it — the default applies again');
+  assert.equal(setsEl.value, '', 'and the field reads empty');
+  change('0');
+  assert.equal(machineAt('m1').targetSets, undefined, 'below 1 is no goal either');
+  select('m2', 32);
+  assert.ok(!props.innerHTML.includes('id="m-sets"'), 'a cardio machine has no set goal, so no field');
+  select('m3', 52);
+  assert.ok(props.innerHTML.includes('Per exercise: Curl 4 · Row 2'), 'per-exercise goals read as one muted line');
+  last(props.querySelector('#m-exercises'), 'click')(chipTap('Curl'));
+  assert.deepEqual([machineAt('m3').exercises, machineAt('m3').exerciseSets], [['Row'], { Row: 2 }],
+    'removing an exercise chip takes its goal with it');
+  assert.ok(props.innerHTML.includes('Per exercise: Row 2') && !props.innerHTML.includes('Curl 4'));
+  last(props.querySelector('#m-exercises'), 'click')(chipTap('Row'));
+  assert.deepEqual([machineAt('m3').exercises, machineAt('m3').exerciseSets], [undefined, undefined],
+    'the last one out deletes the map (locker-style, like exercises)');
+  assert.ok(!props.innerHTML.includes('Per exercise:'));
+}
+
 console.log('gym editor: all assertions passed');

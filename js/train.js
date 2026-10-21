@@ -4,7 +4,7 @@ import {
   usageByMachine, layoutMuscles, distUnit, newLayout, addMachine, nextNum,
   ensureMachine, addMachineVariant, bindItemTo, machineTrainedWhole, newEntry, nameChipsFor, todayStatus, skipPlanDay, machineBrand,
   newestStampedSet, setAssistGoal, COMMON_GRIPS,
-  switchMachine, rateLastSet, usageByMuscle, MUSCLE_GROUPS,
+  switchMachine, rateLastSet, usageByMuscle, MUSCLE_GROUPS, setGoalFor, setTargetSets,
 } from './store.js';
 import { drawLayout, usagePayload, findMachineByNum } from './map.js';
 import { ambientWorkoutStart, ambientFinished } from './sync.js';
@@ -17,10 +17,13 @@ import {
   variantStr, entryKind, machineIcon,
 } from './ui.js';
 import { ensurePersisted } from './persist.js';
-import { insights, inBusyWindow, sameSeries, assistGoalAt, closerStop, walkSaving, walksCached, walkableGrid } from './stats.js';
+import {
+  insights, inBusyWindow, sameSeries, assistGoalAt, closerStop, walkSaving, walksCached, walkableGrid,
+  transitionCounts,
+} from './stats.js';
 
 // Active workout shape:
-//   { v: 2, id, startedAt, plan: [{machineId, exercise|null, target?}…],
+//   { v: 2, id, startedAt, plan: [{machineId, exercise|null, target?, free?}…],
 //     currentMachineId|null, currentExercise|null, entries: [] }
 // plan is the guided order — one slot per (machine, exercise) pair when
 // repeating a workout (so "Next:" walks every exercise of a multi-exercise
@@ -28,7 +31,12 @@ import { insights, inBusyWindow, sameSeries, assistGoalAt, closerStop, walkSavin
 // means the slot covers the whole machine. currentMachineId null shows the
 // workout overview hub instead of a machine's logging screen. Slots started
 // from a stored plan may carry a target ({sets,reps,weight} or
-// {distance,seconds}) — older/free slots simply lack the key.
+// {distance,seconds}, or sets-only {sets} once the goal was changed on the
+// log screen) — older/free slots simply lack the key. A slot grown by
+// OPENING a machine (log screen, overview picker, the picker's start)
+// carries `free: true`: with no set logged it is where you merely stood,
+// not a commitment — nextOpenSlot skips it, the overview still lists it.
+// Slots built from a source (plan or repeat) carry no marker.
 // Each entry.sets item ({ reps, weight } or { distance, seconds }) also
 // carries `at` — epoch ms stamped via `Date.now()` when the set is logged.
 // Sets logged before this feature lack `at`; consumers must guard for it.
@@ -226,8 +234,9 @@ export function startWorkoutFrom(source, firstMachineId = null) {
     .filter((p, i) => !p.machineId
       || pairs.findIndex((q) => q.machineId && sameSlot(q, p) && sameTarget(q, p)) === i)
     .filter((p) => !p.machineId || !pairs.some((q) => q.machineId && broaderThan(p, q)));
+  // a machine merely started AT is a free slot (see the shape note above)
   if (firstMachineId && !plan.some((p) => p.machineId === firstMachineId)) {
-    plan.push({ machineId: firstMachineId, exercise: null });
+    plan.push({ machineId: firstMachineId, exercise: null, free: true });
   }
   // A plan whose first stop has no machine yet opens on that question
   // instead of on the overview: "which machine is this?" is the only thing
@@ -1002,11 +1011,11 @@ const slotEntries = (active, slot) =>
 // has a twin yet — a line bound later can make any slot one). So the
 // heavy block may go first, and a bind never re-deals sets already
 // logged. Sets no twin claims (a workout started before the claims, a set
-// without `at`) are dealt in plan order: each twin fills up to its
-// target's set count (one set without a target), the last twin takes
-// whatever is left. Counting every set on every twin would tick both off
-// after one block.
-function twinShare(active, slot) {
+// without `at`) are dealt in plan order: each twin fills up to its set
+// goal (one set for a slot without one — a cardio bout), the last twin
+// takes whatever is left. Counting every set on every twin would tick both
+// off after one block.
+function twinShare(active, slot, layout, s) {
   const sets = slotEntries(active, slot).flatMap((e) => e.sets);
   const twins = slot.machineId ? active.plan.filter((p) => p.machineId && sameSlot(p, slot)) : [];
   if (twins.length < 2 || !twins.includes(slot)) return sets.length;
@@ -1023,19 +1032,34 @@ function twinShare(active, slot) {
   let left = free.length;
   for (const [i, t] of twins.entries()) {
     const take = i === twins.length - 1 ? left
-      : Math.min(left, Math.max(0, (t.target?.sets || 1) - own[i]));
+      : Math.min(left, Math.max(0, (slotGoal(active, t, layout, s) ?? 1) - own[i]));
     if (t === slot) return own[i] + take;
     left -= take;
   }
   return sets.length;
 }
 const slotSetCount = twinShare;
-// Done means any set logged — or, when the slot carries a plan target,
-// the target's set count reached: the "Next" walk then keeps pulling the
-// workout back to machines with unfinished targets.
-const slotDone = (active, slot) => (slot.target?.sets
-  ? slotSetCount(active, slot) >= slot.target.sets
-  : slotSetCount(active, slot) > 0);
+// A slot's SET GOAL — how many sets tick it off. COMPUTED, never stored:
+// the slot's own target (a plan's `3x10 80`, or the sets-only `{sets}` the
+// log screen's "Sets planned" stepper writes for this workout), else
+// store's setGoalFor — the machine's goal for this exercise, the machine's,
+// the app default. A stored goal would go stale when the setting changes
+// mid-workout, and the slot shape is pinned by the tests. null when the
+// slot is unbound, its machine is gone, or the machine is cardio (a bout is
+// one set, never a tally). `active` is unused today; every caller has it.
+const slotGoal = (active, slot, layout, s) => slot.target?.sets
+  || setGoalFor((layout?.machines ?? []).find((m) => m.id === slot.machineId), slot.exercise ?? null, s);
+// A target that names a load or a bout — what the log head, the prefill
+// and a twin's overview row can show; a sets-only {sets} is a goal, not one
+const fullTarget = (t) => !!t && (t.reps != null || t.distance != null);
+// Done means the goal reached — or, without one (cardio, unbound), any set
+// logged: the "Next" walk then keeps pulling the workout back to machines
+// with unfinished goals, in a free workout as much as in a planned one.
+const slotDone = (active, slot, layout, s) => {
+  const goal = slotGoal(active, slot, layout, s);
+  const n = slotSetCount(active, slot, layout, s);
+  return goal ? n >= goal : n > 0;
+};
 
 // A bound slot whose machine was deleted in the gym is dead: it stays in
 // active.plan (an undo in the gym can bring the machine back), but neither
@@ -1043,13 +1067,16 @@ const slotDone = (active, slot) => (slot.target?.sets
 const slotLive = (layout, slot) =>
   !slot.machineId || (layout?.machines ?? []).some((m) => m.id === slot.machineId);
 
-// Target progress across the whole plan — the overview line and the
-// finish message share it. total 0 = no targeted slots.
-function targetTally(active, layout) {
-  const goals = active.plan.filter((p) => p.target?.sets && slotLive(layout, p));
+// Goal progress across the whole plan — the overview line and the finish
+// message share it. Every live slot with a goal counts (a free workout's
+// slots have one each), so total 0 = cardio or unbound slots only.
+function targetTally(active, layout, s) {
+  const goals = active.plan
+    .map((p) => [p, slotLive(layout, p) ? slotGoal(active, p, layout, s) : null])
+    .filter(([, goal]) => goal);
   return {
-    total: goals.reduce((n, p) => n + p.target.sets, 0),
-    hit: goals.reduce((n, p) => n + Math.min(slotSetCount(active, p), p.target.sets), 0),
+    total: goals.reduce((n, [, goal]) => n + goal, 0),
+    hit: goals.reduce((n, [p, goal]) => n + Math.min(slotSetCount(active, p, layout, s), goal), 0),
   };
 }
 
@@ -1125,6 +1152,9 @@ function renderOverview(root, layout, active, message = '') {
       </div>`;
   const lockerLeads = !sets && !active.lockerDismissed;
 
+  // the card header counts the rows below ("2 of 5 done")
+  let rowCount = 0;
+  let doneCount = 0;
   const rows = active.plan.map((slot, i) => {
     const machine = layout.machines.find((m) => m.id === slot.machineId);
     const entries = slotEntries(active, slot);
@@ -1133,6 +1163,7 @@ function renderOverview(root, layout, active, message = '') {
     if (!machine && !slot.name) {
       if (!entries.length) return '';
     } else if (!machine) {
+      rowCount += 1;
       return `<button class="plan-row unbound" data-i="${i}">
         <span class="machine-badge sm">?</span>
         <span class="plan-label">${esc(slot.name)}</span>
@@ -1141,17 +1172,20 @@ function renderOverview(root, layout, active, message = '') {
     }
     const num = machine?.num ?? entries[0].num;
     const label = machine?.label ?? entries[0].label;
-    const slotSets = slotSetCount(active, slot);
-    const done = slotDone(active, slot);
-    const goal = slot.target?.sets;
-    // with a target the status counts progress against it ("1/3 sets")
+    const slotSets = slotSetCount(active, slot, layout, s);
+    const done = slotDone(active, slot, layout, s);
+    const goal = slotGoal(active, slot, layout, s);
+    // with a goal the status counts progress against it ("1/3 sets")
     const status = !slotSets && !done ? 'open'
       : `${done ? '✓ ' : ''}${slotSets}${goal ? `/${goal}` : ''} set${(goal ?? slotSets) === 1 ? '' : 's'}`;
     // twins read alike by name: their targets tell the rows apart, so the
-    // heavy block can be the one tapped first
-    const twin = slot.target && machine
-      && active.plan.some((p, j) => j !== i && sameSlot(p, slot) && p.target);
+    // heavy block can be the one tapped first (a sets-only target names no
+    // load, so it tells nothing apart)
+    const twin = fullTarget(slot.target) && machine
+      && active.plan.some((p, j) => j !== i && sameSlot(p, slot) && fullTarget(p.target));
     const sub = [variantStr(slot), twin ? targetStr(slot.target, entryKind(machine), s) : ''].filter(Boolean).join(' · ');
+    rowCount += 1;
+    if (done) doneCount += 1;
     return `<button class="plan-row" data-i="${i}" ${machine ? '' : 'disabled'}>
       <span class="machine-badge sm">${esc(num)}</span>
       <span class="machine-icon" aria-hidden="true">${machineIcon(machine ?? entries[0])}</span>
@@ -1165,7 +1199,7 @@ function renderOverview(root, layout, active, message = '') {
     <h1>Workout</h1>
     ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
     <p class="muted">${mins} min · ${plural(sets, 'set')} · ${workoutTotals(active, s)}${(() => {
-    const tally = targetTally(active, layout);
+    const tally = targetTally(active, layout, s);
     return tally.total ? ` · ${esc(`${tally.hit}/${tally.total}`)} target sets` : '';
   })()}</p>
     ${lockerLeads ? `
@@ -1175,7 +1209,7 @@ function renderOverview(root, layout, active, message = '') {
       <p class="muted">Note where your stuff is — handy if the key goes missing.</p>
     </section>` : ''}
     <section class="card">
-      <h2>Exercises</h2>
+      <h2>Exercises${rowCount ? ` <span class="muted">${doneCount} of ${rowCount} done</span>` : ''}</h2>
       ${rows || '<p class="muted">Nothing logged yet — pick your first machine below.</p>'}
     </section>
     ${progress.total ? `
@@ -1256,11 +1290,11 @@ function renderOverview(root, layout, active, message = '') {
 
   const picker = machinePicker(root.querySelector('#picker'), layout, (machineId) => {
     if (!active.plan.some((p) => p.machineId === machineId)) {
-      active.plan.push({ machineId, exercise: null });
+      active.plan.push({ machineId, exercise: null, free: true }); // opened, not committed
     }
     // straight to the machine's first OPEN exercise slot: without one the
     // multi-exercise pick screen named another machine as "Next"
-    const open = active.plan.find((p) => p.machineId === machineId && !slotDone(active, p));
+    const open = active.plan.find((p) => p.machineId === machineId && !slotDone(active, p, layout, s));
     switchMachine(active, machineId, open?.exercise ?? null, slotGrip(open));
     saveActive(active);
     renderTrain(root);
@@ -1409,13 +1443,16 @@ function renderBind(root, layout, active) {
 // Next unfinished plan slot after the current one, wrapping around so a
 // skipped (busy) machine comes up again at the end. Another exercise at
 // the SAME machine is a valid next stop — only the current slot is out.
-function nextOpenSlot(active, layout, afterId, afterExercise = null, afterGrip = null) {
-  const idx = planSlotIndex(active, afterId, afterExercise, afterGrip);
+// A `free` slot with no set is skipped too: a machine merely opened is
+// not a commitment (the overview still lists it).
+function nextOpenSlot(active, layout, s, afterId, afterExercise = null, afterGrip = null) {
+  const idx = planSlotIndex(active, layout, s, afterId, afterExercise, afterGrip);
   const order = [...active.plan.slice(idx + 1), ...active.plan.slice(0, Math.max(idx, 0))];
   // a twin of the slot on screen is no next stop: it is THIS screen once
   // the current block is done ("Next: <this machine>", and no "Busy?")
   const here = { machineId: afterId, exercise: afterExercise, grip: afterGrip };
-  return order.find((slot) => slotLive(layout, slot) && !slotDone(active, slot)
+  return order.find((slot) => slotLive(layout, slot) && !slotDone(active, slot, layout, s)
+    && !(slot.free && slotSetCount(active, slot, layout, s) === 0)
     && !(slot.machineId && sameSlot(slot, here))) ?? null;
 }
 
@@ -1427,14 +1464,14 @@ function nextOpenSlot(active, layout, afterId, afterExercise = null, afterGrip =
 // target and "Next" take over once the first block is done. A chosen block
 // that is done yields to an open twin — "Next" never offers a twin of the
 // screen it is on.
-function planSlotIndex(active, machineId, exercise = null, grip = null) {
+function planSlotIndex(active, layout, s, machineId, exercise = null, grip = null) {
   const here = { machineId, exercise, grip };
   const chosen = active.plan[active.chosenSlot];
-  if (chosen && sameSlot(chosen, here) && (!slotDone(active, chosen)
-    || !active.plan.some((p) => sameSlot(p, here) && !slotDone(active, p)))) return active.chosenSlot;
+  if (chosen && sameSlot(chosen, here) && (!slotDone(active, chosen, layout, s)
+    || !active.plan.some((p) => sameSlot(p, here) && !slotDone(active, p, layout, s)))) return active.chosenSlot;
   // all done: the LAST twin, which holds the latest sets (and any surplus)
   const firstOpen = (match) => {
-    const open = active.plan.findIndex((p) => match(p) && !slotDone(active, p));
+    const open = active.plan.findIndex((p) => match(p) && !slotDone(active, p, layout, s));
     return open !== -1 ? open : active.plan.findLastIndex(match);
   };
   const exact = firstOpen((p) => sameSlot(p, here));
@@ -1451,7 +1488,7 @@ function planSlotIndex(active, machineId, exercise = null, grip = null) {
 // skipped slot stays open and resurfaces via nextOpenSlot's wrap-around.
 // First open slot per machine wins (plan order = exercise order there).
 // Exported for the logic tests.
-export function nearbyAlternative(active, layout, machine, excludeMachineId = null) {
+export function nearbyAlternative(active, layout, machine, excludeMachineId = null, s = getSettings()) {
   const center = (m) => [m.x + m.w / 2, m.y + m.h / 2];
   const [fx, fy] = center(machine);
   // the WALK, around walls and machines, like the "Closer:" line beside it
@@ -1470,7 +1507,7 @@ export function nearbyAlternative(active, layout, machine, excludeMachineId = nu
   let best = null;
   for (const slot of active.plan) {
     if (slot.machineId === machine.id || slot.machineId === excludeMachineId) continue;
-    if (seen.has(slot.machineId) || slotDone(active, slot)) continue;
+    if (seen.has(slot.machineId) || slotDone(active, slot, layout, s)) continue;
     seen.add(slot.machineId);
     const m = layout.machines.find((mm) => mm.id === slot.machineId);
     if (!m) continue;
@@ -1481,9 +1518,47 @@ export function nearbyAlternative(active, layout, machine, excludeMachineId = nu
   return best;
 }
 
+// What to try next when the plan has nothing open — a free workout's
+// "Next" (user ask 2026-10-21: it named whatever machine was opened last).
+// Candidates: machines of the layout not trained today — no set in this
+// workout, none in a workout finished today (`earlier`, finishedToday()),
+// not the current machine. The one your history usually walks to from
+// here wins (stats.js transitionCounts, counted once per workout; the
+// highest count); else the one with the most OPEN primary muscles
+// (trainedMuscles — a machine without tags counts as one, the 🎲 rule).
+// Ties go to the shorter walk (walksCached, around walls and machines;
+// straight lines between centres without a floor to walk — walkableGrid;
+// no way there sorts last), then the lower number. null with nothing left
+// to try — the log screen shows "Workout overview →" then, as before. A
+// SUGGESTION, never a plan slot: the tap that takes it grows a `free`
+// slot. Exported for the logic tests.
+export function suggestNext(active, layout, machine, { workouts = [], earlier = [] } = {}) {
+  const trainedIds = new Set([...(active?.entries ?? []), ...earlier]
+    .filter((e) => e.sets.length).map((e) => e.machineId));
+  const candidates = (layout?.machines ?? []).filter((m) => m.id !== machine.id && !trainedIds.has(m.id));
+  if (!candidates.length) return null;
+  // geometry from a hand-made template may be missing: no NaN centres
+  const num = (v, fb) => (Number.isFinite(Number(v)) ? Number(v) : fb);
+  const center = (m) => [num(m.x, 0) + num(m.w, 0) / 2, num(m.y, 0) + num(m.h, 0) / 2];
+  const [fx, fy] = center(machine);
+  const walks = walkableGrid(layout) ? walksCached(layout, machine, candidates) : null;
+  const dist = (m) => (walks ? walks.get(m.id) ?? Infinity : Math.hypot(center(m)[0] - fx, center(m)[1] - fy));
+  const nearer = (a, b) => (dist(a) - dist(b)) || a.num - b.num; // Infinity − Infinity is NaN: by number
+  const best = (score) => {
+    const top = Math.max(...candidates.map(score));
+    return candidates.filter((m) => score(m) === top).sort(nearer)[0];
+  };
+  const counts = transitionCounts(workouts, layout);
+  const follows = (m) => counts.get(`${machine.id}>${m.id}`)?.n ?? 0;
+  if (candidates.some((m) => follows(m) > 0)) return best(follows);
+  const trained = trainedMuscles(active, layout, earlier);
+  const open = (m) => ((m.muscles ?? []).length ? m.muscles.filter((mu) => !trained.has(mu)).length : 1);
+  return best(open);
+}
+
 // The plan target that applies at this logging position, if any.
-const planTargetFor = (active, machineId, exercise = null, grip = null) => {
-  const idx = planSlotIndex(active, machineId, exercise, grip);
+const planTargetFor = (active, layout, s, machineId, exercise = null, grip = null) => {
+  const idx = planSlotIndex(active, layout, s, machineId, exercise, grip);
   return idx === -1 ? null : active.plan[idx].target ?? null;
 };
 
@@ -1523,7 +1598,7 @@ const setWords = (st, type, s) => (type === 'cardio'
 // when the workout is finished. The snapshot itself (num/label, type flags,
 // exercise) is store's newEntry. `last` is the previous workout's entry for
 // set prefills.
-function resolveEntry(machine, active) {
+function resolveEntry(machine, active, layout, s) {
   const exercises = machine.exercises ?? [];
   const grips = machine.grips ?? [];
   const exercise = exercises.includes(active.currentExercise) ? active.currentExercise : null;
@@ -1540,7 +1615,7 @@ function resolveEntry(machine, active) {
     } else {
       const last = lastGripFor(machine.id, exercise);
       grip = active.plan.find((p) => p.machineId === machine.id && (p.exercise ?? null) === exercise
-        && grips.includes(p.grip) && !slotDone(active, p))?.grip
+        && grips.includes(p.grip) && !slotDone(active, p, layout, s))?.grip
         ?? (grips.includes(last) ? last : null);
       active.currentGrip = grip;
     }
@@ -1574,23 +1649,26 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     return;
   }
 
-  const { exercises, grips, exercise, grip, pickPending, entry, last } = resolveEntry(machine, active);
+  const s = getSettings();
+  const { exercises, grips, exercise, grip, pickPending, entry, last } = resolveEntry(machine, active, layout, s);
 
   const machineSlots = active.plan.filter((p) => p.machineId === machine.id);
-  if (!machineSlots.length) { // free workouts grow the plan
-    active.plan.push({ machineId: machine.id, exercise: null });
+  if (!machineSlots.length) { // free workouts grow the plan — a free slot
+    active.plan.push({ machineId: machine.id, exercise: null, free: true });
     saveLog(active);
   } else if (!pickPending && !machineSlots.some((p) => (!p.exercise || p.exercise === exercise)
     && (p.grip == null || p.grip === grip))) {
     // a fresh exercise or grip at a machine whose slots are scoped gets its
     // own slot (after its siblings) so the overview and "Next:" see it; a
-    // broader slot already aggregates it otherwise
+    // broader slot already aggregates it otherwise. It keeps what its
+    // siblings have: free if the machine's first slot is free.
     const lastIdx = active.plan.findLastIndex((p) => p.machineId === machine.id);
-    active.plan.splice(lastIdx + 1, 0, { machineId: machine.id, exercise, ...(grip ? { grip } : {}) });
+    active.plan.splice(lastIdx + 1, 0, {
+      machineId: machine.id, exercise, ...(grip ? { grip } : {}), ...(machineSlots[0].free ? { free: true } : {}),
+    });
     saveLog(active);
   }
 
-  const s = getSettings();
   // entry flags rule the screen — sets stay homogeneous per entry
   const type = entry ? entryKind(entry) : 'strength';
   const cardio = type === 'cardio';
@@ -1605,17 +1683,19 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // names, across midnight into the next weekday (a Monday-evening crowd
   // says nothing about Monday morning). Date.now, so a test can pin the clock.
   const here = new Date(Date.now());
-  const allHints = insights(getWorkouts(), layout, s, { plans: getPlans() });
+  const workouts = getWorkouts();
+  const allHints = insights(workouts, layout, s, { plans: getPlans() });
   const hints = allHints.filter((it) =>
     it.machineId === machine.id && (it.kind === 'progress'
       ? (it.exercise ?? null) === (exercise ?? null) && (it.grip ?? null) === grip
       : it.kind === 'busy' && inBusyWindow(it, here)));
   // Plan target for this slot — dropped when its shape no longer matches
   // the machine's type (flag toggled since the plan was made).
-  const rawTarget = pickPending ? null : planTargetFor(active, machine.id, exercise, grip);
-  const target = rawTarget
+  const rawTarget = pickPending ? null : planTargetFor(active, layout, s, machine.id, exercise, grip);
+  // `let`: the "Sets planned" stepper replaces the slot's target object
+  let target = rawTarget
     && (cardio ? rawTarget.distance != null : rawTarget.reps != null) ? rawTarget : null;
-  const slotIdx = planSlotIndex(active, machine.id, exercise, grip);
+  const slotIdx = planSlotIndex(active, layout, s, machine.id, exercise, grip);
   const planPos = `${slotIdx + 1}/${active.plan.length}`;
   // one-tap flow state: which target set is up, and is the target met —
   // once it is, the Next button takes over as the primary action
@@ -1624,7 +1704,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // "the last set logged" would hand the 3x6 @ 100 block the 80 kg × 10 of
   // the block before it.
   const freshBlock = !!(target && currentSlot && entry?.sets.length
-    && slotSetCount(active, currentSlot) === 0);
+    && slotSetCount(active, currentSlot, layout, s) === 0);
   const def = pickPending ? null
     : nextSetDefaults(freshBlock ? { ...entry, sets: [] } : entry, lastSets, type, s, target);
   // At an assisted machine: what you train FOR — said by you (a chip
@@ -1639,35 +1719,59 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // `??` throughout, so an explicit 0 (timer off) survives every level.
   const machineRest = () => machine.restSeconds ?? s.restSeconds;
   const restSeconds = active.restOverrides?.[machine.id] ?? machineRest();
-  const targetDone = !!(target && currentSlot && slotDone(active, currentSlot));
-  // only a {sets,reps,weight} target can be counted off — a cardio target
-  // is one bout, not a tally, and has no `sets` to count against
-  const setGoal = target?.sets ?? null;
-  const setPos = setGoal && currentSlot
-    ? Math.min(slotSetCount(active, currentSlot) + 1, setGoal) : null;
+  // The slot's SET GOAL (slotGoal: its target's sets, else the machine's or
+  // the app's — null at a cardio machine, where a target is one bout, not a
+  // tally): the log button counts against it ("set 1/3") and, once it is
+  // met, the Next button takes over as the primary action — in a free
+  // workout as much as in a planned one. `let`: the "Sets planned" stepper
+  // below changes it in place, without a re-render.
+  let setGoal = null;
+  let setPos = null;
+  let targetDone = false;
+  const refreshGoal = () => {
+    setGoal = currentSlot ? slotGoal(active, currentSlot, layout, s) : null;
+    setPos = setGoal ? Math.min(slotSetCount(active, currentSlot, layout, s) + 1, setGoal) : null;
+    // a cardio bout with a plan target is done after one, without one it
+    // is never "done" — the log button stays primary
+    targetDone = !!(currentSlot && (target || setGoal) && slotDone(active, currentSlot, layout, s));
+  };
+  refreshGoal();
+  // the head line under the machine: the plan's target with the set
+  // position, else the goal alone ("Goal: 3 sets · set 1/3")
+  const goalLine = () => (target
+    ? `Target: ${targetStr(target, type, s)}${targetDone ? ' · ✓ done' : setGoal ? ` · set ${setPos}/${setGoal}` : ''}`
+    : setGoal ? `Goal: ${plural(setGoal, 'set')}${targetDone ? ' · ✓ done' : ` · set ${setPos}/${setGoal}`}` : '');
+  // "Keep 4 sets for #7 · Curl" — the link that makes a changed goal the
+  // machine's (or this exercise's), the rest stepper's "Keep 75 s" pattern
+  const keepSetsLabel = (n) => `Keep ${plural(n, 'set')} for #${machine.num}${exercise ? ` · ${exercise}` : ''}`;
   // the log button always says what one tap will log
   const setLabel = (d) => setWords(d, type, s);
   const logLabel = (d) =>
     `✓ Log set${setGoal && !targetDone ? ` ${setPos}/${setGoal}` : ''} — ${setLabel(d)}`;
-  const nextSlot = nextOpenSlot(active, layout, machine.id, exercise, grip);
+  const nextSlot = nextOpenSlot(active, layout, s, machine.id, exercise, grip);
+  // The plan has nothing open: a SUGGESTION instead (suggestNext) — what to
+  // try next, on the same Next button, never a plan slot until it is taken
+  const suggested = nextSlot ? null
+    : suggestNext(active, layout, machine, { workouts, earlier: finishedToday() });
   const nextMachine = nextSlot?.machineId
-    ? layout.machines.find((m) => m.id === nextSlot.machineId) : null;
+    ? layout.machines.find((m) => m.id === nextSlot.machineId) : suggested;
   // an unbound next stop is still a next stop — it just asks which
   // machine it is before it can log anything
   const nextUnbound = !nextMachine && nextSlot?.name ? nextSlot : null;
   // offered only when it differs from the plan's next (excludeMachineId) —
   // and never when the next stop is THIS machine: "busy" would be a lie,
-  // and it would land in the record as busy: <this machine>
-  const nearby = nextMachine && nextMachine.id !== machine.id
-    ? nearbyAlternative(active, layout, machine, nextMachine.id) : null;
+  // and it would land in the record as busy: <this machine>. Nor under a
+  // suggestion: "Busy?" and "Closer:" describe a plan's next stop.
+  const nearby = nextMachine && !suggested && nextMachine.id !== machine.id
+    ? nearbyAlternative(active, layout, machine, nextMachine.id, s) : null;
   // A closer open stop than "Next" (stats.js closerStop, wall-aware): one
   // line under the Next row, never instead of it. Busy-now machines (rule 7
   // at this weekday and hour) are left out; a muscle of THIS machine costs
   // a little extra (recovery).
-  const closer = nextMachine && nextMachine.id !== machine.id ? (() => {
+  const closer = nextMachine && !suggested && nextMachine.id !== machine.id ? (() => {
     const seen = new Set();
     const candidates = active.plan.flatMap((slot) => {
-      if (!slot.machineId || seen.has(slot.machineId) || !slotLive(layout, slot) || slotDone(active, slot)) return [];
+      if (!slot.machineId || seen.has(slot.machineId) || !slotLive(layout, slot) || slotDone(active, slot, layout, s)) return [];
       seen.add(slot.machineId);
       const m = layout.machines.find((x) => x.id === slot.machineId);
       return m ? [{ machine: m, slot }] : [];
@@ -1748,8 +1852,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     : lastSets
       ? `Last: ${setsSummary(lastSets.sets, s, entryKind(lastSets))}`
       : `First time on this ${exercise ? 'exercise' : 'machine'}`}</div>
-        ${target ? `<div class="muted">Target: ${esc(`${targetStr(target, type, s)}${targetDone
-    ? ' · ✓ done' : setGoal ? ` · set ${setPos}/${setGoal}` : ''}`)}</div>` : ''}
+        ${goalLine() ? `<div class="muted" id="goal-line">${esc(goalLine())}</div>` : ''}
         ${machine.muscles?.length || machine.secondaryMuscles?.length ? `<div class="muted">${[
     ...(machine.muscles ?? []).map(esc),
     ...(machine.secondaryMuscles ?? []).filter((mu) => !(machine.muscles ?? []).includes(mu)).map((mu) => `${esc(mu)} ½`),
@@ -1859,6 +1962,10 @@ function renderLog(root, layout, active, reveal = null, message = '') {
         ${stepperField('Rest (s)', 'set-rest', { step: 15, min: 0, value: restSeconds, mode: 'numeric' })}
         <button type="button" id="rest-keep" class="linkish rest-keep"${restSeconds === machineRest()
     ? ' hidden' : ''}>Keep ${esc(restSeconds)} s for #${esc(machine.num)}</button>
+        ${setGoal ? `
+        ${stepperField('Sets planned', 'set-goal', { step: 1, min: 1, value: setGoal, mode: 'numeric' })}
+        <button type="button" id="sets-keep" class="linkish sets-keep"${setGoal === setGoalFor(machine, exercise, s)
+    ? ' hidden' : ''}>${esc(keepSetsLabel(setGoal))}</button>` : ''}
         ${restRemaining ? `<div class="rest-inline" id="rest-inline">Rest
           <span class="cd" id="rest-cd">${fmtDuration(restRemaining)}</span>
           <button type="button" id="rest-plus" class="chip">+15s</button>
@@ -1877,7 +1984,8 @@ function renderLog(root, layout, active, reveal = null, message = '') {
 
     ${nextMachine
     ? `<div class="next-row">
-        <button id="next-machine" class="btn ${targetDone ? 'btn-primary' : 'btn-next'} btn-big">Next: #${esc(nextMachine.num)}
+        <button id="next-machine" class="btn ${targetDone ? 'btn-primary' : 'btn-next'} btn-big"${suggested
+      ? ' data-suggested="1"' : ''}>${suggested ? 'Try next' : 'Next'}: #${esc(nextMachine.num)}
           ${esc(nextMachine.label)}${variantStr(nextSlot) ? ` · ${esc(variantStr(nextSlot))}` : ''} <span class="machine-icon" aria-hidden="true">${machineIcon(nextMachine)}</span> →</button>
         <button type="button" id="locate-next" class="btn btn-next btn-big locate-next"
           aria-label="Show the next machine on the map">📍</button>
@@ -2047,6 +2155,63 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     restKeep.hidden = true;
   });
 
+  // "Sets planned": the goal for THIS workout, written as the slot's
+  // target's `sets` (a sets-only {sets} target is legal — no reps, so no
+  // prefill from it); the machine learns it only through the Keep link.
+  // Neither handler re-renders (the + is under the thumb): the log label,
+  // the head line and the button roles refresh in place.
+  const readGoal = () => {
+    const v = Math.round(parseFloat(field('#set-goal')));
+    return Number.isFinite(v) ? Math.max(1, v) : setGoal;
+  };
+  const setsKeep = root.querySelector('#sets-keep');
+  const paintGoal = () => {
+    refreshGoal();
+    const line = root.querySelector('#goal-line');
+    if (line) line.textContent = goalLine();
+    const btn = root.querySelector('#log-set');
+    if (btn) btn.textContent = logLabel(cardio ? readCardio() : readStrength());
+    // the takeover follows the goal: met → Next leads, open → Log set leads
+    const next = root.querySelector('#next-machine, #next-unbound');
+    const lead = targetDone && next;
+    btn?.classList[lead ? 'remove' : 'add']('btn-primary');
+    next?.classList[lead ? 'add' : 'remove']('btn-primary');
+    next?.classList[lead ? 'remove' : 'add']('btn-next');
+    if (setsKeep) {
+      setsKeep.textContent = keepSetsLabel(setGoal);
+      setsKeep.hidden = setGoal === setGoalFor(machine, exercise, s);
+    }
+  };
+  root.querySelector('#set-goal')?.addEventListener('change', (e) => {
+    const v = readGoal();
+    e.target.value = v;
+    if (!currentSlot) return;
+    currentSlot.target = { ...(currentSlot.target ?? {}), sets: v };
+    if (target) target = currentSlot.target; // the head line reads the new count
+    saveLog(active);
+    paintGoal();
+  });
+
+  setsKeep?.addEventListener('click', () => {
+    const v = readGoal();
+    // Back at what the level above resolves to — the machine's goal for an
+    // exercise, the app default for the machine — the value is DELETED
+    // instead of pinned, so a later change there reaches this one too (the
+    // rest link's rule, one level deeper).
+    const inherited = exercise ? setGoalFor(machine, null, s) : setGoalFor({ ...machine, targetSets: null }, null, s);
+    const keep = v === inherited ? null : v;
+    // onto the layout as it is NOW (store reads it in the tap) — and onto
+    // the render's copy, so the link's hidden state compares against it
+    setTargetSets(machine.id, exercise, keep);
+    if (exercise) {
+      const goals = { ...(machine.exerciseSets ?? {}) };
+      if (keep) goals[exercise] = keep; else delete goals[exercise];
+      if (Object.keys(goals).length) machine.exerciseSets = goals; else delete machine.exerciseSets;
+    } else if (keep) machine.targetSets = keep;
+    else delete machine.targetSets;
+    setsKeep.hidden = true;
+  });
+
   root.querySelector('#log-set')?.addEventListener('click', () => {
     const rest = readRest();
     // A text field still focused when Log set is tapped never sees its
@@ -2092,10 +2257,10 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // after one set, so the answer jumps to the next machine rather than
   // promising another set nobody planned. Stored RAW; esc() at interpolation.
   nextUpLabel = pickPending ? ''
-    : currentSlot && !slotDone(active, currentSlot)
+    : currentSlot && !slotDone(active, currentSlot, layout, s)
       ? (setGoal ? `set ${setPos}/${setGoal} — ${setLabel(def)}` : setLabel(def))
-      : nextMachine
-        ? `#${nextMachine.num} ${nextMachine.label}${variantStr(nextSlot) ? ` · ${variantStr(nextSlot)}` : ''}`
+      : nextMachine // a suggestion says it is one: "Next: try #4 Rower"
+        ? `${suggested ? 'try ' : ''}#${nextMachine.num} ${nextMachine.label}${variantStr(nextSlot) ? ` · ${variantStr(nextSlot)}` : ''}`
         : nextUnbound?.name ?? '';
 
   // the steppers update the one-tap label live, so the button never lies
@@ -2190,8 +2355,18 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   });
 
   root.querySelector('#next-machine')?.addEventListener('click', () => {
-    // the block "Next" names — of twins, the triple alone opens the first open one
-    switchMachine(active, nextSlot.machineId, nextSlot.exercise, { ...slotGrip(nextSlot), ...planSlot(nextSlot) });
+    if (suggested) {
+      // a suggestion taken grows the plan like the picker does: a free
+      // slot (where you merely stood until a set is logged), unless the
+      // machine already has one
+      if (!active.plan.some((p) => p.machineId === suggested.id)) {
+        active.plan.push({ machineId: suggested.id, exercise: null, free: true });
+      }
+      switchMachine(active, suggested.id, null);
+    } else {
+      // the block "Next" names — of twins, the triple alone opens the first open one
+      switchMachine(active, nextSlot.machineId, nextSlot.exercise, { ...slotGrip(nextSlot), ...planSlot(nextSlot) });
+    }
     saveLog(active);
     renderTrain(root);
   });
@@ -2251,7 +2426,7 @@ const setsSummary = (sets, s, kind = 'strength') => {
 
 function finish(root, active) {
   // target tally must run BEFORE finishWorkout clears the active state
-  const { total: goalTotal, hit: goalHit } = targetTally(active, getLayout());
+  const { total: goalTotal, hit: goalHit } = targetTally(active, getLayout(), getSettings());
   const saved = finishWorkout(active);
   // no ghost tone in the hub: the workout is over, so is its rest — only
   // once it IS over: a refused write leaves the workout, and its countdown
