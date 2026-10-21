@@ -104,7 +104,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   (the same lifecycle — absent when empty; older clients ignore it) holds
   the muscles a machine works LESS than its `muscles` (half a set in
   stats.js, "+ N secondary" on History's Muscles card, "½" on Train's
-  coverage chips and log head, listed after the primary machines in the
+  "Muscles today" rows and log head, listed after the primary machines in the
   picker's muscle filter; the editors cycle a chip off → primary →
   secondary → off), and `machine.grips: [string]` (the
   same lifecycle; `COMMON_GRIPS` seeds the editor's chips) into per-grip
@@ -742,7 +742,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   highlight and the 🎲 line (the handler redraws only the SVG). The draw: machines not trained yet
   TODAY (this workout plus the workouts finished today), narrowed to the
   picker's muscle filter while that leaves one, weighted by their open
-  muscles (`trainedMuscles`, shared with the coverage chips; a machine
+  muscles (`trainedMuscles`; a machine
   without primary muscle tags counts as ONE open muscle — never starved to 0
   while tagged muscles are open, never above a machine known to work two); nearness to the last machine (else the entrance,
   else the floor's middle) adds under one muscle's weight, so it only tips
@@ -845,9 +845,24 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   With rest 0 there is no overlay: the same chips (`#rir-log`) sit above
   Log set while the newest set was logged on that very screen, and rate
   through the screen's own `active` — no re-render, the chip just toggles.
-  The overview's "Muscles today" chips (muscles of machines with sets
-  this workout, read live from the layout) double as navigation: a tap
-  calls the picker's `setMuscle()` to filter machines for that muscle. Set-arithmetic must guard
+  The overview's "Muscles today" card is session progress as bar rows
+  (`muscleProgress(active, layout)`, exported for the tests): one
+  `.muscle-row` per muscle of `layoutMuscles(layout)` in `MUSCLE_REGIONS`
+  order (muscles outside the pick list last, alphabetically), its value
+  the sets this workout — a primary set 1, a secondary ½ (store's
+  `usageByMuscle([active], layout)` gives both; History's Muscles card and
+  stats.js weigh them the same) — read live from the layout (entries don't
+  snapshot muscles; deleted machines contribute none). The bar is relative
+  to the busiest muscle (History's rule, `.bar-track`/`.bar-fill`), the
+  label reads "Chest · 3 sets" / "Hamstrings · 1½ sets" / "½ set" and
+  "open" at 0 (`.open`: muted label, empty track); a line above the rows
+  counts "4 of 9 muscles trained" (trained = value > 0). `#muscle-coverage`
+  keeps its id and the rows double as navigation: a tap calls the picker's
+  `setMuscle()` to filter machines for that muscle. The log screen's
+  "Workout overview →" button (the no-Next variant only, `overviewButton`)
+  carries the same count as a `.sub` ("4/9 muscles"), so the progress is
+  one glance away without leaving the machine; no sub when the gym has no
+  muscle tagged (the card hides then too). Set-arithmetic must guard
   against other shapes (`st.reps * st.weight || 0`); only a `target.sets`
   target counts sets off (`setGoal`) — a cardio target is one bout, not a
   tally. Nothing to start = an onboarding screen led by ONE action: type
