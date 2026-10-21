@@ -37,8 +37,10 @@ ever sees ciphertext.
   today — it only fills in the number, you still decide. 📍 shows where the next
   machine stands, a busy one gets the closest open alternative, an open
   stop that saves a real part of the walk (walls and machines in the way
-  counted) gets named under "Next", and a
-  coverage row tracks which muscles you've hit today. Your locker number has a
+  counted) gets named under "Next", and "Muscles today" shows the session
+  as bars — sets per muscle, a secondary muscle counts half, "4 of 9
+  muscles trained" above them and the same count on the way back from a
+  machine. Your locker number has a
   home too — noted at the start, out of the way once you're logging. 🏁 in
   the machine header finishes the workout right where you logged the last
   set, and removing a set takes two taps — it has no undo.

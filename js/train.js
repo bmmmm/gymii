@@ -4,7 +4,7 @@ import {
   usageByMachine, layoutMuscles, distUnit, newLayout, addMachine, nextNum,
   ensureMachine, addMachineVariant, bindItemTo, machineTrainedWhole, newEntry, nameChipsFor, todayStatus, skipPlanDay, machineBrand,
   newestStampedSet, setAssistGoal, COMMON_GRIPS,
-  switchMachine, rateLastSet,
+  switchMachine, rateLastSet, usageByMuscle, MUSCLE_GROUPS,
 } from './store.js';
 import { drawLayout, usagePayload, findMachineByNum } from './map.js';
 import { ambientWorkoutStart, ambientFinished } from './sync.js';
@@ -1057,21 +1057,53 @@ function targetTally(active, layout) {
 // signal that both locker asks (overview card, log-screen row) key on.
 const workoutSetCount = (active) => active.entries.reduce((n, e) => n + e.sets.length, 0);
 
+// Session progress by muscle: one row per muscle of the layout in
+// MUSCLE_REGIONS order (muscles outside the pick list last, alphabetically),
+// its value the sets this workout — a primary set counts 1, a secondary ½
+// (History's Muscles card and stats.js weigh them the same). `trained` is
+// the rows with a value, `max` the busiest row's, for the bar lengths.
+// Exported for the tests; the overview's card and the log screen's
+// "Workout overview →" button read the same numbers.
+export function muscleProgress(active, layout) {
+  const usage = usageByMuscle([active], layout);
+  const order = new Map(MUSCLE_GROUPS.map((mu, i) => [mu, i]));
+  const rows = layoutMuscles(layout).map((muscle) => {
+    const u = usage.get(muscle) ?? { sets: 0, secondary: 0 };
+    return { muscle, sets: u.sets, secondary: u.secondary, value: u.sets + u.secondary / 2 };
+  }).sort((a, b) => (order.get(a.muscle) ?? Infinity) - (order.get(b.muscle) ?? Infinity)
+    || a.muscle.localeCompare(b.muscle));
+  const trained = rows.filter((r) => r.value > 0).length;
+  const max = rows.reduce((m, r) => Math.max(m, r.value), 0);
+  return { rows, trained, total: rows.length, max };
+}
+
+// "3 sets", "½ set", "1½ sets" — the half a secondary muscle earns reads as
+// the ½ glyph; whole numbers go through plural()
+const setsLabel = (value) => {
+  const whole = Math.floor(value);
+  return value === whole ? plural(whole, 'set') : `${whole || ''}½ set${value === 0.5 ? '' : 's'}`;
+};
+
+// The log screen's way back when nothing is next: the button carries the
+// overview card's count ("4/9 muscles"), one glance without leaving the
+// machine. No sub when the gym has no muscle tagged (the card hides too).
+function overviewButton(active, layout) {
+  const { trained, total } = muscleProgress(active, layout);
+  return `<button id="change-machine" class="btn btn-next btn-big">Workout overview →${total
+    ? ` <span class="sub">${trained}/${total} muscles</span>` : ''}</button>`;
+}
+
 function renderOverview(root, layout, active, message = '') {
   const s = getSettings();
   const sets = workoutSetCount(active);
   const mins = minsBetween(active.startedAt, Date.now());
 
-  // Muscle coverage today: muscles of every machine with ≥1 set this
-  // workout, read live from the layout (entries don't snapshot muscles;
-  // deleted machines contribute none). The chips double as navigation —
+  // Session progress by muscle: one bar row per muscle of the gym, its
+  // length the sets this workout against the busiest muscle (a secondary
+  // set ½), read live from the layout (entries don't snapshot muscles;
+  // deleted machines contribute none). The rows double as navigation —
   // tapping one drives the picker's muscle filter below.
-  const allMuscles = layoutMuscles(layout);
-  const trained = trainedMuscles(active, layout);
-  // worked only as a SECONDARY muscle so far today: half-done, drawn dashed
-  const touched = new Set(active.entries.filter((e) => e.sets.length)
-    .flatMap((e) => layout.machines.find((m) => m.id === e.machineId)?.secondaryMuscles ?? [])
-    .filter((mu) => !trained.has(mu)));
+  const progress = muscleProgress(active, layout);
 
   // Name suggestions: what was actually trained (one id per logged set,
   // so the dominant region wins) plus the names already in use. Offered as
@@ -1145,13 +1177,16 @@ function renderOverview(root, layout, active, message = '') {
       <h2>Exercises</h2>
       ${rows || '<p class="muted">Nothing logged yet — pick your first machine below.</p>'}
     </section>
-    ${allMuscles.length ? `
+    ${progress.total ? `
     <section class="card">
       <h2>Muscles today</h2>
-      <div class="chip-select" id="muscle-coverage">
-        ${allMuscles.map((m) => `<button type="button" class="chip${trained.has(m)
-    ? ' sel done' : touched.has(m) ? ' secondary' : ''}" data-muscle="${esc(m)}">${esc(m)}${
-    touched.has(m) ? ' ½' : ''}</button>`).join('')}
+      <p class="muted">${progress.trained} of ${plural(progress.total, 'muscle')} trained</p>
+      <div id="muscle-coverage">
+        ${progress.rows.map((r) => `<button type="button" class="muscle-row${r.value ? '' : ' open'}" data-muscle="${esc(r.muscle)}">
+          <span>${esc(r.muscle)} <span class="m-count">· ${r.value ? esc(setsLabel(r.value)) : 'open'}</span></span>
+          <span class="bar-track"><span class="bar-fill"
+            style="width:${progress.max ? Math.round((r.value / progress.max) * 100) : 0}%"></span></span>
+        </button>`).join('')}
       </div>
       <p class="muted">Tap an open muscle to find a machine for it below.</p>
     </section>` : ''}
@@ -1231,8 +1266,8 @@ function renderOverview(root, layout, active, message = '') {
   }, { actionLabel: 'Add', active });
 
   root.querySelector('#muscle-coverage')?.addEventListener('click', (e) => {
-    const chip = e.target.closest('.chip');
-    if (chip) picker.setMuscle(chip.dataset.muscle);
+    const row = e.target.closest('.muscle-row');
+    if (row) picker.setMuscle(row.dataset.muscle);
   });
 
   // two-tap guard: finishing only happens once, at the very end
@@ -1852,7 +1887,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
       ? `<button id="next-unbound" class="btn ${targetDone ? 'btn-primary' : 'btn-next'} btn-big">Next:
           ${esc(nextUnbound.name)} <span class="sub">tap to say which machine</span></button>
         <button id="change-machine" class="btn">Change machine / overview</button>`
-      : '<button id="change-machine" class="btn btn-next btn-big">Workout overview →</button>'}
+      : overviewButton(active, layout)}
   `;
 
   root.querySelector('#exercise-chips')?.addEventListener('click', (e) => {

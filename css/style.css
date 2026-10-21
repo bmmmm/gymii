@@ -981,6 +981,10 @@ details.workout summary::-webkit-details-marker { display: none; }
 }
 .muscle-row:last-child { border-bottom: 0; }
 .muscle-row.sel { background: var(--accent-dim); border-radius: 8px; }
+/* Train's "Muscles today": the same rows; a muscle without a set this
+   workout is "open" — muted label, empty track, still a tap into the
+   picker's filter */
+.muscle-row.open { color: var(--muted); }
 .muscle-row .m-count { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .bar-track {
   display: block; /* spans collapse to height 0 otherwise */

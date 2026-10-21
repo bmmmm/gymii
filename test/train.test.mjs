@@ -8,7 +8,7 @@ import { strict as assert } from 'node:assert';
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const {
   startWorkoutFrom, renderTrain, nearbyAlternative, nextSetDefaults, dimDelaySeconds,
-  screenKey, goToHub, goToStart, goToPlans, restLeft, restNextUp, surpriseMachine,
+  screenKey, goToHub, goToStart, goToPlans, restLeft, restNextUp, surpriseMachine, muscleProgress,
 } = await import(new URL('../js/train.js', import.meta.url).href);
 
 const gym = store.newLayout('Test gym');
@@ -324,7 +324,7 @@ assert.ok(!root.innerHTML.includes('Busy?'), 'no nearby line when only the next 
 
 // --- muscle coverage on the overview ---
 // muscles of machines with sets this workout read live from the gym;
-// covered chips carry sel+done, open ones stay plain
+// a trained muscle's row carries a bar, an open one carries .open
 gym.machines.find((m) => m.id === 'm1').muscles = ['Chest'];
 gym.machines.find((m) => m.id === 'm2').muscles = ['Lower back'];
 gym.machines.find((m) => m.id === 'near').muscles = ['Shoulders'];
@@ -342,12 +342,13 @@ store.saveActive({
 byId.clear();
 renderTrain(root);
 assert.ok(root.innerHTML.includes('Muscles today'), 'overview renders the coverage card');
-assert.ok(root.innerHTML.includes('chip sel done" data-muscle="Chest"'),
-  'a muscle trained this workout is marked covered');
-assert.ok(root.innerHTML.includes('chip" data-muscle="Lower back"'),
+assert.ok(root.innerHTML.includes('class="muscle-row" data-muscle="Chest">'),
+  'a muscle trained this workout gets a row with a bar');
+assert.ok(root.innerHTML.includes('class="muscle-row open" data-muscle="Lower back">'),
   'a machine without sets leaves its muscle open');
-assert.ok(root.innerHTML.includes('chip" data-muscle="Shoulders"'),
+assert.ok(root.innerHTML.includes('class="muscle-row open" data-muscle="Shoulders">'),
   'unvisited machines leave their muscles open');
+assert.ok(root.innerHTML.includes('1 of 3 muscles trained'), 'the line over the rows counts the trained ones');
 
 // --- locker: leads on the way in, collapses once training starts ---
 // The locker only matters at the start of a workout; from the first logged
@@ -2358,8 +2359,10 @@ const withPicker = (fn) => {
   byId.clear();
   withPicker(() => renderTrain(root));
   const cov = root.innerHTML.match(/id="muscle-coverage"[\s\S]*?<\/div>/)[0];
-  assert.ok(/class="chip sel done" data-muscle="Chest">Chest</.test(cov), 'the chest is done');
-  assert.ok(/class="chip secondary" data-muscle="Triceps">Triceps ½</.test(cov), 'the triceps only half: dashed, ½');
+  assert.ok(cov.includes('class="muscle-row" data-muscle="Chest">') && cov.includes('Chest <span class="m-count">· 1 set</span>'),
+    'the chest row counts its set');
+  assert.ok(cov.includes('class="muscle-row" data-muscle="Triceps">') && cov.includes('Triceps <span class="m-count">· ½ set</span>'),
+    'the triceps only half: ½, and no longer open');
   store.saveActive({ v: 2, id: 'w-sec2', startedAt: Date.now(), plan: [{ machineId: 'cp', exercise: null }],
     currentMachineId: 'cp', currentExercise: null, entries: [] });
   byId.clear();
@@ -2446,6 +2449,69 @@ const withPicker = (fn) => {
   byId.clear();
   renderTrain(root);
   assert.ok(root.innerHTML.includes('Busy?'), 'a grid that is no floor: "Busy?" falls back to centres');
+  store.clearActive();
+  store.saveLayout(before);
+}
+
+// --- Muscles today: session progress as bar rows ---
+// One row per muscle of the gym in MUSCLE_REGIONS order, a primary set 1, a
+// secondary ½, the bar against the busiest muscle; a row without a set is
+// open (muted, empty track) and a tap on any row filters the picker.
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Progress gym');
+  g.machines.push(
+    { id: 'pl', num: 1, label: 'Leg press', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
+      muscles: ['Quads', 'Glutes'], secondaryMuscles: ['Hamstrings'] },
+    { id: 'pc', num: 2, label: 'Chest press', x: 6, y: 0, w: 4, h: 3, settingsFields: [],
+      muscles: ['Chest'], secondaryMuscles: ['Triceps'] },
+    { id: 'pd', num: 3, label: 'Lat pulldown', x: 12, y: 0, w: 4, h: 3, settingsFields: [],
+      muscles: ['Lats'], secondaryMuscles: ['Biceps'] },
+    { id: 'pn', num: 4, label: 'Neck harness', x: 18, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Neck'] });
+  store.saveLayout(g);
+  const three = [{ reps: 10, weight: 80 }, { reps: 10, weight: 80 }, { reps: 8, weight: 90 }];
+  const active = { v: 2, id: 'w-progress', startedAt: Date.now(),
+    plan: [{ machineId: 'pl', exercise: null }, { machineId: 'pc', exercise: null }, { machineId: 'pd', exercise: null }],
+    currentMachineId: null, currentExercise: null,
+    entries: [{ machineId: 'pl', num: 1, label: 'Leg press', settings: {}, sets: three },
+      { machineId: 'pc', num: 2, label: 'Chest press', settings: {}, sets: [{ reps: 10, weight: 40 }] },
+      { machineId: 'pd', num: 3, label: 'Lat pulldown', settings: {}, sets: [] }] };
+  const p = muscleProgress(active, store.getLayout());
+  assert.deepEqual(p.rows.map((r) => r.muscle), ['Chest', 'Lats', 'Biceps', 'Triceps', 'Quads', 'Hamstrings', 'Glutes', 'Neck'],
+    'one row per muscle of the gym, in region order, a muscle outside the pick list last');
+  assert.deepEqual(p.rows.map((r) => r.value), [1, 0, 0, 0.5, 3, 1.5, 3, 0],
+    'a primary set counts 1, a secondary ½ — the leg press\'s three sets give the hamstrings 1½');
+  assert.deepEqual([p.trained, p.total, p.max], [5, 8, 3], 'trained = rows with a value; max = the busiest');
+  store.saveActive(active);
+  byId.clear();
+  const picker = withPicker(() => renderTrain(root));
+  const cov = root.innerHTML.match(/id="muscle-coverage"[\s\S]*?<\/div>/)[0];
+  assert.equal((cov.match(/class="muscle-row/g) ?? []).length, 8, 'eight rows for eight muscles');
+  assert.deepEqual([...cov.matchAll(/data-muscle="([^"]+)"/g)].map((m) => m[1]), p.rows.map((r) => r.muscle),
+    'rendered in the helper\'s order');
+  assert.ok(root.innerHTML.includes('<p class="muted">5 of 8 muscles trained</p>'), 'the line above the rows counts the trained ones');
+  assert.ok(cov.includes('Quads <span class="m-count">· 3 sets</span>'), 'whole numbers through plural');
+  assert.ok(cov.includes('Hamstrings <span class="m-count">· 1½ sets</span>'), 'a half reads as ½');
+  assert.ok(cov.includes('Triceps <span class="m-count">· ½ set</span>'), 'a lone half is singular');
+  assert.ok(cov.includes('Lats <span class="m-count">· open</span>'), 'a muscle without a set reads open');
+  assert.ok(/class="muscle-row open" data-muscle="Lats">/.test(cov), 'and its row carries .open');
+  assert.ok(!/class="muscle-row open" data-muscle="Triceps">/.test(cov), 'half a set is not open');
+  const widthOf = (mu) => cov.match(new RegExp(`data-muscle="${mu}">[\\s\\S]*?width:(\\d+)%`))[1];
+  assert.equal(widthOf('Quads'), '100', 'the busiest muscle fills its track');
+  assert.equal(widthOf('Hamstrings'), '50', 'the others relative to it');
+  assert.equal(widthOf('Lats'), '0', 'an open row leaves its track empty');
+  assert.ok(root.innerHTML.includes('Tap an open muscle to find a machine for it below.'), 'the hint stays');
+  // a tap on a row drives the picker's muscle filter, as the chips did
+  byId.get('#muscle-coverage').listeners.click({ target: { closest: () => ({ dataset: { muscle: 'Lats' } }) } });
+  assert.equal(picker.parts.get('.pick-muscle').value, 'Lats', 'the row sets the picker\'s muscle filter');
+  assert.ok(picker.parts.get('.pick-chips').innerHTML.includes('#3 Lat pulldown'), 'and the picker lists the machine for it');
+  // the log screen's way back carries the same count when nothing is next
+  store.saveActive({ ...active, currentMachineId: 'pd' });
+  byId.clear();
+  renderTrain(root);
+  assert.ok(root.innerHTML.includes('Workout overview → <span class="sub">5/8 muscles</span></button>'),
+    'the overview button says how far the session is');
+  assert.ok(!root.innerHTML.includes('id="next-machine"'), 'no Next: the two other slots are done');
   store.clearActive();
   store.saveLayout(before);
 }
