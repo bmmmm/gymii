@@ -237,6 +237,15 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   weight terms are cut FIRST so a leftover leading number is unambiguous,
   and only a MARKED num (`#7`, `7.`, `7)`) counts — "45 degree leg press"
   keeps its 45. Rep ranges target the low end; foreign units convert.
+  A cardio line may carry its level — `L5`, `level 5`, `lvl 5`,
+  case-insensitive, a whole number — before or after the duration/distance:
+  in the cardio branch it is cut out FIRST, so neither term reads it and it
+  never joins the name; it lands as `target.level`, `L0` names none, and a
+  level alone makes no cardio line (the token stays in the name, visible,
+  as on a strength line). `normalizeTarget` keeps a cardio level whole from
+  1 up — a pasted `workout-plan` cardio item may carry `"level"` — and
+  `planToText()` writes ` L5` after the distance/time, never alone (it
+  would read back as a name).
   `planItemsFrom()` binds raw items against a gym (num, then exact label,
   then a SINGLE substring match) and leaves the rest unbound;
   `planFromText()` and `planFromImport()` both go through it, so a typed
@@ -672,7 +681,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `nearbyAlternative`); its behavior contract is pinned by the
   "prefill matrix" block in test/train.test.mjs: once a set is logged
   this workout its last set is the prefill — history (or a plan target)
-  only seeds the first set. Quick-switch chips on
+  only seeds the first set; a cardio set's `level` rides that same chain
+  and stays ABSENT when its source has none (the stepper then shows 0).
+  Quick-switch chips on
   the log screen jump to the two most recently trained OTHER machines (by
   newest set `at`). Slots started from a stored plan carry its target:
   the log header shows it, the first-set prefill uses it (real logged sets
@@ -782,7 +793,12 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   plan instead of gating it. The binding is written back into the stored
   plan via `active.planId` — asked once per exercise, not once per workout.
   `machine.cardio` flips the log screen to
-  distance+time, `machine.bodyweight` to reps + extra weight,
+  distance + time + Level (`#set-level`, a plain numeric stepper like reps —
+  no keyboard special case; 0 = none: `readCardio` writes `level` only from
+  1 up and an unreadable field keeps the prefill, like distance and time;
+  `setWords` and `targetStr` trail it as "L5" like ui.js `setStr`, so the
+  set list, the log button, the Target line and "Last:" all say it; the
+  stepper's `change` refreshes the label like the other two), `machine.bodyweight` to reps + extra weight,
   `machine.assisted` to "Assist" + reps (sets, target and "Last:" read as a
   minus: "3 × 8 @ −25 kg", "unassisted" at 0; a Goal card offers "Less
   assist" / "More reps" from stats.js `assistGoalAt` — the one goal the
@@ -931,7 +947,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   values, `+ Set` (copies the previous one, minus its `at` and `rir` — it
   was neither logged live nor rated), `+ Machine` (snapshots num/label/type
   flags like the log screen), remove set or whole machine, date + time and
-  name chips. A grip chip whose change `gripTaken` refuses (a gripless twin
+  name chips. A cardio row's third field is `.edit-level` (number, whole
+  from 1 up; empty, 0 or junk deletes `level` from the draft's set on
+  `change` — never a stored 0 — and `+ Set` copies it with the rest). A grip chip whose change `gripTaken` refuses (a gripless twin
   of the same exercise exists) says so once under that entry's chips
   (`gripMsg`, cleared by the next render). The date goes through store's `shiftWorkout`, so the start,
   the finish, every set's `at` and every visit move together and the gaps
@@ -1100,7 +1118,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   the workout's startedAt) when the set has `at`, and a fourth, `rir`, when a
   strength or bodyweight set was rated: `[w, r, sec|null, rir]` — `null`
   holds the third slot for a rated set without `at`; cardio never carries
-  `rir`. A workout with `visits` exports them as `[num, inSec, outSec,
+  `rir`, its fourth element is the set's `level` instead — `[distance,
+  seconds, sec|null, level]`, same null rule, absent without a level (one
+  slot serves both because a cardio set is never rated). A pasted
+  `workout-plan` cardio item may carry `"level"` (store's `normalizeTarget`
+  keeps it). A workout with `visits` exports them as `[num, inSec, outSec,
   busyNum?]` (one num space: every num and label in the export — entries,
   visits and their busy marks — is the layout machine's CURRENT one, looked
   up by `machineId` (`machineName()`), so a renumbering or rename never

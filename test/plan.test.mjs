@@ -91,6 +91,16 @@ assert.deepEqual(store.planFromImport({ items: [{ name: 'leg press', sets: 3 }] 
   { machineId: 'm2', exercise: null, target: { sets: 3, reps: 10, weight: 0 } },
 ], 'a label match binds by name alone');
 
+// a pasted cardio target may carry its level — whole, from 1 up; 0 or junk
+// is none, and a strength item never has one
+assert.deepEqual(store.planFromImport({ items: [
+  { num: 4, distance: 2000, seconds: 900, level: 5 }, { num: 4, seconds: 600, level: 0 },
+  { num: 4, seconds: 600, level: 2.6 }, { num: 4, seconds: 600, level: 'x' }, { num: 1, sets: 3, level: 5 },
+] }).plan.items.map((it) => it.target), [
+  { distance: 2000, seconds: 900, level: 5 }, { distance: 1000, seconds: 600 },
+  { distance: 1000, seconds: 600, level: 3 }, { distance: 1000, seconds: 600 }, { sets: 3, reps: 10, weight: 0 },
+], 'a pasted level is kept whole; 0 and junk are none; a strength target has none');
+
 assert.throws(() => store.planFromImport({ items: [] }), /no items/);
 
 assert.equal(store.importData({ app: 'gymii', kind: 'workout-plan', name: 'X', items: [{ num: 1 }] }),
@@ -398,6 +408,27 @@ assert.deepEqual(store.parsePlanLine('Treadmill 20min', s),
 assert.deepEqual(store.parsePlanLine('Rowing 2km 15min', s),
   { name: 'Rowing', target: { distance: 2000, seconds: 900 } },
   'distance + duration, converted to the display unit');
+// a cardio line's level — the machine's resistance step — in three
+// spellings, before or after the duration, never part of the name
+assert.deepEqual(store.parsePlanLine('Rower 20min L5', s),
+  { name: 'Rower', target: { distance: 0, seconds: 1200, level: 5 } }, '"L5" after the duration');
+assert.deepEqual(store.parsePlanLine('Rower L5 20min', s),
+  { name: 'Rower', target: { distance: 0, seconds: 1200, level: 5 } }, 'or before it');
+assert.deepEqual(store.parsePlanLine('Bike 2km level 7', s),
+  { name: 'Bike', target: { distance: 2000, seconds: 0, level: 7 } }, '"level 7" spelled out');
+assert.deepEqual(store.parsePlanLine('#4 Bike: Intervals 15min lvl 3', s),
+  { name: 'Bike', num: 4, exercise: 'Intervals', target: { distance: 0, seconds: 900, level: 3 } },
+  '"lvl 3" too, next to a num and an exercise');
+assert.equal(store.parsePlanLine('bike 15min l9', s).target.level, 9, 'case-insensitive');
+assert.deepEqual(store.parsePlanLine('Rower 20min L0', s),
+  { name: 'Rower', target: { distance: 0, seconds: 1200 } }, 'L0 names no level');
+assert.deepEqual(store.parsePlanLine('Rower L5', s), { name: 'Rower L5' },
+  'a level alone makes no cardio line — a duration or distance does — so it stays in the name, visible');
+assert.deepEqual(store.parsePlanLine('Leg press 3x10 80 L5', s),
+  { name: 'Leg press L5', target: { sets: 3, reps: 10, weight: 80 } },
+  'a strength line has no level: the token stays in the name, visible');
+assert.deepEqual(store.parsePlanLine('Elliptical 20min', s),
+  { name: 'Elliptical', target: { distance: 0, seconds: 1200 } }, 'an "l" inside a word is no level');
 assert.deepEqual(store.parsePlanLine('Cable crossover', s),
   { name: 'Cable crossover' }, 'a bare name is a valid item — targets are optional');
 assert.equal(store.parsePlanLine('Push day:', s), null, 'a heading is not an exercise');
@@ -532,6 +563,8 @@ const roundTripItems = [
   { machineId: 'm1', exercise: null, target: { sets: 3, reps: 10, weight: 80 } },
   { machineId: 'db', exercise: 'Biceps curls', target: { sets: 4, reps: 12, weight: 15 } },
   { machineId: 'c1', exercise: null, target: { distance: 2000, seconds: 900 } },
+  { machineId: 'c1', exercise: null, target: { distance: 0, seconds: 1200, level: 5 } },
+  { machineId: null, name: 'Rower', exercise: null, target: { distance: 2000, seconds: 0, level: 8 } },
   { machineId: null, name: 'Cable crossover', exercise: null, num: 21, target: { sets: 3, reps: 12, weight: 25 } },
   { machineId: null, name: 'Plank', exercise: null },
 ];
@@ -540,6 +573,8 @@ assert.equal(note, [
   '#1 Chest press 3x10 80',
   '#2 Dumbbells: Biceps curls 4x12 15',
   '#4 Treadmill 2000m 15min',
+  '#4 Treadmill 20min L5',
+  'Rower 2000m L8',
   '#21 Cable crossover 3x12 25',
   'Plank',
 ].join('\n'), 'items serialise to the note they would have been written as');
@@ -549,6 +584,8 @@ assert.deepEqual(store.planItemsFrom(store.parsePlanText(note, s), gym), roundTr
 // a bare weight of 0 is left out and comes back as 0
 assert.equal(store.planToText([{ machineId: 'm1', exercise: null, target: { sets: 3, reps: 10, weight: 0 } }], gym, s),
   '#1 Chest press 3x10', 'a zero weight is not written out');
+assert.equal(store.planToText([{ machineId: 'c1', exercise: null, target: { distance: 0, seconds: 0, level: 5 } }], gym, s),
+  '#4 Treadmill', 'a level with neither distance nor time is not written out — alone it would read back as a name');
 
 // only a marked num unlocks the "machine: exercise" reading — otherwise
 // the colon stays part of the name instead of eating half of it

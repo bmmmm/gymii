@@ -9,7 +9,7 @@ import {
 import { openPlanBuilder } from './train.js';
 import { twoTapConfirm, plural, dateValue } from './ui.js';
 
-export const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; for entries marked assisted:true (a counterweight machine like an assisted pull-up) the weight is the ASSISTANCE — less is stronger, 0 = unassisted — and the machine's "assistGoal", when present, says whether I train there for less assistance ("strength") or more reps at the same assistance ("endurance"); an "exercise" field names one movement at a multi-exercise machine like a free-weight area; a machine's "secondaryMuscles" are worked less than its "muscles" (count a set as half for them); a "grip" field names the attachment or grip it was done with (a rope and a V-bar on one cable tower are separate progressions — never mix their numbers); a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis, and null there means the set has no timestamp; a fourth element, when present, is RIR, reps in reserve, 0–3, 3 = three or more; absent = not rated). A workout's "visits", when present, is the route I walked: [num, seconds in, seconds out] per machine, in order, seconds since the workout started; a fourth element is the num of a machine I skipped because it was busy.
+export const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; for entries marked assisted:true (a counterweight machine like an assisted pull-up) the weight is the ASSISTANCE — less is stronger, 0 = unassisted — and the machine's "assistGoal", when present, says whether I train there for less assistance ("strength") or more reps at the same assistance ("endurance"); an "exercise" field names one movement at a multi-exercise machine like a free-weight area; a machine's "secondaryMuscles" are worked less than its "muscles" (count a set as half for them); a "grip" field names the attachment or grip it was done with (a rope and a V-bar on one cable tower are separate progressions — never mix their numbers); a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis, and null there means the set has no timestamp; a fourth element, when present, is RIR, reps in reserve, 0–3, 3 = three or more; absent = not rated — except on cardio entries, where the fourth element is the level, the machine's resistance step (a whole number from 1; absent = none logged), so a cardio set reads [distance, seconds, seconds-offset or null, level]). A workout's "visits", when present, is the route I walked: [num, seconds in, seconds out] per machine, in order, seconds since the workout started; a fourth element is the num of a machine I skipped because it was busy.
 
 Analyze my progress: trends per machine, plateaus, and muscle-group imbalances. Then suggest concrete targets for my next workout — weight × reps per machine — and one or two practical tips.
 
@@ -19,7 +19,7 @@ If you propose changes to my gym or machines, reply with a valid gymii gym-templ
 
 If I ask you to PLAN a workout (e.g. "plan me a chest & shoulders workout", possibly excluding some machines), pick suitable machines via their muscles field and reply with a gymii workout-plan JSON I can paste back:
 {"app":"gymii","kind":"workout-plan","name":"<short name>","items":[{"num":<machine num>,"sets":3,"reps":10,"weight":50}]}
-Use each machine's num exactly as listed, weights in my unit derived from my history (a slight progression where it looks earned), add "exercise" only for a movement at a multi-exercise machine, add "grip" only with a value from that machine's "grips" list, and use {"num":…,"distance":…,"seconds":…} for cardio machines. An optional top-level "days":[1,4] tags weekdays (0 = Sunday).
+Use each machine's num exactly as listed, weights in my unit derived from my history (a slight progression where it looks earned), add "exercise" only for a movement at a multi-exercise machine, add "grip" only with a value from that machine's "grips" list, and use {"num":…,"distance":…,"seconds":…} for cardio machines, with an optional "level" (the machine's resistance step, a whole number from 1). An optional top-level "days":[1,4] tags weekdays (0 = Sunday).
 For a movement my gym has no machine for, give {"name":"<exercise name>","sets":3,"reps":10,"weight":50} instead of a num — gymii keeps it and asks me which machine it is at the gym.
 My saved plans, when present, are included as "plans" in that same shape. If I ask you to revise one, reply with the full revised plan and KEEP its "id" — that lets gymii update the plan in place (it asks me before replacing). Omit "id" for a brand-new plan.`;
 
@@ -202,7 +202,9 @@ export function buildAiExport() {
       'assisted:true entries log the ASSISTANCE (less = stronger, 0 = unassisted); ' +
       'a third element, when present, is seconds since the workout started (sets logged before ' +
       'timing was added lack it; null = no timestamp); a fourth element, when present, is RIR ' +
-      '(reps in reserve, 0-3, 3 = three or more; absent = not rated); a workout\'s visits are ' +
+      '(reps in reserve, 0-3, 3 = three or more; absent = not rated) — on a cardio entry it is the ' +
+      'level instead (the machine\'s resistance step, a whole number from 1; absent = none logged); ' +
+      'a workout\'s visits are ' +
       '[num, seconds in, seconds out, busy num?] — the machines walked to, in order, seconds since ' +
       'the workout started, the fourth the num of a machine skipped as busy',
     // `gym` is the frozen wire name for the layout — the prompt teaches it
@@ -263,12 +265,16 @@ export function buildAiExport() {
             ...(e.assisted ? { assisted: true } : {}),
             ...(Object.keys(e.settings || {}).some((k) => String(e.settings[k]).trim() !== '')
               ? { settings: e.settings } : {}),
+            // the fourth element is a strength set's rating and a cardio
+            // set's level — one slot serves both, since a cardio set is
+            // never rated; null holds the third slot when the set has no `at`
             sets: e.sets.map((st) => {
               const base = e.cardio ? [st.distance, st.seconds] : [st.weight, st.reps];
-              const rir = !e.cardio && st.rir != null ? st.rir : null;
-              if (st.at == null && rir == null) return base;
+              const fourth = e.cardio ? (st.level >= 1 ? st.level : null)
+                : st.rir != null ? st.rir : null;
+              if (st.at == null && fourth == null) return base;
               const sec = st.at == null ? null : Math.round((st.at - w.startedAt) / 1000);
-              return rir == null ? [...base, sec] : [...base, sec, rir];
+              return fourth == null ? [...base, sec] : [...base, sec, fourth];
             }),
           };
         }),
