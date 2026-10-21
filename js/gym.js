@@ -4,7 +4,7 @@ import {
   MUSCLE_REGIONS, MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS, MACHINE_BRANDS, MAP_LAYERS, nextNum,
   COMMON_GRIPS, freeSpot, WALL_SNAPPED,
 } from './store.js';
-import { esc, download, twoTapConfirm, keepInView, preserveFocus } from './ui.js';
+import { esc, download, twoTapConfirm, keepInView, preserveFocus, machineIcon } from './ui.js';
 import {
   drawLayout, usagePayload, findMachineByNum, findItem, fits,
   snapDoorToWall, snap, clamp, FIXTURES, ITEM_COLORS, OUTLINE_ID,
@@ -813,6 +813,7 @@ export function renderGym(root) {
         <div class="mrow-head">
           <input class="mrow-num" type="number" inputmode="numeric" min="1" data-field="num"
             value="${esc(m.num)}" aria-label="Number">
+          <span class="machine-icon" aria-hidden="true">${machineIcon(m)}</span>
           <input id="ml-label-${esc(m.id)}" class="mrow-label" type="text" data-field="label"
             value="${esc(stagedText(m, 'label', m.label))}" aria-label="Label">
         </div>
@@ -1221,7 +1222,7 @@ export function renderGym(root) {
 
       props.innerHTML = `
         <section class="card">
-          <h2>Machine</h2>
+          <h2>Machine <span class="machine-icon" aria-hidden="true">${machineIcon(item)}</span></h2>
           <label class="field"><span>Number</span>
             <div class="stepper" data-step="1" data-min="1">
               <button type="button" class="step-down">−</button>

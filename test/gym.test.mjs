@@ -958,4 +958,29 @@ const openWithSyncedGrip = () => {
   assert.equal(props.innerHTML, after, 'no second re-render after the chip tap drew the card');
 }
 
+// --- the machine icon: on every list-editor row and in the card's title, live with the tags ---
+{
+  const { root, props } = gymWithProps([
+    { ...mk('g1', 1, 2, 2), label: 'Leg press', muscles: ['Quads'] },
+    { ...mk('g2', 2, 8, 2), label: 'Rower', cardio: true },
+  ]);
+  const icon = (glyph) => `<span class="machine-icon" aria-hidden="true">${glyph}</span>`;
+  last(props.querySelector('#edit-machines'), 'click')();
+  const html = props.innerHTML;
+  assert.ok(/aria-label="Number">\s*<span class="machine-icon" aria-hidden="true">🦵<\/span>\s*<input id="ml-label-g1"/.test(html),
+    'a list row: number field, icon, label field');
+  assert.ok(/aria-label="Number">\s*<span class="machine-icon" aria-hidden="true">🚣<\/span>\s*<input id="ml-label-g2"/.test(html),
+    'the rower\'s row says rower');
+  fire(root.floor, 'pointerdown', { ...at(3, 3), target: onItem('g1') });
+  fire(root.floor, 'pointerup');
+  assert.ok(props.innerHTML.includes(`<h2>Machine ${icon('🦵')}</h2>`), 'the card\'s title carries the icon');
+  const muscleTap = (value) => last(props.querySelector('#m-muscles'), 'click')(chipTap(value));
+  muscleTap('Chest');
+  assert.deepEqual(machineAt('g1').muscles, ['Quads', 'Chest']);
+  assert.ok(props.innerHTML.includes(`<h2>Machine ${icon('🦵')}</h2>`), 'a second primary changes nothing: the first decides');
+  muscleTap('Quads'); // primary → secondary
+  assert.deepEqual(machineAt('g1').muscles, ['Chest']);
+  assert.ok(props.innerHTML.includes(`<h2>Machine ${icon('🫁')}</h2>`), 'the chip tap re-renders the card, and the icon follows');
+}
+
 console.log('gym editor: all assertions passed');

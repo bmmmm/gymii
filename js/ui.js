@@ -1,6 +1,6 @@
 // Small shared UI helpers.
 
-import { distUnit } from './store.js';
+import { distUnit, MUSCLE_REGIONS } from './store.js';
 import { SOURCES } from './stats.js'; // stats.js imports nothing: no cycle
 
 // Local-time values for the date/time inputs — toISOString would shift a
@@ -358,6 +358,44 @@ export const setStr = (st, settings, kind = 'strength') => esc(st.distance != nu
     : kind === 'assisted'
       ? `${st.weight ? `−${st.weight}` : 0}×${st.reps}`
       : `${st.weight ?? 0}×${st.reps}`);
+
+// --- machine icons ---
+// One glyph per machine so it is recognised at a glance in every list.
+// DECORATIVE: every place that shows it keeps the number and the label as
+// the information and renders the span aria-hidden, so nothing here needs
+// a 44px box or a text alternative. Data-driven, nothing stored: a cardio
+// machine is told by its label (first pattern that matches wins, in this
+// order), a strength machine by the REGION of its first primary muscle —
+// the machine's own `muscles[0]`, so one tagged Lats then Biceps reads as
+// back. No primary muscle in the pick list: bodyweight → 🤸, else 🏋️.
+// The pattern list and the region table are exported for the tests.
+export const CARDIO_ICONS = [
+  [/treadmill|run/i, '🏃'],
+  [/bike|cycle|spin|ergometer/i, '🚴'],
+  [/row/i, '🚣'],
+  [/stair|step|climb/i, '🪜'],
+  [/ski/i, '⛷️'],
+  [/swim/i, '🏊'],
+  [/elliptical|cross/i, '🏃'],
+];
+export const CARDIO_FALLBACK_ICON = '❤️';
+export const REGION_ICONS = {
+  Chest: '🫁', Back: '🧗', Shoulders: '🤷', Arms: '💪', Core: '🧘', Legs: '🦵', 'Full body': '🏋️',
+};
+// muscle -> region label, derived from the pick list (store.js keeps its
+// own copy private; this one serves the icon only)
+const MUSCLE_REGION = Object.fromEntries(
+  MUSCLE_REGIONS.flatMap((r) => r.muscles.map((mu) => [mu, r.label])));
+
+export function machineIcon(machine) {
+  if (machine?.cardio) {
+    const label = String(machine.label ?? '');
+    return CARDIO_ICONS.find(([re]) => re.test(label))?.[1] ?? CARDIO_FALLBACK_ICON;
+  }
+  const region = MUSCLE_REGION[machine?.muscles?.[0]];
+  if (region) return REGION_ICONS[region];
+  return machine?.bodyweight ? '🤸' : '🏋️';
+}
 
 // A re-render replaces whole subtrees, so the control you JUST used drifts
 // down whenever the list above it grew by a row — log a set and the log

@@ -513,4 +513,57 @@ assert.equal(ui.fieldValue({ value: '', dataset: { prevValue: '50' } }), '50',
 assert.equal(ui.fieldValue({ value: '', dataset: {} }), '', 'a plain empty field stays empty');
 assert.equal(ui.fieldValue({ value: '0', dataset: { prevValue: '50' } }), '0', 'a typed 0 is input, not emptiness');
 
+// --- machineIcon: one glyph per machine, data-driven, with its fallbacks ---
+{
+  const { MUSCLE_REGIONS } = await import(new URL('../js/store.js', import.meta.url).href);
+  // every cardio pattern by a label a gym would print — first match wins
+  const cardio = (label) => ui.machineIcon({ cardio: true, label });
+  assert.equal(cardio('Treadmill'), '🏃');
+  assert.equal(cardio('Running track'), '🏃', 'run');
+  assert.equal(cardio('Upright bike'), '🚴');
+  assert.equal(cardio('Recumbent cycle'), '🚴');
+  assert.equal(cardio('Spin'), '🚴');
+  assert.equal(cardio('Ergometer'), '🚴');
+  assert.equal(cardio('Rower'), '🚣');
+  assert.equal(cardio('Rowing machine'), '🚣');
+  assert.equal(cardio('Stairmaster'), '🪜');
+  assert.equal(cardio('Stepper'), '🪜');
+  assert.equal(cardio('Climber'), '🪜');
+  assert.equal(cardio('SkiErg'), '⛷️');
+  assert.equal(cardio('Swim trainer'), '🏊');
+  assert.equal(cardio('Elliptical'), '🏃');
+  assert.equal(cardio('Cross trainer'), '🏃');
+  assert.equal(cardio('Air machine'), '❤️', 'cardio without a label match: a heart');
+  assert.equal(cardio(''), '❤️', 'and without a label at all');
+  assert.equal(ui.machineIcon({ cardio: true, label: 'Treadmill', muscles: ['Quads'] }), '🏃',
+    'cardio is told by the label, whatever the tags say');
+  assert.equal(ui.CARDIO_ICONS.length, 7, 'the seven label patterns, in the order they are tried');
+  ui.CARDIO_ICONS.forEach(([re, icon]) => assert.ok(re instanceof RegExp && icon, 'a pattern and its glyph'));
+  assert.equal(ui.CARDIO_FALLBACK_ICON, '❤️');
+
+  // every region of the pick list has a glyph; the machine's FIRST primary muscle decides
+  MUSCLE_REGIONS.forEach((r) => assert.ok(ui.REGION_ICONS[r.label], `a glyph for ${r.label}`));
+  const strength = (...muscles) => ui.machineIcon({ muscles });
+  assert.equal(strength('Chest'), '🫁');
+  assert.equal(strength('Lats'), '🧗', 'Back');
+  assert.equal(strength('Lower back'), '🧗', 'every muscle of a region');
+  assert.equal(strength('Shoulders'), '🤷');
+  assert.equal(strength('Biceps'), '💪', 'Arms');
+  assert.equal(strength('Abs'), '🧘', 'Core');
+  assert.equal(strength('Quads'), '🦵', 'Legs');
+  assert.equal(strength('Full body'), '🏋️');
+  assert.equal(strength('Biceps', 'Lats'), '💪', 'the machine\'s own first muscle, not the pick list\'s order');
+  assert.equal(strength('Lats', 'Biceps'), '🧗');
+  assert.equal(ui.machineIcon({ muscles: ['Chest'], secondaryMuscles: ['Triceps'] }), '🫁', 'primary muscles only');
+  assert.equal(ui.machineIcon({ secondaryMuscles: ['Triceps'] }), '🏋️', 'a secondary muscle alone decides nothing');
+
+  // the fallbacks
+  assert.equal(ui.machineIcon({ bodyweight: true }), '🤸', 'bodyweight without tags');
+  assert.equal(ui.machineIcon({ bodyweight: true, muscles: ['Lats'] }), '🧗', 'but a tag wins');
+  assert.equal(ui.machineIcon({ assisted: true }), '🏋️', 'assisted without tags: strength');
+  assert.equal(ui.machineIcon({}), '🏋️', 'strength without tags');
+  assert.equal(ui.machineIcon({ muscles: ['Pectoralis'] }), '🏋️', 'a muscle outside the pick list has no region');
+  assert.equal(ui.machineIcon(null), '🏋️', 'no machine at all');
+}
+
 console.log('ui helpers: all assertions passed');

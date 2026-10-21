@@ -7,7 +7,7 @@ import {
   esc, fmtDate, fmtDay, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
   dateValue, timeValue, machineChain, keepInView, minsBetween, fmtDuration,
   parseDuration, parseDistance, hintHtml, variantStr, fieldValue, keepFocus, fmtMetric, cssStr,
-  entryKind,
+  entryKind, machineIcon,
 } from './ui.js';
 import { lineChart, barChart } from './chart.js';
 import {
@@ -808,7 +808,7 @@ function wireWorkoutList(root, list, items, s, layout, { readOnly = false } = {}
     // reachable only by combining the name and muscle filters
     list.innerHTML = items.length ? items.slice().reverse()
       .map((w) => (editDraft?.id === w.id ? editWorkoutHtml(editDraft, s, layout, gripMsg)
-        : workoutHtml(w, s, w.id === openId, readOnly)))
+        : workoutHtml(w, s, layout, w.id === openId, readOnly)))
       .join('') : '<p class="muted">No workouts match this filter.</p>';
     gripMsg = null;
   };
@@ -980,9 +980,15 @@ const setCount = (w) => w.entries.reduce((n, e) => n + e.sets.length, 0);
 const minsOf = (w) => // finishedAt can be absent in imported data
   minsBetween(w.startedAt, w.finishedAt ?? w.startedAt);
 
-const entryTitle = (e) => `#${esc(e.num)} ${esc(e.label)}${variantStr(e) ? ` · ${esc(variantStr(e))}` : ''}`;
+// "#14 🦵 Leg press · Rope" — the icon after the number like the rows'
+// badge. Entries snapshot the type flags but never the muscles, so the icon
+// reads the LIVE machine while it exists and falls back to the entry's own
+// flags (cardio, bodyweight) once it is gone.
+const entryTitle = (e, layout) => `#${esc(e.num)} <span class="machine-icon" aria-hidden="true">${
+  machineIcon(layout?.machines?.find((m) => m.id === e.machineId) ?? e)}</span> ${esc(e.label)}${
+  variantStr(e) ? ` · ${esc(variantStr(e))}` : ''}`;
 
-function workoutHtml(w, s, open = false, readOnly = false) {
+function workoutHtml(w, s, layout, open = false, readOnly = false) {
   const sets = setCount(w);
   const chain = machineChain(w);
   return `<details class="workout"${open ? ' open' : ''}>
@@ -995,7 +1001,7 @@ function workoutHtml(w, s, open = false, readOnly = false) {
     </summary>
     ${w.entries.map((e) => `
       <div class="entry-line">
-        <div>${entryTitle(e)}</div>
+        <div>${entryTitle(e, layout)}</div>
         <div class="sets">${e.sets.map((st) => setStr(st, s, entryKind(e))).join(', ')}${settingsStr(e)}</div>
       </div>`).join('')}
     <button class="btn repeat-w" data-wid="${esc(w.id)}">Repeat this workout</button>
@@ -1096,7 +1102,7 @@ function editWorkoutHtml(w, s, layout, gripMsg = null) {
     </div>
     ${w.entries.map((e, ei) => `
       <div class="entry-line">
-        <div class="spread"><div>${entryTitle(e)}</div>
+        <div class="spread"><div>${entryTitle(e, layout)}</div>
           <button class="x entry-del" data-ei="${ei}"
             aria-label="Remove ${esc(e.label)} from this workout">✕</button></div>
         ${gripChips(w, e, ei, layout, gripMsg)}

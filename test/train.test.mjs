@@ -2450,4 +2450,44 @@ const withPicker = (fn) => {
   store.saveLayout(before);
 }
 
+// --- the machine icon: after the badge on a row and in the head, trailing on the ↩ chips and Next ---
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Icon gym');
+  g.machines.push(
+    { id: 'i1', num: 1, label: 'Leg press', x: 0, y: 0, w: 5, h: 4, settingsFields: [], muscles: ['Quads'] },
+    { id: 'i2', num: 2, label: 'Rower', x: 10, y: 0, w: 4, h: 3, settingsFields: [], cardio: true },
+    { id: 'i3', num: 3, label: 'Chest press', x: 20, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Chest'] },
+  );
+  store.saveLayout(g);
+  store.saveWorkouts([]);
+  const icon = (glyph) => `<span class="machine-icon" aria-hidden="true">${glyph}</span>`;
+  const active = {
+    v: 2, id: 'w-icon', startedAt: Date.now() - 600000, currentMachineId: 'i1', currentExercise: null,
+    plan: [{ machineId: 'i1', exercise: null }, { machineId: 'i2', exercise: null }, { machineId: 'i3', exercise: null }],
+    entries: [{ machineId: 'i3', num: 3, label: 'Chest press', settings: {},
+      sets: [{ reps: 10, weight: 50, at: Date.now() - 300000 }] }],
+  };
+  store.saveActive(active);
+  byId.clear();
+  renderTrain(root);
+  let h = root.innerHTML;
+  assert.ok(h.includes(`<span class="machine-badge">1</span>`) && h.includes(`<div class="title">${icon('🦵')} Leg press`),
+    'the log screen\'s head: the icon opens the title line, right after the badge');
+  assert.ok(/id="next-machine"[^>]*>Next: #2\s+Rower <span class="machine-icon" aria-hidden="true">🚣<\/span> →/.test(h),
+    'Next: the icon trails the label, so "Next: #2 Rower" still reads as one text');
+  assert.ok(h.includes(`↩ #3 Chest press ${icon('🫁')}</button>`), 'the quick-switch chip: trailing too');
+  store.saveActive({ ...active, currentMachineId: null });
+  byId.clear();
+  renderTrain(root);
+  h = root.innerHTML;
+  assert.ok(h.includes('<h1>Workout</h1>'), 'the overview');
+  assert.ok(/class="machine-badge sm">1<\/span>\s*<span class="machine-icon" aria-hidden="true">🦵<\/span>\s*<span class="plan-label">Leg press/.test(h),
+    'a plan row: badge, icon, label');
+  assert.ok(/class="machine-badge sm">2<\/span>\s*<span class="machine-icon" aria-hidden="true">🚣<\/span>/.test(h), 'the rower\'s row');
+  assert.ok(/class="machine-badge sm">3<\/span>\s*<span class="machine-icon" aria-hidden="true">🫁<\/span>/.test(h), 'the chest press\'s row');
+  store.clearActive();
+  store.saveLayout(before);
+}
+
 console.log('train plan construction: all assertions passed');

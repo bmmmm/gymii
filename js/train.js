@@ -14,7 +14,7 @@ import {
   esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural, machineChain,
   minsBetween,
   primeAudio, playTimerSound, keepInView, parseDuration, parseDistance, hintHtml, fieldValue,
-  variantStr, entryKind,
+  variantStr, entryKind, machineIcon,
 } from './ui.js';
 import { ensurePersisted } from './persist.js';
 import { insights, inBusyWindow, sameSeries, assistGoalAt, closerStop, walkSaving, walksCached, walkableGrid } from './stats.js';
@@ -974,7 +974,7 @@ function showMapOverlay(layout, machine) {
   overlay.innerHTML = `
     <div class="machine-head">
       <span class="machine-badge">${esc(machine.num)}</span>
-      <div class="title">${esc(machine.label)}</div>
+      <div class="title"><span class="machine-icon" aria-hidden="true">${machineIcon(machine)}</span> ${esc(machine.label)}</div>
     </div>
     <div class="map-wrap"><svg xmlns="http://www.w3.org/2000/svg"></svg></div>
     <div class="muted">Tap anywhere to close</div>`;
@@ -1122,6 +1122,7 @@ function renderOverview(root, layout, active, message = '') {
     const sub = [variantStr(slot), twin ? targetStr(slot.target, entryKind(machine), s) : ''].filter(Boolean).join(' · ');
     return `<button class="plan-row" data-i="${i}" ${machine ? '' : 'disabled'}>
       <span class="machine-badge sm">${esc(num)}</span>
+      <span class="machine-icon" aria-hidden="true">${machineIcon(machine ?? entries[0])}</span>
       <span class="plan-label">${esc(label)}${sub
         ? ` <span class="muted">· ${esc(sub)}</span>` : ''}</span>
       <span class="plan-status${done ? ' done' : ''}">${esc(status)}</span>
@@ -1703,7 +1704,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     <div class="machine-head">
       <span class="machine-badge">${esc(machine.num)}</span>
       <div>
-        <div class="title">${esc(machine.label)} <span class="muted">${planPos}</span>
+        <div class="title"><span class="machine-icon" aria-hidden="true">${machineIcon(machine)}</span> ${esc(machine.label)} <span class="muted">${planPos}</span>
           ${active.locker ? `<span class="muted">· 🔒 ${esc(active.locker)}</span>` : ''}</div>
         <div class="muted">${pickPending
     ? 'Pick an exercise below'
@@ -1833,13 +1834,13 @@ function renderLog(root, layout, active, reveal = null, message = '') {
     ${quickSwitch.length ? `
     <div class="quick-switch">
       ${quickSwitch.map((c) => `<button type="button" class="chip" data-machine="${esc(c.machineId)}">
-        ↩ #${esc(c.m.num)} ${esc(c.m.label)}</button>`).join('')}
+        ↩ #${esc(c.m.num)} ${esc(c.m.label)} <span class="machine-icon" aria-hidden="true">${machineIcon(c.m)}</span></button>`).join('')}
     </div>` : ''}
 
     ${nextMachine
     ? `<div class="next-row">
         <button id="next-machine" class="btn ${targetDone ? 'btn-primary' : 'btn-next'} btn-big">Next: #${esc(nextMachine.num)}
-          ${esc(nextMachine.label)}${variantStr(nextSlot) ? ` · ${esc(variantStr(nextSlot))}` : ''} →</button>
+          ${esc(nextMachine.label)}${variantStr(nextSlot) ? ` · ${esc(variantStr(nextSlot))}` : ''} <span class="machine-icon" aria-hidden="true">${machineIcon(nextMachine)}</span> →</button>
         <button type="button" id="locate-next" class="btn btn-next btn-big locate-next"
           aria-label="Show the next machine on the map">📍</button>
       </div>

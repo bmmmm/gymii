@@ -15,7 +15,7 @@ import {
 import { drawLayout } from './map.js';
 import {
   esc, twoTapConfirm, stepperField, plural, keepInView, fmtDuration, parseDuration, parseDistance,
-  hintHtml, variantStr, fieldValue, entryKind,
+  hintHtml, variantStr, fieldValue, entryKind, machineIcon,
 } from './ui.js';
 import { insights } from './stats.js';
 
@@ -129,6 +129,7 @@ export function renderPlanBuilder(
     return `<div class="plan-item${m ? '' : ' unbound'}">
       <div class="plan-item-head">
         <span class="machine-badge sm">${m ? esc(m.num) : '?'}</span>
+        ${m ? `<span class="machine-icon" aria-hidden="true">${machineIcon(m)}</span>` : ''}
         <span class="plan-label">${esc(label)}${!m && variantStr(it)
     ? ` <span class="muted">· ${esc(variantStr(it))}</span>` : ''}</span>
         <span class="plan-item-actions">

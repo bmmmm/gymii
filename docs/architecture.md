@@ -424,6 +424,31 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `screenKey()` detects a screen CHANGE and resets the scroll to the top;
   an unchanged key is an in-place update whose scroll belongs to the user.
   `hintHtml()` renders one stats.js hint (see § js/stats.js).
+  `machineIcon(machine)` is the one glyph a machine is recognised by in
+  every list — PRESENTATION, nothing stored, so it lives here and not in
+  store.js (it imports `MUSCLE_REGIONS` from there; ui.js imported store.js
+  already). Data-driven: a cardio machine by its label (`CARDIO_ICONS`,
+  first pattern that matches wins — treadmill/run 🏃, bike/cycle/spin/
+  ergometer 🚴, row 🚣, stair/step/climb 🪜, ski ⛷️, swim 🏊,
+  elliptical/cross 🏃, none ❤️), a strength machine by the REGION of its
+  FIRST primary muscle (`REGION_ICONS`: Chest 🫁, Back 🧗, Shoulders 🤷,
+  Arms 💪, Core 🧘, Legs 🦵, Full body 🏋️ — the machine's own
+  `muscles[0]`, never the pick list's order), with no muscle in the pick
+  list bodyweight 🤸, else 🏋️. DECORATIVE: every surface renders it as
+  `<span class="machine-icon" aria-hidden="true">` and keeps the number and
+  the label as the information, so neither the 44px rule nor a text
+  alternative applies. In a badge row it follows the badge (the overview's
+  `.plan-row`, the builder's `.plan-item-head`, the list editor's row after
+  the number field) and in History's entry lines the number ("#14 🦵 Leg
+  press", read from the LIVE machine while it exists, else from the entry's
+  own type flags — entries snapshot no muscles); on the log screen's
+  `.machine-head` it opens the title LINE rather than standing as a fourth
+  flex item (the head has ~70px of slack at 320px, and a word that no
+  longer fits would scroll the route sideways); on the two sentence-like
+  controls — the Next button and the ↩ quick-switch chips — it TRAILS the
+  label, because "Next: #3 Leg press" is pinned as one text by a dozen
+  tests and B's "Try next:" reads the same way. The Gym card's `<h2>`
+  carries it too, so a chip tap shows the region change live.
 - `js/map.js` — the shared floor-map renderer, split out of the editor so
   train.js/plan.js never import from gym.js. `drawLayout()` draws every
   map surface (editor, train mini-maps, builder); its `highlightId` opt
@@ -461,7 +486,14 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   overlay renders without the stylesheet; there is deliberately NO
   `<marker>` (`url(#id)` collides when two maps share a page) — the
   arrowhead is a plain polygon. In path mode machines drop custom colours,
-  as in usage mode, and those off the path dim. It imports `esc` from ui.js and the
+  as in usage mode, and those off the path dim. The machine's icon (ui.js
+  `machineIcon`, a constant glyph) sits as a small `<text>` in the box's
+  top-left corner in EVERY mode — editor, colors, usage, path, highlight —
+  at 0.55 × the number's font size, `pointer-events="none"`, and only where
+  the box is at least 3 units on BOTH sides (a 2×2 box has no room beside
+  its number). Its class is `.machine-glyph`, deliberately not the span's
+  `.machine-icon`: that CSS rule's 18px font-size would size an SVG text in
+  user units. It imports `esc` and `machineIcon` from ui.js and the
   placement geometry from store.js (which imports only the import-free
   stats.js and merge.js) — keep it
   free of gym/train/plan imports so the cycle cannot reappear. Every id
