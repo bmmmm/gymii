@@ -371,8 +371,8 @@ export const setStr = (st, settings, kind = 'strength') => esc(st.distance != nu
 // The pattern list and the region table are exported for the tests.
 export const CARDIO_ICONS = [
   [/treadmill|run/i, '🏃'],
+  [/row/i, '🚣'], // before the bike group: a "rowing ergometer" rows
   [/bike|cycle|spin|ergometer/i, '🚴'],
-  [/row/i, '🚣'],
   [/stair|step|climb/i, '🪜'],
   [/ski/i, '⛷️'],
   [/swim/i, '🏊'],

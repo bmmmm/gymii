@@ -526,6 +526,7 @@ assert.equal(ui.fieldValue({ value: '0', dataset: { prevValue: '50' } }), '0', '
   assert.equal(cardio('Ergometer'), '🚴');
   assert.equal(cardio('Rower'), '🚣');
   assert.equal(cardio('Rowing machine'), '🚣');
+  assert.equal(cardio('Rowing ergometer'), '🚣', 'rowing wins over the ergometer in its name');
   assert.equal(cardio('Stairmaster'), '🪜');
   assert.equal(cardio('Stepper'), '🪜');
   assert.equal(cardio('Climber'), '🪜');
