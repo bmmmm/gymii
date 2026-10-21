@@ -1024,7 +1024,7 @@ try {
     assert.equal(store.getSettings().historyRange, '4w', 'and is saved all the same');
     assert.equal(merge.mergeSettings(store.getSettings(), remote).merged.weightStep, 5,
       'so the newer weight step from the other device wins the merge');
-    const changed = { unit: 'lbs', weightStep: 7.5, restSeconds: 120, aiPrompt: 'Mine.' };
+    const changed = { unit: 'lbs', weightStep: 7.5, restSeconds: 120, defaultSets: 4, aiPrompt: 'Mine.' };
     for (const k of merge.USER_SETTINGS) {
       clock += 1000;
       store.saveSettings({ ...store.getSettings(), [k]: changed[k] });

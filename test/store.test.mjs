@@ -527,6 +527,47 @@ assert.equal(lats[0].entries.length, 3, 'the WHOLE workout survives, entries unt
 assert.deepEqual(store.workoutsWithMuscle(mWorkouts, mGym, 'Chest'), []);
 assert.deepEqual(store.workoutsWithMuscle(mWorkouts, null, 'Lats'), []);
 
+// --- set goals: one resolution, locker-style machine fields ---
+{
+  assert.equal(store.getSettings().defaultSets, 3, 'three sets per exercise by default');
+  const s4 = { defaultSets: 4 };
+  const plain = { id: 'g1', num: 1, label: 'Leg press', settingsFields: [] };
+  assert.equal(store.setGoalFor(plain, null, s4), 4, 'no machine field: the setting');
+  assert.equal(store.setGoalFor(plain, null, {}), 3, 'no setting either: 3');
+  assert.equal(store.setGoalFor(plain, 'Curl', s4), 4, 'an exercise without its own goal reads the machine\'s');
+  assert.equal(store.setGoalFor({ ...plain, targetSets: 5 }, 'Curl', s4), 5, 'the machine goal beats the setting');
+  assert.equal(store.setGoalFor({ ...plain, targetSets: 5, exerciseSets: { Curl: 2 } }, 'Curl', s4), 2,
+    'the exercise goal beats the machine goal');
+  assert.equal(store.setGoalFor({ ...plain, targetSets: 5, exerciseSets: { Curl: 2 } }, 'Row', s4), 5,
+    'another exercise still reads the machine goal');
+  assert.equal(store.setGoalFor({ ...plain, targetSets: 2.6 }, null, s4), 3, 'a goal is a whole number');
+  assert.equal(store.setGoalFor({ ...plain, targetSets: 0 }, null, s4), 4, 'a goal below 1 is no goal');
+  assert.strictEqual(store.setGoalFor({ ...plain, cardio: true, targetSets: 5 }, null, s4), null,
+    'a cardio machine has no set goal — a bout is one set');
+  assert.strictEqual(store.setGoalFor(null, null, s4), null, 'no machine: none');
+
+  const before = store.getLayout();
+  const l = store.newLayout('Goals');
+  l.machines.push({ ...plain, exercises: ['Curl', 'Row'] });
+  store.saveLayout(l);
+  store.setTargetSets('g1', null, 4);
+  assert.equal(store.getLayout().machines[0].targetSets, 4, 'setTargetSets writes the machine goal');
+  store.setTargetSets('g1', 'Curl', 2);
+  assert.deepEqual(store.getLayout().machines[0].exerciseSets, { Curl: 2 }, 'and an exercise goal');
+  store.setTargetSets('g1', 'Row', 2.4);
+  assert.deepEqual(store.getLayout().machines[0].exerciseSets, { Curl: 2, Row: 2 }, 'rounded to a whole number');
+  store.setTargetSets('g1', 'Row', null);
+  assert.deepEqual(store.getLayout().machines[0].exerciseSets, { Curl: 2 }, 'null deletes one exercise goal');
+  store.setTargetSets('g1', 'Curl', 0);
+  assert.equal('exerciseSets' in store.getLayout().machines[0], false, 'the emptied map is absent, not {}');
+  store.setTargetSets('g1', null, null);
+  assert.equal('targetSets' in store.getLayout().machines[0], false, 'null deletes the machine goal');
+  store.setTargetSets('ghost', null, 3); // no such machine: a no-op, never a throw
+  assert.equal(store.cleanSettings({ defaultSets: '4' }).defaultSets, 4, 'cleanSettings repairs defaultSets');
+  assert.equal('defaultSets' in store.cleanSettings({ defaultSets: 'x' }), false, 'and drops an unreadable one');
+  store.saveLayout(before);
+}
+
 // --- timer sound: the stored default names a real TIMER_SOUNDS entry ---
 // The coupling belongs here, where the default is defined; everything about
 // the sounds themselves lives in test/ui.test.mjs.

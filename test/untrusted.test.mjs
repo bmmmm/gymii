@@ -65,6 +65,10 @@ assert.equal(store.importData(template(layoutOf())), 'gym-template', 'a clean te
   ['machine secondaryMuscles (no array)', (l) => { l.machines[0].secondaryMuscles = X; }],
   ['machine secondaryMuscles (no strings)', (l) => { l.machines[0].secondaryMuscles = [{}]; }],
   ['machine assistGoal (unknown)', (l) => { l.machines[0].assistGoal = X; }],
+  ['machine targetSets', (l) => { l.machines[0].targetSets = `3${X}`; }],
+  ['machine exerciseSets (no object)', (l) => { l.machines[0].exerciseSets = X; }],
+  ['machine exerciseSets (array)', (l) => { l.machines[0].exerciseSets = [3]; }],
+  ['machine exerciseSets (no numbers)', (l) => { l.machines[0].exerciseSets = { Curl: `4${X}` }; }],
   ['shape id', (l) => { l.shapes[0].id += X; }],
   ['shape color', (l) => { l.shapes[0].color = `red${X}`; }],
   ['shape w', (l) => { l.shapes[0].w = `4${X}`; }],
@@ -99,12 +103,14 @@ store.importData(backup({ workouts: [workoutOf()] }));
 {
   const w = workoutOf();
   w.entries[0].num = `7${X}`;
-  w.entries[0].sets = [{ reps: '12', weight: `40${X}` }, { distance: X, seconds: 600 }];
+  w.entries[0].sets = [{ reps: '12', weight: `40${X}` }, { distance: X, seconds: 600 },
+    { distance: 500, seconds: 120, level: '5' }, { distance: 500, seconds: 120, level: X }];
   store.importData(backup({ workouts: [w] }));
   const [entry] = store.getWorkouts()[0].entries;
   assert.equal('num' in entry, false, 'a num that is no number is dropped');
-  assert.deepEqual(entry.sets, [{ reps: 12 }, { seconds: 600 }],
-    'set numbers: a stringified one survives as a number, markup is dropped');
+  assert.deepEqual(entry.sets, [{ reps: 12 }, { seconds: 600 },
+    { distance: 500, seconds: 120, level: 5 }, { distance: 500, seconds: 120 }],
+    'set numbers: a stringified one survives as a number, markup is dropped — the cardio level like the rest');
 }
 {
   const w = workoutOf();

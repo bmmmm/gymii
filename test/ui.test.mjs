@@ -107,6 +107,9 @@ assert.equal(ui.setStr({ reps: 6, weight: 0 }, kg, 'assisted'), '0×6', 'unassis
 assert.deepEqual(['cardio', 'bodyweight', 'assisted', 'strength'].map((k) => ui.entryKind(k === 'strength' ? {} : { [k]: true })),
   ['cardio', 'bodyweight', 'assisted', 'strength'], 'entryKind reads the flags');
 assert.equal(ui.setStr({ distance: 2000, seconds: 600 }, kg), '2000 m · 10:00');
+assert.equal(ui.setStr({ distance: 2000, seconds: 600, level: 5 }, kg), '2000 m · 10:00 · L5',
+  'a cardio set says its resistance step when it has one');
+assert.equal(ui.setStr({ distance: 2000, seconds: 600, level: 0 }, kg), '2000 m · 10:00', 'level 0 is none');
 assert.equal(ui.setStr({ distance: 1.5, seconds: 600 }, { unit: 'lb' }), '1.5 mi · 10:00',
   'distances follow the weight unit');
 // distance 0 is a REAL cardio set (a warm-up on the spot, an imported row).

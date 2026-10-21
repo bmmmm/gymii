@@ -83,7 +83,21 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   layout read in the tap — absent means "not said", and stats.js
   `assistGoal()` observes it instead. A file whose machine carries a
   non-boolean `assisted` or an unknown `assistGoal` is refused like a bad
-  `grips`; one flagged `bodyweight` AND `assisted` is healed to bodyweight
+  `grips`; SET GOALS: `setGoalFor(machine, exercise, settings)` is THE
+  resolution of how many sets a visit holds — `machine.exerciseSets[exercise]`
+  → `machine.targetSets` → `settings.defaultSets` (3; a `USER_SETTINGS`
+  field, so it syncs) → 3, whole numbers from 1 up, and `null` for a cardio
+  machine (a bout is one set, never a tally); `setTargetSets(machineId,
+  exercise|null, n|null)` writes either field on the layout read in the
+  tap (the `setAssistGoal` pattern), `null` deletes, an emptied
+  `exerciseSets` is absent (locker-style; the gym editor prunes an
+  exercise's entry when the exercise goes). A non-finite `targetSets` is
+  refused like a bad `restSeconds`, an `exerciseSets` that is no plain
+  object of finite numbers like a bad `grips`. A cardio set may carry
+  `level` (its resistance step, a whole number from 1; absent = none,
+  never 0 or null) — in `SET_NUMBERS`, so untrusted input repairs it, and
+  unit-less, so `setUnit` leaves it alone; ui.js `setStr` trails it as
+  "L5"; one flagged `bodyweight` AND `assisted` is healed to bodyweight
   (`healKind`) on sync (`cleanLayout`), template and backup import; an entry's non-true `assisted` is dropped;
   optional `machine.exercises: [string]` (deleted when emptied) splits a
   machine into per-exercise entries, `machine.secondaryMuscles: [string]`

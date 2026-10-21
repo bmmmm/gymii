@@ -349,9 +349,10 @@ export const entryKind = (e) => (e?.cardio ? 'cardio' : e?.bodyweight ? 'bodywei
 
 // One set, rendered compactly; the entry's kind is passed in rather than
 // sniffed from the shape (`true` is the old bodyweight flag). An assisted
-// set reads as a minus: the counterweight takes that much off. HTML-ready.
+// set reads as a minus: the counterweight takes that much off. A cardio
+// set's resistance step, when logged, trails as "L5". HTML-ready.
 export const setStr = (st, settings, kind = 'strength') => esc(st.distance != null
-  ? `${st.distance} ${distUnit(settings)} · ${fmtDuration(st.seconds)}`
+  ? `${st.distance} ${distUnit(settings)} · ${fmtDuration(st.seconds)}${st.level ? ` · L${st.level}` : ''}`
   : kind === true || kind === 'bodyweight'
     ? (st.weight ? `BW+${st.weight}×${st.reps}` : `BW×${st.reps}`)
     : kind === 'assisted'

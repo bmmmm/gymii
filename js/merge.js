@@ -112,7 +112,7 @@ export function mergeGyms(local, remote) {
 // quirk — user-scoped. `unit` syncing shrinks the mixed-unit window; the
 // transport additionally normalizes values via convertWeight/-Distance
 // before merging collections when units still differ (see docs).
-export const USER_SETTINGS = ['unit', 'weightStep', 'restSeconds', 'aiPrompt'];
+export const USER_SETTINGS = ['unit', 'weightStep', 'restSeconds', 'defaultSets', 'aiPrompt'];
 
 export function mergeSettings(local, remote) {
   const merged = { ...local };

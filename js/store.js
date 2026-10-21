@@ -701,6 +701,42 @@ export function setAssistGoal(machineId, goal) {
   saveLayout(layout);
 }
 
+// --- set goals ---
+// How many sets a visit to a machine (or one of its exercises) is meant to
+// hold: `machine.exerciseSets[exercise]` → `machine.targetSets` →
+// `settings.defaultSets` → 3, as a whole number from 1 up. THE one
+// resolution — train.js counts a slot done against it, the gym editor and
+// the log screen's "Keep N sets" write through setTargetSets below. A
+// cardio machine has NO set goal (null): a bout is one set, never a tally.
+// Both machine fields are optional and absent when unset; `exerciseSets`
+// is locker-style (absent when empty, an exercise removed from the machine
+// takes its entry with it — the gym editor prunes it).
+const wholeFrom = (v) => (Number.isFinite(v) && v >= 1 ? Math.round(v) : null);
+export function setGoalFor(machine, exercise = null, settings = null) {
+  if (!machine || machine.cardio) return null;
+  return (exercise ? wholeFrom(machine.exerciseSets?.[exercise]) : null)
+    ?? wholeFrom(machine.targetSets) ?? wholeFrom(settings?.defaultSets) ?? 3;
+}
+
+// Writes the goal for a machine (exercise null) or for one of its
+// exercises onto the layout read IN THE TAP (the setAssistGoal pattern —
+// a render-time layout would be a delete command after an ambient pull).
+// `null` (or anything not a whole number ≥ 1) deletes; an emptied
+// `exerciseSets` goes with it.
+export function setTargetSets(machineId, exercise, n) {
+  const layout = getLayout();
+  const m = layout?.machines.find((x) => x.id === machineId);
+  if (!m) return;
+  const v = wholeFrom(n);
+  if (exercise) {
+    const goals = { ...(m.exerciseSets ?? {}) };
+    if (v) goals[exercise] = v; else delete goals[exercise];
+    if (Object.keys(goals).length) m.exerciseSets = goals; else delete m.exerciseSets;
+  } else if (v) m.targetSets = v;
+  else delete m.targetSets;
+  saveLayout(layout);
+}
+
 // A fresh history entry for this machine. num/label, the type flags and the
 // exercise are SNAPSHOTTED here — history, the editor, the chart and the AI
 // export read the entry, never the live machine, so a machine renamed or
@@ -1041,7 +1077,7 @@ export function finishWorkout(active) {
 export function getSettings() {
   const settings = {
     v: 1, restSeconds: 90, weightStep: 2.5, unit: 'kg', mapColors: 'custom', pickerMap: 'hidden',
-    timerSound: 'double', keepAwake: 'break', timerDim: '10s',
+    timerSound: 'double', keepAwake: 'break', timerDim: '10s', defaultSets: 3,
     ...read(KEYS.settings, {}),
   };
   // keepAwake was a boolean before it grew a scope — migrate stored ones
@@ -1354,7 +1390,9 @@ export const isSafeId = (id) => typeof id === 'string' && /^[\w-]+$/.test(id);
 const isColor = (c) => c == null || (typeof c === 'string' && /^#(?:[0-9a-f]{3}){1,2}$/i.test(c));
 const finiteOrAbsent = (o, keys) => keys.every((k) => o[k] == null || Number.isFinite(o[k]));
 const isPlaced = (o) => finiteOrAbsent(o, ['x', 'y', 'w', 'h', 'rot']);
-const SET_NUMBERS = ['reps', 'weight', 'distance', 'seconds'];
+// `level` is a cardio set's resistance step (a rower's 1–10) — unit-less,
+// so setUnit never touches it; absent means none, never 0 or null.
+const SET_NUMBERS = ['reps', 'weight', 'distance', 'seconds', 'level'];
 
 // A present numeric field becomes a finite number — a stringified one from
 // an old export survives — or is dropped; every consumer guards absence.
@@ -1388,8 +1426,13 @@ function numFields(o, keys) {
   return out;
 }
 
+// `exerciseSets` must be a plain object of finite numbers — refused like a
+// bad `grips`, since a view reads its keys and values straight into markup
+const isNumberMap = (o) => o === undefined || (!!o && typeof o === 'object' && !Array.isArray(o)
+  && Object.values(o).every((v) => Number.isFinite(v)));
 const isValidMachine = (m) => !!m && isSafeId(m.id) && Number.isFinite(m.num)
-  && isPlaced(m) && finiteOrAbsent(m, ['restSeconds']) && isColor(m.color)
+  && isPlaced(m) && finiteOrAbsent(m, ['restSeconds', 'targetSets']) && isColor(m.color)
+  && isNumberMap(m.exerciseSets)
   && (m.exercises === undefined
     || (Array.isArray(m.exercises) && m.exercises.every((x) => typeof x === 'string')))
   && (m.grips === undefined
@@ -1471,7 +1514,7 @@ export function cleanPlan(p) {
 // is a reset (merge.js mergeSettings), so the default stands in.
 export function cleanSettings(settings) {
   const out = numFields(settings && typeof settings === 'object' ? settings : {},
-    ['restSeconds', 'weightStep']);
+    ['restSeconds', 'weightStep', 'defaultSets']);
   if (out.unit !== undefined && out.unit !== 'kg' && out.unit !== 'lbs') delete out.unit;
   return out;
 }
