@@ -58,6 +58,16 @@ assert.deepEqual(p.items[1], { name: 'Face pulls', num: 12, sets: 3, reps: 15, w
 assert.deepEqual(p.items[2], { num: 9, distance: 3000, seconds: 900 },
   'cardio targets keep their own shape');
 {
+  // a cardio target's level rides along in that shape — the one the prompt teaches back
+  const plans = store.getPlans();
+  plans[0].items[3].target.level = 5;
+  store.savePlans(plans);
+  assert.deepEqual(JSON.parse(buildAiExport()).plans[0].items[2], { num: 9, distance: 3000, seconds: 900, level: 5 },
+    'a plan item exports its level');
+  delete plans[0].items[3].target.level;
+  store.savePlans(plans);
+}
+{
   // grips travel: the machine's list, a plan item's and a logged entry's
   const g = store.getLayout();
   g.machines[0].grips = ['Rope', 'V-bar'];
@@ -112,13 +122,20 @@ store.saveWorkouts([{
     ] },
     { machineId: 'tm', num: 9, label: 'Treadmill', cardio: true, settings: {}, sets: [
       { distance: 3000, seconds: 900, at: t0 + 120000, rir: 1 },
+      { distance: 3000, seconds: 900, at: t0 + 120000, level: 5 },
+      { distance: 3000, seconds: 900, level: 5 },
+      { distance: 3000, seconds: 900, level: 0 },
     ] },
   ],
 }]);
 const tupleSets = JSON.parse(buildAiExport()).workouts[0].entries.map((e) => e.sets);
 assert.deepEqual(tupleSets[0], [[40, 10], [40, 10, 90], [40, 10, 90, 2], [40, 10, null, 0]],
   'tuples grow only as far as the data goes; rir 0 is kept; rir without at gets a null');
-assert.deepEqual(tupleSets[1], [[3000, 900, 120]], 'cardio sets never carry rir');
+assert.deepEqual(tupleSets[1], [[3000, 900, 120], [3000, 900, 120, 5], [3000, 900, null, 5], [3000, 900]],
+  'cardio sets never carry rir; their fourth element is the level, null holds the third slot without at, level 0 is none');
+assert.match(JSON.parse(buildAiExport()).note, /on a cardio entry it is the level instead/, 'the note says so');
+assert.match(DEFAULT_PROMPT, /except on cardio entries, where the fourth element is the level/, 'and so does the prompt');
+assert.match(DEFAULT_PROMPT, /for cardio machines, with an optional "level"/, 'which teaches the plan shape too');
 assert.equal('visits' in JSON.parse(buildAiExport()).workouts[0], false, 'no visits recorded: no visits key');
 
 // --- visits: the route, as [num, inSec, outSec, busyNum?] ---

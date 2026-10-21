@@ -959,6 +959,13 @@ function wireWorkoutList(root, list, items, s, layout, { readOnly = false } = {}
       const st = editDraft.entries[+t.dataset.ei].sets[+t.dataset.si];
       st.seconds = parseDuration(t.value) ?? st.seconds;
       t.value = fmtDuration(st.seconds);
+    } else if (t.classList.contains('edit-level')) {
+      // the level is optional on the set: a whole number from 1 up stays,
+      // empty, 0 or junk deletes it — never a stored 0 or null
+      const st = editDraft.entries[+t.dataset.ei].sets[+t.dataset.si];
+      const v = Math.round(parseFloat(t.value));
+      if (v >= 1) st.level = v; else delete st.level;
+      t.value = v >= 1 ? v : '';
     } else if (t.classList.contains('edit-locker')) {
       editDraft.locker = t.value.trim();
     } else if (t.classList.contains('edit-name')) {
@@ -1115,7 +1122,9 @@ function editWorkoutHtml(w, s, layout, gripMsg = null) {
                 value="${esc(st.distance)}" aria-label="Distance (${du})"> ${du} ·
               <input type="text" inputmode="numeric" autocomplete="off" data-kind="time"
                 class="edit-minutes" data-ei="${ei}" data-si="${si}"
-                value="${fmtDuration(st.seconds)}" aria-label="Time (m:ss)">` : `
+                value="${fmtDuration(st.seconds)}" aria-label="Time (m:ss)"> · L
+              <input type="number" inputmode="numeric" class="edit-level" data-ei="${ei}" data-si="${si}"
+                value="${st.level >= 1 ? esc(st.level) : ''}" aria-label="Level">` : `
               ${e.bodyweight ? 'BW+' : e.assisted ? '−' : ''}<input type="text" inputmode="decimal" autocomplete="off" data-kind="decimal" class="edit-weight"
                 data-ei="${ei}" data-si="${si}" value="${esc(st.weight)}"
                 aria-label="${e.bodyweight ? 'Extra weight' : e.assisted ? 'Assist' : 'Weight'} (${esc(s.unit)})"> ${esc(s.unit)} ×

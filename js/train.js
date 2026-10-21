@@ -1493,7 +1493,8 @@ const planTargetFor = (active, machineId, exercise = null, grip = null) => {
 // noise, not information.
 const targetStr = (t, type, s) => (type === 'cardio'
   ? [t.distance ? `${t.distance} ${distUnit(s)}` : '',
-    t.seconds ? fmtDuration(t.seconds) : ''].filter(Boolean).join(' · ') || '—'
+    t.seconds ? fmtDuration(t.seconds) : '',
+    t.level ? `L${t.level}` : ''].filter(Boolean).join(' · ') || '—'
   : type === 'bodyweight'
     ? `${t.sets} × ${t.reps}${t.weight ? ` @ BW+${t.weight} ${s.unit}` : ''}`
     : type === 'assisted'
@@ -1503,9 +1504,10 @@ const targetStr = (t, type, s) => (type === 'cardio'
 // One logged (or about-to-be-logged) set in words, by the entry's type —
 // the set list, the log button and "Next:" on the rest screen. Assisted
 // reads as a minus: the counterweight takes that much off ("unassisted"
-// once it is down to 0).
+// once it is down to 0). A cardio set's level trails as "L5" (ui.js setStr
+// says the same on "Last:" and in History).
 const setWords = (st, type, s) => (type === 'cardio'
-  ? `${st.distance} ${distUnit(s)} · ${fmtDuration(st.seconds)}`
+  ? `${st.distance} ${distUnit(s)} · ${fmtDuration(st.seconds)}${st.level ? ` · L${st.level}` : ''}`
   : type === 'bodyweight'
     ? (st.weight ? `BW+${st.weight} ${s.unit} × ${st.reps}` : `BW × ${st.reps}`)
     : type === 'assisted'
@@ -1846,7 +1848,8 @@ function renderLog(root, layout, active, reveal = null, message = '') {
       <div class="next-set" data-focus-context>
         ${cardio ? `
         ${stepperField(`Distance (${du})`, 'set-distance', { step: s.unit === 'kg' ? 100 : 0.1, min: 0, value: def.distance, kind: 'distance', metric: s.unit === 'kg' })}
-        ${stepperField('Time (m:ss)', 'set-time', { step: 60, min: 0, value: def.seconds, kind: 'time' })}`
+        ${stepperField('Time (m:ss)', 'set-time', { step: 60, min: 0, value: def.seconds, kind: 'time' })}
+        ${stepperField('Level', 'set-level', { step: 1, min: 0, value: def.level ?? 0, mode: 'numeric' })}`
     : type === 'bodyweight' ? `
         ${stepperField('Reps', 'set-reps', { step: 1, min: 1, value: def.reps, mode: 'numeric' })}
         ${stepperField('Extra weight', 'set-weight', { step: s.weightStep, min: 0, value: def.weight, kind: 'decimal' })}`
@@ -1980,9 +1983,18 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // emptied on focus still means the value it showed (iOS lets the Log set
   // tap land before the blur that would restore it).
   const field = (sel) => fieldValue(root.querySelector(sel));
+  // The level is the machine's resistance step: 0 on the stepper means
+  // none, and none is ABSENT on the set — never 0, never null — so every
+  // consumer reads `st.level` as optional. Unreadable keeps the prefill.
+  const readLevel = () => {
+    const v = Math.round(parseFloat(field('#set-level')));
+    const level = Number.isFinite(v) ? v : def.level ?? 0;
+    return level >= 1 ? { level } : {};
+  };
   const readCardio = () => ({
     distance: parseDistance(field('#set-distance'), s.unit === 'kg') ?? def.distance,
     seconds: parseDuration(field('#set-time')) ?? def.seconds,
+    ...readLevel(),
   });
   const readStrength = () => ({
     weight: parseDistance(field('#set-weight'), false) ?? def.weight,
@@ -2101,12 +2113,13 @@ function renderLog(root, layout, active, reveal = null, message = '') {
       if (cardio) {
         root.querySelector('#set-time').value = fmtDuration(d.seconds);
         root.querySelector('#set-distance').value = d.distance;
+        root.querySelector('#set-level').value = d.level ?? 0;
       } else {
         root.querySelector('#set-weight').value = d.weight;
         root.querySelector('#set-reps').value = d.reps;
       }
     };
-    (cardio ? ['#set-distance', '#set-time'] : ['#set-weight', '#set-reps']).forEach((sel) => {
+    (cardio ? ['#set-distance', '#set-time', '#set-level'] : ['#set-weight', '#set-reps']).forEach((sel) => {
       const el = root.querySelector(sel);
       el?.addEventListener('change', () => refreshLogLabel(true));
       el?.addEventListener('input', () => refreshLogLabel(false));
@@ -2215,8 +2228,11 @@ export function nextSetDefaults(entry, last, type, s, target = null) {
     : type === 'bodyweight' ? { reps: 10, weight: 0 } : { reps: 10, weight: 20 };
   // a copy with every field present — a stored set may lack one (`at` and
   // even `weight` are optional), and "undefined kg × 8" is no prefill
+  // …except a cardio level, which stays ABSENT when its source has none:
+  // the stepper then shows 0 (= none) and readCardio writes nothing
   const from = (st) => (type === 'cardio'
-    ? { distance: st.distance ?? base.distance, seconds: st.seconds ?? base.seconds }
+    ? { distance: st.distance ?? base.distance, seconds: st.seconds ?? base.seconds,
+      ...(st.level >= 1 ? { level: Math.round(st.level) } : {}) }
     : { reps: st.reps ?? 10, weight: st.weight ?? 0 });
   if (entry.sets.length) return from(entry.sets[entry.sets.length - 1]);
   if (target) return from(target);

@@ -1540,6 +1540,9 @@ const TRAILING_WEIGHT = /^\s*(?:@|x|×|\*|-|with)?\s*[-−]?\s*(\d+(?:[.,]\d+)?)
 const UNIT_WEIGHT = /(\d+(?:[.,]\d+)?)\s*(kgs?|lbs?|pounds?)\b/i;
 const DURATION = /(\d+(?:[.,]\d+)?)\s*(h|hrs?|hours?|min(?:ute)?s?|sec(?:ond)?s?)\b/i;
 const DISTANCE = /(\d+(?:[.,]\d+)?)\s*(km|mi|miles?|m)\b/i;
+// a cardio line's level — the machine's resistance step: "L5", "level 5",
+// "lvl 5", a whole number
+const LEVEL = /\b(?:level|lvl|l)\s*(\d+)\b/i;
 const MARKED_NUM = /^(?:(?:nr|no)\.?\s*)?(?:#\s*(\d{1,3})|(\d{1,3})\s*[.)])\s*/i;
 
 const num = (raw) => parseFloat(String(raw).replace(',', '.'));
@@ -1594,17 +1597,25 @@ export function parsePlanLine(line, settings = getSettings()) {
     rest = (rest.slice(0, sr.index) + after.slice(tw ? tw[0].length : 0))
       .replace(uw ? uw[0] : '', '');
   } else {
-    // no sets term — a duration or a distance makes it a cardio item
-    const dur = DURATION.exec(rest);
-    const dist = DISTANCE.exec(rest);
+    // no sets term — a duration or a distance makes it a cardio item. Its
+    // level is cut out BEFORE the duration and distance are read, so
+    // "Rower 20min L5" and "Rower L5 20min" read alike and "L5" never joins
+    // the name; L0 names none, and a level alone makes no cardio line (the
+    // token then stays in the name, visible — as on a strength line).
+    const lv = LEVEL.exec(rest);
+    const scan = lv ? rest.replace(lv[0], ' ') : rest;
+    const dur = DURATION.exec(scan);
+    const dist = DISTANCE.exec(scan);
     if (dur || dist) {
       const secs = dur ? num(dur[1]) * (/^(h|hrs?|hours?)$/i.test(dur[2]) ? 3600
         : /^sec/i.test(dur[2]) ? 1 : 60) : 0;
+      const level = lv ? parseInt(lv[1], 10) : 0;
       target = {
         distance: dist ? toDisplayDistance(num(dist[1]), dist[2], settings) : 0,
         seconds: Math.round(secs),
+        ...(level >= 1 ? { level } : {}),
       };
-      rest = rest.replace(dur ? dur[0] : '', '').replace(dist ? dist[0] : '', '');
+      rest = scan.replace(dur ? dur[0] : '', '').replace(dist ? dist[0] : '', '');
     }
   }
 
@@ -1671,8 +1682,12 @@ function normalizeTarget(raw, cardio) {
   const int = (v, min, fb) => (Number.isFinite(v) ? Math.max(min, Math.round(v)) : fb);
   const pos = (v, fb) => (Number.isFinite(v) && v >= 0 ? v : fb);
   if (cardio) {
+    // the level is optional: a whole number from 1 up stays, anything else
+    // (a note's or an LLM's 0, junk) is none — absent, never 0
+    const level = Number.isFinite(raw.level) ? Math.round(raw.level) : 0;
     return raw.distance != null || raw.seconds != null
-      ? { distance: pos(raw.distance, 1000), seconds: int(raw.seconds, 0, 600) } : null;
+      ? { distance: pos(raw.distance, 1000), seconds: int(raw.seconds, 0, 600), ...(level >= 1 ? { level } : {}) }
+      : null;
   }
   return raw.sets != null || raw.reps != null || raw.weight != null
     ? { sets: int(raw.sets, 1, 3), reps: int(raw.reps, 1, 10), weight: pos(raw.weight, 0) } : null;
@@ -1744,7 +1759,10 @@ export function planToText(items, layout, settings = getSettings()) {
       const dist = t.distance ? ` ${t.distance}${du}` : '';
       const time = t.seconds
         ? ` ${t.seconds % 60 ? `${t.seconds}s` : `${t.seconds / 60}min`}` : '';
-      return `${head}${dist}${time}`;
+      // the level only next to a distance or time: alone it would read
+      // back as part of the name
+      const level = (dist || time) && t.level ? ` L${t.level}` : '';
+      return `${head}${dist}${time}${level}`;
     }
     return `${head} ${t.sets}x${t.reps}${t.weight ? ` ${t.weight}` : ''}`;
   }).filter(Boolean).join('\n');

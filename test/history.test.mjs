@@ -500,6 +500,34 @@ list().listeners.click(clickOn('.edit-save'));
 assert.deepEqual(store.getWorkouts().find((w) => w.id === 'wrow').entries[0].sets[0],
   { distance: 2000, seconds: 750 });
 
+// --- the editor's cardio level: a third field, whole from 1 up; empty or 0 deletes it ---
+render(); // still on the Workouts screen
+list().listeners.click(clickOn('.edit-w', { wid: 'wrow' }));
+assert.ok(/class="edit-level" data-ei="0" data-si="0"\s+value="" aria-label="Level"/.test(list().innerHTML),
+  'a cardio row has a Level field, empty while the set has none');
+const levelChange = (si, value) => {
+  const target = { value, dataset: { ei: '0', si }, classList: { contains: (c) => c === 'edit-level' }, closest: () => null };
+  list().listeners.change({ target });
+  return target.value;
+};
+assert.equal(levelChange('0', '5'), 5, 'a typed level is written back');
+assert.equal(levelChange('0', '2.6'), 3, 'whole');
+list().listeners.click(clickOn('.set-add', { ei: '0' }));
+list().listeners.click(clickOn('.edit-save'));
+assert.deepEqual(store.getWorkouts().find((w) => w.id === 'wrow').entries[0].sets,
+  [{ distance: 2000, seconds: 750, level: 3 }, { distance: 2000, seconds: 750, level: 3 }],
+  'Save stores the level, and + Set copied it with the rest');
+render();
+list().listeners.click(clickOn('.edit-w', { wid: 'wrow' }));
+assert.ok(/class="edit-level" data-ei="0" data-si="1"\s+value="3"/.test(list().innerHTML),
+  'the field shows the stored level');
+assert.equal(levelChange('0', '0'), '', '0 clears the field');
+assert.equal(levelChange('1', ''), '', 'so does emptying it');
+list().listeners.click(clickOn('.edit-save'));
+assert.deepEqual(store.getWorkouts().find((w) => w.id === 'wrow').entries[0].sets,
+  [{ distance: 2000, seconds: 750 }, { distance: 2000, seconds: 750 }],
+  'and Save deletes the level from the set — never a stored 0');
+
 // --- the editor's weight: a decimal text field, "12,5" is 12.5 ---
 store.saveWorkouts([...store.getWorkouts(), {
   id: 'wdec', startedAt: Date.UTC(2026, 7, 11, 10), finishedAt: Date.UTC(2026, 7, 11, 11),

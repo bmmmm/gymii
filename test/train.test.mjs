@@ -443,6 +443,7 @@ assert.equal(store.getActive().plan[0].machineId, qsGym.machines[0].id,
 //  (c) exercise scoping (lastEntryFor's own cases live in store.test.mjs)
 //  (d) a previous entry whose type flag was toggled since
 //  (e) prefills after setUnit converted the history
+//  (f) a cardio set's level rides the same chain, absent when none
 // nextSetDefaults is pure precedence logic and is exercised directly (it is
 // exported for exactly this, like nearbyAlternative); everything that only
 // exists once resolveEntry ran — the "Last:" header, machine settings
@@ -489,6 +490,24 @@ assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'cardio', kgS), { distance:
 // (e) the static cardio default is stated in the display unit too
 assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'cardio', lbsS), { distance: 0.5, seconds: 600 },
   'e: static cardio default is 0.5 mi in imperial');
+// (f) a cardio level: the set just logged, else the target, else the last
+// workout's opener — and ABSENT (never 0) when that source has none
+const bout = { distance: 2000, seconds: 600 };
+const lastBout = { sets: [{ distance: 1500, seconds: 420, level: 4 }] };
+assert.deepEqual(nextSetDefaults({ sets: [{ ...bout, level: 5 }] }, lastBout, 'cardio', kgS, { ...bout, level: 7 }),
+  { ...bout, level: 5 }, 'f: the set just logged carries its level past the target');
+assert.deepEqual(nextSetDefaults({ sets: [bout] }, lastBout, 'cardio', kgS, { ...bout, level: 7 }),
+  bout, 'f: a set logged without a level prefills none — history does not reach past it');
+assert.deepEqual(nextSetDefaults({ sets: [] }, lastBout, 'cardio', kgS, { ...bout, level: 7 }),
+  { ...bout, level: 7 }, 'f: the target seeds the first set, level included');
+assert.deepEqual(nextSetDefaults({ sets: [] }, lastBout, 'cardio', kgS, bout),
+  bout, 'f: a target without a level prefills none');
+assert.deepEqual(nextSetDefaults({ sets: [] }, lastBout, 'cardio', kgS),
+  { distance: 1500, seconds: 420, level: 4 }, 'f: without a target the last workout\'s opener brings its level');
+assert.deepEqual(nextSetDefaults({ sets: [] }, null, 'cardio', kgS, { ...bout, level: 0 }),
+  bout, 'f: a level of 0 is none');
+assert.deepEqual(nextSetDefaults({ sets: [{ ...bout, level: 2.6 }] }, null, 'cardio', kgS),
+  { ...bout, level: 3 }, 'f: a level prefills whole');
 
 // --- render-level: header line, settings carry-over, stepper values ---
 store.clearAll();
@@ -2553,6 +2572,64 @@ const withPicker = (fn) => {
   assert.ok(/class="machine-badge sm">2<\/span>\s*<span class="machine-icon" aria-hidden="true">🚣<\/span>/.test(h), 'the rower\'s row');
   assert.ok(/class="machine-badge sm">3<\/span>\s*<span class="machine-icon" aria-hidden="true">🫁<\/span>/.test(h), 'the chest press\'s row');
   store.clearActive();
+  store.saveLayout(before);
+}
+
+// --- cardio levels: a third stepper, stored from 1 up, absent at 0, prefilled like the rest ---
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Level gym');
+  g.machines.push({ id: 'rw', num: 9, label: 'Rower', x: 0, y: 0, w: 3, h: 3, settingsFields: [], cardio: true });
+  store.saveLayout(g);
+  store.saveWorkouts([]);
+  const open = (plan) => {
+    store.saveActive({ v: 2, id: 'w-level', startedAt: Date.now() - 60000, plan,
+      currentMachineId: 'rw', currentExercise: null, entries: [] });
+    byId.clear();
+    renderTrain(root);
+  };
+  const logWith = (level) => {
+    byId.get('#set-distance').value = '2000';
+    byId.get('#set-time').value = '10:00';
+    byId.get('#set-rest').value = '0';
+    byId.get('#set-level').value = level;
+    byId.get('#log-set').listeners.click();
+    const { at, ...set } = store.getActive().entries[0].sets.at(-1);
+    return set;
+  };
+  open([{ machineId: 'rw', exercise: null }]);
+  assert.ok(root.innerHTML.includes('<span class="label">Level</span>'), 'a cardio log screen has a Level stepper');
+  assert.ok(root.innerHTML.includes('<input id="set-level" type="number" inputmode="numeric" value="0">'),
+    'a plain numeric stepper like reps, 0 (= none) with no history');
+  assert.deepEqual(logWith('5'), { distance: 2000, seconds: 600, level: 5 }, 'the level is stored on the set');
+  assert.ok(root.innerHTML.includes('<span>2000 m · 10:00 · L5</span>'), 'the set list says it');
+  assert.ok(root.innerHTML.includes('id="set-level" type="number" inputmode="numeric" value="5"'),
+    'and the next set is prefilled with it');
+  assert.ok(root.innerHTML.includes('>✓ Log set — 2000 m · 10:00 · L5<'), 'so the log button says it');
+  byId.get('#set-level').value = '3';
+  byId.get('#set-level').listeners.change();
+  assert.equal(byId.get('#log-set').textContent, '✓ Log set — 2000 m · 10:00 · L3', 'the stepper updates the label live');
+  assert.equal(logWith('x').level, 5, 'an unreadable level logs the prefill (the last set\'s), like distance and time');
+  assert.deepEqual(logWith('0'), { distance: 2000, seconds: 600 }, '0 is none: no level key at all');
+  assert.ok(root.innerHTML.includes('<span>2000 m · 10:00</span>'), 'and the row says nothing of it');
+  assert.ok(root.innerHTML.includes('id="set-level" type="number" inputmode="numeric" value="0"'),
+    'the next prefill follows the last set: none');
+  assert.equal(logWith('2.6').level, 3, 'a level is a whole number');
+  // a plan target's level seeds the first set, and the head line names it
+  open([{ machineId: 'rw', exercise: null, target: { distance: 3000, seconds: 900, level: 7 } }]);
+  assert.ok(root.innerHTML.includes('id="set-level" type="number" inputmode="numeric" value="7"'),
+    'a plan target prefills its level');
+  assert.ok(root.innerHTML.includes('Target: 3000 m · 15:00 · L7'), 'the target line names it');
+  assert.ok(root.innerHTML.includes('>✓ Log set — 3000 m · 15:00 · L7<'), 'and so does the log button');
+  // no target: the last workout's opener brings its level, "Last:" says it
+  store.saveWorkouts([{ id: 'lv1', startedAt: 1000, finishedAt: 2000, entries: [{ machineId: 'rw', num: 9,
+    label: 'Rower', cardio: true, settings: {}, sets: [{ distance: 1500, seconds: 420, level: 4 }] }] }]);
+  open([{ machineId: 'rw', exercise: null }]);
+  assert.ok(root.innerHTML.includes('id="set-level" type="number" inputmode="numeric" value="4"'),
+    'without a target the last workout\'s level prefills');
+  assert.ok(root.innerHTML.includes('Last: 1500 m · 7:00 · L4'), 'and "Last:" says it');
+  store.clearActive();
+  store.saveWorkouts([]);
   store.saveLayout(before);
 }
 

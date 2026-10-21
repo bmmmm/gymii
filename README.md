@@ -30,7 +30,8 @@ ever sees ciphertext.
   floor plan — nothing to set up, it follows the muscle tags.
 - 💪 **Train** — repeat a past workout in order, or roam by number, map tap or
   muscle. Last workout's numbers prefill every set. Cardio machines log
-  distance + time, bodyweight machines reps + extra weight, assisted ones
+  distance + time (+ the level, where the machine has one — `Rower 20min
+  L5` in a typed plan line), bodyweight machines reps + extra weight, assisted ones
   (pull-up or dip with a counterweight) reps + the assist — less is
   stronger, and you say whether you're after less assist or more reps
   (until you do, gymii reads it from your history), free-weight
