@@ -733,17 +733,45 @@ const inFlight = new Map(); // gid -> { again }
 // such write: runSync reports the generation its pushed state was taken at,
 // and syncNow lowers the flag only if it is still current — an edit made
 // while the PUT was in flight raised a flag that must survive the run.
-// Per tab: another tab's edit during this tab's push is not seen (the Web
-// Lock serializes syncs, not edits).
+// The counter is module state, so per tab — and the Web Lock serializes
+// syncs, not edits. Another tab's edit during this tab's push is caught by
+// the `storage` event, which the browser fires in every OTHER tab of the
+// origin on each localStorage write: no extra write per edit, the write
+// the edit made anyway is the signal. That tab's own subscription raised
+// the shared flag already; bumping the generation here is what keeps
+// syncNow from lowering it over the edit. Mirrors the store notifier: a
+// gym part a notifying writer stores counts for that gym, the gym-less
+// keys (settings, registry) for the active one; the sync
+// bookkeeping (`sync`, `synckey`, the pending-deletes queue) never counts
+// — syncNow's own records would read as edits — and neither does
+// `active`, whose writer does not notify.
 const edits = new Map(); // gid -> generation
 const editGen = (gid) => edits.get(gid) ?? 0;
+const bumpEdit = (gid) => { if (gid) edits.set(gid, editGen(gid) + 1); };
+const EDIT_PARTS = new Set(['layout', 'workouts', 'plans', 'tombstones']);
+const EDIT_GLOBAL = new Set(['gymii.settings', 'gymii.gyms']);
 onStoreChange(() => {
   if (applying) return;
   const { activeId } = getGyms();
-  edits.set(activeId, editGen(activeId) + 1);
+  bumpEdit(activeId);
   const cfg = getSyncConfig(activeId);
   if (cfg && cfg.dirty !== true) saveSyncConfig(activeId, { ...cfg, dirty: true });
 });
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', (e) => {
+    const { key } = e;
+    if (e.storageArea && e.storageArea !== globalThis.localStorage) return;
+    if (key == null) return; // a clear(): no config left for a run to lower anything in
+    if (EDIT_GLOBAL.has(key)) {
+      // a removed registry is self-healed by the tab that removed it —
+      // getGyms() here would race it with a write of its own
+      if (e.newValue != null) bumpEdit(getGyms().activeId);
+      return;
+    }
+    const m = /^gymii\.([^.]+)\.([^.]+)$/.exec(key);
+    if (m && EDIT_PARTS.has(m[2])) bumpEdit(m[1]);
+  });
+}
 
 async function withTabLock(fn) {
   const locks = globalThis.navigator?.locks;

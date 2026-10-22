@@ -16,6 +16,15 @@ const devices = { A: new Map(), B: new Map() };
 const useDevice = (d) => useStore(devices[d]);
 useDevice('A');
 
+// A stand-in `window` that only collects listeners, installed BEFORE sync.js
+// loads: its `storage` subscription runs at module load (block 22 fires it
+// as another tab's write would). Node has no `window` of its own.
+const windowListeners = new Map();
+globalThis.window = {
+  addEventListener: (type, fn) => windowListeners.set(type, [...(windowListeners.get(type) ?? []), fn]),
+};
+const fireWindow = (type, e) => (windowListeners.get(type) ?? []).forEach((fn) => fn(e));
+
 const store = await import(new URL('../js/store.js', import.meta.url).href);
 const sync = await import(new URL('../js/sync.js', import.meta.url).href);
 
@@ -1083,6 +1092,54 @@ try {
   }
   assert.deepEqual(outcome, { status: 'offline' }, '21: quota while recording the error: still an answer');
   await sync.ambientSettled();
+
+  // --- 22. another TAB's edit while this tab's push is in flight ---
+  // The generation is per tab: a second tab's write raised the shared flag
+  // through its own subscription, but this tab's counter never moved, so
+  // syncNow lowered the flag over an edit its blob does not carry. The
+  // browser's `storage` event (fired here by hand, as in every other tab)
+  // is what moves it now.
+  sync.initAmbientSync({ editDebounceMs: 60000 }); // nothing below may start a run of its own
+  const plansKey = `gymii.${gid}.plans`;
+  const otherTabWrites = (key, value) => {
+    localStorage.setItem(key, value);
+    store.saveSyncConfig(gid, { ...store.getSyncConfig(gid), dirty: true }); // that tab's subscription
+    fireWindow('storage', { key, newValue: value });
+  };
+  const runWithFlagUp = async (hook) => {
+    srv.hook = hook;
+    store.saveSyncConfig(gid, { ...store.getSyncConfig(gid), dirty: true });
+    srv.log.length = 0;
+    assert.equal((await sync.syncNow(gid)).status, 'synced', '22: setup run');
+    assert.deepEqual(methods(srv), ['GET', 'PUT'], '22: the run pushed');
+  };
+  await runWithFlagUp(() => otherTabWrites(plansKey,
+    JSON.stringify([...store.getPlans(), { id: 'other-tab', name: 'Made in another tab', items: [] }])));
+  assert.equal(store.getSyncConfig(gid).dirty, true, "22: another tab's edit during the PUT keeps the flag up");
+  srv.log.length = 0;
+  assert.equal((await sync.syncNow(gid)).status, 'synced', '22: the next run');
+  assert.deepEqual(methods(srv), ['GET', 'PUT'], '22: pushes it');
+  assert.ok((await decryptBlob(srv.blob, passR)).plans.some((p) => p.id === 'other-tab'), '22: and it arrived');
+  assert.equal(store.getSyncConfig(gid).dirty, false, '22: then the flag comes down');
+
+  // settings are gym-less: they count for the active gym, like the notifier
+  await runWithFlagUp(() => otherTabWrites('gymii.settings',
+    JSON.stringify({ ...store.getSettings(), defaultSets: 5 })));
+  assert.equal(store.getSyncConfig(gid).dirty, true, '22: a settings write in another tab counts too');
+  await sync.syncNow(gid);
+
+  // the bookkeeping is no edit: the other tab's sync records, its queue and
+  // an in-progress workout (whose writer does not notify) lower nothing
+  await runWithFlagUp(() => {
+    fireWindow('storage', { key: `gymii.${gid}.sync`, newValue: '{}' });
+    fireWindow('storage', { key: `gymii.${gid}.synckey`, newValue: '{}' });
+    fireWindow('storage', { key: 'gymii.sync.pendingDeletes', newValue: '[]' });
+    fireWindow('storage', { key: `gymii.${gid}.active`, newValue: '{}' });
+    fireWindow('storage', { key: 'gymii.other-gym.plans', newValue: '[]' }); // another gym's edit
+    fireWindow('storage', { key: null, newValue: null }); // a clear()
+  });
+  assert.equal(store.getSyncConfig(gid).dirty, false, '22: sync bookkeeping and other gyms do not count');
+  sync.initAmbientSync({ editDebounceMs: 0 });
 }
 
 console.log('sync client: all assertions passed');
