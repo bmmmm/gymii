@@ -875,7 +875,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   slots built from a source — plan or repeat — carry no marker, and the
   tests pin both shapes by `deepEqual`). That is the user's ask of
   2026-10-21: "Next" in a free workout named whatever machine was opened
-  last. `startWorkoutFrom` drops only exact repeats (same triple AND same
+  last. The predicate is ONE helper, `idleFree(active, slot, layout, s)`
+  (`slot.free` and a `twinShare` of 0), and "Busy?" (`nearbyAlternative`)
+  and the "Closer:" candidates skip such a slot through it too (2026-10-22;
+  the two once still offered a machine merely opened) — a set on it makes
+  it a stop again for all three. `startWorkoutFrom` drops only exact repeats (same triple AND same
   target), so both blocks survive a restart. A plan whose FIRST
   slot has no machine yet starts with `binding: 0` — the workout opens on
   "which machine is this?" rather than on an overview of rows to assign;
@@ -1055,9 +1059,26 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   to the busiest muscle (History's rule, `.bar-track`/`.bar-fill`), the
   label reads "Chest · 3 sets" / "Hamstrings · 1½ sets" / "½ set" and
   "open" at 0 (`.open`: muted label, empty track); a line above the rows
-  counts "4 of 9 muscles trained" (trained = value > 0). `#muscle-coverage`
-  keeps its id and the rows double as navigation: a tap calls the picker's
-  `setMuscle()` to filter machines for that muscle. The log screen's
+  counts "4 of 9 muscles trained" (trained = value > 0). The CARD orders
+  the rows, not `muscleProgress` (whose region order the tests pin):
+  `muscleCardHtml(progress, shown)` (exported for the tests; user ask
+  2026-10-22 — 14 rows on a gym that tags every muscle) puts the trained
+  rows first, most sets first (a stable sort: ties keep region order),
+  then ONE toggle row `button#muscle-fold.muscle-fold` ("Show N untrained"
+  / "Hide untrained", `aria-expanded`, a full-width 44px box), then — only
+  when unfolded — the untrained rows in region order. The fold is a view
+  toggle ON the card, persisted as the device-local
+  `settings.muscleFold` ('shown' | 'folded', absent = folded; not in
+  merge.js `USER_SETTINGS`, so it never bumps the sync stamp). With
+  nothing trained yet (or nothing untrained) there is no toggle and every
+  row shows — folding them all would leave an empty card. The toggle sits
+  ABOVE what it shows and hides, so a tap moves neither it nor anything
+  above it: the handler swaps only `#muscle-coverage`'s content (no
+  `renderTrain`, so the picker's state and the scroll stay), needs no
+  `keepInView`, and refocuses the new toggle with `preventScroll`.
+  `#muscle-coverage` keeps its id and ONE delegated click listener (it
+  survives the swap); the rows double as navigation: a tap calls the
+  picker's `setMuscle()` to filter machines for that muscle. The log screen's
   "Workout overview →" button (the no-Next variant only, `overviewButton`)
   carries the same count as a `.sub` ("4/9 muscles"), so the progress is
   one glance away without leaving the machine; no sub when the gym has no
