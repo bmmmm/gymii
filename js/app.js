@@ -1,4 +1,5 @@
-import { renderTrain } from './train.js';
+import { renderTrain, isFirstRun } from './train.js';
+import { renderTour, spotTabs } from './tour.js';
 import { renderGym } from './gym.js';
 import { renderHistory } from './history.js';
 import { renderAi } from './ai.js';
@@ -14,6 +15,12 @@ const routes = {
   history: (v) => renderHistory(v, { entry: true }),
   ai: renderAi,
   settings: renderSettings,
+  // not a tab: reached from Settings → Help, the first-run screen, and on
+  // a device's very first start (route() below). Done or skipped, it hands
+  // over to Train — replace(), so Back never walks into the tour again.
+  tour: (v) => renderTour(v, {
+    entry: true, askUnit: isFirstRun(), onExit: () => location.replace('#train'),
+  }),
 };
 
 // The Settings-tab dot: accent while offline edits wait, danger once a
@@ -58,6 +65,14 @@ function route() {
   // own keys only: #toString or #constructor would find Object.prototype's
   // and render a blank view
   const tab = Object.hasOwn(routes, name) ? name : 'train';
+  // First start on this device: the tour comes before the first-run screen,
+  // once (renderTour marks it seen). Only where Train would open — a #gym or
+  // #settings link (a pairing QR lands there) goes where it points.
+  if (tab === 'train' && !getSettings().tourSeen && isFirstRun()) {
+    location.replace('#tour'); // hashchange re-enters route()
+    return;
+  }
+  spotTabs([]); // the tour's tab marks never outlive it
   const view = document.getElementById('view');
   view.innerHTML = '';
   view.scrollTop = 0;

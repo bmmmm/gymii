@@ -1,5 +1,15 @@
 # TODO
 
+Shipped 2026-10-23 (`2026-10-23`): the first start, reworked — a guided
+tour (`js/tour.js`, route `#tour`, six steps with the tab each one talks
+about pulsing in the real tabbar) opens once on a device's first start
+and asks kg or lbs there (an untouched step follows: 5 lbs, not 5.5);
+Settings → Help and the first-run screen repeat it. The first-run screen
+leads with one sentence and trades its prose links for an "Other ways
+in" card (demo gym, tour, Gym, backup/sync); an empty gym floor says
+what to do on the floor itself. New: `test/tour.test.mjs`,
+`smoke/tour.spec.mjs`.
+
 Shipped 2026-10-22 (`2026-10-22c`): the open items — "Busy?" and "Closer:"
 skip a free slot with no set (one `idleFree` predicate with nextOpenSlot);
 "Muscles today" lists trained muscles first and folds the open ones behind

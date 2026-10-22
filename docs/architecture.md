@@ -449,7 +449,15 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
 - `js/app.js` — hash-router, renders views into `#view`. The `#gym`
   route is deliberately NOT in the tabbar (the map is a setup tool, not a
   daily surface — user decision); it is reached via links in onboarding,
-  Settings and the Train hub's Gym tile. Don't re-add the tab. A route is
+  Settings and the Train hub's Gym tile. Don't re-add the tab. `#tour`
+  (js/tour.js) is a route without a tab too. On a device's FIRST start —
+  the route would open Train, `settings.tourSeen` is unset and train.js's
+  `isFirstRun()` holds (no workout, plan, builder or machine) — route()
+  `location.replace('#tour')`s instead, so the tour comes before the
+  first-run screen exactly once; a deep link (#gym, a pairing QR's
+  #settings) goes where it points. route() clears the tour's tab marks
+  (`spotTabs([])`) on every route change, so a tab tap out of the tour
+  takes them along. A route is
   an OWN key of `routes` (`Object.hasOwn` — `#toString` found the
   prototype's and rendered blank), anything else is Train; a malformed
   `#pair=%E0` is caught (URIError) and scrubbed to `#settings` like a good
@@ -472,6 +480,23 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   storage does nothing (never throws). It repeats ONE decision of
   `applyTheme`, which stays the owner; `test/sw.test.mjs` pins that both
   agree, so a new theme value must change both.
+- `js/tour.js` — the guided tour: six steps (`TOUR_STEPS` — welcome,
+  the training loop as a four-line strip, plans, the optional map, History
+  + AI, Settings), a screen in `#view` like every route — NOT an overlay,
+  so nothing traps focus or blocks a tap, and the tabbar stays usable.
+  The tab a step talks about pulses (`#tabbar a.tour-spot`, `spotTabs`).
+  Opening it (route entry) resets to step one and marks
+  `settings.tourSeen` — device-local, not in merge.js `USER_SETTINGS`, so
+  no sync stamp moves; whoever leaves by a tab tap has met it, and the
+  first-run screen offers it again. Step one asks kg/lbs only when the
+  caller passes `askUnit` (app.js: `isFirstRun()`): with data on the
+  device the question would convert a whole history from inside a
+  walkthrough. The chip goes through `setUnit`; an untouched DEFAULT step
+  follows the unit (2.5 kg ⇄ 5 lbs) where setUnit's conversion would give
+  5.5 — a step someone chose converts as usual. Skip (every step but the
+  last) and "Let's go" call `onExit` — app.js `location.replace('#train')`,
+  so Back never walks into the tour again. Reached again from Settings →
+  Help (`#tour-again`) and the first-run screen's "Other ways in".
 - `js/ui.js` — shared helpers; owns the keyboard. `initFocusCentering()`
   (wired once in app.js) centres every focused field in the VISIBLE band
   once `visualViewport` settles — a field-to-field hop fires no resize, so
@@ -571,6 +596,12 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   gym.js never imports from train.js/plan.js (the direction the map
   split exists to prevent).
 - `js/gym.js` — floor-plan editor (renderer imported from map.js).
+  An empty floor (no machine, no shape) explains itself ON the floor:
+  `#floor-empty`, an overlay inside `.floor-wrap` toggled by `redraw()`,
+  so it goes with the first item and comes back with an undo to nothing
+  without shifting the toolbar the thumb just used; its "Load a
+  ready-made gym" presses the Templates card's `#load-template` (the
+  Layout view shows while nothing is selected) and scrolls to it.
   Polygon outline with vertex/midpoint editing; wall-snapped fixtures
   (entrance/door/window) glue to the nearest wall segment with rotation +
   flips. EVERYTHING ON THE MAP STARTS LOCKED — machines, zones, walls,
@@ -729,7 +760,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   delete comes back at its old index. A save that changes nothing writes
   nothing and records no step.
 - `js/settings.js` — the Settings tab (units, gyms, backups, the Sync card
-  — the sync half is docs/sync-plan.md). `renderSettings()` is wrapped
+  — the sync half is docs/sync-plan.md; a Help card links `#tour`). `renderSettings()` is wrapped
   whole in `preserveFocus` (every field in it is covered once). The Workout
   card's steppers write one settings key each on `change`: the rest timer
   (`#rest-seconds`, whole seconds from 0) and "Sets per exercise"
@@ -1099,9 +1130,14 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   against other shapes (`st.reps * st.weight || 0`); sets are counted off
   against the slot's goal (`setGoal` = `slotGoal`, see SET GOALS above) —
   a cardio target is one bout, not a tally, and has no goal. Nothing to
-  start = an onboarding screen led by ONE action: type
-  in the plan you already have (`planFromText`), with quick start on a
-  line below it and the Gym as a text link. The map is the reward for
+  start (`isFirstRun()`, exported — app.js opens the tour on it once) =
+  an onboarding screen led by ONE action: type in the plan you already
+  have (`planFromText`), with quick start as the second card and an
+  "Other ways in" card of real 44px buttons below (prose links were
+  neither targets nor findable): `#ob-demo` loads the Demo gym
+  (`loadDemoData`, as Settings → Test data) and lands on the hub with a
+  notice saying how to get back, then the tour, the Gym, and Settings for
+  a backup or a second device. The map is the reward for
   a gym that exists, never the toll gate before it — a saved plan also
   outranks onboarding, and the start screen falls back to quick start
   when the gym has no machines. The picker offers create-on-miss for
@@ -1340,7 +1376,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   chart's ancestors from `onSelect`: the captured container would die.
   `niceTicks` and `timeTicks(x0, x1, span)` (Mondays up to six weeks, month
   starts beyond) are exported.
-- `js/demo.js` — "Load test data" (Settings card): fills a separate "Demo"
+- `js/demo.js` — "Load test data" (Settings card, and the first-run
+  screen's "Look around in a demo gym"): fills a separate "Demo"
   gym with a 16-machine gym (the example template plus cardio,
   bodyweight and a multi-exercise machine), ~8 weeks of Push/Pull/Legs
   history and three weekday plans built so `due`, `missed` and `done` all

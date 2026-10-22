@@ -41,7 +41,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `settings` (the Sync
   card's states over the stub DOM), `qr` (the encoder: pinned reference
   matrix, RS vectors, full decode round-trip, penalty rules, overflow), `train` (guided-plan
-  construction, hub/start/plans navigation), `plan` (stored plans, the note parser/serialiser, AI
+  construction, hub/start/plans navigation), `tour` (step walk, seen
+  mark without a sync stamp, the unit question and its default step,
+  `isFirstRun`), `plan` (stored plans, the note parser/serialiser, AI
   import, binding, targets), `history` (the two screens and the
   entry reset, name filter, week card, hints, progress chips/range/pick,
   walking paths, muscle card + filter, heatmap state, full editor,
@@ -116,7 +118,16 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   stepper's −, the floor stops at its items, the template browser keeps
   its two taps, the plan builder keeps typed text and its draft, unknown
   or malformed hashes route, the Muscles card folds its open rows without
-  moving the toggle, and a new cardio plan line takes the last level.
+  moving the toggle, and a new cardio plan line takes the last level;
+  and the first start (`tour.spec.mjs`): an empty install boots into the
+  tour once, every step and the welcome screen hold the rules at 320px
+  with the right tabs marked, the unit asked there sticks (5 lbs step), a
+  device with data is never sent there and its Settings → Help repeat
+  asks no unit, a tab tap takes the marks along, the demo button lands on
+  the hub, and an empty gym floor explains itself without moving
+  "+ Machine". `seedDemoGym` starts on `#settings` for that reason: on
+  `#train` an empty install redirects to `#tour`, and the reload after
+  seeding would boot back into it.
   A NEW browser spec goes in
   `smoke/` as `*.spec.mjs`, NEVER in `test/` — `testMatch` is pinned
   because Playwright's collector imports whatever it matches and would run

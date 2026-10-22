@@ -19,6 +19,7 @@ import {
   variantStr, entryKind, machineIcon,
 } from './ui.js';
 import { ensurePersisted } from './persist.js';
+import { loadDemoData } from './demo.js';
 import {
   insights, inBusyWindow, sameSeries, assistGoalAt, closerStop, walkSaving, walksCached, walkableGrid,
   transitionCounts,
@@ -126,6 +127,14 @@ export const screenKey = (active, builder, screen) => {
 
 let lastScreenKey = null;
 
+// Nothing to start yet: no workout running, no plan being built or saved,
+// no machine. The Train tab shows the first-run screen then, and app.js
+// opens the tour in front of it on a device's very first start.
+export const isFirstRun = () => {
+  const layout = getLayout();
+  return !getActive() && !builder && !getPlans().length && (!layout || !layout.machines.length);
+};
+
 export function renderTrain(root, message = '') {
   const layout = getLayout();
   const active = getActive();
@@ -146,7 +155,7 @@ export function renderTrain(root, message = '') {
   // is exactly what someone without a gym starts with — and so does a
   // SAVED plan: once one exists there is something to start, and sending
   // its owner back to the first-run screen would hide it.
-  if (!active && !builder && !getPlans().length && (!layout || !layout.machines.length)) {
+  if (isFirstRun()) {
     renderOnboarding(root, message);
     return;
   }
@@ -695,17 +704,21 @@ function wireQuickStart(root) {
 
 // First-run screen. ONE action leads: type in the plan you already have —
 // on paper, in a chat, from a trainer — and gymii reads it into exercises
-// that don't need a gym yet. The other two ways in (a machine in front of
-// you right now, drawing the floor plan) stay, one line each. The map is
-// the reward for a gym that exists, never the toll gate before it.
+// that don't need a gym yet. The machine in front of you is the second
+// card; everything else waits in "Other ways in" as real buttons (prose
+// links were neither 44px targets nor findable): the demo gym to look
+// around in, the tour, the floor plan, a backup or a second device. The
+// map is the reward for a gym that exists, never the toll gate before it.
 function renderOnboarding(root, message) {
   root.innerHTML = `
     <h1>Welcome to gymii</h1>
     ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
+    <p class="muted ob-lead">Start whichever way fits you — the rest can wait.</p>
     <section class="card">
       <h2>Type in your plan</h2>
       <p class="muted">One exercise per line, the way it's written on your
-        plan. Machines come later — gymii asks which is which at the layout.</p>
+        plan. No machines needed yet — the first time you reach an exercise,
+        gymii asks which machine it is.</p>
       <textarea id="ob-plan" rows="5"
         placeholder="Leg press 3x10 80&#10;Lat pulldown 3x12 45&#10;Chest press 3x8-12 40kg&#10;Treadmill 20min"></textarea>
       <button id="ob-read" class="btn btn-primary btn-big">Read my plan</button>
@@ -719,9 +732,15 @@ function renderOnboarding(root, message) {
         <button id="qs-start" class="btn btn-inline">Start</button>
       </div>
     </section>
-    <p class="muted">Prefer to set up first? Draw the floor plan or load a
-      ready-made gym in the <a href="#gym">Gym</a>, or import a backup
-      in <a href="#settings">Settings</a>.</p>`;
+    <section class="card">
+      <h2>Other ways in</h2>
+      <button type="button" id="ob-demo" class="btn">👀 Look around in a demo gym</button>
+      <a class="btn" href="#tour">🧭 Take the tour</a>
+      <a class="btn" href="#gym">🗺 Set up my gym first</a>
+      <a class="btn" href="#settings">↻ Restore a backup or sync a device</a>
+      <p class="muted">The demo is a separate gym with eight weeks of made-up
+        training — yours stays empty until you start.</p>
+    </section>`;
 
   const readPlan = () => {
     const text = root.querySelector('#ob-plan').value;
@@ -741,6 +760,14 @@ function renderOnboarding(root, message) {
     renderTrain(root);
   };
   root.querySelector('#ob-read').addEventListener('click', readPlan);
+
+  // the same loader as Settings → Test data: a gym of its own, switched to
+  root.querySelector('#ob-demo').addEventListener('click', () => {
+    loadDemoData();
+    screen = 'hub';
+    renderTrain(root, 'You\'re in the Demo gym — tap around freely. Your own gym '
+      + 'waits under Settings → Your gyms; "Delete this gym" there removes the demo.');
+  });
 
   wireQuickStart(root);
 }

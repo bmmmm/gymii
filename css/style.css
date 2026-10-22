@@ -1139,6 +1139,55 @@ select {
    any length, so it wraps instead of pushing the label off the card. */
 .sync-val { text-align: right; min-width: 0; overflow-wrap: anywhere; }
 
+/* --- the tour (js/tour.js) --- */
+
+.tour-head { align-items: center; }
+/* Skip reads as a word, but stays a 44px box */
+.btn-quiet { background: transparent; border-color: transparent; color: var(--muted); font-weight: 600; }
+.tour-dots { display: flex; gap: 6px; margin: 4px 0 18px; }
+.tour-dots span { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+.tour-dots span.on { background: var(--accent); width: 20px; border-radius: 4px; }
+.tour-icon { font-size: 44px; line-height: 1; margin-bottom: 4px; }
+.tour h1 { outline: none; }
+.tour p { line-height: 1.5; }
+.tour-flow { list-style: none; padding: 0; margin: 14px 0; }
+.tour-flow li {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; margin-bottom: 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+}
+.tour-chip {
+  flex: 0 0 96px; padding: 6px 4px; text-align: center; font-size: 14px;
+  border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border);
+  font-weight: 700; white-space: nowrap;
+}
+.tour-flow li:nth-child(3) .tour-chip { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.tour-nav { margin-top: 18px; }
+.tour-nav > .btn-inline { flex: none; }
+.tour-nav > .btn { margin: 0; }
+/* the tab a tour step talks about: a ring that breathes on its icon pill */
+#tabbar a.tour-spot { color: var(--accent); }
+#tabbar a.tour-spot .tab-icon {
+  background: var(--accent-dim);
+  box-shadow: 0 0 0 2px var(--accent);
+  animation: tour-pulse 1.6s ease-in-out infinite;
+}
+@keyframes tour-pulse { 50% { box-shadow: 0 0 0 5px var(--accent-dim); } }
+
+.ob-lead { font-size: 15px; margin: -6px 0 14px; }
+
+/* an empty gym floor says what to do, on the floor itself */
+.floor-wrap { position: relative; }
+.floor-empty {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 12px 16px; text-align: center;
+  color: var(--muted); font-size: 13px; line-height: 1.4;
+  pointer-events: none;
+}
+.floor-empty p { margin: 0; max-width: 32em; }
+.floor-empty .btn { pointer-events: auto; }
+
 /* --- empty states --- */
 
 .empty {

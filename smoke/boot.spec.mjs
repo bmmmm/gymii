@@ -7,10 +7,13 @@ import { seedDemoGym, watchForFailures } from './fixtures.mjs';
 // files without resolving their imports, so a renamed export is a
 // link-time SyntaxError nothing in CI could see before this spec. This is
 // the test that stands between a typo and a white page.
-test('a fresh install boots into onboarding', async ({ page }) => {
+test('a fresh install boots into the tour, then onboarding', async ({ page }) => {
   const { consoleErrors, badResponses } = watchForFailures(page);
   await page.goto('/');
-  // an empty install has no gym yet, so Train opens on the welcome screen
+  // an empty install has nothing to start: the tour first (once per device),
+  // then the welcome screen
+  await expect(page.locator('#tour-next')).toBeVisible();
+  await page.locator('#tour-skip').click();
   await expect(page.locator('#ob-read')).toBeVisible();
   await expect(page.locator('#tabbar a[data-tab="train"]')).toHaveAttribute('aria-current', 'page');
   expect(consoleErrors, 'a clean boot logs nothing').toEqual([]);

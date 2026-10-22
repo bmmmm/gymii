@@ -68,7 +68,9 @@ exist because breaking them was once a real bug.
 - `js/sync.js` + `js/merge.js` — cross-device sync (E2E, or explicit plain
   mode without a secure context); frozen public
   API; `docs/sync-protocol.md` is the wire contract.
-- `js/app.js` — hash-router; `#gym` is deliberately NOT in the tabbar.
+- `js/app.js` — hash-router; `#gym` is deliberately NOT in the tabbar,
+  nor is `#tour` (`js/tour.js`, the guided tour — once on a device's first
+  start, again from Settings → Help).
 - `js/map.js` — shared floor-map renderer (imports only `esc` and the
   placement geometry of `js/geometry.js` — `freeSpot`, `overlapsSolid`,
   `WALL_SNAPPED` are re-exported; every id

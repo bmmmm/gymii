@@ -232,7 +232,13 @@ export function renderGym(root) {
       <button id="find-go" class="btn btn-inline">Find</button>
     </div>
     <p class="muted" id="find-err"></p>
-    <div class="floor-wrap"><svg id="floor" class="floor" xmlns="http://www.w3.org/2000/svg"></svg></div>
+    <div class="floor-wrap"><svg id="floor" class="floor" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="floor-empty" id="floor-empty" hidden>
+        <p>An empty floor. Add the machines you use with <strong>+ Machine</strong>,
+          or start from a ready-made gym — zones, walls and the rest are optional.</p>
+        <button type="button" id="floor-empty-tpl" class="btn btn-inline">Load a ready-made gym</button>
+      </div>
+    </div>
     <div class="map-mode" id="map-mode">
       <button type="button" class="chip" data-mode="custom">Colors</button>
       <button type="button" class="chip" data-mode="usage">Usage</button>
@@ -250,10 +256,25 @@ export function renderGym(root) {
   let usageMode = getSettings().mapColors === 'usage';
   let usageCache = null;
   const usageOn = () => usageMode;
-  const redraw = () => drawLayout(svg, layout, {
-    selectedId, editor: true, selectedVertex,
-    usage: usageMode ? (usageCache ??= usagePayload(usageByMachine())) : null,
-    highlightId: findHighlightId, unlockedId,
+  // An empty floor explains itself ON the floor: an overlay, so it comes
+  // and goes with the first item (and with an undo back to nothing)
+  // without moving the toolbar the thumb just used.
+  const floorEmpty = root.querySelector('#floor-empty');
+  const redraw = () => {
+    floorEmpty.hidden = !!(layout.machines.length || layout.shapes?.length);
+    drawLayout(svg, layout, {
+      selectedId, editor: true, selectedVertex,
+      usage: usageMode ? (usageCache ??= usagePayload(usageByMachine())) : null,
+      highlightId: findHighlightId, unlockedId,
+    });
+  };
+  // the Templates card sits below the map in the Layout view — which is
+  // what shows while nothing is selected, and on an empty floor nothing is
+  root.querySelector('#floor-empty-tpl').addEventListener('click', () => {
+    const load = props.querySelector('#load-template');
+    if (!load) return;
+    load.click();
+    load.closest('.card').scrollIntoView({ block: 'start' });
   });
   // Touch targets are sized from the SVG's on-screen width, so re-render
   // on resize/orientation change. Observing the element (not window)

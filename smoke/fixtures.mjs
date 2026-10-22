@@ -12,13 +12,16 @@ export const ROUTES = ['train', 'gym', 'history', 'ai', 'settings'];
  * three plans — and reboots the app on it.
  */
 export async function seedDemoGym(page) {
-  await page.goto('/#train');
+  // Not #train: on an empty install that redirects to the tour (app.js),
+  // and a reload would boot back into #tour.
+  await page.goto('/#settings');
   await page.evaluate(async () => {
     localStorage.clear();
     const { loadDemoData } = await import('/js/demo.js');
     loadDemoData();
   });
   // A hash change does NOT reload; the app has to boot on the seeded data.
+  await page.goto('/#train');
   await page.reload();
 }
 

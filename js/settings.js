@@ -419,6 +419,13 @@ function renderSettingsView(root) {
     </section>
 
     <section class="card">
+      <h2>Help</h2>
+      <a class="btn" href="#tour" id="tour-again">Take the tour again</a>
+      <p class="muted">A one-minute walk through training, plans, the gym map,
+        History and sync.</p>
+    </section>
+
+    <section class="card">
       <h2>Gym</h2>
       <a class="btn" href="#gym">Open the gym</a>
       <p class="muted">Draw the floor plan, number the machines and edit their
