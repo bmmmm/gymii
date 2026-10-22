@@ -3006,7 +3006,7 @@ const withPicker = (fn) => {
     { id: 'h3', startedAt: Date.now() - 864e5, entries: [e('ro', 'V-bar', 40), e('as', null, 15)] },
   ];
   store.saveWorkouts(hist);
-  const { lastEntryIn, lastGripIn } = await import(new URL('../js/train.js', import.meta.url).href);
+  const { lastEntryIn, lastGripIn } = store;
   const ws = store.getWorkouts();
   for (const [ex, grip, anyGrip] of [[null, null, false], [null, null, true], [null, 'Rope', false], [null, 'Rope', true],
     [null, 'Gone', true], ['Nope', null, true]]) {

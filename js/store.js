@@ -672,8 +672,13 @@ export function updateWorkout(patch) {
 // grips were all cleared still has its gripped history — with no gripless
 // entry, the newest entry of (machine, exercise) under any grip seeds it.
 export function lastEntryFor(machineId, exercise = null, grip = null, { anyGrip = false } = {}) {
+  return lastEntryIn(getWorkouts(), machineId, exercise, grip, { anyGrip });
+}
+
+// lastEntryFor over a list the caller already read — the log screen parses
+// the history once per render instead of once per lookup.
+export function lastEntryIn(workouts, machineId, exercise = null, grip = null, { anyGrip = false } = {}) {
   const sel = { machineId, exercise, grip };
-  const workouts = getWorkouts();
   for (let i = workouts.length - 1; i >= 0; i--) {
     const entry = workouts[i].entries.find((e) => sameSeries(e, sel) && e.sets.length);
     if (entry) return entry;
@@ -695,7 +700,10 @@ function newestAnyGrip(workouts, machineId, exercise) {
 // The grip last trained at (machine, exercise), whatever it was — the log
 // screen's default when no plan slot names one. null when none was.
 export function lastGripFor(machineId, exercise = null) {
-  return newestAnyGrip(getWorkouts(), machineId, exercise)?.grip ?? null;
+  return lastGripIn(getWorkouts(), machineId, exercise);
+}
+export function lastGripIn(workouts, machineId, exercise = null) {
+  return newestAnyGrip(workouts, machineId, exercise)?.grip ?? null;
 }
 
 // --- assisted machines (counterweight: less assist = stronger) ---
@@ -1303,9 +1311,11 @@ export function usageByMuscle(workouts, layout) {
 
 // The workouts that touched `muscle` — WHOLE workouts on purpose: history
 // edits a full workout, so narrowing entries would let Save silently drop
-// the machines that didn't match.
+// the machines that didn't match. Resistance machines only, like
+// usageByMuscle — the row's filter must not find what the row didn't count.
 export function workoutsWithMuscle(workouts, layout, muscle) {
-  const muscles = muscleIndex(layout);
+  const cardio = new Set((layout?.machines ?? []).filter((m) => m.cardio).map((m) => m.id));
+  const muscles = new Map([...muscleIndex(layout)].filter(([id]) => !cardio.has(id)));
   return workouts.filter((w) => w.entries.some((e) => {
     const m = muscles.get(e.machineId);
     return m && (m.primary.includes(muscle) || m.secondary.includes(muscle));

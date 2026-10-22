@@ -720,8 +720,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   would squeeze the text — the rest overlay the rest hint, a plan row "· reorder?" when its
   builder has a route hint (`planListCard`). `renderLog` reads the history
   ONCE per render and hands that list down — the prefill and grip default
-  (`lastEntryIn`/`lastGripIn`: store's `lastEntryFor`/`lastGripFor` walks
-  over a list already read, pinned against them in the tests), the hints,
+  (store's `lastEntryIn`/`lastGripIn` — the walks behind `lastEntryFor`/
+  `lastGripFor`, over a list already read), the hints,
   the assist goal, `finishedToday` and `suggestNext`; a test counts the
   storage reads. `active.plan` is a list of slots
   `{machineId, exercise|null, grip?, target?}` (null = whole machine; no
@@ -1200,6 +1200,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   self-clear and the past-log reset). Muscles resolve against the LIVE gym
   — entries don't snapshot them — and a set on a two-muscle machine counts
   fully for both (usage is attribution; only naming votes split 1/n).
+  Both count RESISTANCE machines only — a tagged treadmill neither fills a
+  row nor turns up under its filter.
   Resistance machines only, like the hints (stats.js `resistanceMuscles`):
   a treadmill tagged Calves is no calf set, so the card never contradicts
   the hint under its row, and the "can't be attributed" note leaves cardio

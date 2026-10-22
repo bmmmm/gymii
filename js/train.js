@@ -4,7 +4,7 @@ import {
   usageByMachine, layoutMuscles, distUnit, newLayout, addMachine, nextNum,
   ensureMachine, addMachineVariant, bindItemTo, machineTrainedWhole, newEntry, nameChipsFor, todayStatus, skipPlanDay, machineBrand,
   newestStampedSet, setAssistGoal, COMMON_GRIPS,
-  switchMachine, rateLastSet, usageByMuscle, MUSCLE_GROUPS, setGoalFor, setTargetSets,
+  switchMachine, rateLastSet, usageByMuscle, MUSCLE_GROUPS, setGoalFor, setTargetSets, lastEntryIn, lastGripIn,
 } from './store.js';
 import { drawLayout, usagePayload, findMachineByNum } from './map.js';
 import { ambientWorkoutStart, ambientFinished } from './sync.js';
@@ -1603,28 +1603,6 @@ const setWords = (st, type, s) => (type === 'cardio'
       : `${st.weight} ${s.unit} × ${st.reps}`);
 
 // --- logging screen ---
-
-// store's lastEntryFor / lastGripFor over a list already read — the log
-// screen parses the history once per render (store.js reads storage on
-// every call). Same walk, same matches; test/train.test.mjs pins both
-// pairs against each other.
-const newestEntry = (workouts, match) => {
-  for (let i = workouts.length - 1; i >= 0; i--) {
-    const entry = workouts[i].entries.find((e) => match(e) && e.sets.length);
-    if (entry) return entry;
-  }
-  return null;
-};
-const anyGripOf = (machineId, exercise) => (e) => e.machineId === machineId
-  && (e.exercise ?? null) === (exercise ?? null);
-export function lastEntryIn(workouts, machineId, exercise = null, grip = null, { anyGrip = false } = {}) {
-  const sel = { machineId, exercise, grip };
-  return newestEntry(workouts, (e) => sameSeries(e, sel))
-    ?? (anyGrip && grip == null ? newestEntry(workouts, anyGripOf(machineId, exercise)) : null);
-}
-export function lastGripIn(workouts, machineId, exercise = null) {
-  return newestEntry(workouts, anyGripOf(machineId, exercise))?.grip ?? null;
-}
 
 // Resolves which entry the logging screen edits. At multi-exercise
 // machines (free weights) each exercise gets its own entry; until one is
