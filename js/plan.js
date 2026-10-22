@@ -27,7 +27,8 @@ const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frida
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
 // Seeds a fresh item's target from the last workout on that machine so a
-// new plan starts from reality, not from zero. Cross-type history (the
+// new plan starts from reality, not from zero (a cardio line takes the
+// last set's level too). Cross-type history (the
 // machine's type flag changed since) is ignored, like renderLog does.
 // machine null = an unbound item: no history to seed from, so the target
 // falls back to the plain strength default (cardio unbound items keep the
@@ -42,6 +43,9 @@ function targetDefaults(machine, exercise, grip, s) {
     return {
       distance: st?.distance ?? (s.unit === 'kg' ? 1000 : 0.5),
       seconds: st?.seconds ?? 600,
+      // the level rides along like the log stepper's chain: a whole step
+      // from 1 up, absent when the last set named none
+      ...(Number.isInteger(st?.level) && st.level >= 1 ? { level: st.level } : {}),
     };
   }
   return {

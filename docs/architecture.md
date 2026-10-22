@@ -396,7 +396,14 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   bumps a per-gym edit generation (module state, per tab), runSync reports
   the generation its payload was reconciled at, and syncNow compares —
   an edit made during the PUT's await kept the flag lowered over it
-  before, and the follow-up run's 304 then never pushed it. The 304 check
+  before, and the follow-up run's 304 then never pushed it. ANOTHER TAB's
+  edit moves the counter too, through the window `storage` event (fired
+  in every other tab on a localStorage write — no extra write per edit):
+  a `layout`/`workouts`/`plans`/`tombstones` key bumps its own gym,
+  `gymii.settings`/`gymii.gyms` the active one, like the notifier; the
+  bookkeeping keys (`sync`, `synckey`, the pending-deletes queue) and
+  `active` (its writer does not notify) never count, or syncNow's own
+  records would read as edits (test-pinned, sync block 22). The 304 check
   reads the flag fresh, not from the config the run started with.
   syncNow's bookkeeping writes (`rev`, `lastError`, …) never throw: a
   refused one is the store's banner, the caller still gets `{status}`.
@@ -1101,7 +1108,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   Back), because a tab switch re-renders the Train tab from scratch: a
   fresh deep copy per render lost every edit. The name field writes the
   draft on `input` for the same reason. Target steppers and the bind
-  number read through `fieldValue()`.
+  number read through `fieldValue()`. A new line seeds its target from the
+  last logged set there (`targetDefaults`) — a cardio line its distance,
+  time AND `level` (absent when that set named none); the list view has
+  no level stepper, the Text view shows and edits it.
 - `js/history.js` — two screens in one module, switched by module state like
   train.js (no hash sub-routes; `#history` stays one route). The OVERVIEW is
   what a glance needs: This week (tiles, a bar chart of the last 12 weeks,

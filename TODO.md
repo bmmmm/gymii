@@ -27,8 +27,6 @@ count resistance machines only, like the hints.
 - The four long render closures (`renderGym` ~1450 lines, `renderLog`,
   `renderSettingsView`, `renderPlanBuilder`) — splitting them is a refactor
   of its own, best done when a module is touched anyway.
-- The sync edit counter is per tab: an edit in a second tab during this
-  tab's push is caught only by the next edit.
 
 Shipped 2026-10-21 (`2026-10-21`), orchestrated (a foundation commit, then
 four agents in parallel worktrees — icons, set goals + Next, muscle bars,
@@ -55,8 +53,6 @@ element of a cardio set in the AI export). Also: the picker's 🎲 chip is a
 
 - "Busy?" and "Closer:" still consider a free slot with no set (only
   `nextOpenSlot` skips it).
-- A new builder line does not inherit the last set's cardio `level`
-  (`targetDefaults`); the Text view sets it.
 - The 14-row "Muscles today" card is long on a gym that tags every muscle;
   trained-first ordering or folding the open rows is a user call.
 

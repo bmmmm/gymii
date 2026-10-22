@@ -35,7 +35,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   conformance over a stubbed fetch, WebCrypto roundtrip, sync-code parsing,
   wire unit conversion, synckey-never-in-backup, plain mode, and the M2
   ambient matrix — coalescing, suppression, dirty/304, offline replay,
-  queued deletes, tab lock, throttle — plus M3 devices/discovery: fresh
+  queued deletes, tab lock, throttle, another tab's edit mid-push via a
+  stub `window` storage event — plus M3 devices/discovery: fresh
   pairing tokens, revoke→401, last-token, adopt plain/with-pass/wrong-pass),
   `settings` (the Sync
   card's states over the stub DOM), `qr` (the encoder: pinned reference

@@ -1095,6 +1095,32 @@ assert.deepEqual(plantext.parsePlanLine('Leg press 3x8 – 12 80', s).target, { 
   store.saveWorkouts([]);
 }
 
+// --- a new cardio line takes the last set's level, like its distance and time ---
+{
+  const g = store.newLayout('Level builder gym');
+  g.machines.push({ id: 'lr', num: 4, label: 'Rower', x: 0, y: 0, w: 4, h: 3, settingsFields: [], cardio: true });
+  g.machines.push({ id: 'lb', num: 5, label: 'Bike', x: 6, y: 0, w: 4, h: 3, settingsFields: [], cardio: true });
+  store.saveLayout(g);
+  store.saveWorkouts([{ id: 'lw', startedAt: 1000, entries: [
+    { machineId: 'lr', num: 4, label: 'Rower', cardio: true, settings: {},
+      sets: [{ distance: 1000, seconds: 300, level: 3 }, { distance: 2500, seconds: 720, level: 6 }] },
+    { machineId: 'lb', num: 5, label: 'Bike', cardio: true, settings: {}, sets: [{ distance: 5000, seconds: 900 }] },
+  ] }]);
+  const opts = { seed: [] };
+  byId.clear();
+  byId.set('#plan-text', null);
+  renderPlanBuilder(root, opts, () => {});
+  root.querySelector('#machine-chips').listeners.click(fakeClick({ dataset: { id: 'lr' } }));
+  root.querySelector('#machine-chips').listeners.click(fakeClick({ dataset: { id: 'lb' } }));
+  const [rower, bike] = opts.draftState.draft.items;
+  assert.deepEqual(rower.target, { distance: 2500, seconds: 720, level: 6 },
+    "a new cardio line takes the LAST set's level along with its distance and time");
+  assert.deepEqual(bike.target, { distance: 5000, seconds: 900 }, 'a last set without a level adds none');
+  assert.equal(plantext.planToText(opts.draftState.draft.items, store.getLayout(), store.getSettings()),
+    '#4 Rower 2500m 12min L6\n#5 Bike 5000m 15min','and the Text view says it');
+  store.saveWorkouts([]);
+}
+
 // --- the machine icon after a builder row's badge; an unbound line has none to show ---
 {
   const g = store.newLayout('Icon builder gym');
