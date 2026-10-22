@@ -6,14 +6,14 @@
 // Pinned to a DST-observing zone: week starts and the busy rule's
 // time-of-day only show DAY_MS-style drift where transitions exist (CI runs
 // UTC). Static imports are hoisted above this line; that stays correct
-// because the helper never looks at the clock and both modules under test
-// arrive by dynamic import from the body, after the zone is set.
+// because node:assert never looks at the clock and both modules under test
+// arrive by dynamic import from the body, after the zone is set. No
+// localStorage stub: stats.js and weekday.js (the DST pin's reference) are
+// both storage-free — the store.js import that once needed it was unused.
 process.env.TZ = 'Europe/Berlin';
 
-import './helpers/localstorage.mjs'; // FIRST: store.js (the DST pin) needs the stub
 import { strict as assert } from 'node:assert';
 
-const store = await import(new URL('../app/js/store.js', import.meta.url).href);
 const weekday = await import(new URL('../app/js/weekday.js', import.meta.url).href);
 const stats = await import(new URL('../app/js/stats.js', import.meta.url).href);
 
@@ -358,7 +358,7 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
 
 // 4 muscle-volume — ≥ 4 weeks, ≥ 4 muscles, lowest 4-week mean < half the median
 {
-  const vol = (calves, { layout = L4, first = 30 } = {}) => [first, 23, 16, 9].map((n, i) => W(day(n), [
+  const vol = (calves, { first = 30 } = {}) => [first, 23, 16, 9].map((n, i) => W(day(n), [
     E('va', sets(8)), E('vb', sets(8)), E('vc', sets(8)), E('vd', sets(calves[i])),
     E('vt', Array.from({ length: 10 }, () => C(1000, 300))),
   ]));
@@ -373,7 +373,7 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   assert.equal(find(vol([4, 4, 4, 4]), 'muscle-volume', { layout: L4 }), undefined,
     'muscle-volume: exactly half the median is not below it');
   const L3 = { ...L4, machines: L4.machines.filter((m) => m.id !== 'vb') };
-  assert.equal(find(vol([4, 4, 4, 3], { layout: L3 }), 'muscle-volume', { layout: L3 }), undefined,
+  assert.equal(find(vol([4, 4, 4, 3]), 'muscle-volume', { layout: L3 }), undefined,
     'muscle-volume: three muscles are too few to compare');
   assert.ok(find(vol([4, 4, 4, 3], { first: 28 }), 'muscle-volume', { layout: L4 }), 'muscle-volume: 28 days is enough');
   assert.equal(find(vol([4, 4, 4, 3], { first: 27 }), 'muscle-volume', { layout: L4 }), undefined,

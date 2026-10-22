@@ -82,7 +82,7 @@ test('the last field on a long screen still reaches the middle', async ({ page }
   await seedDemoGym(page);
   await page.goto('/#settings');
   const field = page.locator('#gym-new-name');
-  await field.evaluate((el) => {
+  await field.evaluate(() => {
     const view = document.getElementById('view');
     view.scrollTop = view.scrollHeight; // parked at the bottom, behind any keyboard
   });

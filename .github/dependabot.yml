@@ -1,5 +1,6 @@
-# Two ecosystems. The app that ships still has no dependencies; the browser
-# smoke suite has one, and `npm` is the ecosystem that reads pnpm lockfiles.
+# Two ecosystems. The app that ships still has no dependencies; the test
+# tooling has two (Playwright for the smoke suite, Biome for lint), and
+# `npm` is the ecosystem that reads pnpm lockfiles.
 #
 # A Dependabot PR does NOT know minimumReleaseAge, and --frozen-lockfile does
 # not re-check it — so these are adopted locally (`pnpm add -D <pkg>@latest`,

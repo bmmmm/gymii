@@ -698,7 +698,7 @@ assert.ok(hint('Aim for 2 strength days').includes(
   'href="https://pmc.ncbi.nlm.nih.gov/articles/PMC7719906/" target="_blank" rel="noopener" aria-label="Source: WHO 2020 guidelines"'),
   'the ↗ opens the study, named for screen readers');
 const quadsRow = root.innerHTML.slice(root.innerHTML.indexOf('data-muscle="Quads"'));
-assert.match(quadsRow, /^[^]*?<\/button><p class="hint muscle-hint"><span>Train it this week — last trained 21 days ago\.<\/span><a /,
+assert.match(quadsRow, /^[\s\S]*?<\/button><p class="hint muscle-hint"><span>Train it this week — last trained 21 days ago\.<\/span><a /,
   'the muscle hint follows its row as a sibling — a link inside a button is no link');
 assert.ok(!hint('Target beaten twice') && !hint('Usually busy'),
   'progress and busy belong to the log screen, not to History');
@@ -1095,7 +1095,7 @@ mem.set(layoutKey, savedLayout);
     const after = [];
     const { focused } = tapFocused(boxId, dataset, fire, {
       gone: { before, at, box: () => ({ querySelectorAll: () => { after.length = 0;
-        buttonsOf(afterHtml()).forEach((b, i) => after.push({ focus: () => { landed = textOf(b); } })); return after; } }) },
+        buttonsOf(afterHtml()).forEach((b) => after.push({ focus: () => { landed = textOf(b); } })); return after; } }) },
     });
     return { at: landed, focused };
   };

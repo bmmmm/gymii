@@ -10,7 +10,8 @@ fresh clone, to CI and to cloud agents.
 
 `.github/workflows/ci.yml` runs all logic tests (`test/*.test.mjs`), parses
 every shipped script, cross-checks the `app/sw.js` SHELL list against
-`git ls-files` and drives the browser smoke suite (`smoke/*.spec.mjs`,
+`git ls-files`, lints with Biome (`biome ci`, lint only) and drives the
+browser smoke suite (`smoke/*.spec.mjs`,
 Chromium only), then deploys `app/` to Pages
 (<https://bmmmm.github.io/gymii/>) once they pass on main. Only `app/` is
 published: until 2026-10-23 the deploy uploaded the repo root, and the live
@@ -18,7 +19,7 @@ site served AGENTS.md, TODO.md, every test and `serve.py` next to the app.
 `security.yml` (gitleaks + forbidden files + token grep) and `shellcheck.yml`
 (only on `scripts/**`) round out the checkers.
 
-The `smoke` job is the only one that installs anything. Two tripwires keep
+The `lint` and `smoke` jobs are the only ones that install anything. Two tripwires keep
 the app that ships dependency-free: `static-checks` refuses a file in
 `app/` that mentions `node_modules`, and `deploy` refuses to run at all if
 `app/` carries an install or a `package.json` — it uploads `path: app` with

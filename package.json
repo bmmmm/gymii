@@ -9,10 +9,12 @@
   "scripts": {
     "preinstall": "node -e \"const ua=process.env.npm_config_user_agent||'';if(!ua.startsWith('pnpm/')){console.error('\\n  gymii is pnpm-only (supply-chain policy). Use: pnpm install - npm/yarn are blocked.\\n');process.exit(1)}\"",
     "test": "node --test --test-reporter=spec 'test/*.test.mjs'",
+    "lint": "biome lint",
     "smoke": "playwright test",
     "smoke:ui": "playwright test --ui"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
     "@playwright/test": "^1.64.1"
   }
 }

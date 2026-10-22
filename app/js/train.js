@@ -840,7 +840,7 @@ export function surpriseMachine(layout, active = null, { rand = Math.random, ear
     r -= weights[i];
     if (r < 0 && weights[i] > 0) return candidates[i];
   }
-  return candidates.findLast((m, i) => weights[i] > 0);
+  return candidates.findLast((_m, i) => weights[i] > 0);
 }
 
 // Number input, muscle filter and a tappable mini-map; calls

@@ -1920,7 +1920,8 @@ const withPicker = (fn) => {
   assert.equal(store.getActive().currentGrip, 'Rope', 'and it is the grip on screen at once');
   assert.equal(selected(), 'Rope', 'its chip shows selected');
   assert.ok(!root.innerHTML.includes('id="grip-new"'), 'the picker closes after the pick');
-  assert.ok(!/id="grip-new"[\s\S]*data-grip="Rope"/.test((byId.get('#grip-add').listeners.click(), root.innerHTML)),
+  byId.get('#grip-add').listeners.click();
+  assert.ok(!/id="grip-new"[\s\S]*data-grip="Rope"/.test(root.innerHTML),
     'a grip the machine knows is not offered again');
   byId.get('#grip-custom').value = ' Wide  [bar] ';
   byId.get('#grip-custom-add').listeners.click();

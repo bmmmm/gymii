@@ -65,8 +65,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   charts' markup and the tap/scrub/keyboard selection over a stub container
   — chart.js imports nothing, so NO localStorage stub), `stats` (the pure
   History analytics: weekly buckets, series, route, every insight rule at
-  its threshold and one step short; it imports the localStorage stub FIRST
-  only because its DST pin compares its `startOfDay` copy with store.js's),
+  its threshold and one step short; its DST pin compares its `startOfDay`
+  copy with weekday.js's — both storage-free, so NO localStorage stub),
   `ui` (the shared
   helpers, `keepFocus`'s positional stand-in, incl. the four DOM-facing ones over hand-made stubs — the file
   runs under Pacific/Auckland, where local-vs-UTC actually differs),
@@ -168,11 +168,22 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   install was saved only by the missing TTY (2026-10-01,
   `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`). Call the script's own
   command instead: `node_modules/.bin/playwright test -c <worktree>/playwright.config.mjs`.
-- Dependabot watches the one dependency. A bot PR does NOT know
-  `minimumReleaseAge` and `--frozen-lockfile` does not re-check it, so the
-  existing repo rule (adopt locally, never merge in the UI) carries real
-  weight here: adopt via `pnpm add -D @playwright/test@latest`, which does
-  respect the cooldown.
+- Dependabot watches the two dev dependencies (Playwright, Biome). A bot
+  PR does NOT know `minimumReleaseAge` and `--frozen-lockfile` does not
+  re-check it, so the existing repo rule (adopt locally, never merge in the
+  UI) carries real weight here: adopt via `pnpm add -D <pkg>@latest`, which
+  does respect the cooldown (on 2026-10-23 it picked Biome 2.5.15 over the
+  two-day-old 2.6.x).
+- Lint: `pnpm run lint` — Biome, LINT ONLY (`biome.jsonc`: the formatter
+  is off, so there was no reformat commit and blame is intact). The
+  recommended preset is on; each rule turned off carries its reason in the
+  config, and all of them flag a deliberate idiom (`forEach((x) =>
+  set.add(x))`, `(cache ??= build())`, the stylesheet's cascade order),
+  never a defect. What stays on found real dead code when it came in: an
+  unused store.js import in the stats suite, a `vol()` option no case read,
+  unused destructured bindings. A deliberately unused parameter takes a
+  `_` prefix (`(_r, c) => c % 3 === 0`). CI's `lint` job runs `biome ci`
+  and gates the deploy.
 - Touch targets are 44px, as real boxes (`min-height`/`min-width`), never
   as an invisible pseudo-element. Two documented exceptions, both commented
   in the stylesheet: `.hm-cell` (seven columns of a week don't fit 44px at

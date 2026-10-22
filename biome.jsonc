@@ -1,0 +1,63 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  // Lint only. The formatter stays off on purpose: no reformat commit, git
+  // blame stays intact, and the code keeps the hand-set shape it has.
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    // icon.svg is the source the PNG icons are drawn from, not markup a
+    // browser ever renders inline
+    "includes": ["**", "!app/icons"]
+  },
+  "formatter": { "enabled": false },
+  "assist": { "enabled": false },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      // Every rule below is OFF for a reason this codebase states, not for
+      // convenience: each flags a deliberate idiom, never a defect (all sites
+      // were read when Biome came in, 2026-10-23). A rule that finds real
+      // mistakes — unused variables and parameters, shadowed globals, empty
+      // regex classes — stays on.
+      "suspicious": {
+        // `xs.forEach((x) => set.add(x))`: an expression-bodied arrow whose
+        // value nobody reads is the house style (69 sites)
+        "useIterableCallbackReturn": "off",
+        // `(cache ??= build())` is the memo idiom, used on purpose
+        "noAssignInExpressions": "off"
+      },
+      "complexity": {
+        // `a && a.b` and `?.` are both fine; switching is style, and in app/
+        // it would be a shipped change for nothing
+        "useOptionalChain": "off",
+        // `[hidden]` and prefers-reduced-motion MUST win over every rule
+        "noImportantStyles": "off",
+        // tests group their cases in bare blocks for readability
+        "noUselessLoneBlockStatements": "off",
+        // `walls.flatMap(([a, b]) => [a, b])` takes the first two of each,
+        // which is not `.flat()` — a false positive
+        "noFlatMapIdentity": "off"
+      },
+      "style": {
+        // string concatenation vs template literal is taste
+        "useTemplate": "off",
+        // the stylesheet is ordered by component, and the cascade there is
+        // read top to bottom on purpose
+        "noDescendingSpecificity": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      // The one classic script (first-paint theme, see its header): written
+      // in classic-script shape — an IIFE, `var`, `catch (e)` — and kept so.
+      "includes": ["app/js/theme-boot.js"],
+      "linter": {
+        "rules": {
+          "correctness": { "noInnerDeclarations": "off", "noUnusedVariables": "off" },
+          "complexity": { "useArrowFunction": "off" }
+        }
+      }
+    }
+  ]
+}

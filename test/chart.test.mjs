@@ -129,7 +129,7 @@ assert.deepEqual(picked, [['b', 1]], 'onSelect indexes the caller\'s array, not 
 // --- interaction: tap, scrub, keyboard ---
 
 c = box();
-let calls = [];
+const calls = [];
 let captured = null;
 c.setPointerCapture = (id) => { captured = id; };
 lineChart(c, pts, { unit: 'kg', selectedT: pts[0].t, onSelect: (p, i) => calls.push([p, i]) });
@@ -205,7 +205,7 @@ for (const over of [{ getBoundingClientRect: undefined }, { getBoundingClientRec
 
 const weeks = Array.from({ length: 12 }, (_, i) => ({ key: `w${i}`, label: `${i + 1} Sep`, v: i === 4 ? 0 : 3 + i }));
 c = box();
-let barCalls = [];
+const barCalls = [];
 barChart(c, weeks, { unit: 'sets', onSelect: (b, i) => barCalls.push([b, i]) });
 assert.equal(count(c.innerHTML, /<rect class="c-bar/g), 12, 'one bar per week');
 assert.equal(count(c.innerHTML, /class="c-bar sel/g), 1, 'exactly one selected bar');

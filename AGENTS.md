@@ -8,9 +8,9 @@ and `serve.py` serves, so `app/js/store.js` is `js/store.js` in the browser.
 The repo root holds tests, docs and tooling only; none of it is deployed.
 
 **The app that ships stays dependency-free — nothing from `node_modules`
-ever reaches the browser; its test infrastructure is not.** The one
-dependency is `@playwright/test`, for the browser smoke suite in `smoke/`,
-and two CI tripwires keep the line where it is: no file in `app/` may
+ever reaches the browser; its test infrastructure is not.** The dev
+dependencies are `@playwright/test` (browser smoke suite, `smoke/`) and
+`@biomejs/biome` (lint, `biome.jsonc`), and two CI tripwires keep the line where it is: no file in `app/` may
 mention `node_modules`, and the deploy job refuses to run if an install is
 present in `app/`.
 
@@ -30,8 +30,11 @@ it before writing or changing a test.
   docs/testing.md. A new browser spec goes in `smoke/`
   as `*.spec.mjs`, NEVER in `test/`. A spec that flakes twice in a month is
   rewritten or deleted. `grep -rn` needs `--exclude-dir=node_modules`.
-- Dependabot: adopt locally via `pnpm add -D @playwright/test@latest`
-  (respects the cooldown), never merge in the UI.
+- Lint: `pnpm run lint` (Biome, lint only — no formatter). A rule turned
+  off in `biome.jsonc` carries its reason there; fix findings, don't
+  silence them. Prefix a deliberately unused parameter with `_`.
+- Dependabot: adopt locally via `pnpm add -D <pkg>@latest` (respects the
+  cooldown), never merge in the UI.
 - Touch targets are 44px as real boxes (documented exceptions `.hm-cell`,
   `.linkish`); anything focusable and text-shaped stays ≥16px — split a
   `font:` shorthand, it silently beats that rule.
@@ -148,8 +151,8 @@ both remotes, never merge in the GitHub UI.
 
 CI runs the logic tests, parses every shipped script (`static-checks` — the
 one job that would catch a typo in app/js/app.js, since nothing else loads the
-files) plus an `app/sw.js` SHELL cross-check and the `smoke` suite — all four
-gate the deploy — and deploys Pages from main; every asset reference must stay RELATIVE (project subpath).
+files) plus an `app/sw.js` SHELL cross-check, Biome `lint` and the `smoke`
+suite — all five gate the deploy — and deploys Pages from main; every asset reference must stay RELATIVE (project subpath).
 DONE = deployed, and a deploy says which build it is: any push to main that
 touches `app/js/`, `app/css/`, `app/index.html` or `app/sw.js` must bump `APP_VERSION` in
 `app/js/version.js` to the deploy date in the SAME push, or `static-checks` goes

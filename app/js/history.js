@@ -476,8 +476,8 @@ const progressCard = {
       const kind = series[series.length - 1].kind;
       const reps = (kind === 'bodyweight' && !series.some((p) => p.top.weight > 0))
         || (kind === 'assisted' && assistViewOf(getSettings()) === 'reps');
-      const valueOf = (p) => (kind === 'cardio' ? p.top.distance : reps ? p.top.reps : p.top.weight);
-      const points = series.map((p) => ({ t: p.t, v: valueOf(p), workoutId: p.workoutId, e1rm: p.e1rm }));
+      const pointValue = (p) => (kind === 'cardio' ? p.top.distance : reps ? p.top.reps : p.top.weight);
+      const points = series.map((p) => ({ t: p.t, v: pointValue(p), workoutId: p.workoutId, e1rm: p.e1rm }));
       const metric = kind === 'cardio' ? `top distance (${distUnit(s)})`
         : kind === 'bodyweight' ? (reps ? 'top reps' : `top added weight (${unit})`)
           : kind === 'assisted' ? (reps ? 'reps at the least assist' : `assist (${unit}) — lower is stronger`)

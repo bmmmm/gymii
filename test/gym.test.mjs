@@ -931,7 +931,7 @@ const openWithSyncedGrip = () => {
 }
 {
   // a mouse: the next tap's pointer is held while the field's change fires
-  const { root, props, label } = openWithSyncedGrip();
+  const { props, label } = openWithSyncedGrip();
   cardEvent(props, 'pointerdown');
   label.value = 'Cable tower';
   last(label, 'change')();
@@ -945,7 +945,7 @@ const openWithSyncedGrip = () => {
 }
 {
   // a handler that re-renders anyway satisfies the pending refresh
-  const { root, props, label } = openWithSyncedGrip();
+  const { props, label } = openWithSyncedGrip();
   cardEvent(props, 'pointerdown');
   label.value = 'Cable tower';
   last(label, 'change')();
