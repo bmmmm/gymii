@@ -121,6 +121,36 @@ store.importData(backup({ workouts: [workoutOf()] }));
   assert.equal('grip' in odd, false, 'a grip that is no string is dropped, the entry kept');
   assert.equal(rope.grip, 'Rope', 'a string grip stays');
 }
+// the moments: a startedAt that is no number refuses the file (sync drops
+// the one record); finishedAt, stamps and a set's at/rir are repaired
+[['missing', undefined], ['markup', X], ['object', {}], ['NaN', NaN]].forEach(([what, v]) => {
+  const w = workoutOf();
+  w.id = 'w-start';
+  w.startedAt = v;
+  assert.equal(store.cleanWorkout(w), null, `startedAt ${what}: no record`);
+  assert.throws(() => store.importData(backup({ workouts: [w] })), /Invalid backup/, `startedAt ${what}: refused`);
+});
+{
+  const w = workoutOf();
+  w.id = 'w-text';
+  w.startedAt = '1500';
+  w.finishedAt = X;
+  w.updatedAt = 'soon';
+  w.name = 42;
+  w.locker = { n: 7 };
+  w.entries[0] = {
+    ...w.entries[0], exercise: 7, label: ['Row'], sets: [{ reps: 10, weight: 40, at: X, rir: '2' }],
+  };
+  w.entries.push({ ...workoutOf().entries[0], exercise: 'Curl', label: 'Row' });
+  const c = store.cleanWorkout(w);
+  assert.equal(c.startedAt, 1500, 'a stringified startedAt survives as a number');
+  assert.deepEqual(['finishedAt', 'updatedAt', 'name', 'locker'].filter((k) => k in c), [],
+    'a finishedAt/updatedAt that is no number and a name/locker that is no string are dropped');
+  assert.deepEqual([('exercise' in c.entries[0]), ('label' in c.entries[0])], [false, false],
+    "an entry's exercise and label that are no string are dropped");
+  assert.deepEqual(c.entries[0].sets, [{ reps: 10, weight: 40, rir: 2 }], "a set's at and rir are numbers or nothing");
+  assert.deepEqual([c.entries[1].exercise, c.entries[1].label], ['Curl', 'Row'], 'strings stay');
+}
 {
   const l = layoutOf();
   l.machines[0].grips = ['Rope', 'V-bar'];
@@ -177,10 +207,33 @@ store.importData(backup({ settings: { unit: `kg${X}`, restSeconds: `90${X}`, wei
   assert.equal(s.restSeconds, 90, 'a rest that is no number is refused');
   assert.equal(s.weightStep, 2.5, 'a weight step that is no number is refused');
 }
-store.importData(backup({ settings: { unit: 'lbs', restSeconds: '120' } }));
-assert.equal(store.getSettings().unit, 'lbs', 'lbs is a unit');
-assert.equal(store.getSettings().restSeconds, 120, 'a stringified rest survives as a number');
-store.saveSettings({ ...store.getSettings(), unit: 'kg', restSeconds: 90 });
+// A valid foreign unit is NOT adopted: the unit is global, the data per
+// gym, so flipping it would relabel every other gym's weights unconverted.
+// The device keeps its unit, and the file's records come over into it.
+{
+  const otherGym = store.getGyms().activeId;
+  store.saveWorkouts([{ ...workoutOf(), id: 'w-kept' }]); // 40 kg, stays 40 kg
+  const fileGym = store.createGym('From an lbs device');
+  store.setActiveGym(fileGym);
+  const w = workoutOf();
+  w.entries[0].sets = [{ reps: 10, weight: 88 }, { distance: 1, seconds: 600 }];
+  store.importData(backup({
+    workouts: [w],
+    plans: [{ id: 'p-lbs', name: 'Lbs', items: [{ name: 'Row', target: { sets: 3, reps: 10, weight: 110 } }] }],
+    settings: { unit: 'lbs', restSeconds: '120', weightStep: 5 },
+  }));
+  const s = store.getSettings();
+  assert.equal(s.unit, 'kg', 'a backup in lbs leaves the device in kg');
+  assert.equal(s.restSeconds, 120, 'a stringified rest survives as a number');
+  assert.equal(s.weightStep, 2.5, 'the weight step comes over converted (5 lbs → 2.5 kg)');
+  assert.deepEqual(store.getWorkouts()[0].entries[0].sets, [{ reps: 10, weight: 40 }, { distance: 1609, seconds: 600 }],
+    'its sets are converted into kg and meters');
+  assert.equal(store.getPlans()[0].items[0].target.weight, 50, 'its plan targets too');
+  store.setActiveGym(otherGym);
+  assert.equal(store.getWorkouts()[0].entries[0].sets[0].weight, 40, "another gym's weights are untouched");
+  store.deleteGym(fileGym);
+}
+store.saveSettings({ ...store.getSettings(), unit: 'kg', restSeconds: 90, weightStep: 2.5 });
 
 // --- 1f. AI-pasted workout plans: num is a number or nothing ---
 {

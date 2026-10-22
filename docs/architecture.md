@@ -28,7 +28,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   hex, unit `kg`/`lbs`. Files refuse what they cannot repair (a layout or
   a workout with a bad id: "Invalid gym template" / "Invalid backup"),
   repair numbers (`"40"` → 40, markup → dropped; a plan item's `num`
-  survives `planItemsFrom` only as a whole number from 1 up), drop bad plans as plans
+  survives `planItemsFrom` only as a whole number from 1 up), hold a
+  workout to a finite `startedAt` (no record without one — the list sorts
+  by it) and its text fields (`name`, `locker`, an entry's
+  `label`/`exercise`/`grip`) to strings or nothing — a number there
+  crashed History's `localeCompare` — drop bad plans as plans
   always were; sync drops bad records one by one (`cleanRemote` in
   sync.js) and gives a bad layout frame the local one — or a fresh
   layout's, never none: a gridless layout is not written, and the push
@@ -38,7 +42,12 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   handler that slips through from running. Pinned by test/untrusted.test.mjs and
   sync.test.mjs block 19. Stored
   weights are always in the current display
-  unit — `setUnit()` converts ALL gyms' data in one shot. Set shapes:
+  unit — `setUnit()` converts ALL gyms' data in one shot. The unit is
+  global and the data per gym, so a backup NEVER sets it: importData keeps
+  the device's unit and converts the file's workouts, plan targets and
+  weight step from the file's unit into it. `convertRecords()` is the ONE
+  field-walk — setUnit, that import and sync's wire normalization share
+  it, so a new unit-bearing field is added there once. Set shapes:
   strength `{reps, weight}`, cardio `{distance, seconds}` (distance in the
   display unit, m/mi via `distUnit()`; seconds unit-less), bodyweight
   reuses `{reps, weight}` with weight = ADDED weight, assisted with weight =
@@ -133,8 +142,13 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   read functions keep their contracts. `saveLayout()` is diff-aware (stamps
   changed machines/shapes, tombstones vanished ids, one structural stamp
   for name/grid/meta/outline — the editor's mutate-then-save needs no change);
-  bulk restore goes through `restoreLayout()` verbatim (imports, future sync
-  apply — re-diffing would forge stamps). Because of that diff, A RENDER
+  bulk restore goes through `restoreLayout()` verbatim (a backup, sync
+  apply — re-diffing would forge stamps). A GYM TEMPLATE is not a restore
+  but an edit that replaces the layout: importData hands a copy to
+  `saveLayout()`, so the machines it drops are tombstoned, what it brings
+  is stamped fresh and sync hears of it — restored verbatim, the next merge
+  resurrected the old machines and the remote's older structure won.
+  Because of that diff, A RENDER
   CLOSURE IS A DELETE COMMAND after an ambient pull: a screen's
   render-time layout lacks whatever synced in since (`restoreLayout`
   re-renders nothing), and saving it tombstones those machines on every
@@ -146,7 +160,10 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   chars; legacy 8-char ids stay valid, and ids deliberately carry no
   device marker (they travel into AI exports). Backups are `v: 2`
   (tombstones included, deletes stay dead across restore); v1 files import
-  unchanged. The future sync key (`gymii.<gid>.synckey`) must NEVER enter
+  unchanged. A backup's tombstones MERGE with the local ones (max `at` per
+  id) while every other part overwrites: a local tombstone may not be
+  pushed yet, and replacing the sidecar brought an offline-deleted workout
+  back on the next sync. The future sync key (`gymii.<gid>.synckey`) must NEVER enter
   a backup.
   `suggestWorkoutNames(machineIds, layout)` proposes names from what was
   trained (each machine contributes ONE unit split across its muscles, so
@@ -298,7 +315,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   wanted) and `setUnit` (writes across all gyms and can stop midway; the
   banner makes it visible, a transaction would be a framework).
   `storedBytes()` is the honest occupancy figure: every gymii key across
-  EVERY gym, `key.length + value.length` in UTF-16 units. It exists
+  EVERY gym plus the global ones (`gymii.sync.pendingDeletes` included —
+  and `clearAll()` takes that queue too), `key.length + value.length` in
+  UTF-16 units. It exists
   because `navigator.storage.estimate()` cannot answer it — that API
   covers IndexedDB and the Cache API and leaves Web Storage out of its
   numbers entirely, so it is shown as context beside this count, never
@@ -358,7 +377,16 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   by a module-load `onStoreChange` subscription on any interactive write
   (so manual "Sync now" sees edits too), lowered by a completed sync — a
   304 with the flag down ends the run, which is what keeps idle pulls
-  from re-pushing and bumping the revision forever. reconcile brackets
+  from re-pushing and bumping the revision forever. It comes down ONLY if
+  no edit landed after the pushed state was taken: the same subscription
+  bumps a per-gym edit generation (module state, per tab), runSync reports
+  the generation its payload was reconciled at, and syncNow compares —
+  an edit made during the PUT's await kept the flag lowered over it
+  before, and the follow-up run's 304 then never pushed it. The 304 check
+  reads the flag fresh, not from the config the run started with.
+  syncNow's bookkeeping writes (`rev`, `lastError`, …) never throw: a
+  refused one is the store's banner, the caller still gets `{status}`.
+  reconcile brackets
   its synchronous apply with `applying` so its own bulk writes neither
   re-trigger nor re-dirty. Offline outcomes set `syncPending`
   (`getSyncState().pending`); `deleteGym` queues the blob's DELETE in

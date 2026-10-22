@@ -260,6 +260,24 @@ export function saveTombstones(tombstones) {
     { ...emptyTombstones(), ...tombstones });
 }
 
+// Union by id, the later `at` wins — merge.js's rule, for a backup's
+// tombstones landing on local ones (importData). `incoming` is untrusted:
+// an entry without a safe id and a finite `at` is no tombstone.
+const TOMBSTONE_KINDS = ['workouts', 'plans', 'machines', 'shapes'];
+function mergeTombstones(local, incoming) {
+  const out = { ...emptyTombstones(), ...local };
+  TOMBSTONE_KINDS.forEach((kind) => {
+    const theirs = Array.isArray(incoming?.[kind]) ? incoming[kind] : [];
+    const at = new Map(out[kind].map((t) => [t.id, t.at]));
+    theirs.forEach((t) => {
+      if (!t || !isSafeId(t.id) || !Number.isFinite(t.at)) return;
+      at.set(t.id, Math.max(at.get(t.id) ?? -Infinity, t.at));
+    });
+    out[kind] = [...at].map(([id, a]) => ({ id, at: a }));
+  });
+  return out;
+}
+
 function addTombstone(kind, id, at = Date.now()) {
   const t = getTombstones();
   t[kind] = [...t[kind].filter((x) => x.id !== id), { id, at }];
@@ -661,6 +679,11 @@ export function lastEntryFor(machineId, exercise = null, grip = null, { anyGrip 
     if (entry) return entry;
   }
   if (!anyGrip || grip != null) return null;
+  return newestAnyGrip(workouts, machineId, exercise);
+}
+
+// The newest entry with sets at (machine, exercise), under any grip.
+function newestAnyGrip(workouts, machineId, exercise) {
   for (let i = workouts.length - 1; i >= 0; i--) {
     const entry = workouts[i].entries.find((e) => e.machineId === machineId
       && (e.exercise ?? null) === (exercise ?? null) && e.sets.length);
@@ -672,13 +695,7 @@ export function lastEntryFor(machineId, exercise = null, grip = null, { anyGrip 
 // The grip last trained at (machine, exercise), whatever it was — the log
 // screen's default when no plan slot names one. null when none was.
 export function lastGripFor(machineId, exercise = null) {
-  const workouts = getWorkouts();
-  for (let i = workouts.length - 1; i >= 0; i--) {
-    const entry = workouts[i].entries.find((e) => e.machineId === machineId
-      && (e.exercise ?? null) === (exercise ?? null) && e.sets.length);
-    if (entry) return entry.grip ?? null;
-  }
-  return null;
+  return newestAnyGrip(getWorkouts(), machineId, exercise)?.grip ?? null;
 }
 
 // --- assisted machines (counterweight: less assist = stronger) ---
@@ -1109,30 +1126,41 @@ export const convertDistance = (v, unit) => (unit === 'lbs'
 // gyms' histories, active workouts and plan targets (unit is global,
 // data is per gym) — plus the shared weight step. Seconds are
 // unit-less and untouched.
+//
+// ONE field-walk for everything that stores {weight, distance}, IN PLACE,
+// from the other unit into `unit`: setUnit, a backup written in the other
+// unit (importData) and sync's wire normalization (sync.js) all go through
+// it, so a new unit-bearing field is added here once.
+function convertBout(o, unit) {
+  if (o.weight != null) o.weight = convertWeight(o.weight, unit);
+  if (o.distance != null) o.distance = convertDistance(o.distance, unit);
+}
+const convertSets = (entries, unit) => (entries ?? []).forEach(
+  (e) => (e.sets ?? []).forEach((st) => convertBout(st, unit)));
+export function convertRecords({ workouts = [], plans = [] }, unit) {
+  workouts.forEach((w) => convertSets(w.entries, unit));
+  plans.forEach((pl) => (pl.items ?? []).forEach((it) => it.target && convertBout(it.target, unit)));
+}
+export const convertWeightStep = (step, unit) => Math.max(0.5, convertWeight(step, unit));
+
 export function setUnit(unit) {
   const s = getSettings();
   if (unit === s.unit) return;
-  // one field-walk for everything that stores {weight, distance}
-  const convert = (o) => {
-    if (o.weight != null) o.weight = convertWeight(o.weight, unit);
-    if (o.distance != null) o.distance = convertDistance(o.distance, unit);
-  };
-  const convertSets = (entries) => entries.forEach((e) => e.sets.forEach(convert));
 
   ensureGyms().list.forEach((p) => {
     const workouts = read(scopedKey(p.id, 'workouts'), []);
-    workouts.forEach((w) => convertSets(w.entries));
+    convertRecords({ workouts }, unit);
     write(scopedKey(p.id, 'workouts'), workouts);
 
     const active = read(scopedKey(p.id, 'active'), null);
     if (active) {
-      convertSets(active.entries);
+      convertSets(active.entries, unit);
       // a running workout's slots carry their OWN copy of the plan targets
       // (train.js startWorkoutFrom) — the log screen's header and its
       // first-set prefill read that copy, so skipping it would turn an 80 kg
       // goal into an 80 lbs one the moment the unit is switched mid-workout.
       // Legacy plans are bare machineId strings; they have no target.
-      active.plan?.forEach((slot) => slot?.target && convert(slot.target));
+      active.plan?.forEach((slot) => slot?.target && convertBout(slot.target, unit));
       write(scopedKey(p.id, 'active'), active);
     }
 
@@ -1140,12 +1168,12 @@ export function setUnit(unit) {
     // would silently turn a 80 kg target into an 80 lbs one
     const plans = read(scopedKey(p.id, 'plans'), []);
     if (plans.length) {
-      plans.forEach((pl) => pl.items?.forEach((it) => it.target && convert(it.target)));
+      convertRecords({ plans }, unit);
       write(scopedKey(p.id, 'plans'), plans);
     }
   });
 
-  saveSettings({ ...s, unit, weightStep: Math.max(0.5, convertWeight(s.weightStep, unit)) });
+  saveSettings({ ...s, unit, weightStep: convertWeightStep(s.weightStep, unit) });
 }
 
 // Sorted list of every muscle assigned across the layout's machines — feeds
@@ -1487,13 +1515,25 @@ export function cleanLayout(layout, local = null) {
 
 // A workout or plan whose ids fail is not a record: null. Its numbers are
 // repaired (numFields), never a reason to refuse it.
+// A workout without a finite `startedAt` is no record either: the list is
+// sorted by it (saveWorkouts) and every date on screen is made of it. The
+// other moments (`finishedAt`, the `updatedAt` stamp, a set's `at`, its
+// `rir`) are repaired like any number; the text fields the views sort and
+// compare (name, locker, an entry's label/exercise/grip) are strings or
+// dropped — a number there crashed History's localeCompare.
+const stringsOrDrop = (o, keys) => keys.reduce(stringOrDrop, o);
 export function cleanWorkout(w) {
   if (!w || !isSafeId(w.id) || !Array.isArray(w.entries)) return null;
+  const out = numFields(w, ['startedAt', 'finishedAt', 'updatedAt']);
+  if (!Number.isFinite(out.startedAt)) return null;
   const entries = w.entries.map((e) => (e && (e.machineId == null || isSafeId(e.machineId))
     && Array.isArray(e.sets)
-    ? { ...flagOrDrop(stringOrDrop(numFields(e, ['num']), 'grip'), 'assisted'), sets: e.sets.map((st) => numFields(st, SET_NUMBERS)) }
+    ? {
+      ...flagOrDrop(stringsOrDrop(numFields(e, ['num']), ['grip', 'exercise', 'label']), 'assisted'),
+      sets: e.sets.map((st) => numFields(st, [...SET_NUMBERS, 'at', 'rir'])),
+    }
     : null));
-  return entries.includes(null) ? null : { ...w, entries };
+  return entries.includes(null) ? null : { ...stringsOrDrop(out, ['name', 'locker']), entries };
 }
 
 export function cleanPlan(p) {
@@ -1857,8 +1897,13 @@ export function importData(data) {
   if (!data || data.app !== 'gymii') throw new Error('Not a gymii file');
   if (data.kind === 'gym-template') {
     if (!isValidLayout(data.gym)) throw new Error('Invalid gym template');
-    // bulk restore, not an interactive edit: no re-diffing, no re-stamping
-    restoreLayout(healKinds(data.gym));
+    // A template REPLACES the layout — an edit like any other, so it goes
+    // through saveLayout's diff: fresh stamps for what it brings, tombstones
+    // for the machines and shapes it drops, a change notification. Restored
+    // verbatim it was invisible to sync: the next merge resurrected the old
+    // machines and the remote's older structure won. A copy, because
+    // saveLayout stamps the object it is handed.
+    saveLayout(healKinds(JSON.parse(JSON.stringify(data.gym))));
     return 'gym-template';
   }
   if (data.kind === 'backup') {
@@ -1870,15 +1915,28 @@ export function importData(data) {
     if ((data.gym != null && !isValidLayout(data.gym)) || !workouts || workouts.includes(null)) {
       throw new Error('Invalid backup');
     }
+    const plans = Array.isArray(data.plans) ? data.plans.map(cleanPlan).filter(Boolean) : null;
+    // The unit is global, the data per gym: adopting the file's unit would
+    // relabel every OTHER gym's stored weights without converting them. So
+    // the device keeps its unit and the file's records (and weight step)
+    // are converted into it — the same field-walk setUnit uses. A file
+    // without a valid unit is taken as already speaking the device's.
+    const current = getSettings();
+    const { unit: fileUnit, ...fileSettings } = cleanSettings(data.settings);
+    if (fileUnit && fileUnit !== current.unit) {
+      convertRecords({ workouts, plans: plans ?? [] }, current.unit);
+      if (fileSettings.weightStep != null) {
+        fileSettings.weightStep = convertWeightStep(fileSettings.weightStep, current.unit);
+      }
+    }
     if (data.gym != null) restoreLayout(healKinds(data.gym));
     saveWorkouts(workouts);
-    if (Array.isArray(data.plans)) {
-      savePlans(data.plans.map(cleanPlan).filter(Boolean));
-    }
-    saveSettings({ ...getSettings(), ...cleanSettings(data.settings) });
-    // a v1 file carries none — restoring it clears the slate, same
-    // whole-overwrite semantics as every other part of a backup import
-    saveTombstones(data.tombstones ?? {});
+    if (plans) savePlans(plans);
+    saveSettings({ ...current, ...fileSettings });
+    // Tombstones MERGE (max `at` per id), unlike every other part: the
+    // local ones may not be pushed yet, and dropping one would bring an
+    // offline-deleted record back on the next sync. A v1 file carries none.
+    saveTombstones(mergeTombstones(getTombstones(), data.tombstones));
     return 'backup';
   }
   if (data.kind === 'workout-plan') {
@@ -1888,18 +1946,18 @@ export function importData(data) {
   throw new Error('Unrecognized file kind');
 }
 
-// Full factory reset: every gym's data, the registry, and settings.
 // How much of the ~5 MB localStorage budget gymii itself occupies, in
 // UTF-16 code units — the unit browsers actually charge for. Counted over
 // EVERY gym, not just the active one, because the quota is per origin and
-// an old gym's history weighs exactly as much as today's.
+// an old gym's history weighs exactly as much as today's — and over the
+// global keys too, the queued blob deletes included.
 //
 // navigator.storage.estimate() cannot answer this: it reports IndexedDB and
 // the Cache API, and Web Storage is not in the number at all.
 export function storedBytes() {
   const gyms = read(KEYS.gyms, null);
   const keys = [
-    KEYS.gyms, KEYS.settings,
+    KEYS.gyms, KEYS.settings, PENDING_DELETES_KEY,
     ...(gyms?.list ?? []).flatMap((g) => GYM_PARTS.map((part) => scopedKey(g.id, part))),
   ];
   return keys.reduce((sum, key) => {
@@ -1908,12 +1966,16 @@ export function storedBytes() {
   }, 0);
 }
 
+// Full factory reset: every gym's data, the registry, settings, and the
+// queued blob deletes (they hold server tokens — nothing of an install may
+// outlive its reset).
 export function clearAll() {
   const gyms = read(KEYS.gyms, null);
   gyms?.list.forEach((g) => GYM_PARTS
     .forEach((part) => localStorage.removeItem(scopedKey(g.id, part))));
   // the pre-profile top-level keys keep their historical names — 'gymii.gym'
   // held what is now the layout, and does NOT follow the gym→layout rename
-  [KEYS.gyms, 'gymii.profiles', KEYS.settings, 'gymii.gym', 'gymii.workouts', 'gymii.active']
+  [KEYS.gyms, 'gymii.profiles', KEYS.settings, PENDING_DELETES_KEY,
+    'gymii.gym', 'gymii.workouts', 'gymii.active']
     .forEach((k) => localStorage.removeItem(k));
 }
