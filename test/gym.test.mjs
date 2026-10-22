@@ -1023,4 +1023,142 @@ const openWithSyncedGrip = () => {
   assert.ok(!props.innerHTML.includes('Per exercise:'));
 }
 
+// --- "Use the default (3)": the explicit way back to inheriting the set goal ---
+// An armed number field restores its value on a blur without input, so the
+// field alone could never be emptied again.
+{
+  const { root, props } = gymWithProps([mk('m1', 1, 10, 10), { ...mk('m2', 2, 30, 10), targetSets: 5 }]);
+  const select = (id, x) => {
+    fire(root.floor, 'pointerdown', { ...at(x, 11), target: onItem(id) });
+    fire(root.floor, 'pointerup');
+  };
+  select('m1', 12);
+  assert.ok(/id="m-sets-pinned" hidden>/.test(props.innerHTML), 'nothing pinned: the way back stays hidden');
+  const setsEl = { value: '4' };
+  last(props.querySelector('#m-sets'), 'change')({ target: setsEl });
+  assert.equal(props.querySelector('#m-sets-pinned').hidden, false, 'a pinned goal shows it, in place');
+  last(props.querySelector('#m-sets-default'), 'click')();
+  assert.equal(machineAt('m1').targetSets, undefined, 'one tap inherits again — the key is deleted');
+  assert.equal(props.querySelector('#m-sets').value, '', 'the field reads empty, the default in its placeholder');
+  assert.equal(props.querySelector('#m-sets-pinned').hidden, true, 'and the link folds away');
+  select('m2', 32);
+  assert.ok(/id="m-sets-pinned">Set for this\s+machine\. <button type="button" id="m-sets-default" class="linkish">Use the default\s+\(3\)<\/button>/
+    .test(props.innerHTML), 'a machine rendered with its own goal offers the default by number');
+}
+
+// --- a stepper's label names the INPUT, never wraps the ± (a tap on the text pressed "−") ---
+{
+  const { root, props } = gymWithProps([mk('m1', 1, 10, 10)]);
+  for (const [label, id] of [['Floor width', 'floor-w'], ['Floor height', 'floor-h']]) {
+    assert.ok(props.innerHTML.includes(`<div class="field"><label for="${id}">${label}</label>`),
+      `${label}: a <label for> beside the stepper`);
+    assert.ok(props.innerHTML.includes(`aria-label="Decrease ${label.toLowerCase()}">−</button>`)
+      && props.innerHTML.includes(`aria-label="Increase ${label.toLowerCase()}">+</button>`), `${label}: ± say what they change`);
+  }
+  assert.ok(!/<label class="field"><span>[^<]*<\/span>\s*<div class="stepper"/.test(props.innerHTML),
+    'no label wraps a stepper on the Layout card');
+  fire(root.floor, 'pointerdown', { ...at(11, 11), target: onItem('m1') });
+  fire(root.floor, 'pointerup');
+  assert.ok(props.innerHTML.includes('<div class="field"><label for="m-num">Number</label>')
+    && props.innerHTML.includes('aria-label="Decrease number">−</button>'), 'nor on the machine card');
+}
+
+// --- the floor shrinks only down to what is on it ---
+{
+  const { props } = gymWithProps([mk('m1', 1, 40, 10), { ...mk('m2', 2, 10, 30), h: 4 }]);
+  const msg = props.querySelector('#floor-msg');
+  const changeFloor = (sel, value) => {
+    const el = { value };
+    last(props.querySelector(sel), 'change')({ target: el });
+    return el.value;
+  };
+  assert.equal(changeFloor('#floor-w', '30'), 44, 'a machine reaching x 44 stops the width there');
+  assert.equal(store.getLayout().grid.w, 44);
+  assert.equal(msg.hidden, false, 'and says why');
+  assert.ok(msg.textContent.includes('reach to 44') && msg.textContent.includes('narrower'), msg.textContent);
+  assert.equal(changeFloor('#floor-h', '20'), 34, 'the height stops at the lowest item (30 + 4)');
+  assert.ok(msg.textContent.includes('shorter'));
+  assert.ok(store.getLayout().outline.every((p) => p.x <= 44 && p.y <= 34), 'the outline follows the floor');
+  assert.equal(changeFloor('#floor-w', '80'), 80, 'growing is never refused');
+  assert.equal(msg.hidden, true, 'and clears the hint');
+  // with nothing on it, the floor's own floor (20) applies
+  const empty = gymWithProps([]);
+  const el = { value: '5' };
+  last(empty.props.querySelector('#floor-w'), 'change')({ target: el });
+  assert.equal(el.value, 20, 'an empty floor still keeps its minimum of 20');
+}
+
+// --- the template browser: wired once, the manifest fetched once per open ---
+{
+  const realFetch = globalThis.fetch;
+  const fetched = [];
+  globalThis.fetch = async (url) => {
+    fetched.push(url);
+    if (url === 'templates/index.json') {
+      return { json: async () => ({ templates: [{ name: 'Test gym', file: 'templates/test.json' }] }) };
+    }
+    throw new Error('offline');
+  };
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const { props } = gymWithProps([mk('m1', 1, 10, 10)]);
+  const panel = props.querySelector('#template-browser');
+  last(props.querySelector('#load-template'), 'click')();
+  await tick();
+  assert.ok(panel.innerHTML.includes('data-file="templates/test.json"'), 'the library lists the manifest');
+  last(props.querySelector('#gym-brands'), 'click')(chipTap('Technogym')); // the Layout card re-renders itself
+  await tick();
+  assert.ok(panel.innerHTML.includes('data-file="templates/test.json"'), 'the re-render brings the browser back');
+  assert.equal(fetched.filter((u) => u === 'templates/index.json').length, 1,
+    'without fetching the manifest again');
+  last(props.querySelector('#load-template'), 'click')(); // tapped again while open
+  await tick();
+  assert.equal(fetched.filter((u) => u === 'templates/index.json').length, 2, 'asked for, it is fetched afresh');
+  assert.equal(panel.listeners.click.length, 1, 'three fills, ONE click listener on the panel');
+  // the two-tap guard holds: one tap arms, only the second loads
+  const classes = new Set();
+  const btn = {
+    dataset: { file: 'templates/test.json', label: 'Test gym' },
+    textContent: 'Test gym',
+    classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c), contains: (c) => classes.has(c) },
+  };
+  const tap = () => panel.listeners.click[0]({ target: { closest: (sel) => (sel === '.tpl-load' ? btn : null) } });
+  await tap();
+  assert.ok(!fetched.includes('templates/test.json'), 'one tap only arms');
+  assert.equal(btn.textContent, 'Tap again to replace current layout');
+  await tap();
+  assert.equal(fetched.filter((u) => u === 'templates/test.json').length, 1, 'the second tap loads');
+  globalThis.fetch = realFetch;
+}
+
+// --- find-by-number reads an ARMED field by what it shows ---
+{
+  const root = gymWith([mk('m1', 1, 10, 10), mk('m2', 2, 20, 10)]);
+  const findNum = root.querySelector('#find-num');
+  // focused: initNumericOverwrite emptied it and stashed the number
+  findNum.value = '';
+  findNum.dataset.prevValue = '2';
+  root.querySelector('#find-go').listeners.click.at(-1)();
+  assert.ok(root.floor.innerHTML.includes('class="machine locate" data-id="m2"'),
+    'an armed "2" finds #2 — a tap on Find need not blur the field first on iOS');
+}
+
+// --- a drag in Usage mode reads neither the settings nor the history per move ---
+{
+  store.saveSettings({ ...store.getSettings(), mapColors: 'usage' });
+  const root = gymWith([mk('m1', 1, 10, 10)]);
+  doubleTap(root.floor, 'm1', [11, 11]);
+  const ls = globalThis.localStorage;
+  const realGet = ls.getItem;
+  const reads = [];
+  ls.getItem = (k) => { reads.push(k); return realGet.call(ls, k); };
+  fire(root.floor, 'pointerdown', { ...at(11, 11), target: onItem('m1') });
+  for (let x = 12; x < 20; x++) fire(root.floor, 'pointermove', at(x, 11));
+  ls.getItem = realGet;
+  fire(root.floor, 'pointerup');
+  assert.ok(machineAt('m1').x > 10, 'the drag moved the machine');
+  assert.deepEqual(reads.filter((k) => /workouts|settings/.test(k)), [],
+    'eight moves, eight redraws — no storage read among them');
+  store.saveSettings({ ...store.getSettings(), mapColors: 'custom' });
+}
+
 console.log('gym editor: all assertions passed');

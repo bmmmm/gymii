@@ -55,22 +55,32 @@ function targetDefaults(machine, exercise, grip, s) {
 const itemIsCardio = (item, machine) =>
   (machine ? !!machine.cardio : item.target?.distance != null);
 
-export function renderPlanBuilder(
-  root, { planId = null, notice = '', seed = null, seedName = '' } = {}, onClose,
-) {
+// `opts` is the caller's builder state (train.js's `builder`, alive until
+// Save/Cancel/Back): the draft is kept ON it, so a tab switch — which
+// re-renders the Train tab from scratch and calls this again — comes back
+// to the plan as edited, not to a fresh copy of the stored one.
+export function renderPlanBuilder(root, opts = {}, onClose) {
+  const { planId = null, notice = '', seed = null, seedName = '' } = opts;
   let layout = getLayout(); // may be null — a plan can exist before the gym does
   const s = getSettings();
   const du = distUnit(s);
   const stored = planId ? getPlans().find((p) => p.id === planId) : null;
-  // the draft is a deep copy — Cancel must leave the stored plan (or the
-  // routine a seed came from) untouched
-  const draft = stored
-    ? JSON.parse(JSON.stringify(stored))
-    : {
-      id: uid(),
-      name: seedName,
-      items: seed ? JSON.parse(JSON.stringify(seed)) : [],
-    };
+  // The draft is a deep copy — Cancel must leave the stored plan (or the
+  // routine a seed came from) untouched. `text` is the Text view's note as
+  // typed (null = serialise the items), so neither a chip tap nor a tab
+  // switch rewrites — or drops — a half-typed line.
+  const state = (opts.draftState ??= {
+    draft: stored
+      ? JSON.parse(JSON.stringify(stored))
+      : {
+        id: uid(),
+        name: seedName,
+        items: seed ? JSON.parse(JSON.stringify(seed)) : [],
+      },
+    view: null,
+    text: null,
+  });
+  const { draft } = state;
   let muscle = ''; // active muscle filter, '' = all
   let binding = null; // index of the item whose bind prompt is open
   // what a bind just changed ("Target reset …") — said once, gone on the
@@ -84,7 +94,7 @@ export function renderPlanBuilder(
   // Anything that arrives with items (edit, AI import, a note just read, a
   // routine turned into a plan) opens as a list: that is a review, not a
   // blank page.
-  let view = draft.items.length ? 'list' : 'text';
+  let view = (state.view ??= draft.items.length ? 'list' : 'text');
 
   const machineFor = (id) => (id ? layout?.machines.find((m) => m.id === id) : null);
 
@@ -273,8 +283,13 @@ export function renderPlanBuilder(
 
     // textarea content goes in via value, never innerHTML — user data can
     // never break out of the markup that way
-    const textArea = root.querySelector('#plan-text');
-    if (textArea) textArea.value = planToText(draft.items, layout, s);
+    const textArea = view === 'text' ? root.querySelector('#plan-text') : null;
+    if (textArea) {
+      textArea.value = state.text ?? planToText(draft.items, layout, s);
+      // kept as typed on the builder state: a tab switch re-renders the
+      // builder from scratch, and the note must come back with it
+      textArea.addEventListener('input', () => { state.text = textArea.value; });
+    }
 
     const svg = view === 'list' && machines.length ? root.querySelector('svg') : null;
     if (svg) {
@@ -287,14 +302,35 @@ export function renderPlanBuilder(
       }
     }
 
+    // every keystroke lands on the draft (trimmed on change and on Save):
+    // a chip tap or a tab switch re-renders before any blur
+    root.querySelector('#plan-name').addEventListener('input', (e) => {
+      draft.name = e.target.value;
+    });
     root.querySelector('#plan-name').addEventListener('change', (e) => {
       draft.name = e.target.value.trim();
     });
+
+    // A tap that re-renders while the Text view is open — a name or day
+    // chip, "Set Mon" — takes the note in first (it is authoritative while
+    // on screen, like a view switch) and keeps it AS TYPED, so the render
+    // prints it back verbatim instead of re-serialising half a line. Text
+    // that reads as no exercise leaves the items alone; Save says so
+    // (persist → fromText). Only the Text view: the stub DOM and a stale
+    // node must not re-parse a note over the list's edits.
+    const pullText = () => {
+      const ta = view === 'text' ? root.querySelector('#plan-text') : null;
+      if (!ta) return;
+      state.text = ta.value;
+      const raw = parsePlanText(ta.value, s);
+      if (raw.length || !ta.value.trim()) draft.items = planItemsFrom(raw, layout);
+    };
 
     // tapping a chip names the plan; tapping the selected one clears it
     root.querySelector('#name-chips')?.addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
       if (!chip) return;
+      pullText();
       draft.name = draft.name === chip.dataset.name ? '' : chip.dataset.name;
       render();
     });
@@ -303,7 +339,7 @@ export function renderPlanBuilder(
     // only when there IS text but none of it reads as an exercise —
     // emptying the note deliberately is a valid edit, caught by persist.
     const fromText = () => {
-      const ta = root.querySelector('#plan-text');
+      const ta = view === 'text' ? root.querySelector('#plan-text') : null;
       if (!ta) return true;
       const raw = parsePlanText(ta.value, s);
       if (!raw.length && ta.value.trim()) {
@@ -320,6 +356,8 @@ export function renderPlanBuilder(
       if (!chip || chip.dataset.view === view) return;
       if (view === 'text' && !fromText()) return;
       view = chip.dataset.view;
+      state.view = view;
+      state.text = null; // the items are the truth now; Text serialises them afresh
       binding = null;
       render();
     });
@@ -382,7 +420,7 @@ export function renderPlanBuilder(
         return;
       } else if (btn.classList.contains('bind-go')) {
         const field = root.querySelector('.bind-num');
-        bindItem(i, null, Math.round(parseFloat(field?.value) || 0));
+        bindItem(i, null, Math.round(parseFloat(field ? fieldValue(field) : '') || 0));
         return;
       } else if (btn.classList.contains('it-remove')) {
         draft.items.splice(i, 1);
@@ -414,7 +452,9 @@ export function renderPlanBuilder(
       if (!match) return;
       const t = draft.items[Number(match[2])]?.target;
       if (!t) return;
-      const v = parseFloat(e.target.value) || 0;
+      // fieldValue: an armed field reads empty while it still shows its
+      // value (a stepper tap on iOS can land before the restoring blur)
+      const v = parseFloat(fieldValue(e.target)) || 0;
       if (match[1] === 'sets') { t.sets = Math.max(1, Math.round(v)); e.target.value = t.sets; }
       else if (match[1] === 'reps') { t.reps = Math.max(1, Math.round(v)); e.target.value = t.reps; }
       else if (match[1] === 'weight') {
@@ -423,10 +463,10 @@ export function renderPlanBuilder(
         e.target.value = t.weight;
       }
       else if (match[1] === 'distance') {
-        t.distance = parseDistance(e.target.value, s.unit === 'kg') ?? t.distance;
+        t.distance = parseDistance(fieldValue(e.target), s.unit === 'kg') ?? t.distance;
         e.target.value = t.distance;
       } else {
-        t.seconds = parseDuration(e.target.value) ?? t.seconds;
+        t.seconds = parseDuration(fieldValue(e.target)) ?? t.seconds;
         e.target.value = fmtDuration(t.seconds);
       }
     });
@@ -471,6 +511,7 @@ export function renderPlanBuilder(
     });
 
     root.querySelector('#day-rhythm')?.addEventListener('click', () => {
+      pullText();
       draft.days = [...new Set([...(draft.days ?? []), rhythm])].sort((a, b) => a - b);
       render();
     });
@@ -478,6 +519,7 @@ export function renderPlanBuilder(
     root.querySelector('#day-chips').addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
       if (!chip) return;
+      pullText();
       const d = parseInt(chip.dataset.day, 10);
       const days = new Set(draft.days ?? []);
       if (days.has(d)) days.delete(d); else days.add(d);

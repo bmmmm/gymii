@@ -4,7 +4,9 @@ import {
   MUSCLE_REGIONS, MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS, MACHINE_BRANDS, MAP_LAYERS, nextNum,
   COMMON_GRIPS, freeSpot, WALL_SNAPPED,
 } from './store.js';
-import { esc, download, twoTapConfirm, keepInView, preserveFocus, machineIcon } from './ui.js';
+import {
+  esc, download, twoTapConfirm, keepInView, preserveFocus, machineIcon, fieldValue,
+} from './ui.js';
 import {
   drawLayout, usagePayload, findMachineByNum, findItem, fits,
   snapDoorToWall, snap, clamp, FIXTURES, ITEM_COLORS, OUTLINE_ID,
@@ -41,6 +43,34 @@ const DOUBLE_TAP_MS = 450;
 // a double tap — otherwise pushing an item twice in quick succession would
 // lock it again mid-arrangement.
 const TAP_SLOP = 1.5;
+
+// A labelled whole-number stepper. The <label for> names the INPUT and sits
+// BESIDE the stepper, never around it: a label wrapping the stepper hands a
+// tap on its text to its first labelable descendant — the "−" button — so
+// tapping "Floor width" used to shrink the floor. The shape of ui.js's
+// stepperField, as a type=number field; the ± say what they change.
+const numberStepper = (label, id, value, { step = 1, min = 1 } = {}) => `
+  <div class="field"><label for="${id}">${label}</label>
+    <div class="stepper" data-step="${step}" data-min="${min}">
+      <button type="button" class="step-down" aria-label="Decrease ${label.toLowerCase()}">−</button>
+      <input id="${id}" type="number" inputmode="numeric" value="${esc(value)}">
+      <button type="button" class="step-up" aria-label="Increase ${label.toLowerCase()}">+</button>
+    </div>
+  </div>`;
+
+// How far the plan's items reach, in grid units — the floor cannot shrink
+// below it, or a machine past the new edge is drawn off the floor where no
+// tap reaches it. Lines may run backwards (negative w/h), hence the max of
+// both ends.
+function itemsExtent(layout) {
+  let w = 0;
+  let h = 0;
+  [...(layout.machines ?? []), ...(layout.shapes ?? [])].forEach((it) => {
+    w = Math.max(w, it.x, it.x + (it.w || 0));
+    h = Math.max(h, it.y, it.y + (it.h || 0));
+  });
+  return { w: Math.ceil(w), h: Math.ceil(h) };
+}
 
 // --- undo entries ---
 // An undo entry is what one edit CHANGED, part by part — each machine and
@@ -211,10 +241,17 @@ export function renderGym(root) {
 
   const svg = root.querySelector('#floor');
   const props = root.querySelector('#props');
-  const usageOn = () => getSettings().mapColors === 'usage';
+  // redraw() runs on EVERY pointermove of a drag, so it reads nothing from
+  // storage: the map mode is read once per editor render (the chips below
+  // keep it current), and the Usage counts — a walk over the whole workout
+  // history — are computed once, on the first draw that needs them. A drag
+  // in the editor logs no set, so they cannot go stale while it is open.
+  let usageMode = getSettings().mapColors === 'usage';
+  let usageCache = null;
+  const usageOn = () => usageMode;
   const redraw = () => drawLayout(svg, layout, {
     selectedId, editor: true, selectedVertex,
-    usage: usageOn() ? usagePayload(usageByMachine()) : null,
+    usage: usageMode ? (usageCache ??= usagePayload(usageByMachine())) : null,
     highlightId: findHighlightId, unlockedId,
   });
   // Touch targets are sized from the SVG's on-screen width, so re-render
@@ -229,6 +266,7 @@ export function renderGym(root) {
     const chip = e.target.closest('.chip');
     if (!chip) return;
     saveSettings({ ...getSettings(), mapColors: chip.dataset.mode });
+    usageMode = chip.dataset.mode === 'usage';
     updateModeBar();
     redraw();
   });
@@ -450,7 +488,8 @@ export function renderGym(root) {
     const wasUnlocked = unlockedId === item.id;
     const now = Date.now();
     const doubleTap = lastTap?.id === item.id && now - lastTap.t < DOUBLE_TAP_MS;
-    lastTap = { id: item.id, t: now, x: svgPoint(e).x, y: svgPoint(e).y };
+    const down = svgPoint(e);
+    lastTap = { id: item.id, t: now, x: down.x, y: down.y };
     select(item.id);
     if (doubleTap && !target.dataset.handle) {
       // the gesture TOGGLES: the same double tap that unlocked the item
@@ -470,7 +509,7 @@ export function renderGym(root) {
       e.preventDefault();
       return;
     }
-    const p = svgPoint(e);
+    const p = down;
     drag = target.dataset.handle
       ? { mode: 'resize', item, moved: false }
       : { mode: 'move', item, offX: p.x - item.x, offY: p.y - item.y, moved: false };
@@ -620,7 +659,10 @@ export function renderGym(root) {
   const findInput = root.querySelector('#find-num');
   const findErr = root.querySelector('#find-err');
   const findGo = () => {
-    const n = Math.round(parseFloat(findInput.value));
+    // fieldValue: the field is armed for overwrite while focused (empty,
+    // its number in the placeholder), and on iOS a tap on Find does not
+    // reliably blur it first
+    const n = Math.round(parseFloat(fieldValue(findInput)));
     if (!n || n < 1) return;
     const machine = findMachineByNum(layout, n);
     if (!machine) {
@@ -635,13 +677,26 @@ export function renderGym(root) {
   root.querySelector('#find-go').addEventListener('click', findGo);
   findInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') findGo(); });
 
+  // The library manifest, fetched once per open: the Layout card re-renders
+  // itself (brand chips, list edits) and brings the browser back each time,
+  // which must not cost a network round-trip — and a "Loading…" flash —
+  // per chip tap. "Load template…" asks again (tplManifest = null).
+  let tplManifest = null; // Promise of the template list
+  const templateList = () => (tplManifest ??= fetch('templates/index.json', { cache: 'no-store' })
+    .then((r) => r.json())
+    .then((idx) => idx.templates || [])
+    .catch(() => [])); // no manifest reachable — file import below still works
+
   async function openTemplateBrowser(panel) {
+    // Wired ONCE per panel node, delegated: "Load template…" tapped again
+    // while open re-fills the same panel, and a second click listener there
+    // would arm AND confirm a template in one tap — the two-tap guard gone.
+    if (!panel.dataset.wired) {
+      panel.dataset.wired = '1';
+      wireTemplatePanel(panel);
+    }
     panel.innerHTML = '<p class="muted">Loading library…</p>';
-    let list = [];
-    try {
-      const idx = await fetch('templates/index.json', { cache: 'no-store' }).then((r) => r.json());
-      list = idx.templates || [];
-    } catch { /* no manifest reachable — file import below still works */ }
+    const list = await templateList();
 
     panel.innerHTML = `
       ${list.map((t) => {
@@ -657,34 +712,41 @@ export function renderGym(root) {
       <p class="muted"><a class="linkish" target="_blank" rel="noopener"
         href="https://github.com/bmmmm/gymii/issues/new?template=01-gym-template.yml">Share
         your gym</a> — send in your floor plan and it becomes part of this library.</p>`;
+  }
 
-    const msg = panel.querySelector('#tpl-msg');
+  // Delegated, so the panel's contents can be replaced at will: every node
+  // is looked up at event time, never captured from one fill.
+  function wireTemplatePanel(panel) {
+    const say = (text) => {
+      const msg = panel.querySelector('#tpl-msg');
+      if (msg) msg.textContent = text;
+    };
     const apply = (data) => {
       importData(data);
       renderGym(root);
     };
-
     panel.addEventListener('click', async (e) => {
+      if (e.target.closest('#tpl-file-btn')) {
+        panel.querySelector('#tpl-file-input').click();
+        return;
+      }
       const btn = e.target.closest('.tpl-load');
       if (!btn) return;
       if (!twoTapConfirm(btn, 'Tap again to replace current layout', btn.dataset.label)) return;
       try {
         apply(await fetch(btn.dataset.file, { cache: 'no-store' }).then((r) => r.json()));
       } catch (err) {
-        msg.textContent = `Load failed: ${err.message}`;
+        say(`Load failed: ${err.message}`);
       }
     });
-
-    panel.querySelector('#tpl-file-btn').addEventListener('click', () => {
-      panel.querySelector('#tpl-file-input').click();
-    });
-    panel.querySelector('#tpl-file-input').addEventListener('change', async (e) => {
+    panel.addEventListener('change', async (e) => {
+      if (e.target.id !== 'tpl-file-input') return;
       const file = e.target.files[0];
       if (!file) return;
       try {
         apply(JSON.parse(await file.text()));
       } catch (err) {
-        msg.textContent = `Import failed: ${err.message}`;
+        say(`Import failed: ${err.message}`);
       }
     });
   }
@@ -794,13 +856,37 @@ export function renderGym(root) {
   const option = (value, label, selected) =>
     `<option value="${esc(value)}"${selected ? ' selected' : ''}>${esc(label)}</option>`;
 
+  // A machine's number from its field, the card's or a list row's: a number
+  // is a machine's identity in plans and on the map, so a taken one is
+  // refused and the field shows the old one again.
+  const changeNum = (m, field) => {
+    const n = Math.max(1, Math.round(parseFloat(field.value) || 1));
+    if (numTaken(n, m)) {
+      field.value = m.num;
+      numMsg = takenMsg(n, m);
+      renderProps();
+      return;
+    }
+    m.num = n;
+    field.value = m.num;
+    save();
+    redraw();
+    if (numMsgShown) renderProps();
+  };
+  // Every brand in use anywhere in this gym plus the pick list — the eighth
+  // Panatta must be a pick, not a typing exercise. The gym's own brand is
+  // what "no own brand" means, so it is no option.
+  const brandChoices = (gymBrand) => [...new Set([...MACHINE_BRANDS, ...layout.machines.map((m) => m.brand)])]
+    .filter((b) => b && b !== gymBrand);
+  // The card's last line names the lock state (machines, zones, furniture).
+  const lockHint = (item) => `<p class="muted">${unlockedId === item.id
+    ? '🔓 Unlocked — drag it on the plan to move it, drag the handle to resize. Double-tap it again to lock.'
+    : '🔒 Locked so it cannot be nudged by accident. Double-tap it on the plan to move or resize it.'}</p>`;
+
   function machineListHtml() {
     if (!layout.machines.length) return '<p class="muted">No machines yet — tap + Machine above the plan.</p>';
     const gymBrand = layout.meta?.brand || '';
-    // every brand in use anywhere in this gym, like the machine card —
-    // the eighth Panatta must be a pick, not a typing exercise
-    const brands = [...new Set([...MACHINE_BRANDS, ...layout.machines.map((m) => m.brand)])]
-      .filter((b) => b && b !== gymBrand);
+    const brands = brandChoices(gymBrand); // like the machine card
     const rows = [...layout.machines].sort((a, b) => a.num - b.num).map((m) => {
       // one row in a fixed order, tap to cycle
       const muscles = rowMuscles(m);
@@ -873,23 +959,9 @@ export function renderGym(root) {
       if (!m) return;
       const v = e.target.value;
       switch (e.target.dataset.field) {
-        case 'num': {
-          const n = Math.max(1, Math.round(parseFloat(v) || 1));
-          // a number is a machine's identity in plans and on the map: a
-          // taken one is refused, the field shows the old one again
-          if (numTaken(n, m)) {
-            e.target.value = m.num;
-            numMsg = takenMsg(n, m);
-            renderProps();
-            return;
-          }
-          m.num = n;
-          e.target.value = m.num;
-          save();
-          redraw();
-          if (numMsgShown) renderProps();
+        case 'num':
+          changeNum(m, e.target);
           return;
-        }
         case 'label':
           e.target.value = commitText(m, 'label', v);
           save();
@@ -1055,20 +1127,9 @@ export function renderGym(root) {
                (the one you switch between) — this one travels with the
                exported template. Two different names, so they say so. -->
           <label class="field"><span>Layout name</span><input id="gym-name" type="text" value="${esc(layout.name)}"></label>
-          <label class="field"><span>Floor width</span>
-            <div class="stepper" data-step="5" data-min="20">
-              <button type="button" class="step-down">−</button>
-              <input id="floor-w" type="number" inputmode="numeric" value="${esc(layout.grid.w)}">
-              <button type="button" class="step-up">+</button>
-            </div>
-          </label>
-          <label class="field"><span>Floor height</span>
-            <div class="stepper" data-step="5" data-min="20">
-              <button type="button" class="step-down">−</button>
-              <input id="floor-h" type="number" inputmode="numeric" value="${esc(layout.grid.h)}">
-              <button type="button" class="step-up">+</button>
-            </div>
-          </label>
+          ${numberStepper('Floor width', 'floor-w', layout.grid.w, { step: 5, min: 20 })}
+          ${numberStepper('Floor height', 'floor-h', layout.grid.h, { step: 5, min: 20 })}
+          <p class="muted" id="floor-msg" role="status" hidden></p>
           <p class="muted">Add rooms, walls and machines, then drag them into place.
           Everything on the plan is 🔒 locked: a tap only opens an item for
           editing. Double-tap an item to unlock it for moving and resizing,
@@ -1167,6 +1228,7 @@ export function renderGym(root) {
 
       props.querySelector('#load-template').addEventListener('click', () => {
         tplOpen = true;
+        tplManifest = null; // asked for: the library as it is now
         openTemplateBrowser(props.querySelector('#template-browser'));
       });
       if (tplOpen) openTemplateBrowser(props.querySelector('#template-browser'));
@@ -1174,10 +1236,21 @@ export function renderGym(root) {
         layout.name = e.target.value.trim() || 'My gym';
         save();
       });
+      // The floor shrinks only down to what is on it (itemsExtent): past
+      // that a machine would sit off the floor, drawn where no tap reaches.
+      // The field stops there and says why, without a re-render.
+      const floorMsg = props.querySelector('#floor-msg');
       const onFloor = (inputId, key) => {
         props.querySelector(inputId).addEventListener('change', (e) => {
-          const v = clamp(Math.round(parseFloat(e.target.value) || 20), 20, 200);
+          const want = clamp(Math.round(parseFloat(e.target.value) || 20), 20, 200);
+          const min = clamp(itemsExtent(layout)[key], 20, 200);
+          const v = Math.max(want, min);
+          floorMsg.hidden = v === want;
+          floorMsg.textContent = v === want ? ''
+            : `The plan's items reach to ${min} — move them in first to make the floor ${
+              key === 'w' ? 'narrower' : 'shorter'}.`;
           e.target.value = v;
+          if (layout.grid[key] === v) return; // refused down to where it was: nothing to save
           layout.grid[key] = v;
           layout.outline.forEach((p) => { // keep the outline on the shrunk floor
             p.x = Math.min(p.x, layout.grid.w);
@@ -1203,9 +1276,7 @@ export function renderGym(root) {
       const gripOptions = [...new Set([...COMMON_GRIPS, ...(item.grips ?? [])])];
       const gymBrand = layout.meta?.brand || '';
       const own = ownBrand(layout, item); // '' when it follows the gym
-      // the gym's brand is what "no own brand" means, so it is no option here
-      const brandOptions = [...new Set([...MACHINE_BRANDS, ...layout.machines.map((m) => m.brand)])]
-        .filter((b) => b && b !== gymBrand);
+      const brandOptions = brandChoices(gymBrand);
       const brandLine = own
         ? `<strong>${esc(own)}</strong> — this machine's own${gymBrand
           ? `; the gym's is ${esc(gymBrand)}` : ''}.`
@@ -1223,13 +1294,7 @@ export function renderGym(root) {
       props.innerHTML = `
         <section class="card">
           <h2>Machine <span class="machine-icon" aria-hidden="true">${machineIcon(item)}</span></h2>
-          <label class="field"><span>Number</span>
-            <div class="stepper" data-step="1" data-min="1">
-              <button type="button" class="step-down">−</button>
-              <input id="m-num" type="number" inputmode="numeric" value="${esc(item.num)}">
-              <button type="button" class="step-up">+</button>
-            </div>
-          </label>
+          ${numberStepper('Number', 'm-num', item.num)}
           ${refusedHtml}
           <label class="field"><span>Label</span><input id="m-label" type="text"
             value="${esc(stagedText(item, 'label', item.label))}"></label>
@@ -1264,6 +1329,9 @@ export function renderGym(root) {
           <label class="field"><span>Sets per visit</span>
             <input id="m-sets" type="number" inputmode="numeric" min="1"
               placeholder="(${esc(getSettings().defaultSets)})" value="${esc(item.targetSets ?? '')}"></label>
+          <p class="muted" id="m-sets-pinned"${item.targetSets === undefined ? ' hidden' : ''}>Set for this
+            machine. <button type="button" id="m-sets-default" class="linkish">Use the default
+            (${esc(getSettings().defaultSets)})</button></p>
           ${item.exerciseSets ? `<p class="muted">Per exercise: ${Object.entries(item.exerciseSets)
     .map(([x, n]) => `${esc(x)} ${esc(n)}`).join(' · ')}</p>` : ''}`}
           <div class="field-block"><span>Color on the plan</span>
@@ -1300,38 +1368,32 @@ export function renderGym(root) {
           </div>
           <label class="field"><span>Doc link</span><input id="m-doc" type="text" inputmode="url"
             placeholder="https://…" value="${esc(stagedText(item, 'docUrl', item.docUrl || ''))}"></label>
-          <p class="muted">${unlockedId === item.id
-    ? '🔓 Unlocked — drag it on the plan to move it, drag the handle to resize. Double-tap it again to lock.'
-    : '🔒 Locked so it cannot be nudged by accident. Double-tap it on the plan to move or resize it.'}</p>
+          ${lockHint(item)}
           <button id="del-item" class="btn btn-danger">Delete machine</button>
         </section>`;
 
-      props.querySelector('#m-num').addEventListener('change', (e) => {
-        const n = Math.max(1, Math.round(parseFloat(e.target.value) || 1));
-        if (numTaken(n, item)) {
-          e.target.value = item.num;
-          numMsg = takenMsg(n, item);
-          renderProps();
-          return;
-        }
-        item.num = n;
-        e.target.value = item.num;
-        save();
-        redraw();
-        if (numMsgShown) renderProps();
-      });
+      props.querySelector('#m-num').addEventListener('change', (e) => changeNum(item, e.target));
       // "Sets per visit": a whole number from 1 up pins the machine's set
       // goal (store's `targetSets`); empty — or anything else — inherits the
       // app default again, so the key is deleted. Hidden for cardio (no goal
       // there, store's setGoalFor), hence optional. Per-exercise goals are
       // written on the log screen ("Keep N sets for #7 · Curl"), only read here.
-      props.querySelector('#m-sets')?.addEventListener('change', (e) => {
-        const n = Math.round(parseFloat(e.target.value));
+      // An armed field restores its number on a blur without input, so
+      // "empty" is out of reach by typing — "Use the default (3)" below the
+      // field is the way back to inheriting. Both update in place, no
+      // re-render: a `change` fires inside the NEXT tap's pointerdown, and a
+      // card replaced right then would swallow that tap.
+      const setsPinned = props.querySelector('#m-sets-pinned');
+      const setsField = props.querySelector('#m-sets');
+      const writeSets = (n, field = setsField) => {
         if (Number.isFinite(n) && n >= 1) item.targetSets = n;
         else delete item.targetSets;
-        e.target.value = item.targetSets ?? '';
+        field.value = item.targetSets ?? '';
+        setsPinned.hidden = item.targetSets === undefined;
         save();
-      });
+      };
+      setsField?.addEventListener('change', (e) => writeSets(Math.round(parseFloat(e.target.value)), e.target));
+      props.querySelector('#m-sets-default')?.addEventListener('click', () => writeSets(NaN));
       // Text fields commit on `change` — which only fires on blur or Enter,
       // while a chip tap right next to them re-renders the card. Every
       // keystroke is staged (see `staged`), so the re-render prints back
@@ -1517,9 +1579,7 @@ export function renderGym(root) {
             <div id="z-color">${colorRow(item.color)}</div>
           </div>
           ${layerRow(item)}
-          <p class="muted">${unlockedId === item.id
-    ? '🔓 Unlocked — drag it on the plan to move it, drag the handle to resize. Double-tap it again to lock.'
-    : '🔒 Locked so it cannot be nudged by accident. Double-tap it on the plan to move or resize it.'}</p>
+          ${lockHint(item)}
           <button id="del-item" class="btn btn-danger">Delete</button>
         </section>`;
       wireColorRow('#z-color', item);

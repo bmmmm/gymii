@@ -47,11 +47,17 @@ function route() {
   // credential: hand it to Settings and scrub it from the URL in the same
   // breath — location.replace leaves no history entry carrying it.
   if (name.startsWith('pair=')) {
-    setPendingPairCode(decodeURIComponent(name.slice(5)));
+    // a malformed escape (#pair=%E0) throws here — before anything renders,
+    // which would leave a blank app; such a code could not pair anyway
+    try {
+      setPendingPairCode(decodeURIComponent(name.slice(5)));
+    } catch { /* URIError: dropped, the URL is scrubbed all the same */ }
     location.replace('#settings'); // hashchange re-enters route()
     return;
   }
-  const tab = routes[name] ? name : 'train';
+  // own keys only: #toString or #constructor would find Object.prototype's
+  // and render a blank view
+  const tab = Object.hasOwn(routes, name) ? name : 'train';
   const view = document.getElementById('view');
   view.innerHTML = '';
   view.scrollTop = 0;
