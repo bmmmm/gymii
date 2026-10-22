@@ -7,6 +7,17 @@ holds open work only.
 
 ## 2026-10-23
 
+Shipped 2026-10-23 (`2026-10-23b`): the repo restructured, no behaviour
+change. Everything that ships moved to `app/`, the only directory the
+deploy uploads — until now Pages served AGENTS.md, TODO.md, every test and
+`serve.py` next to the app; URLs, the service worker and stored data stay
+as they were, since `app/` is the site root. Tooling: pnpm 12.14, Playwright
+1.64.1, `pnpm test` on Node's built-in runner, `.node-version` (24),
+Biome as a lint-only fifth deploy gate (`biome.jsonc` says why each rule it
+turns off is off), `.editorconfig`. Docs: this CHANGELOG.md out of TODO.md,
+docs/architecture.md in one section per module, docs/decisions/ and
+docs/media/.
+
 Shipped 2026-10-23 (`2026-10-23`): the first start, reworked — a guided
 tour (`js/tour.js`, route `#tour`, six steps with the tab each one talks
 about pulsing in the real tabbar) opens once on a device's first start
