@@ -9,6 +9,11 @@ ever sees ciphertext.
 
 **→ [bmmmm.github.io/gymii](https://bmmmm.github.io/gymii/)** — installable, works offline.
 
+![The first start: a six-step tour, the welcome screen, an empty gym floor that says what to do, and the tour again from Settings](docs/first-start.gif)
+
+New here? A one-minute tour opens on the first start — and waits in
+Settings → Help whenever you want it again.
+
 ## What's inside
 
 - 🗺️ **Gym** — a real floor-plan editor: walls, zones, doors, mirrors,
@@ -106,7 +111,8 @@ ever sees ciphertext.
   in one go. A True black display on this device, for OLED screens and dark
   gyms.
 - 📦 **Templates** — export your gym as JSON, import someone else's. Want to
-  poke around first? Settings → "Load test data" fills a separate Demo gym
+  poke around first? "Look around in a demo gym" on the welcome screen (or
+  Settings → "Load test data") fills a separate Demo gym
   with eight weeks of history and three plans — your own gyms stay untouched.
 - 🤖 **AI, on your terms** — copy a prompt plus your data into any LLM you
   trust, paste the answer back. gymii never talks to an AI service itself.
