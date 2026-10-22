@@ -111,7 +111,12 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   nothing) and an assisted log screen (the demo's #17: "Assist", 44px Goal
   chips, a tap says the goal on the machine); and the Gym's folded parts (`gym.spec.mjs`,
   320px): the machine list editor and the machine card's brand fold-out
-  pass them too.
+  pass them too; and the 2026-10-22 review pins (`review.spec.mjs`, each
+  checked to FAIL on the build before it): a label tap no longer presses a
+  stepper's −, the floor stops at its items, the template browser keeps
+  its two taps, the plan builder keeps typed text and its draft, unknown
+  or malformed hashes route, the Muscles card folds its open rows without
+  moving the toggle, and a new cardio plan line takes the last level.
   A NEW browser spec goes in
   `smoke/` as `*.spec.mjs`, NEVER in `test/` — `testMatch` is pinned
   because Playwright's collector imports whatever it matches and would run

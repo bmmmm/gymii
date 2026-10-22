@@ -2604,7 +2604,18 @@ const withPicker = (fn) => {
   assert.equal(widthOf('Quads'), '100', 'the busiest muscle fills its track');
   assert.equal(widthOf('Hamstrings'), '50', 'the others relative to it');
   assert.equal(widthOf('Lats'), '0', 'an open row leaves its track empty');
-  assert.ok(root.innerHTML.includes('Tap an open muscle to find a machine for it below.'), 'the hint stays');
+  assert.ok(root.innerHTML.includes('Tap an open muscle to find a machine for it below.'), 'the hint shows with the open rows');
+  {
+    const { muscleCardHtml } = await import(new URL('../js/train.js', import.meta.url).href);
+    const hint = 'Tap an open muscle';
+    const mixed = { rows: [{ muscle: 'Quads', value: 3 }, { muscle: 'Lats', value: 0 }], max: 3 };
+    assert.ok(!muscleCardHtml(mixed, false).includes(hint), 'folded: no open row on screen, no hint');
+    assert.ok(muscleCardHtml(mixed, true).includes(hint), 'unfolded: the hint follows the open rows');
+    assert.ok(muscleCardHtml({ rows: [{ muscle: 'Lats', value: 0 }], max: 0 }, false).includes(hint),
+      'nothing trained: every row shows, the hint too');
+    assert.ok(!muscleCardHtml({ rows: [{ muscle: 'Quads', value: 3 }], max: 3 }, false).includes(hint),
+      'everything trained: nothing open, no hint');
+  }
   // a tap on a row drives the picker's muscle filter, as the chips did
   byId.get('#muscle-coverage').listeners.click({ target: { closest: () => ({ dataset: { muscle: 'Lats' } }) } });
   assert.equal(picker.parts.get('.pick-muscle').value, 'Lats', 'the row sets the picker\'s muscle filter');

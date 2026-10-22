@@ -1,5 +1,16 @@
 # TODO
 
+Shipped 2026-10-22 (`2026-10-22c`): the open items — "Busy?" and "Closer:"
+skip a free slot with no set (one `idleFree` predicate with nextOpenSlot);
+"Muscles today" lists trained muscles first and folds the open ones behind
+"Show N untrained" (device-local `settings.muscleFold`, the "tap an open
+muscle" hint only while an open row shows); a new cardio builder line takes
+the last set's `level`; another tab's edit during a push keeps the sync
+dirty flag (window `storage` event, no extra write); gym.js's undo engine
+moved to the pure `js/layoutdiff.js` with its own tests, plus the
+closure-free helpers out of `renderGym`. New smoke spec
+`smoke/review.spec.mjs` (8 browser pins, each failing on `8bc05d9`).
+
 Shipped 2026-10-22 (`2026-10-22b`): store.js split — the placement
 geometry (`js/geometry.js`) and the weekday date maths (`js/weekday.js`),
 both pure and import-free, and the plan-text parser/printer

@@ -1124,7 +1124,9 @@ export function muscleProgress(active, layout) {
 // keepInView, no scroll. The fold is a device-local view setting
 // (`settings.muscleFold`, 'shown' | absent = folded — never stamped, see
 // store's saveSettings). With nothing trained yet every row shows: folding
-// all of them would leave an empty card. Exported for the tests.
+// all of them would leave an empty card. The "tap an open muscle" hint
+// travels with the rows: it shows only while an open row is on screen.
+// Exported for the tests.
 export function muscleCardHtml(progress, shown = getSettings().muscleFold === 'shown') {
   const trained = progress.rows.filter((r) => r.value > 0).sort((a, b) => b.value - a.value);
   const open = progress.rows.filter((r) => !(r.value > 0));
@@ -1133,10 +1135,13 @@ export function muscleCardHtml(progress, shown = getSettings().muscleFold === 's
           <span class="bar-track"><span class="bar-fill"
             style="width:${progress.max ? Math.round((r.value / progress.max) * 100) : 0}%"></span></span>
         </button>`;
-  if (!trained.length || !open.length) return [...trained, ...open].map(row).join('');
+  const hint = '<p class="muted">Tap an open muscle to find a machine for it below.</p>';
+  if (!trained.length || !open.length) {
+    return [...trained, ...open].map(row).join('') + (open.length ? hint : '');
+  }
   const toggle = `<button type="button" id="muscle-fold" class="muscle-fold" aria-expanded="${shown}">${
     shown ? 'Hide untrained' : `Show ${open.length} untrained`}</button>`;
-  return [...trained.map(row), toggle, ...(shown ? open.map(row) : [])].join('');
+  return [...trained.map(row), toggle, ...(shown ? [...open.map(row), hint] : [])].join('');
 }
 
 // "3 sets", "½ set", "1½ sets" — the half a secondary muscle earns reads as
@@ -1254,7 +1259,6 @@ function renderOverview(root, layout, active, message = '') {
       <div id="muscle-coverage">
         ${muscleCardHtml(progress, s.muscleFold === 'shown')}
       </div>
-      <p class="muted">Tap an open muscle to find a machine for it below.</p>
     </section>` : ''}
     <section class="card">
       <h2>Add machine</h2>
