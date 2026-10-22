@@ -718,7 +718,12 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   (busy, via stats.js `inBusyWindow` — an hour either side of the window,
   reaching across midnight into the next weekday) — full width, not inside the head's flex row, where the 44px ↗
   would squeeze the text — the rest overlay the rest hint, a plan row "· reorder?" when its
-  builder has a route hint (`planListCard`). `active.plan` is a list of slots
+  builder has a route hint (`planListCard`). `renderLog` reads the history
+  ONCE per render and hands that list down — the prefill and grip default
+  (`lastEntryIn`/`lastGripIn`: store's `lastEntryFor`/`lastGripFor` walks
+  over a list already read, pinned against them in the tests), the hints,
+  the assist goal, `finishedToday` and `suggestNext`; a test counts the
+  storage reads. `active.plan` is a list of slots
   `{machineId, exercise|null, grip?, target?}` (null = whole machine; no
   grip = a WILDCARD that counts every grip, which is why old plans and
   slots need no migration) — a repeat plans one slot per (machine,
@@ -790,7 +795,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   newest set `at`). Slots started from a stored plan carry its target:
   the log header shows it, the first-set prefill uses it (real logged sets
   then outrank it). SET GOALS: every slot counts against a goal —
-  `slotGoal(active, slot, layout, s)` = `slot.target?.sets`, else store's
+  `slotGoal(slot, layout, s)` = `slot.target?.sets`, else store's
   `setGoalFor(machine, slot.exercise, s)` (the exercise's, the machine's,
   the app default of 3) — COMPUTED, never stored (a stored goal would go
   stale when the setting changes mid-workout, and the tests pin the slot
@@ -798,7 +803,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   or cardio (a bout is one set, never a tally). `slotDone` = goal ? count ≥
   goal : count > 0, so "Next:" pulls the walk back to unfinished goals in a
   free workout as much as in a planned one; every caller of
-  `slotDone`/`slotSetCount` (`nextOpenSlot`, `planSlotIndex`, `twinShare`,
+  `slotDone`/`twinShare` (the slot's set count; `nextOpenSlot`, `planSlotIndex`,
   `targetTally`, `resolveEntry`, the overview rows and picker, `renderLog`,
   the rest's `nextUpLabel`, `nearbyAlternative`'s and the Closer line's
   candidates) passes `layout` and the render's settings. `twinShare` deals
@@ -1194,7 +1199,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   (`muscleFilter`, ANDed after the name filter, same lifecycle incl.
   self-clear and the past-log reset). Muscles resolve against the LIVE gym
   — entries don't snapshot them — and a set on a two-muscle machine counts
-  fully for both (usage is attribution; only naming votes split 1/n). The
+  fully for both (usage is attribution; only naming votes split 1/n).
+  Resistance machines only, like the hints (stats.js `resistanceMuscles`):
+  a treadmill tagged Calves is no calf set, so the card never contradicts
+  the hint under its row, and the "can't be attributed" note leaves cardio
+  sets out (they never were muscle sets). The
   filter narrows WHOLE workouts, never entries, so the editor's Save can't
   drop non-matching machines; the card itself is computed over the
   name-only list so every muscle stays reachable while one is selected.

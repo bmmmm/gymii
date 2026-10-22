@@ -308,6 +308,22 @@ const onlyNext = { ...mkActive(), plan: [
   { machineId: 'm1', exercise: null }, { machineId: 'db', exercise: null }] };
 assert.equal(nearbyAlternative(onlyNext, gym, m1, 'db'), null, 'no candidates -> null');
 
+// a template machine without geometry is no NaN distance: a NaN never
+// loses a `<` and so used to win the escape hatch outright (straight lines
+// here — a grid of 500 is no floor to walk)
+{
+  const here = { id: 'h', num: 1, label: 'Here', x: 20, y: 20, w: 4, h: 3 };
+  const g = { grid: { w: 500, h: 500 }, machines: [
+    here,
+    { id: 'nogeo', num: 2, label: 'No geometry' },
+    { id: 'close', num: 3, label: 'Close', x: 25, y: 20, w: 4, h: 3 },
+  ] };
+  const a = { id: 'w-nan', plan: [{ machineId: 'h', exercise: null }, { machineId: 'nogeo', exercise: null },
+    { machineId: 'close', exercise: null }], currentMachineId: 'h', entries: [] };
+  assert.equal(nearbyAlternative(a, g, here, null, { v: 1, defaultSets: 3 }).machine.id, 'close',
+    'a machine without x/y/w/h sits at the origin, not at NaN');
+}
+
 // log screen offers the escape hatch — and only when it exists
 store.saveActive({
   v: 2, id: 'w-nearby-render', startedAt: 1755000000000,
@@ -2939,6 +2955,82 @@ const withPicker = (fn) => {
   startWorkoutFrom({ entries: [entryAt('fa'), entryAt('fb')] });
   assert.deepEqual(store.getActive().plan, [{ machineId: 'fa', exercise: null }, { machineId: 'fb', exercise: null }],
     'slots from a source (plan or repeat) carry no marker');
+  store.clearActive();
+  store.saveWorkouts([]);
+  store.saveLayout(before);
+}
+
+// --- "Start another routine": one row per machine SET, not per order ---
+// An unnamed routine was keyed by its machine ids in training order, so
+// A→B and B→A made two rows for one routine.
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Routine gym');
+  for (const [id, num] of [['ra', 1], ['rb', 2], ['rc', 3]]) {
+    g.machines.push({ id, num, label: `R${num}`, x: num * 5, y: 0, w: 4, h: 3, settingsFields: [] });
+  }
+  store.saveLayout(g);
+  store.clearActive();
+  const w = (id, t, ids) => ({ id, startedAt: t, entries: ids.map((m) => ({ machineId: m, num: 0, label: 'x', settings: {}, sets: [{ reps: 8, weight: 10 }] })) });
+  store.saveWorkouts([
+    w('r1', 1755000000000, ['ra', 'rb']),
+    w('r2', 1755100000000, ['rb', 'ra']),
+    w('r3', 1755200000000, ['rc']),
+  ]);
+  byId.clear();
+  goToStart();
+  renderTrain(root);
+  const rows = (root.innerHTML.match(/class="btn btn-inline repeat-w" data-wid="[^"]*"/g) ?? []);
+  assert.equal(rows.length, 1, `A→B and B→A are one routine row — ${rows.join(', ')}`);
+  assert.ok(rows[0].includes('data-wid="r2"'), 'the newer of the two stands for it');
+  store.saveWorkouts([]);
+  store.saveLayout(before);
+  goToHub();
+}
+
+// --- the log screen parses the history ONCE per render ---
+// renderLog read getWorkouts() four to five times (prefill, grip default,
+// hints, assist goal, finished today / the Next suggestion); now one list
+// is read and handed down. The local walks match store's own.
+{
+  const before = store.getLayout();
+  const g = store.newLayout('Read-once gym');
+  g.machines.push({ id: 'ro', num: 1, label: 'Row', x: 0, y: 0, w: 4, h: 3, settingsFields: [], grips: ['Rope', 'V-bar'] });
+  g.machines.push({ id: 'as', num: 2, label: 'Dip', x: 6, y: 0, w: 4, h: 3, settingsFields: [], assisted: true });
+  store.saveLayout(g);
+  const e = (machineId, grip, weight) => ({ machineId, num: 1, label: 'x', settings: {}, ...(grip ? { grip } : {}),
+    ...(machineId === 'as' ? { assisted: true } : {}), sets: [{ reps: 8, weight }] });
+  const hist = [
+    { id: 'h1', startedAt: Date.now() - 3 * 864e5, entries: [e('ro', null, 30), e('as', null, 20)] },
+    { id: 'h2', startedAt: Date.now() - 2 * 864e5, entries: [e('ro', 'Rope', 35)] },
+    { id: 'h3', startedAt: Date.now() - 864e5, entries: [e('ro', 'V-bar', 40), e('as', null, 15)] },
+  ];
+  store.saveWorkouts(hist);
+  const { lastEntryIn, lastGripIn } = await import(new URL('../js/train.js', import.meta.url).href);
+  const ws = store.getWorkouts();
+  for (const [ex, grip, anyGrip] of [[null, null, false], [null, null, true], [null, 'Rope', false], [null, 'Rope', true],
+    [null, 'Gone', true], ['Nope', null, true]]) {
+    for (const id of ['ro', 'as', 'zz']) {
+      assert.deepEqual(lastEntryIn(ws, id, ex, grip, { anyGrip }), store.lastEntryFor(id, ex, grip, { anyGrip }),
+        `lastEntryIn = store.lastEntryFor (${id}, ${ex}, ${grip}, ${anyGrip})`);
+      assert.equal(lastGripIn(ws, id, ex), store.lastGripFor(id, ex), `lastGripIn = store.lastGripFor (${id}, ${ex})`);
+    }
+  }
+  const reads = () => {
+    let n = 0;
+    const get = localStorage.getItem;
+    localStorage.getItem = (k) => { if (/workouts$/.test(k)) n++; return get(k); };
+    return { done: () => { localStorage.getItem = get; return n; } };
+  };
+  for (const machineId of ['ro', 'as']) {
+    store.saveActive({ v: 2, id: `w-ro-${machineId}`, startedAt: Date.now(), plan: [{ machineId, exercise: null }],
+      currentMachineId: machineId, currentExercise: null, entries: [] });
+    byId.clear();
+    const r = reads();
+    renderTrain(root);
+    assert.equal(r.done(), 1, `one history read per log-screen render (${machineId})`);
+  }
+  assert.equal(store.getActive().currentMachineId, 'as');
   store.clearActive();
   store.saveWorkouts([]);
   store.saveLayout(before);

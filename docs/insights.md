@@ -35,12 +35,15 @@ History computes the list once per render over EVERY workout (never the
 filtered list: "1.5 strength days a week" says nothing about one routine);
 train.js and plan.js compute it per render of their screen (the start
 screen's plan list only when a plan has a name — only a named plan can carry
-a route hint). `insights()` is MEMOISED on its serialised input (workouts,
+a route hint). `insights()` is MEMOISED on its input's CONTENT (workouts,
 layout, plans, unit, weight step) and the day of `now`: every render
-re-reads storage, so references never repeat, but the content does —
-measured at 435 workouts, 4.1 ms → 0.85 ms per call on a hit (node, M-series;
-cold 18 ms either way), and the log screen and the rest overlay ask the same
-question back to back.
+re-reads storage, so references never repeat, but the content does — and
+the log screen and the rest overlay ask the same question back to back. A
+miss keeps a `structuredClone` of the input (so a caller editing its own
+array in place afterwards cannot fake a hit); a call compares against it
+field by field, out at the first difference, instead of serialising
+everything per call (measured at 435 workouts on garage: a hit 8.2 ms with
+the old JSON key, 3.2 ms now; a miss 63 → 66 ms for the clone).
 
 ## Order
 

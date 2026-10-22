@@ -39,13 +39,19 @@ const daysBetween = (t, now) => Math.round((startOfDay(now) - startOfDay(t)) / D
 const finite = Number.isFinite;
 const setVolume = (st) => st.reps * st.weight || 0;
 const isRir = (v) => v === 0 || v === 1 || v === 2 || v === 3;
-const byStart = (workouts) => [...workouts].sort((a, b) => a.startedAt - b.startedAt);
+// Ascending by start. A list already in order (store keeps it so — the
+// common case) comes back AS IS, so the series and goal helpers that
+// insights() feeds its sorted list can call this again for free; nothing
+// here mutates the result.
+const byStart = (workouts) => (workouts.every((w, i) => !i || workouts[i - 1].startedAt <= w.startedAt)
+  ? workouts : [...workouts].sort((a, b) => a.startedAt - b.startedAt));
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 // up to `d` decimals, trailing zeros dropped: 57.5, 60, 1.75
 const num = (n, d = 1) => String(Math.round(n * 10 ** d) / 10 ** d);
 
-// Linear-interpolation quantile over an ascending array.
-function quantile(sorted, q) {
+// Linear-interpolation quantile over an ascending array (q = 0.5 is the
+// median; history.js's path card reads it too).
+export function quantile(sorted, q) {
   const pos = (sorted.length - 1) * q;
   const lo = Math.floor(pos);
   const hi = Math.ceil(pos);
@@ -857,9 +863,10 @@ export function assistGoal(machine, points = [], targetReps = null) {
 // latest session of that series came from, else the first plan's.
 export function assistGoalAt(workouts, layout, plans, { machineId, exercise = null, grip = null }) {
   const sel = { machineId, exercise, grip };
-  const latest = byStart(workouts).filter((w) => w.entries.some((e) => sameSeries(e, sel) && e.sets.length)).pop();
+  const ws = byStart(workouts); // sorted once, for the latest and the series
+  const latest = ws.findLast((w) => w.entries.some((e) => sameSeries(e, sel) && e.sets.length));
   return assistGoal(layout?.machines.find((m) => m.id === machineId),
-    machineSeries(workouts, machineId, exercise, grip),
+    machineSeries(ws, machineId, exercise, grip),
     targetReps(plans ?? [], machineId, exercise, latest?.planId, grip));
 }
 
@@ -978,7 +985,13 @@ function restRule(ws) {
 
 // 6 — the same walk back to a machine keeps recurring.
 function routeRule(ws, layout) {
-  const paths = ws.map((w) => ({ w, p: workoutPath(w, layout) })).filter((x) => x.p).slice(-8);
+  // the last eight workouts that HAVE a path, walked from the newest — no
+  // path is built for the older history
+  const paths = [];
+  for (let i = ws.length - 1; i >= 0 && paths.length < 8; i--) {
+    const p = workoutPath(ws[i], layout);
+    if (p) paths.unshift({ w: ws[i], p });
+  }
   const hits = new Map();
   paths.forEach(({ w, p }) => {
     const seen = new Set();
@@ -1128,20 +1141,43 @@ function assistPlateau(series, goal, unit, now) {
 // MEMOISED on everything a rule reads — the workouts, the layout, the unit
 // and weight step, the plans and the DAY of `now` (every rule counts whole
 // days). Callers re-read storage on every render, so a reference would
-// never repeat; the serialised input does, and comparing it costs a
-// fraction of the rules (measured: 435 workouts, 4.1 ms warm per call vs
-// 0.85 ms on a hit). One entry is enough: the screens that ask twice in a
-// row (log screen, then the rest overlay) ask the same question. The answer
-// is FROZEN — every caller gets the same objects, so a caller that sorted
-// or edited them in place would corrupt the next one's; it throws instead.
+// never repeat; the content does. A miss keeps a structuredClone of its
+// input (a copy, so a caller editing its own array in place afterwards
+// cannot fake a hit), and a call compares against that copy field by field
+// (`sameData`, out at the first difference) — no serialising on every call,
+// which the memo did before (measured, 435 workouts × 7 entries, node on
+// garage: a hit 8.2 ms with the serialised key, 3.2 ms now; a miss pays
+// the clone, 63 → 66 ms cold). One entry is enough: the screens that
+// ask twice in a row (log screen, then the rest overlay) ask the same
+// question. The answer is FROZEN — every caller gets the same objects, so
+// a caller that sorted or edited them in place would corrupt the next
+// one's; it throws instead.
+const sameData = (a, b) => {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) {
+    return Number.isNaN(a) && Number.isNaN(b);
+  }
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!sameData(a[i], b[i])) return false;
+    return true;
+  }
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const k of keys) if (!Object.hasOwn(b, k) || !sameData(a[k], b[k])) return false;
+  return true;
+};
 let memo = null;
 export function insights(workouts, layout, settings, { now = Date.now(), plans = [] } = {}) {
   if (workouts.length < 3) return [];
-  const key = [startOfDay(now).getTime(), settings?.unit, settings?.weightStep,
-    JSON.stringify(layout ?? null), JSON.stringify(plans), JSON.stringify(workouts)].join('|');
-  if (memo?.key === key) return memo.value;
+  const day = startOfDay(now).getTime();
+  if (memo && memo.day === day && memo.unit === settings?.unit && memo.step === settings?.weightStep
+    && sameData(memo.input.workouts, workouts) && sameData(memo.input.layout, layout ?? null)
+    && sameData(memo.input.plans, plans)) return memo.value;
+  const input = structuredClone({ workouts, layout: layout ?? null, plans });
   const value = Object.freeze(rules(workouts, layout, settings, now, plans).map(Object.freeze));
-  memo = { key, value };
+  memo = { day, unit: settings?.unit, step: settings?.weightStep, input, value };
   return value;
 }
 

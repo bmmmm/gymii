@@ -132,6 +132,11 @@ assert.equal(stats.e1rm(80, 1), 80, 'a single is its own 1RM');
 assert.equal(stats.e1rm(50, 11), null, 'beyond 10 reps Epley is not valid');
 assert.equal(stats.e1rm(0, 5), null, 'no load, no estimate');
 
+// --- quantile: q = 0.5 is the median (history.js's path card reads it) ---
+assert.equal(stats.quantile([1, 5, 9], 0.5), 5, 'odd count: the middle value');
+assert.equal(stats.quantile([1, 2, 3, 4], 0.5), 2.5, 'even count: the mean of the two middle ones');
+assert.equal(stats.quantile([7], 0.5), 7, 'one value is its own median');
+
 // --- machineSeries ---
 {
   const a = W(day(20), [E('m1', [S(8, 50), S(12, 50)])]);
@@ -416,6 +421,12 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   const old = [30, 28, 26].map((n) => walk(n, BT));
   const recent = [20, 18, 16, 14, 12, 10, 8, 6].map((n) => walk(n, CLEAN));
   assert.equal(find([...old, ...recent], 'route'), undefined, 'route: only the last 8 paths count');
+  // workouts WITHOUT a path (one machine) are skipped, not counted in the 8:
+  // the three backtracks are within the last eight paths even though nine
+  // pathless workouts came after them
+  const single = [7, 6, 5, 4, 3, 2, 1, 1, 0].map((n) => walk(n, ['m2']));
+  assert.equal(find([...old, ...single], 'route')?.text, 'Reorder — back to #1 after #3 in 3 workouts.',
+    'route: the last 8 workouts that HAVE a path');
 }
 
 // 7 busy — ≥ 3 busy marks on one machine, same weekday, within 2 h, within 8 weeks
@@ -527,6 +538,20 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     const held = stats.insights(trio, LAYOUT, KG, { now: NOW }); // the memo holds this question again
     assert.notStrictEqual(ask(), held, `${what}: a fresh answer`);
   }
+  // the memo compares CONTENT, not a serialisation: the same data with
+  // its keys in another order is the same question…
+  const reordered = trio.map((w) => Object.fromEntries(Object.entries(w).reverse()));
+  const again = stats.insights(trio, LAYOUT, KG, { now: NOW });
+  assert.strictEqual(stats.insights(reordered, LAYOUT, KG, { now: NOW }), again, 'key order is no change');
+  // …and it remembers a COPY: the caller's own array edited in place after
+  // the call (same reference, same length, same set count) is a new question
+  const mine = copy(trio);
+  const before = stats.insights(mine, LAYOUT, KG, { now: NOW });
+  mine[2].entries[0].sets[0].weight = 45;
+  assert.notStrictEqual(stats.insights(mine, LAYOUT, KG, { now: NOW }), before, 'an in-place edit invalidates');
+  mine[0].entries[0].sets[0].rir = 2; // a new field on an old set
+  const plus = stats.insights(mine, LAYOUT, KG, { now: NOW });
+  assert.notStrictEqual(plus, stats.insights(trio, LAYOUT, KG, { now: NOW }), 'back to the old data: fresh again');
 
   // one machine, two findings: progress (50) sorts before plateau (40),
   // and both come back — they sit on different screens
