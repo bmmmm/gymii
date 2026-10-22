@@ -5,12 +5,12 @@
 import { failWritesAfter } from './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
-const store = await import(new URL('../js/store.js', import.meta.url).href);
-const plantext = await import(new URL('../js/plantext.js', import.meta.url).href);
+const store = await import(new URL('../app/js/store.js', import.meta.url).href);
+const plantext = await import(new URL('../app/js/plantext.js', import.meta.url).href);
 const {
   startWorkoutFrom, renderTrain, nearbyAlternative, nextSetDefaults, dimDelaySeconds,
   screenKey, goToHub, goToStart, goToPlans, restLeft, restNextUp, surpriseMachine, muscleProgress, suggestNext,
-} = await import(new URL('../js/train.js', import.meta.url).href);
+} = await import(new URL('../app/js/train.js', import.meta.url).href);
 
 const gym = store.newLayout('Test gym');
 gym.machines.push({ id: 'm1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
@@ -1209,7 +1209,7 @@ try {
 // object only if nothing asked the rules anything else in between.
 {
   const before = store.getLayout();
-  const { insights } = await import(new URL('../js/stats.js', import.meta.url).href);
+  const { insights } = await import(new URL('../app/js/stats.js', import.meta.url).href);
   const g = store.newLayout('Guard gym');
   g.machines.push({ id: 'n1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
   store.saveLayout(g);
@@ -2511,7 +2511,7 @@ const withPicker = (fn) => {
   open.machines[2].muscles = ['Chest']; // and the recovery malus makes the rack the better stop
   store.saveLayout(open);
   byId.clear();
-  const { floodCount } = await import(new URL('../js/stats.js', import.meta.url).href);
+  const { floodCount } = await import(new URL('../app/js/stats.js', import.meta.url).href);
   const floods = floodCount();
   renderTrain(root);
   assert.ok(root.innerHTML.includes('Busy? #3'), 'without the wall the near machine is "Busy?"');
@@ -2606,7 +2606,7 @@ const withPicker = (fn) => {
   assert.equal(widthOf('Lats'), '0', 'an open row leaves its track empty');
   assert.ok(root.innerHTML.includes('Tap an open muscle to find a machine for it below.'), 'the hint shows with the open rows');
   {
-    const { muscleCardHtml } = await import(new URL('../js/train.js', import.meta.url).href);
+    const { muscleCardHtml } = await import(new URL('../app/js/train.js', import.meta.url).href);
     const hint = 'Tap an open muscle';
     const mixed = { rows: [{ muscle: 'Quads', value: 3 }, { muscle: 'Lats', value: 0 }], max: 3 };
     assert.ok(!muscleCardHtml(mixed, false).includes(hint), 'folded: no open row on screen, no hint');

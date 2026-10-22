@@ -23,7 +23,7 @@ response within a week.
   execute script or break out of its rendering context. All user data is
   supposed to pass through `esc()` / `.value` sinks — a path that doesn't
   is a bug we want to hear about privately.
-- **Community templates**: a crafted `templates/*.json` that does more than
+- **Community templates**: a crafted `app/templates/*.json` that does more than
   describe a floor plan when loaded.
 - **Service worker**: cache behaviour that lets one origin's content stand
   in for gymii's, or keeps a known-vulnerable version pinned.

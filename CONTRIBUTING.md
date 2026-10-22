@@ -15,14 +15,14 @@ paste the JSON, name city and country. A maintainer turns it into a PR.
 
 **As a PR** — exactly two files:
 
-1. Add your export as `templates/<id>.json` (pick a short kebab-case id).
-2. Add one entry to `templates/index.json`:
+1. Add your export as `app/templates/<id>.json` (pick a short kebab-case id).
+2. Add one entry to `app/templates/index.json`:
    `{"id", "name", "country", "city", "file"}` — country as a two-letter
-   code, `file` as `templates/<id>.json`.
+   code, `file` as `templates/<id>.json` (relative to `app/`, where the site is served from).
 3. Run `node test/templates.test.mjs` — it validates the manifest against
    the files and every template against the app's real import validation.
 
-Do **not** touch `sw.js`: template files are on-demand content the service
+Do **not** touch `app/sw.js`: template files are on-demand content the service
 worker caches when first loaded; only the manifest is precached.
 
 Templates are published under this repo's license (GPL-3.0). Please only
@@ -60,7 +60,7 @@ out / paste back, by design).
   files keep importing (`gym-template`, `backup`, `workout-plan`), existing
   `gymii.*` localStorage keeps loading (migrate on read), the template
   manifest keeps its shape, and every new runtime asset goes into the
-  `sw.js` SHELL list (CI enforces it; missing entries break offline only).
+  `app/sw.js` SHELL list (CI enforces it; missing entries break offline only).
 
 ### Why the issue forms ask what they ask
 

@@ -14,7 +14,7 @@ year — blob size is a non-issue) with WebCrypto (AES-256-GCM, key derived
 via PBKDF2 from a generated passphrase) and PUTs it to a tiny self-hosted
 Go server that stores opaque blobs with a monotonic revision counter.
 Conflict handling at the transport is just "409 → pull → merge → re-push";
-all merge intelligence lives client-side in `js/merge.js`. Client clocks
+all merge intelligence lives client-side in `app/js/merge.js`. Client clocks
 never order anything at the protocol level. Pairing a second device is one
 "sync code" (server URL + device token + passphrase), shown once.
 
@@ -25,14 +25,14 @@ never order anything at the protocol level. Pairing a second device is one
   so deletes can't be resurrected, diff-aware `saveLayout` vs verbatim
   `restoreLayout`, crypto-random 16-char `uid()` (no device marker — ids
   travel into AI exports), backup envelope v2 (tombstones ride along, v1
-  imports unchanged), pure `js/merge.js` pinned by the 18-case matrix in
+  imports unchanged), pure `app/js/merge.js` pinned by the 18-case matrix in
   `test/merge.test.mjs`, and the protocol spec.
 - **M1 — manual sync, E2E from day one (DONE 2026-08-27 — proven
-  end-to-end: the real `js/sync.js` against the real `gymii-sync` binary,
+  end-to-end: the real `app/js/sync.js` against the real `gymii-sync` binary,
   a fresh second device with its own gym id converging both ways)**: the
   `gymii-sync` Go server (own
   repo, stdlib, opaque blobs, bearer token per device, configurable CORS
-  origin), `js/sync.js` (fetch + revision/ETag + 409 loop + WebCrypto +
+  origin), `app/js/sync.js` (fetch + revision/ETag + 409 loop + WebCrypto +
   sync-code pairing), a Settings "Sync" card with a "Sync now" button,
   unit normalization at the wire, and the honest rewrite of every privacy
   claim (README, SECURITY.md, in-app copy, meta description — "never
@@ -53,7 +53,7 @@ never order anything at the protocol level. Pairing a second device is one
   server: mint→pair with a fresh token, revoke→401 for exactly that
   device, last-token 409, discovery + adopt-by-passphrase both ways;
   QR/#pair/badge browser-verified)**: QR pairing (hand-written encoder in
-  `js/qr.js`, QR wraps `<app-url>#pair=<code>` so the camera opens gymii
+  `app/js/qr.js`, QR wraps `<app-url>#pair=<code>` so the camera opens gymii
   with the field prefilled — never auto-paired, and the fragment is
   scrubbed from history), per-device tokens over `GET/POST/DELETE
   /v1/tokens` (named, `self` server-computed, the last token refuses to
@@ -65,7 +65,7 @@ never order anything at the protocol level. Pairing a second device is one
   decision ("already running on your phone — resume here?"), not merge
   logic; deliberately deferred.
 
-## Merge rules (implemented in js/merge.js)
+## Merge rules (implemented in app/js/merge.js)
 
 Union by id + whole-record last-writer-wins via `updatedAt` + tombstones,
 per kind: workouts and plans as documents-per-id (no content dedupe of

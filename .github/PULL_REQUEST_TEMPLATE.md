@@ -5,13 +5,13 @@
 
 ## Adding a gym template?
 
-Then this PR should touch **exactly two files** — your `templates/<id>.json`
-and one entry in `templates/index.json` — and nothing else (in particular
-not `sw.js`; templates are cached on demand). Check these, delete the rest
+Then this PR should touch **exactly two files** — your `app/templates/<id>.json`
+and one entry in `app/templates/index.json` — and nothing else (in particular
+not `app/sw.js`; templates are cached on demand). Check these, delete the rest
 of this template, done:
 
 - [ ] The template file is an unmodified **Settings → Export gym template** export
-- [ ] `templates/index.json` gained one entry (unique `id`, `name`, `country`, `city`, `file`)
+- [ ] `app/templates/index.json` gained one entry (unique `id`, `name`, `country`, `city`, `file`)
 - [ ] `node test/templates.test.mjs` passes locally
 
 ## Claims
@@ -44,8 +44,8 @@ for f in test/*.test.mjs; do node "$f" || break; done
 
 - [ ] Old export files still import: `gym-template`, `backup`, `workout-plan` and the AI answer shapes are backwards compatible (or a read-time migration handles them)
 - [ ] `localStorage` under `gymii.*` keeps loading for existing users (schema changes migrate on read, like profiles did)
-- [ ] `templates/index.json` keeps its manifest shape (`id`, `name`, `country`, `city`, `file`)
-- [ ] Any NEW runtime asset (js/css/icons, not templates) is in the `sw.js` SHELL list — CI checks this, but it breaks offline-only, so think about it here
+- [ ] `app/templates/index.json` keeps its manifest shape (`id`, `name`, `country`, `city`, `file`)
+- [ ] Any NEW runtime asset (js/css/icons under app/, not templates) is in the `app/sw.js` SHELL list — CI checks this, but it breaks offline-only, so think about it here
 
 ## Out of scope
 

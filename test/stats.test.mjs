@@ -13,9 +13,9 @@ process.env.TZ = 'Europe/Berlin';
 import './helpers/localstorage.mjs'; // FIRST: store.js (the DST pin) needs the stub
 import { strict as assert } from 'node:assert';
 
-const store = await import(new URL('../js/store.js', import.meta.url).href);
-const weekday = await import(new URL('../js/weekday.js', import.meta.url).href);
-const stats = await import(new URL('../js/stats.js', import.meta.url).href);
+const store = await import(new URL('../app/js/store.js', import.meta.url).href);
+const weekday = await import(new URL('../app/js/weekday.js', import.meta.url).href);
+const stats = await import(new URL('../app/js/stats.js', import.meta.url).href);
 
 // The zone really is in effect — otherwise every DST assertion below would
 // pass vacuously.

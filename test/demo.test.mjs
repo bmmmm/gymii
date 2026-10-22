@@ -15,10 +15,10 @@ process.env.TZ = 'Europe/Berlin';
 import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
-const store = await import(new URL('../js/store.js', import.meta.url).href);
-const weekday = await import(new URL('../js/weekday.js', import.meta.url).href);
-const demo = await import(new URL('../js/demo.js', import.meta.url).href);
-const stats = await import(new URL('../js/stats.js', import.meta.url).href);
+const store = await import(new URL('../app/js/store.js', import.meta.url).href);
+const weekday = await import(new URL('../app/js/weekday.js', import.meta.url).href);
+const demo = await import(new URL('../app/js/demo.js', import.meta.url).href);
+const stats = await import(new URL('../app/js/stats.js', import.meta.url).href);
 
 const KG = { unit: 'kg' };
 const NOW = new Date('2026-08-12T14:00:00').getTime(); // a Wednesday
@@ -274,7 +274,7 @@ assert.deepEqual(worthALook({ layout, workouts, plans }, NOW), SHOWN,
 // this diff is what keeps the copy honest when the template changes ---
 const { readFileSync } = await import('node:fs');
 const tpl = JSON.parse(readFileSync(
-  new URL('../templates/example-gym.json', import.meta.url), 'utf8')).gym;
+  new URL('../app/templates/example-gym.json', import.meta.url), 'utf8')).gym;
 const base = ({ id, num, label, x, y, w, h, settingsFields, muscles }) =>
   ({ id, num, label, x, y, w, h, settingsFields, muscles });
 tpl.machines.forEach((tm) => {

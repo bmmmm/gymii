@@ -8,7 +8,7 @@ import { strict as assert } from 'node:assert';
 
 const {
   layoutDiff, applySide, foreignOnly, clone, same,
-} = await import(new URL('../js/layoutdiff.js', import.meta.url).href);
+} = await import(new URL('../app/js/layoutdiff.js', import.meta.url).href);
 
 const base = () => ({
   id: 'g1',

@@ -9,10 +9,10 @@
 import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
-const store = await import(new URL('../js/store.js', import.meta.url).href);
-const plantext = await import(new URL('../js/plantext.js', import.meta.url).href);
-const { renderTour, TOUR_STEPS } = await import(new URL('../js/tour.js', import.meta.url).href);
-const { isFirstRun } = await import(new URL('../js/train.js', import.meta.url).href);
+const store = await import(new URL('../app/js/store.js', import.meta.url).href);
+const plantext = await import(new URL('../app/js/plantext.js', import.meta.url).href);
+const { renderTour, TOUR_STEPS } = await import(new URL('../app/js/tour.js', import.meta.url).href);
+const { isFirstRun } = await import(new URL('../app/js/train.js', import.meta.url).href);
 
 const stubEl = () => ({
   listeners: {},

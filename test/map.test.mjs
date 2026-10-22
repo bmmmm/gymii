@@ -7,11 +7,11 @@
 import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
-const store = await import(new URL('../js/store.js', import.meta.url).href);
+const store = await import(new URL('../app/js/store.js', import.meta.url).href);
 const {
   drawLayout, overlapsSolid, fits, freeSpot,
   snapDoorToWall, findMachineByNum, findItem, usagePayload, FIXTURES, WALL_SNAPPED,
-} = await import(new URL('../js/map.js', import.meta.url).href);
+} = await import(new URL('../app/js/map.js', import.meta.url).href);
 
 // drawLayout renders into whatever quacks like an SVG element, so a plain
 // fake object is enough to assert on the generated markup.

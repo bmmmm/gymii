@@ -3,12 +3,16 @@
 Minimal gym workout tracker. Vanilla HTML/CSS/JS (ES modules), **no build
 step**, all data in localStorage. Mobile-first, dark-only.
 
+**Everything that ships lives in `app/`** — the directory Pages publishes
+and `serve.py` serves, so `app/js/store.js` is `js/store.js` in the browser.
+The repo root holds tests, docs and tooling only; none of it is deployed.
+
 **The app that ships stays dependency-free — nothing from `node_modules`
 ever reaches the browser; its test infrastructure is not.** The one
 dependency is `@playwright/test`, for the browser smoke suite in `smoke/`,
-and two CI tripwires keep the line where it is: no shipped file may
+and two CI tripwires keep the line where it is: no file in `app/` may
 mention `node_modules`, and the deploy job refuses to run if an install is
-present in the publish directory.
+present in `app/`.
 
 ## Run & verify
 
@@ -16,8 +20,8 @@ Full detail — what each suite covers, the localStorage/DOM stubs, Playwright
 setup and sandbox notes — lives in [docs/testing.md](docs/testing.md). Read
 it before writing or changing a test.
 
-- Dev server: `python3 serve.py [port]` → http://localhost:8437 (sends
-  `no-store`; plain `http.server` served stale modules — don't go back).
+- Dev server: `python3 serve.py [port]` → http://localhost:8437, serving
+  `app/` (sends `no-store`; plain `http.server` served stale modules).
 - Logic tests: `for f in test/*.test.mjs; do node "$f"; done` (CI runs the
   glob). `test/helpers/localstorage.mjs` must be a test's FIRST import. The
   stub DOM hands back EVERY selector — drive view switches explicitly.
@@ -49,14 +53,14 @@ exist because breaking them was once a real bug.
   list inside one gym. Machines, never "stations"; workouts, never
   "sessions". The wire format keeps `gym` / `gym-template` — files in the
   wild read them that way. Don't "fix" that.
-- `js/store.js` — the ONLY data layer (per-gym localStorage keys, lazy
+- `app/js/store.js` — the ONLY data layer (per-gym localStorage keys, lazy
   migrations, sync stamps + tombstones, shared invariant helpers, write
   failures announce AND rethrow). Shared invariants live as store helpers
   (`bindOrCreateMachine`, `newEntry`, `nameChipsFor`) — extend, never
-  re-inline. `js/persist.js` — origin durability.
-  Pure logic split off it, all storage-free: `js/geometry.js` (placement),
-  `js/weekday.js` (due/missed/done date maths, no imports), and
-  `js/plantext.js` (the plan-text parser/printer — it imports store.js,
+  re-inline. `app/js/persist.js` — origin durability.
+  Pure logic split off it, all storage-free: `app/js/geometry.js` (placement),
+  `app/js/weekday.js` (due/missed/done date maths, no imports), and
+  `app/js/plantext.js` (the plan-text parser/printer — it imports store.js,
   which imports `planFromImport` back, call-time only).
 - Cross-module traps: sets are strength `{reps, weight}`, cardio
   `{distance, seconds}`, bodyweight = ADDED weight, assisted = the ASSIST
@@ -65,36 +69,36 @@ exist because breaking them was once a real bug.
   distances are in the DISPLAY unit: a new such field must be converted by
   `setUnit()` too. A stepper field is read only via `fieldValue()` (ui.js)
   — an armed field is empty while it still shows its value.
-- `js/sync.js` + `js/merge.js` — cross-device sync (E2E, or explicit plain
+- `app/js/sync.js` + `app/js/merge.js` — cross-device sync (E2E, or explicit plain
   mode without a secure context); frozen public
   API; `docs/sync-protocol.md` is the wire contract.
-- `js/app.js` — hash-router; `#gym` is deliberately NOT in the tabbar,
-  nor is `#tour` (`js/tour.js`, the guided tour — once on a device's first
+- `app/js/app.js` — hash-router; `#gym` is deliberately NOT in the tabbar,
+  nor is `#tour` (`app/js/tour.js`, the guided tour — once on a device's first
   start, again from Settings → Help).
-- `js/map.js` — shared floor-map renderer (imports only `esc` and the
-  placement geometry of `js/geometry.js` — `freeSpot`, `overlapsSolid`,
+- `app/js/map.js` — shared floor-map renderer (imports only `esc` and the
+  placement geometry of `app/js/geometry.js` — `freeSpot`, `overlapsSolid`,
   `WALL_SNAPPED` are re-exported; every id
   into an attribute goes through `esc()` — template files are untrusted);
-  `js/gym.js` — the editor (everything starts locked, every mutation via
-  `save()`) and never imports from train.js/plan.js; `js/layoutdiff.js` —
+  `app/js/gym.js` — the editor (everything starts locked, every mutation via
+  `save()`) and never imports from train.js/plan.js; `app/js/layoutdiff.js` —
   its pure undo diff engine, no imports.
-- `js/train.js` — hub, guided workout, rest timer (the rest belongs to the
-  WORKOUT); `js/plan.js` — the plan builder, works without a gym.
-- `js/history.js` — overview (week, progress, paths, muscles, with the hints
+- `app/js/train.js` — hub, guided workout, rest timer (the rest belongs to the
+  WORKOUT); `app/js/plan.js` — the plan builder, works without a gym.
+- `app/js/history.js` — overview (week, progress, paths, muscles, with the hints
   of stats.js where they apply) +
-  Workouts screen (list, editor, back-logging); `js/chart.js` — its charts;
-  `js/stats.js` — pure History analytics, no imports (like merge.js); rules,
+  Workouts screen (list, editor, back-logging); `app/js/chart.js` — its charts;
+  `app/js/stats.js` — pure History analytics, no imports (like merge.js); rules,
   thresholds and sources live in docs/insights.md — change both together;
-  `js/ui.js` — shared helpers (formatting, steppers,
+  `app/js/ui.js` — shared helpers (formatting, steppers,
   keyboard centring, timer sound).
-- `js/settings.js` — the Settings tab (units, gyms, backups, Sync card);
-  `js/qr.js` — hand-written QR encoder for pairing; `js/version.js` —
+- `app/js/settings.js` — the Settings tab (units, gyms, backups, Sync card);
+  `app/js/qr.js` — hand-written QR encoder for pairing; `app/js/version.js` —
   `APP_VERSION`, bumped with every deploy.
-- `js/demo.js` — deterministic demo gym, found by its `demo` flag, never by
-  name; `js/ai.js` — copy/paste export, deliberately NO AI API.
-- `sw.js` — network-first PWA. A new static file goes into SHELL and bumps
+- `app/js/demo.js` — deterministic demo gym, found by its `demo` flag, never by
+  name; `app/js/ai.js` — copy/paste export, deliberately NO AI API.
+- `app/sw.js` — network-first PWA. A new static file goes into SHELL and bumps
   `CACHE` in the SAME commit (CI's `shell-list` checks the first half) —
-  template files excepted: only `templates/index.json` is precached.
+  template files excepted: only `app/templates/index.json` is precached.
 
 ## Conventions (user-set, follow them)
 
@@ -125,7 +129,7 @@ exist because breaking them was once a real bug.
   whose parts belong together gets `data-focus-context`, never a scroll
   handler of its own; a screen change in the Train tab resets the scroll
   via `screenKey()`, an in-place update never does. Mechanics and the
-  reasons: docs/architecture.md § js/ui.js.
+  reasons: docs/architecture.md § app/js/ui.js.
 - Numeric inputs arm for overwrite on focus — old value greyed out in the
   placeholder as "(40)", empty field types fresh, blur without input
   restores it (`initNumericOverwrite()` in ui.js, delegated globally).
@@ -143,12 +147,12 @@ Dependabot/CodeQL PRs on GitHub are signals only — fix locally and push to
 both remotes, never merge in the GitHub UI.
 
 CI runs the logic tests, parses every shipped script (`static-checks` — the
-one job that would catch a typo in js/app.js, since nothing else loads the
-files) plus a `sw.js` SHELL cross-check and the `smoke` suite — all four
+one job that would catch a typo in app/js/app.js, since nothing else loads the
+files) plus an `app/sw.js` SHELL cross-check and the `smoke` suite — all four
 gate the deploy — and deploys Pages from main; every asset reference must stay RELATIVE (project subpath).
 DONE = deployed, and a deploy says which build it is: any push to main that
-touches `js/`, `css/`, `index.html` or `sw.js` must bump `APP_VERSION` in
-`js/version.js` to the deploy date in the SAME push, or `static-checks` goes
+touches `app/js/`, `app/css/`, `app/index.html` or `app/sw.js` must bump `APP_VERSION` in
+`app/js/version.js` to the deploy date in the SAME push, or `static-checks` goes
 red before Pages sees it — a second deploy on the same day takes a letter
 (`2026-09-02b`), since the gate wants the FILE changed and two builds must
 not share one name. Settings shows the string; a PWA updates itself in

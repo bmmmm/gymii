@@ -1,13 +1,13 @@
 # gymii sync protocol (M1)
 
-The contract between the gymii client (`js/sync.js`) and a sync server
+The contract between the gymii client (`app/js/sync.js`) and a sync server
 (reference implementation: `gymii-sync`, a small self-hosted Go binary in
 its own repo). The server is a **dumb store for opaque encrypted blobs** —
 it never sees plaintext, never understands gymii's data model, and never
 decides a conflict beyond "your revision is stale."
 
 Status: implemented by three clients of one contract — the browser
-(`js/sync.js`), the reference server (`gymii-sync`), and `gymii-cli`, a
+(`app/js/sync.js`), the reference server (`gymii-sync`), and `gymii-cli`, a
 headless standing device that mirrors the opaque blobs as a backup and
 never decrypts on its automatic path. This document stays the source of
 truth — change it first, then the implementations. The "pinned by the
@@ -144,7 +144,7 @@ settings, plus the sync-relevant sidecars:
   crypto works (`crypto-available`). The server treats both shapes as the
   same opaque JSON.
 - `userSettings` carries ONLY the user-scoped fields (`USER_SETTINGS` in
-  `js/merge.js`); device-scoped settings never leave the device — and never
+  `app/js/merge.js`); device-scoped settings never leave the device — and never
   move its `updatedAt` either: `saveSettings` stamps only when a user field
   changed, so a History range chip tapped on a stale device cannot outrank
   a weight step another device set since. The wire format is unchanged.
@@ -194,7 +194,7 @@ settings, plus the sync-relevant sidecars:
    state is pushed under the known revision. A merge whose result equals
    the remote blob pushes nothing either way, so idle syncs never bump
    the revision.)
-3. Else: `merge*` (js/merge.js) per kind → apply locally via the bulk
+3. Else: `merge*` (app/js/merge.js) per kind → apply locally via the bulk
    writers (`restoreLayout`, `saveWorkouts`, `savePlans`, `saveTombstones`) →
    encrypt merged → `PUT If-Match: <remote revision>`.
 4. On 409: re-GET, re-merge, re-PUT (the loop IS the conflict protocol).

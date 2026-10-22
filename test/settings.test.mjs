@@ -78,8 +78,8 @@ Object.defineProperty(globalThis.navigator, 'clipboard', {
   },
 });
 
-const store = await import(new URL('../js/store.js', import.meta.url).href);
-const { renderSettings, setPendingPairCode } = await import(new URL('../js/settings.js', import.meta.url).href);
+const store = await import(new URL('../app/js/store.js', import.meta.url).href);
+const { renderSettings, setPendingPairCode } = await import(new URL('../app/js/settings.js', import.meta.url).href);
 
 // --- DOM stubs: stable per selector, stateful classList for the two-tap ---
 // The stub answers EVERY selector, rendered or not (AGENTS.md), so every

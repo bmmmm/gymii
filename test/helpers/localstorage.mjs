@@ -7,7 +7,7 @@
 // It installs itself ON IMPORT, and that is the whole contract: a test must
 // list it as its FIRST import. ESM evaluates every dependency completely
 // before the importing module's own body runs, so by the time a test reaches
-// `await import('../js/store.js')` the stub is already in place — but among
+// `await import('../app/js/store.js')` the stub is already in place — but among
 // several static imports, declaration order decides, so a helper listed
 // second would still be fine while one listed after a module that touches
 // storage at load time would not.

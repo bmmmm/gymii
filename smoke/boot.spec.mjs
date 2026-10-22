@@ -46,7 +46,7 @@ test('every tab renders without an error', async ({ page }) => {
 // sw.js is registered as a CLASSIC worker, so an `import` in it would pass
 // static-checks and only fail here.
 test('the service worker registers, activates and precaches the shell', async ({ page }) => {
-  const shell = [...readFileSync(new URL('../sw.js', import.meta.url), 'utf8')
+  const shell = [...readFileSync(new URL('../app/sw.js', import.meta.url), 'utf8')
     .match(/const SHELL = \[([\s\S]*?)\];/)[1]
     .matchAll(/'([^']+)'/g)].map((m) => m[1]);
   expect(shell.length, 'the SHELL list was parsed out of sw.js').toBeGreaterThan(10);

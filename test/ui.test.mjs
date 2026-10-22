@@ -11,7 +11,7 @@ process.env.TZ = 'Pacific/Auckland';
 
 import { strict as assert } from 'node:assert';
 
-const ui = await import(new URL('../js/ui.js', import.meta.url).href);
+const ui = await import(new URL('../app/js/ui.js', import.meta.url).href);
 
 // --- local time, not UTC ---
 
@@ -515,7 +515,7 @@ assert.equal(ui.fieldValue({ value: '0', dataset: { prevValue: '50' } }), '0', '
 
 // --- machineIcon: one glyph per machine, data-driven, with its fallbacks ---
 {
-  const { MUSCLE_REGIONS } = await import(new URL('../js/store.js', import.meta.url).href);
+  const { MUSCLE_REGIONS } = await import(new URL('../app/js/store.js', import.meta.url).href);
   // every cardio pattern by a label a gym would print — first match wins
   const cardio = (label) => ui.machineIcon({ cardio: true, label });
   assert.equal(cardio('Treadmill'), '🏃');

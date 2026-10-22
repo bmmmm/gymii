@@ -6,7 +6,7 @@ import { strict as assert } from 'node:assert';
 import {
   stamp, mergeById, mergeWorkouts, mergePlans, mergeLayout, mergeGyms,
   mergeSettings,
-} from '../js/merge.js';
+} from '../app/js/merge.js';
 
 const w = (id, updatedAt, weight = 40, startedAt = 1000) => ({
   id, startedAt, ...(updatedAt != null ? { updatedAt } : {}),

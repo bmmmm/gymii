@@ -5,7 +5,7 @@
 process.env.TZ = 'Europe/Berlin'; // the monthly axis crosses a DST change
 import { strict as assert } from 'node:assert';
 
-const { lineChart, barChart, niceTicks, timeTicks } = await import(new URL('../js/chart.js', import.meta.url).href);
+const { lineChart, barChart, niceTicks, timeTicks } = await import(new URL('../app/js/chart.js', import.meta.url).href);
 
 const day = (y, m, d) => new Date(y, m - 1, d).getTime(); // local midnight
 const count = (html, re) => (html.match(re) ?? []).length;

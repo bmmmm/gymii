@@ -2,7 +2,7 @@
 // the structural invariants a scanner relies on.
 // Run with: node test/qr.test.mjs
 import { strict as assert } from 'node:assert';
-import { qrSvg, qrMatrix, rsEcCodewords, gfMul, maskPenalty } from '../js/qr.js';
+import { qrSvg, qrMatrix, rsEcCodewords, gfMul, maskPenalty } from '../app/js/qr.js';
 
 // ---------------------------------------------------------------- GF(256)
 

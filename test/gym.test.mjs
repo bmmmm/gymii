@@ -6,10 +6,10 @@
 import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
-const store = await import(new URL('../js/store.js', import.meta.url).href);
+const store = await import(new URL('../app/js/store.js', import.meta.url).href);
 // the editor's placement check, and only that — the rendering half of map.js
 // is asserted in test/map.test.mjs
-const { overlapsSolid } = await import(new URL('../js/map.js', import.meta.url).href);
+const { overlapsSolid } = await import(new URL('../app/js/map.js', import.meta.url).href);
 
 const SVG_PX = 358; // typical 390px phone minus #view padding
 const PAD = 2.5; // map.js's viewBox padding, in grid units
@@ -28,7 +28,7 @@ globalThis.DOMPoint = class {
   matrixTransform(m) { return { x: m.a * this.x + m.e, y: m.d * this.y + m.f }; }
 };
 
-const { renderGym, focusMachine, osmUrl } = await import(new URL('../js/gym.js', import.meta.url).href);
+const { renderGym, focusMachine, osmUrl } = await import(new URL('../app/js/gym.js', import.meta.url).href);
 const S = SVG_PX / (60 + 2 * PAD); // screen px per unit, editor viewBox
 
 // Permissive element stub: every selector resolves, every listener is

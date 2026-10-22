@@ -13,7 +13,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   exception is the wire format: backup and template files keep the field
   `gym` and the kind `gym-template`, because files in the wild read them
   that way — see `exportGymTemplate()`. Don't "fix" that.
-- `js/store.js` — the ONLY data layer. Gym registry `gymii.gyms`
+- `app/js/store.js` — the ONLY data layer. Gym registry `gymii.gyms`
   (`{v, list:[{id,name}], activeId}`); layout/workouts/active live under
   per-gym keys `gymii.<gid>.layout|workouts|active`, settings stay global
   (`gymii.settings`). Two historical shapes migrate lazily in
@@ -38,7 +38,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   layout's, never none: a gridless layout is not written, and the push
   back would empty the server's machines. The views escape the same
   fields anyway, for records stored before the checks (map.js draws
-  geometry through `Number()`), and index.html's CSP keeps any inline
+  geometry through `Number()`), and app/index.html's CSP keeps any inline
   handler that slips through from running. Pinned by test/untrusted.test.mjs and
   sync.test.mjs block 19. Stored
   weights are always in the current display
@@ -130,7 +130,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   one string form (a JSON triple — History's chip and heatmap keys).
   Readers write `m.grips ?? []`; `getLayout` heals nothing here.
   Other lazy migrations live in `getLayout()` (outline, meta).
-  SYNC GROUNDWORK (docs/sync-protocol.md is the contract; js/merge.js the
+  SYNC GROUNDWORK (docs/sync-protocol.md is the contract; app/js/merge.js the
   pure merge layer): every interactive write stamps `updatedAt`
   (`savePlan`, `updateWorkout`, `finishWorkout`, `workoutFromText`,
   `saveSettings` — only when a `USER_SETTINGS` field changed, a device-local
@@ -156,7 +156,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   THE TAP — `ensureMachine(num, name, target)` (bind-or-create + save),
   `addMachineVariant(id, { exercises, grips })`, or `getLayout()` right there;
   the gym editor's `save()` and its undo/redo both read the stored layout IN
-  THE TAP (`foreignOnly`/`applySide`, js/layoutdiff.js). `uid()` is crypto-random, 16
+  THE TAP (`foreignOnly`/`applySide`, app/js/layoutdiff.js). `uid()` is crypto-random, 16
   chars; legacy 8-char ids stay valid, and ids deliberately carry no
   device marker (they travel into AI exports). Backups are `v: 2`
   (tombstones included, deletes stay dead across restore); v1 files import
@@ -234,7 +234,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   and the machine's whole-machine siblings take its label, unless the
   machine was already trained whole (`machineTrainedWhole`): relabelling
   would cut those sets off their slot and their prefill, so there the line
-  stays a whole-machine twin (the twins share the sets, § js/train.js) — or the two
+  stays a whole-machine twin (the twins share the sets, § app/js/train.js) — or the two
   would be one slot twice: Next pointing at itself, "✓ 3/3" on both rows,
   the second target gone on restart; unbound items keep their exercise
   part for this; an unbound slot carries `itemIdx` so the write-back hits
@@ -249,7 +249,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   (`active.plan[i].target` — startWorkoutFrom copies targets onto slots),
   not just stored plans; leaving them out silently turned an 80 kg goal
   into an 80 lbs one mid-workout.
-  The plan text lives in `js/plantext.js` (split off store.js; it writes
+  The plan text lives in `app/js/plantext.js` (split off store.js; it writes
   only through store's helpers):
   `parsePlanLine()`/`parsePlanText()` read a trainer's note ("Leg press
   3x10 80", "#7 Chest press 3x8-12 40kg", "Treadmill 20min"): set and
@@ -307,7 +307,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   data they never saved. Only the transition is announced, so a run of
   failing writes raises one banner and the next good write reports `null`;
   `getWriteError()` reads the current state. No retry, no queue, no second
-  store — `js/app.js` shows `#storage-alert` and the user acts.
+  store — `app/js/app.js` shows `#storage-alert` and the user acts.
   ORDER INVARIANT in `finishWorkout()`: `saveWorkouts()` FIRST, then
   `clearActive()`. `removeItem` cannot fail, `setItem` can — the other
   order deletes a finished workout that never reached history. Same rule
@@ -324,7 +324,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   covers IndexedDB and the Cache API and leaves Web Storage out of its
   numbers entirely, so it is shown as context beside this count, never
   instead of it.
-- `js/geometry.js`, `js/weekday.js`, `js/plantext.js` — split off store.js
+- `app/js/geometry.js`, `app/js/weekday.js`, `app/js/plantext.js` — split off store.js
   (2026-10-22) so the data layer holds storage and its invariants, not
   every rule that happens to read a plan. geometry.js (placement:
   `WALL_SNAPPED`, `isSolid`, `overlapsSolid`, `SNAP`, `freeSpot`) and
@@ -336,7 +336,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `importData` — an ES-module cycle that is safe because neither module
   calls the other while it loads. Keep it that way: no top-level call
   across the two.
-- `js/persist.js` — origin DURABILITY, deliberately not part of store.js
+- `app/js/persist.js` — origin DURABILITY, deliberately not part of store.js
   (that file is the localStorage layer; this one asks the browser to keep
   it, and stubs `navigator.storage` rather than `localStorage`). It
   imports nothing. Running out of room is not the risk — a workout costs
@@ -350,12 +350,12 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `persist()` per page load, guarded on the StorageManager's IDENTITY, so
   a test stub is a fresh load for free. Everything returns `null` rather
   than throwing.
-- `js/sync.js` — the cross-device sync engine (M1; docs/sync-protocol.md
+- `app/js/sync.js` — the cross-device sync engine (M1; docs/sync-protocol.md
   is the wire contract, docs/sync-plan.md the decision log, gymii-sync the
   reference server in its own repo). Public API is a FROZEN contract the
   Settings Sync card consumes: `getSyncState`, `enableSync`,
   `pairWithCode`, `getSyncCode`, `syncNow`, `disableSync`. `syncNow` runs
-  GET → decrypt → merge (js/merge.js) → apply → encrypt → PUT If-Match,
+  GET → decrypt → merge (app/js/merge.js) → apply → encrypt → PUT If-Match,
   with a max-3 re-merge loop on 409; merged state is applied through the
   bulk writers plus store's `restoreGymEntry`/`restoreSettings` — restore
   twins exist because re-stamping with Date.now() would forge edits that
@@ -433,7 +433,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   slot that was current when their request went out — sync off empties it,
   so a late answer never comes back under a new setup — and paint only
   while their gym is still active. The QR on the
-  pairing code is `js/qr.js` (hand-written encoder, byte mode, EC M, SVG
+  pairing code is `app/js/qr.js` (hand-written encoder, byte mode, EC M, SVG
   string — hard black/white, cameras need the contrast) wrapping
   `<app-url>#pair=<code>`; app.js intercepts `#pair=` BEFORE the route
   lookup, parks the code via `setPendingPairCode` (the focusMachine
@@ -446,11 +446,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   name wins the LWW merge instead of being pushed back out. The
   Settings-tab badge (`#sync-badge`, app.js `updateSyncBadge`) feeds on
   `syncHealth()`/`onSyncActivity` — accent = pending, danger = error.
-- `js/app.js` — hash-router, renders views into `#view`. The `#gym`
+- `app/js/app.js` — hash-router, renders views into `#view`. The `#gym`
   route is deliberately NOT in the tabbar (the map is a setup tool, not a
   daily surface — user decision); it is reached via links in onboarding,
   Settings and the Train hub's Gym tile. Don't re-add the tab. `#tour`
-  (js/tour.js) is a route without a tab too. On a device's FIRST start —
+  (app/js/tour.js) is a route without a tab too. On a device's FIRST start —
   the route would open Train, `settings.tourSeen` is unset and train.js's
   `isFirstRun()` holds (no workout, plan, builder or machine) — route()
   `location.replace('#tour')`s instead, so the tour comes before the
@@ -473,14 +473,14 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   it neither syncs nor moves the settings stamp. Chart and map colors were
   re-validated against #0a0a0a and #000 (same single deutan WARN as on
   #171c22, covered by numbers and labels). The FIRST paint is covered by
-  `js/theme-boot.js`, a classic (non-module) script loaded synchronously in
+  `app/js/theme-boot.js`, a classic (non-module) script loaded synchronously in
   `<head>` before the stylesheet: for `settings.theme === "black"` it stamps
   `html[data-theme="black"]` and paints `meta[name=theme-color]` `#000000`
   before the deferred app.js runs; any other value, corrupt JSON or blocked
   storage does nothing (never throws). It repeats ONE decision of
   `applyTheme`, which stays the owner; `test/sw.test.mjs` pins that both
   agree, so a new theme value must change both.
-- `js/tour.js` — the guided tour: six steps (`TOUR_STEPS` — welcome,
+- `app/js/tour.js` — the guided tour: six steps (`TOUR_STEPS` — welcome,
   the training loop as a four-line strip, plans, the optional map, History
   + AI, Settings), a screen in `#view` like every route — NOT an overlay,
   so nothing traps focus or blocks a tap, and the tabbar stays usable.
@@ -497,7 +497,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   last) and "Let's go" call `onExit` — app.js `location.replace('#train')`,
   so Back never walks into the tour again. Reached again from Settings →
   Help (`#tour-again`) and the first-run screen's "Other ways in".
-- `js/ui.js` — shared helpers; owns the keyboard. `initFocusCentering()`
+- `app/js/ui.js` — shared helpers; owns the keyboard. `initFocusCentering()`
   (wired once in app.js) centres every focused field in the VISIBLE band
   once `visualViewport` settles — a field-to-field hop fires no resize, so
   focusin settles 300 ms later, skipping a field `preserveFocus` merely
@@ -510,7 +510,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   builder, bind, log, overview and onboarding into one container, so
   `screenKey()` detects a screen CHANGE and resets the scroll to the top;
   an unchanged key is an in-place update whose scroll belongs to the user.
-  `hintHtml()` renders one stats.js hint (see § js/stats.js).
+  `hintHtml()` renders one stats.js hint (see § app/js/stats.js).
   `machineIcon(machine)` is the one glyph a machine is recognised by in
   every list — PRESENTATION, nothing stored, so it lives here and not in
   store.js (it imports `MUSCLE_REGIONS` from there; ui.js imported store.js
@@ -536,7 +536,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   label, because "Next: #3 Leg press" is pinned as one text by a dozen
   tests and B's "Try next:" reads the same way. The Gym card's `<h2>`
   carries it too, so a chip tap shows the region change live.
-- `js/map.js` — the shared floor-map renderer, split out of the editor so
+- `app/js/map.js` — the shared floor-map renderer, split out of the editor so
   train.js/plan.js never import from gym.js. `drawLayout()` draws every
   map surface (editor, train mini-maps, builder); its `highlightId` opt
   marks one machine `.locate` (white stroke, CSS pulse) and dims the rest
@@ -595,7 +595,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `focusMachine` edit handoff — which is fine exactly as long as
   gym.js never imports from train.js/plan.js (the direction the map
   split exists to prevent).
-- `js/gym.js` — floor-plan editor (renderer imported from map.js).
+- `app/js/gym.js` — floor-plan editor (renderer imported from map.js).
   An empty floor (no machine, no shape) explains itself ON the floor:
   `#floor-empty`, an overlay inside `.floor-wrap` toggled by `redraw()`,
   so it goes with the first item and comes back with an undo to nothing
@@ -725,7 +725,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   mutation must go through `save()`, never `saveLayout()` directly. An
   entry is what the edit CHANGED (`layoutDiff`: each machine and shape by
   id, each of name/grid/meta/outline), never a snapshot. The engine —
-  `layoutDiff`, `applySide`, `foreignOnly` — is `js/layoutdiff.js`, pure
+  `layoutDiff`, `applySide`, `foreignOnly` — is `app/js/layoutdiff.js`, pure
   and import-free like merge.js, pinned directly by
   test/layoutdiff.test.mjs; gym.js owns only the history stack and when
   to call it. The editor's other pure helpers (`MACHINE_TEXT`, the
@@ -759,7 +759,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   edit changed that key, a machine it deleted stays deleted, and an undone
   delete comes back at its old index. A save that changes nothing writes
   nothing and records no step.
-- `js/settings.js` — the Settings tab (units, gyms, backups, the Sync card
+- `app/js/settings.js` — the Settings tab (units, gyms, backups, the Sync card
   — the sync half is docs/sync-plan.md; a Help card links `#tour`). `renderSettings()` is wrapped
   whole in `preserveFocus` (every field in it is covered once). The Workout
   card's steppers write one settings key each on `change`: the rest timer
@@ -769,8 +769,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   from 1 up, unreadable text keeps the value it had, and the field is read
   through `fieldValue` like the weight step (an armed field left empty
   still means what it showed). The weight step is a decimal TEXT field
-  (§ js/history.js, "12,5").
-- `js/train.js` — guided workout; under the log screen's machine head sit
+  (§ app/js/history.js, "12,5").
+- `app/js/train.js` — guided workout; under the log screen's machine head sit
   the hints for THIS machine and exercise (progress) and this weekday
   (busy, via stats.js `inBusyWindow` — an hour either side of the window,
   reaching across midnight into the next weekday) — full width, not inside the head's flex row, where the 44px ↗
@@ -1147,7 +1147,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   whatever already stood there, and on a packed floor it may overlap but
   — as long as the grid holds the item at all — never lands on another
   solid item's exact spot.
-- `js/plan.js` — the plan builder: muscle-filtered machine picking, per-item
+- `app/js/plan.js` — the plan builder: muscle-filtered machine picking, per-item
   targets, reorder, weekday chips, and the route hint of the plan this
   name's workouts walk (above the items it reorders). It renders INSIDE the Train tab via
   train.js's module state (`openPlanBuilder()`, which ai.js uses for import
@@ -1175,7 +1175,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   last logged set there (`targetDefaults`) — a cardio line its distance,
   time AND `level` (absent when that set named none); the list view has
   no level stepper, the Text view shows and edits it.
-- `js/history.js` — two screens in one module, switched by module state like
+- `app/js/history.js` — two screens in one module, switched by module state like
   train.js (no hash sub-routes; `#history` stays one route). The OVERVIEW is
   what a glance needs: This week (tiles, a bar chart of the last 12 weeks,
   that week's workouts READ-ONLY — repeat, and "Edit ›" into the editor on
@@ -1295,7 +1295,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   filter narrows WHOLE workouts, never entries, so the editor's Save can't
   drop non-matching machines; the card itself is computed over the
   name-only list so every muscle stays reachable while one is selected.
-- `js/stats.js` — pure History analytics: weekly buckets, per-machine series
+- `app/js/stats.js` — pure History analytics: weekly buckets, per-machine series
   with estimated 1RM, muscle sets per week, the walked route, transition
   counts, rest gaps, the floor's walking distance (`walksFrom`: one
   Dijkstra flood from a machine to all targets over whole grid points, 8
@@ -1361,7 +1361,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   the two equal across a DST day. Weeks start on Monday and are stepped with
   `setDate()`, never 7 × 86400000. The rules, their thresholds and their
   sources live in docs/insights.md — change both together.
-- `js/chart.js` — the History charts, `lineChart` (time on x, an optional
+- `app/js/chart.js` — the History charts, `lineChart` (time on x, an optional
   dashed second series) and `barChart`; it imports nothing and escapes
   every caller string (labels, units, keys) itself. One point or column is
   selected at a time: tap, drag to scrub, or ArrowLeft/Right, and the
@@ -1376,7 +1376,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   chart's ancestors from `onSelect`: the captured container would die.
   `niceTicks` and `timeTicks(x0, x1, span)` (Mondays up to six weeks, month
   starts beyond) are exported.
-- `js/demo.js` — "Load test data" (Settings card, and the first-run
+- `app/js/demo.js` — "Load test data" (Settings card, and the first-run
   screen's "Look around in a demo gym"): fills a separate "Demo"
   gym with a 16-machine gym (the example template plus cardio,
   bodyweight and a multi-exercise machine), ~8 weeks of Push/Pull/Legs
@@ -1401,7 +1401,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   Shoulders), only muscles the demo already trains as primaries, so the
   secondary UI shows there; `test/demo.test.mjs` strips them before the old
   layout digest pin.
-- `js/ai.js` — copy prompt+data / paste-import. Deliberately NO AI API.
+- `app/js/ai.js` — copy prompt+data / paste-import. Deliberately NO AI API.
   Export set tuples are `[w, r]`, gain a third element (seconds offset from
   the workout's startedAt) when the set has `at`, and a fourth, `rir`, when a
   strength or bodyweight set was rated: `[w, r, sec|null, rir]` — `null`
@@ -1433,7 +1433,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   naming the plan (`planFromImport` only reports `replacesId`, it never
   reuses an id itself; the Settings file-import path always creates new).
   The default prompt tells the LLM the exact plan shape to answer with.
-- `sw.js` + `manifest.webmanifest` — PWA. Network-first with cache
+- `app/sw.js` + `app/manifest.webmanifest` — PWA. Network-first with cache
   fallback (online always fresh, no cache bump per deploy), capped by
   `NET_TIMEOUT_MS` (2.5 s) so a stalled gym wifi never spins forever: once
   the timer fires, a cached copy answers — but only one that EXISTS and
@@ -1444,17 +1444,17 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   REJECTION beats the timer immediately, so hard offline stays instant.
   IMPORTANT:
   new static files (js modules, css, icons) must be added to the SHELL
-  list in `sw.js` — EXCEPT template files: they are on-demand content the
-  fetch handler caches on first load, only `templates/index.json` is
-  precached (so a community template PR never touches sw.js). CI's
+  list in `app/sw.js` — EXCEPT template files: they are on-demand content the
+  fetch handler caches on first load, only `app/templates/index.json` is
+  precached (so a community template PR never touches app/sw.js). CI's
   `shell-list` job goes red on a forgotten one, and the `CACHE` constant is
   bumped IN THE SAME COMMIT as any SHELL edit — the precache is filled once
   per cache name, so a new entry under the old name never gets fetched.
-  `js/theme-boot.js` (the first-paint theme script, see app.js) is in SHELL
+  `app/js/theme-boot.js` (the first-paint theme script, see app.js) is in SHELL
   too.
   The service worker deliberately imports nothing: a module worker
   (`register(..., { type: 'module' })`) fails on Safari < 16.4, so
-  `js/version.js` is duplicated into SHELL as a plain path rather than
+  `app/js/version.js` is duplicated into SHELL as a plain path rather than
   shared as code. `settings.keepAwake` names the
   screen wake lock's SCOPE: `break` (default), `workout` (held while an
   active workout exists — battery cost, never the default) or `off`; a

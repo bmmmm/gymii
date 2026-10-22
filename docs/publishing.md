@@ -9,18 +9,21 @@ fresh clone, to CI and to cloud agents.
 ## CI and the Pages deploy
 
 `.github/workflows/ci.yml` runs all logic tests (`test/*.test.mjs`), parses
-every shipped script, cross-checks the `sw.js` SHELL list against
+every shipped script, cross-checks the `app/sw.js` SHELL list against
 `git ls-files` and drives the browser smoke suite (`smoke/*.spec.mjs`,
-Chromium only), then deploys the repo root to Pages
-(<https://bmmmm.github.io/gymii/>) once they pass on main.
+Chromium only), then deploys `app/` to Pages
+(<https://bmmmm.github.io/gymii/>) once they pass on main. Only `app/` is
+published: until 2026-10-23 the deploy uploaded the repo root, and the live
+site served AGENTS.md, TODO.md, every test and `serve.py` next to the app.
 `security.yml` (gitleaks + forbidden files + token grep) and `shellcheck.yml`
 (only on `scripts/**`) round out the checkers.
 
 The `smoke` job is the only one that installs anything. Two tripwires keep
-the app that ships dependency-free: `static-checks` refuses a shipped file
-that mentions `node_modules`, and `deploy` refuses to run at all if an
-install is present — it uploads `path: .` with no exclude list, and that is
-safe only while the publish directory has none.
+the app that ships dependency-free: `static-checks` refuses a file in
+`app/` that mentions `node_modules`, and `deploy` refuses to run at all if
+`app/` carries an install or a `package.json` — it uploads `path: app` with
+no exclude list, and that is safe only while the publish directory has none.
+An install lands in the repo root, outside it.
 
 Chromium only, on purpose. What the suite checks — the module graph
 loading, click chains, box metrics, SW registration — is the same question
@@ -29,7 +32,7 @@ that Playwright's WebKit build does not answer. Those live on the device
 checklist in TODO.md.
 
 The site lives on a project subpath, so every asset reference must stay
-RELATIVE (`css/style.css`, not `/css/style.css`) — index.html, the manifest
+RELATIVE (`css/style.css`, not `/css/style.css`) — app/index.html, the manifest
 and the SHELL list already are.
 
 When a Pages deploy fails, dispatch a fresh run
@@ -40,7 +43,7 @@ looks like a workflow bug and isn't.
 
 ## Community templates
 
-`templates/index.json` is the manifest "database" (id, name, country, city,
+`app/templates/index.json` is the manifest "database" (id, name, country, city,
 file); `test/templates.test.mjs` is the gate — every entry must exist, import
 cleanly and have ≥1 machine, and every file must be listed.
 

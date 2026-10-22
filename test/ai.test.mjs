@@ -6,8 +6,8 @@
 import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
-const store = await import(new URL('../js/store.js', import.meta.url).href);
-const { renderAi, buildAiExport, compactJson, DEFAULT_PROMPT } = await import(new URL('../js/ai.js', import.meta.url).href);
+const store = await import(new URL('../app/js/store.js', import.meta.url).href);
+const { renderAi, buildAiExport, compactJson, DEFAULT_PROMPT } = await import(new URL('../app/js/ai.js', import.meta.url).href);
 
 // --- fixture: a small gym and one saved plan with everything on it ---
 

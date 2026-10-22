@@ -4,8 +4,8 @@
 import { mem, failWritesAfter } from './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
-const store = await import(new URL('../js/store.js', import.meta.url).href);
-const geometry = await import(new URL('../js/geometry.js', import.meta.url).href);
+const store = await import(new URL('../app/js/store.js', import.meta.url).href);
+const geometry = await import(new URL('../app/js/geometry.js', import.meta.url).href);
 
 // build a layout
 const layout = store.newLayout('Test layout');
@@ -430,7 +430,7 @@ assert.notStrictEqual(store.newEntry(strengthMachine).sets, store.newEntry(stren
 
 // the shipped example template must pass import validation
 const { readFileSync } = await import('node:fs');
-const example = JSON.parse(readFileSync(new URL('../templates/example-gym.json', import.meta.url), 'utf8'));
+const example = JSON.parse(readFileSync(new URL('../app/templates/example-gym.json', import.meta.url), 'utf8'));
 assert.equal(store.importData(example), 'gym-template');
 assert.equal(store.getLayout().machines.length, 11);
 assert.ok(store.getLayout().machines.some((m) => (m.muscles || []).includes('Lower back')),
@@ -572,7 +572,7 @@ assert.deepEqual(store.workoutsWithMuscle(mWorkouts, null, 'Lats'), []);
 // --- timer sound: the stored default names a real TIMER_SOUNDS entry ---
 // The coupling belongs here, where the default is defined; everything about
 // the sounds themselves lives in test/ui.test.mjs.
-const ui = await import(new URL('../js/ui.js', import.meta.url).href);
+const ui = await import(new URL('../app/js/ui.js', import.meta.url).href);
 assert.equal(store.getSettings().timerSound, 'double', 'timer sound defaults to double');
 assert.ok(ui.TIMER_SOUNDS[store.getSettings().timerSound],
   'and that default is a sound that exists — a rename in ui.js must not mute the timer');
@@ -1073,7 +1073,7 @@ assert.deepEqual(movedBare, { id: 'wn', startedAt: -5, entries: [] },
   assert.equal(byId.old, 50, "the file's own tombstones join it");
   assert.equal(byId.both, 900, 'one id on both sides keeps the later `at`');
   assert.equal('x"><b>' in byId, false, 'a tombstone without a safe id is no tombstone');
-  const merge = await import(new URL('../js/merge.js', import.meta.url).href);
+  const merge = await import(new URL('../app/js/merge.js', import.meta.url).href);
   const after = merge.mergeWorkouts(store.getWorkouts(), [], store.getTombstones().workouts, []);
   assert.deepEqual(after.items.map((w) => w.id), ['keep'], 'so the next merge keeps the deleted workout dead');
   store.clearAll();
@@ -1085,7 +1085,7 @@ assert.deepEqual(movedBare, { id: 'wn', startedAt: -5, entries: [] },
 // resurrects the old machines nor lets the remote's older structure win.
 {
   store.clearAll();
-  const merge = await import(new URL('../js/merge.js', import.meta.url).href);
+  const merge = await import(new URL('../app/js/merge.js', import.meta.url).href);
   const realNow = Date.now;
   let clock = 1_800_000_000_000;
   Date.now = () => clock;

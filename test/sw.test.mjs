@@ -8,7 +8,7 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-const SRC = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
+const SRC = readFileSync(new URL('../app/sw.js', import.meta.url), 'utf8');
 const ORIGIN = 'https://gym.example';
 
 // The one object `Response.error()` ever returns, so a test can assert
@@ -265,8 +265,8 @@ const flush = async () => { for (let i = 0; i < 6; i++) await new Promise((r) =>
 // identical fake, and demand the same result for every kind of setting —
 // including the ones that must do nothing.
 {
-  const BOOT = readFileSync(new URL('../js/theme-boot.js', import.meta.url), 'utf8');
-  const HTML = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const BOOT = readFileSync(new URL('../app/js/theme-boot.js', import.meta.url), 'utf8');
+  const HTML = readFileSync(new URL('../app/index.html', import.meta.url), 'utf8');
   const fakeDoc = () => {
     const meta = { content: '#0f1216', setAttribute(k, v) { this[k] = v; } };
     return {
@@ -287,7 +287,7 @@ const flush = async () => { for (let i = 0; i < 6; i++) await new Promise((r) =>
     return document;
   };
   const prior = globalThis.document;
-  const { applyTheme } = await import(new URL('../js/ui.js', import.meta.url).href);
+  const { applyTheme } = await import(new URL('../app/js/ui.js', import.meta.url).href);
   const viaApp = (settings) => {
     const document = fakeDoc();
     globalThis.document = document;

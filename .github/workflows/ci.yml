@@ -25,7 +25,7 @@ jobs:
       - run: for f in test/*.test.mjs; do echo "== $f"; node "$f" || exit 1; done
 
   # No build step means nothing parses the shipped scripts before a browser
-  # does: a stray typo in js/app.js or sw.js sails through the logic tests
+  # does: a stray typo in app/js/app.js or app/sw.js sails through the logic tests
   # (they import single modules) and only breaks the live page. This parses
   # every one of them.
   # NOT `node --check <file>`: for a plain .js file that parses as CommonJS,
@@ -46,7 +46,7 @@ jobs:
           node-version: '24'
       - name: Every shipped script parses
         run: |
-          for f in js/*.js sw.js; do
+          for f in app/js/*.js app/sw.js; do
             echo "== $f"
             node --input-type=module --check < "$f" || exit 1
           done
@@ -56,13 +56,13 @@ jobs:
       # 404 in the browser and be invisible to every other job.
       - name: Nothing shipped reaches into node_modules
         run: |
-          if git grep -n 'node_modules' -- 'js/*.js' 'css/*.css' index.html sw.js; then
+          if git grep -n 'node_modules' -- app; then
             echo "::error::a shipped file references node_modules"
             exit 1
           fi
           echo "No shipped file references node_modules."
 
-      # "Which build am I running?" has exactly one answer, js/version.js, and
+      # "Which build am I running?" has exactly one answer, app/js/version.js, and
       # only while it is bumped — a PWA updates itself in the background, so a
       # stale number is worse than none. A push to main that ships changed
       # files and leaves it alone stops here, before Pages sees it. Pull
@@ -76,20 +76,22 @@ jobs:
             echo "No comparable previous commit (new branch or force-push) — skipped."
             exit 0
           fi
-          changed=$(git diff --name-only "$before" '${{ github.sha }}' -- js css index.html sw.js)
+          # template files are on-demand content, not a build: a community
+          # template PR must not need a version bump
+          changed=$(git diff --name-only "$before" '${{ github.sha }}' -- app/js app/css app/index.html app/sw.js)
           if [ -z "$changed" ]; then
             echo "Nothing that ships changed."
             exit 0
           fi
-          if echo "$changed" | grep -qx 'js/version.js'; then
+          if echo "$changed" | grep -qx 'app/js/version.js'; then
             echo "Version bumped alongside: $(echo "$changed" | tr '\n' ' ')"
             exit 0
           fi
-          echo "::error file=js/version.js::shipped files changed without bumping APP_VERSION: $(echo "$changed" | tr '\n' ' ')"
+          echo "::error file=app/js/version.js::shipped files changed without bumping APP_VERSION: $(echo "$changed" | tr '\n' ' ')"
           exit 1
 
   # A runtime asset missing from the sw.js SHELL list breaks the app OFFLINE
-  # only — invisible in every normal test. icons/icon.svg is the source the
+  # only — invisible in every normal test. app/icons/icon.svg is the source the
   # PNGs are generated from, never fetched at runtime, so it stays out.
   # Template FILES stay out too: they are on-demand content the service
   # worker caches on first load — only the manifest is precached, so a
@@ -99,19 +101,22 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # SHELL entries are relative to app/ — the directory that becomes the
+      # site root — so the listed paths are taken from inside it.
       - name: Every runtime asset is in the sw.js SHELL list
+        working-directory: app
         run: |
           missing=0
           while IFS= read -r f; do
             if ! grep -qF "'$f'" sw.js; then
-              echo "::error file=sw.js::$f is not in the SHELL list — it would be missing offline"
+              echo "::error file=app/sw.js::$f is not in the SHELL list — it would be missing offline"
               missing=1
             fi
           done < <(git ls-files 'js/*.js' 'css/*.css' 'icons/*.png' 'templates/index.json')
           [ "$missing" -eq 0 ] && echo "SHELL list covers every runtime asset."
           exit "$missing"
 
-  # What a stub DOM cannot see, on principle: js/app.js loading at all, five
+  # What a stub DOM cannot see, on principle: app/js/app.js loading at all, five
   # click handlers in a row across three re-renders, a box's real metrics, a
   # service worker registering. The app that ships stays dependency-free —
   # this job is the only place node_modules exists, and nothing from it
@@ -144,7 +149,8 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
-  # Flat no-build site: the repo root IS the publish dir. Only main deploys;
+  # No-build site: app/ IS the publish dir, uploaded as it is in the repo —
+  # tests, docs and tooling around it never reach Pages. Only main deploys;
   # pull_request runs stop after the checks.
   deploy:
     needs: [test, static-checks, shell-list, smoke]
@@ -159,19 +165,19 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # `path: .` uploads the whole checkout. It is safe today only because
-      # this job never installs anything — an implicit invariant, made
-      # explicit here rather than left as a trap for the next person who
-      # adds a build step above.
+      # `path: app` uploads that directory with no exclude list. An install
+      # lands in the repo root, outside it — this keeps it that way, made
+      # explicit rather than left as a trap for the next person who adds a
+      # build step inside app/.
       - name: The publish directory carries no install
         run: |
-          if [ -e node_modules ]; then
-            echo "::error::node_modules exists in the publish directory — it would be deployed"
+          if [ -e app/node_modules ] || [ -e app/package.json ]; then
+            echo "::error::app/ carries an install or a package manifest — it would be deployed"
             exit 1
           fi
           echo "Publish directory is install-free."
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: .
+          path: app
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

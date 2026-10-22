@@ -6,12 +6,12 @@
 import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
-const store = await import(new URL('../js/store.js', import.meta.url).href);
-const weekday = await import(new URL('../js/weekday.js', import.meta.url).href);
-const plantext = await import(new URL('../js/plantext.js', import.meta.url).href);
+const store = await import(new URL('../app/js/store.js', import.meta.url).href);
+const weekday = await import(new URL('../app/js/weekday.js', import.meta.url).href);
+const plantext = await import(new URL('../app/js/plantext.js', import.meta.url).href);
 const { startWorkoutFrom, renderTrain, goToStart, goToPlans, goToHub } =
-  await import(new URL('../js/train.js', import.meta.url).href);
-const { renderPlanBuilder } = await import(new URL('../js/plan.js', import.meta.url).href);
+  await import(new URL('../app/js/train.js', import.meta.url).href);
+const { renderPlanBuilder } = await import(new URL('../app/js/plan.js', import.meta.url).href);
 
 const gym = store.newLayout('Plan test gym');
 gym.machines.push({

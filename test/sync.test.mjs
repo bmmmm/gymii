@@ -25,8 +25,8 @@ globalThis.window = {
 };
 const fireWindow = (type, e) => (windowListeners.get(type) ?? []).forEach((fn) => fn(e));
 
-const store = await import(new URL('../js/store.js', import.meta.url).href);
-const sync = await import(new URL('../js/sync.js', import.meta.url).href);
+const store = await import(new URL('../app/js/store.js', import.meta.url).href);
+const sync = await import(new URL('../app/js/sync.js', import.meta.url).href);
 
 // --- an independent implementation of the crypto half of the contract ---
 const PBKDF2_ITERATIONS = 600000;
@@ -1018,7 +1018,7 @@ try {
 // the weight step: before, that tap re-stamped every setting and the stale
 // weight step won the merge.
 {
-  const merge = await import(new URL('../js/merge.js', import.meta.url).href);
+  const merge = await import(new URL('../app/js/merge.js', import.meta.url).href);
   const realNow = Date.now;
   let clock = 1_900_000_000_000;
   Date.now = () => clock;

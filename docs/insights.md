@@ -3,7 +3,7 @@
 A hint is one instruction about your own training, shown where you act on
 it, with a ↗ to the study it rests on and no explainer (user, 2026-10-01:
 "direkt die Anweisung, nur ein Hinweis zu den Docs"). They come from
-`insights()` in `js/stats.js`, which is pure: workouts, layout, settings,
+`insights()` in `app/js/stats.js`, which is pure: workouts, layout, settings,
 `now` and the saved plans go in, raw strings come out (the UI escapes via
 `hintHtml()` in ui.js). **This file and the code are one contract — change
 both together.** Thresholds below are the ones in the code;

@@ -4,7 +4,7 @@
 // Run with: node test/persist.test.mjs
 import { strict as assert } from 'node:assert';
 
-const url = new URL('../js/persist.js', import.meta.url).href;
+const url = new URL('../app/js/persist.js', import.meta.url).href;
 
 // Each case installs its own StorageManager object: the module's one-ask
 // guard hangs on that object's identity, so a fresh stub IS a fresh page

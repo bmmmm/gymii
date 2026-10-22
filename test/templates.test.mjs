@@ -7,9 +7,9 @@ import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 import { readFileSync, readdirSync } from 'node:fs';
 
-const store = await import(new URL('../js/store.js', import.meta.url).href);
+const store = await import(new URL('../app/js/store.js', import.meta.url).href);
 
-const dir = new URL('../templates/', import.meta.url);
+const dir = new URL('../app/templates/', import.meta.url);
 const idx = JSON.parse(readFileSync(new URL('index.json', dir), 'utf8'));
 assert.equal(idx.v, 1, 'manifest version is 1');
 assert.ok(Array.isArray(idx.templates) && idx.templates.length, 'manifest lists templates');

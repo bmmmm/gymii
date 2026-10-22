@@ -7,12 +7,12 @@
 import { mem } from './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
-const store = await import(new URL('../js/store.js', import.meta.url).href);
-const weekday = await import(new URL('../js/weekday.js', import.meta.url).href);
+const store = await import(new URL('../app/js/store.js', import.meta.url).href);
+const weekday = await import(new URL('../app/js/weekday.js', import.meta.url).href);
 // a Progress chip / heatmap key: stats.js's seriesKey, the (machine, exercise, grip) triple
 const K = (machineId, exercise = null, grip = null) => JSON.stringify([machineId, exercise, grip]);
-const { fmtDay: fmtDayOf } = await import(new URL('../js/ui.js', import.meta.url).href);
-const { renderHistory } = await import(new URL('../js/history.js', import.meta.url).href);
+const { fmtDay: fmtDayOf } = await import(new URL('../app/js/ui.js', import.meta.url).href);
+const { renderHistory } = await import(new URL('../app/js/history.js', import.meta.url).href);
 
 // --- fixture: three named workouts across two routines ---
 
@@ -981,7 +981,7 @@ mem.set(layoutKey, savedLayout);
 // cannot prove — that a real browser keeps the caret on the new node — is the
 // browser check in docs/testing.md's list, not this file's.
 {
-  const { cssStr } = await import(new URL('../js/ui.js', import.meta.url).href);
+  const { cssStr } = await import(new URL('../app/js/ui.js', import.meta.url).href);
   const g = store.newLayout('Keep focus gym');
   g.machines.push(
     { id: 'ax', num: 17, label: 'Assisted pull-up', x: 0, y: 0, w: 4, h: 3, settingsFields: [], assisted: true, muscles: ['Back'] },

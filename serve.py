@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 """Dev server for gymii: plain http.server with caching disabled, so code
 changes always show up on a normal reload (ES modules are cached hard
-otherwise). Not needed in production — GitHub Pages handles caching."""
+otherwise). Not needed in production — GitHub Pages handles caching.
 
+It serves app/, the same directory Pages publishes, so a URL means the same
+file here as on the live site — and nothing outside app/ (tests, docs,
+node_modules) is reachable from the browser."""
+
+import functools
 import http.server
+import pathlib
 import sys
+
+APP_DIR = pathlib.Path(__file__).resolve().parent / 'app'
 
 
 class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
@@ -25,4 +33,7 @@ class Server(http.server.ThreadingHTTPServer):
 if __name__ == '__main__':
     # optional port arg so parallel checkouts can serve side by side
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8437
-    http.server.test(HandlerClass=NoCacheHandler, ServerClass=Server, port=port)
+    # a partial, like `python3 -m http.server --directory` builds its own:
+    # independent of the cwd the server was started from
+    handler = functools.partial(NoCacheHandler, directory=str(APP_DIR))
+    http.server.test(HandlerClass=handler, ServerClass=Server, port=port)

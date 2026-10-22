@@ -13,8 +13,8 @@
 import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
-const store = await import(new URL('../js/store.js', import.meta.url).href);
-const plantext = await import(new URL('../js/plantext.js', import.meta.url).href);
+const store = await import(new URL('../app/js/store.js', import.meta.url).href);
+const plantext = await import(new URL('../app/js/plantext.js', import.meta.url).href);
 
 const X = '"><img src=x onerror=alert(1)>';
 // inert = the payload reached the markup, and only as text
@@ -272,11 +272,11 @@ globalThis.DOMPoint = class {
 };
 
 const { renderTrain, goToStart, goToPlans, openPlanBuilder } = await import(
-  new URL('../js/train.js', import.meta.url).href);
-const { renderHistory } = await import(new URL('../js/history.js', import.meta.url).href);
-const { renderSettings } = await import(new URL('../js/settings.js', import.meta.url).href);
-const { renderGym, focusMachine } = await import(new URL('../js/gym.js', import.meta.url).href);
-const { drawLayout } = await import(new URL('../js/map.js', import.meta.url).href);
+  new URL('../app/js/train.js', import.meta.url).href);
+const { renderHistory } = await import(new URL('../app/js/history.js', import.meta.url).href);
+const { renderSettings } = await import(new URL('../app/js/settings.js', import.meta.url).href);
+const { renderGym, focusMachine } = await import(new URL('../app/js/gym.js', import.meta.url).href);
+const { drawLayout } = await import(new URL('../app/js/map.js', import.meta.url).href);
 
 // One permissive element stub: every selector resolves (memoised, so a
 // listener wired on a nested element is still there when the test fires it)

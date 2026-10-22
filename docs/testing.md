@@ -5,7 +5,10 @@ Split out of AGENTS.md so the always-read file stays a map (its budget is
 Moved verbatim. Tracked on purpose: `.claude/` is gitignored here, so a doc
 there would be invisible to a fresh clone, to CI and to cloud agents.
 
-- Dev server: `python3 serve.py [port]` → http://localhost:8437 (sends
+- Dev server: `python3 serve.py [port]` → http://localhost:8437. It serves
+  `app/` — the directory Pages publishes — from any cwd, so a URL names the
+  same file locally and live, and tests/docs are unreachable from the
+  browser, as they are on Pages. It sends
   `Cache-Control: no-store`; plain `http.server` made Chrome serve stale
   modules — don't go back to it). It also raises the listen backlog from
   5 to 64: parallel local Playwright workers overflowed it, macOS refused
@@ -17,7 +20,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `test/helpers/localstorage.mjs`: importing it installs it, which is why it
   must be a test's FIRST import — ESM evaluates a dependency completely
   before the importing module's own body runs, so the stub is in place ahead
-  of every `await import('../js/store.js')`. It exports `mem` (the backing
+  of every `await import('../app/js/store.js')`. It exports `mem` (the backing
   Map, a live binding) and `useStore(map)` to point the stub at another Map;
   one call is a device switch, which is how sync.test.mjs runs two devices in
   one process. `failWritesAfter(n)` lets `n` writes through and then throws
@@ -69,8 +72,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   templates, backups and AI pastes refused or repaired at entry, and
   hostile values seeded straight into storage rendering escaped in every
   view — the sync half is sync.test.mjs block 19), `sw` (the real
-  `sw.js` run in a `node:vm` sandbox: method/origin gate, cache writes,
-  offline fallback, the head script that must agree with `applyTheme` (`js/theme-boot.js`), and the stalled-network timeout — the sandbox owns
+  `app/sw.js` run in a `node:vm` sandbox: method/origin gate, cache writes,
+  offline fallback, the head script that must agree with `applyTheme` (`app/js/theme-boot.js`), and the stalled-network timeout — the sandbox owns
   `setTimeout`, so 2.5 s are proven in microseconds). Modules import
   fine in Node as long as none touches the DOM at top level; the stub DOM
   hands back EVERY selector, rendered or not, so a test must drive view
@@ -86,7 +89,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
 - Browser smoke tests: `pnpm install` once, then `pnpm exec playwright
   install chromium` once (~170 MB, deliberately NOT an install script —
   Playwright is kept off `onlyBuiltDependencies`), then `pnpm run smoke`.
-  The scenarios in `smoke/*.spec.mjs`: the app boots at all (js/app.js is
+  The scenarios in `smoke/*.spec.mjs`: the app boots at all (app/js/app.js is
   loaded by no Node test and `static-checks` does not resolve imports), a
   logged set survives a reload, the rest keeps running inline after the
   overlay closes and across a reload, no route scrolls sideways at 320px,
