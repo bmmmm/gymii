@@ -1015,6 +1015,24 @@ details.workout summary::-webkit-details-marker { display: none; }
    picker's filter */
 .muscle-row.open { color: var(--muted); }
 .muscle-row .m-count { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+/* Train's fold row between the trained muscles and the untrained ones
+   (muscleCardHtml): a full-width 44px box in the list's own rhythm, the
+   accent saying it is an action rather than a muscle */
+.muscle-fold {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 4px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.muscle-fold:last-child { border-bottom: 0; }
+.muscle-fold:active { filter: brightness(1.3); }
 .bar-track {
   display: block; /* spans collapse to height 0 otherwise */
   height: 6px;

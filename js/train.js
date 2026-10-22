@@ -1116,6 +1116,29 @@ export function muscleProgress(active, layout) {
   return { rows, trained, total: rows.length, max };
 }
 
+// The card's rows (user ask 2026-10-22: 14 rows on a gym that tags every
+// muscle): trained rows first, most sets first — a stable sort, so ties
+// keep muscleProgress's region order — then the untrained ones, folded
+// behind ONE toggle row between the two groups. The toggle sits ABOVE what
+// it shows and hides, so neither tap moves it (or anything above it): no
+// keepInView, no scroll. The fold is a device-local view setting
+// (`settings.muscleFold`, 'shown' | absent = folded — never stamped, see
+// store's saveSettings). With nothing trained yet every row shows: folding
+// all of them would leave an empty card. Exported for the tests.
+export function muscleCardHtml(progress, shown = getSettings().muscleFold === 'shown') {
+  const trained = progress.rows.filter((r) => r.value > 0).sort((a, b) => b.value - a.value);
+  const open = progress.rows.filter((r) => !(r.value > 0));
+  const row = (r) => `<button type="button" class="muscle-row${r.value ? '' : ' open'}" data-muscle="${esc(r.muscle)}">
+          <span>${esc(r.muscle)} <span class="m-count">· ${r.value ? esc(setsLabel(r.value)) : 'open'}</span></span>
+          <span class="bar-track"><span class="bar-fill"
+            style="width:${progress.max ? Math.round((r.value / progress.max) * 100) : 0}%"></span></span>
+        </button>`;
+  if (!trained.length || !open.length) return [...trained, ...open].map(row).join('');
+  const toggle = `<button type="button" id="muscle-fold" class="muscle-fold" aria-expanded="${shown}">${
+    shown ? 'Hide untrained' : `Show ${open.length} untrained`}</button>`;
+  return [...trained.map(row), toggle, ...(shown ? open.map(row) : [])].join('');
+}
+
 // "3 sets", "½ set", "1½ sets" — the half a secondary muscle earns reads as
 // the ½ glyph; whole numbers go through plural()
 const setsLabel = (value) => {
@@ -1229,11 +1252,7 @@ function renderOverview(root, layout, active, message = '') {
       <h2>Muscles today</h2>
       <p class="muted">${progress.trained} of ${plural(progress.total, 'muscle')} trained</p>
       <div id="muscle-coverage">
-        ${progress.rows.map((r) => `<button type="button" class="muscle-row${r.value ? '' : ' open'}" data-muscle="${esc(r.muscle)}">
-          <span>${esc(r.muscle)} <span class="m-count">· ${r.value ? esc(setsLabel(r.value)) : 'open'}</span></span>
-          <span class="bar-track"><span class="bar-fill"
-            style="width:${progress.max ? Math.round((r.value / progress.max) * 100) : 0}%"></span></span>
-        </button>`).join('')}
+        ${muscleCardHtml(progress, s.muscleFold === 'shown')}
       </div>
       <p class="muted">Tap an open muscle to find a machine for it below.</p>
     </section>` : ''}
@@ -1312,9 +1331,23 @@ function renderOverview(root, layout, active, message = '') {
     renderTrain(root);
   }, { actionLabel: 'Add', active });
 
-  root.querySelector('#muscle-coverage')?.addEventListener('click', (e) => {
-    const row = e.target.closest('.muscle-row');
-    if (row) picker.setMuscle(row.dataset.muscle);
+  // one delegated listener: it survives the fold toggle's in-place swap of
+  // the rows (only #muscle-coverage's content changes — the overview, the
+  // picker's state and the scroll stay as they are)
+  const coverage = root.querySelector('#muscle-coverage');
+  coverage?.addEventListener('click', (e) => {
+    const hit = e.target.closest('.muscle-row, #muscle-fold');
+    if (!hit) return;
+    if (hit.id !== 'muscle-fold') {
+      picker.setMuscle(hit.dataset.muscle);
+      return;
+    }
+    const cur = getSettings();
+    const shown = cur.muscleFold !== 'shown';
+    saveSettings({ ...cur, muscleFold: shown ? 'shown' : 'folded' });
+    coverage.innerHTML = muscleCardHtml(progress, shown);
+    // the node tapped was replaced: hand focus to its successor in place
+    coverage.querySelector('#muscle-fold')?.focus?.({ preventScroll: true });
   });
 
   // two-tap guard: finishing only happens once, at the very end
@@ -1460,8 +1493,8 @@ function renderBind(root, layout, active) {
 // Next unfinished plan slot after the current one, wrapping around so a
 // skipped (busy) machine comes up again at the end. Another exercise at
 // the SAME machine is a valid next stop — only the current slot is out.
-// A `free` slot with no set is skipped too: a machine merely opened is
-// not a commitment (the overview still lists it).
+// A `free` slot with no set is skipped too (idleFree): a machine merely
+// opened is not a commitment (the overview still lists it).
 function nextOpenSlot(active, layout, s, afterId, afterExercise = null, afterGrip = null) {
   const idx = planSlotIndex(active, layout, s, afterId, afterExercise, afterGrip);
   const order = [...active.plan.slice(idx + 1), ...active.plan.slice(0, Math.max(idx, 0))];
@@ -1469,8 +1502,15 @@ function nextOpenSlot(active, layout, s, afterId, afterExercise = null, afterGri
   // the current block is done ("Next: <this machine>", and no "Busy?")
   const here = { machineId: afterId, exercise: afterExercise, grip: afterGrip };
   return order.find((slot) => slotLive(layout, slot) && !slotDone(active, slot, layout, s)
-    && !(slot.free && twinShare(active, slot, layout, s) === 0)
+    && !idleFree(active, slot, layout, s)
     && !(slot.machineId && sameSlot(slot, here))) ?? null;
+}
+
+// A `free` slot without a set of its own: where you merely stood (a machine
+// opened, never logged), not a stop the plan owes you. "Next", "Busy?" and
+// "Closer:" all skip it — one predicate, so the three never disagree.
+function idleFree(active, slot, layout, s) {
+  return !!slot.free && twinShare(active, slot, layout, s) === 0;
 }
 
 // The plan index the logging screen is at: the exact (machine, exercise,
@@ -1503,7 +1543,8 @@ function planSlotIndex(active, layout, s, machineId, exercise = null, grip = nul
 // `machine` (its center is the location proxy); the plan-ordered walk
 // stays untouched, this is pure display logic with no stored state: a
 // skipped slot stays open and resurfaces via nextOpenSlot's wrap-around.
-// First open slot per machine wins (plan order = exercise order there).
+// First open slot per machine wins (plan order = exercise order there); a
+// free slot without a set is no open slot here either (idleFree).
 // Exported for the logic tests.
 export function nearbyAlternative(active, layout, machine, excludeMachineId = null, s = getSettings()) {
   const center = machineCenter;
@@ -1524,7 +1565,7 @@ export function nearbyAlternative(active, layout, machine, excludeMachineId = nu
   let best = null;
   for (const slot of active.plan) {
     if (slot.machineId === machine.id || slot.machineId === excludeMachineId) continue;
-    if (seen.has(slot.machineId) || slotDone(active, slot, layout, s)) continue;
+    if (seen.has(slot.machineId) || slotDone(active, slot, layout, s) || idleFree(active, slot, layout, s)) continue;
     seen.add(slot.machineId);
     const m = layout.machines.find((mm) => mm.id === slot.machineId);
     if (!m) continue;
@@ -1791,7 +1832,8 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   const closer = nextMachine && !suggested && nextMachine.id !== machine.id ? (() => {
     const seen = new Set();
     const candidates = active.plan.flatMap((slot) => {
-      if (!slot.machineId || seen.has(slot.machineId) || !slotLive(layout, slot) || slotDone(active, slot, layout, s)) return [];
+      if (!slot.machineId || seen.has(slot.machineId) || !slotLive(layout, slot) || slotDone(active, slot, layout, s)
+        || idleFree(active, slot, layout, s)) return [];
       seen.add(slot.machineId);
       const m = layout.machines.find((x) => x.id === slot.machineId);
       return m ? [{ machine: m, slot }] : [];

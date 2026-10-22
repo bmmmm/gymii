@@ -368,11 +368,17 @@ renderTrain(root);
 assert.ok(root.innerHTML.includes('Muscles today'), 'overview renders the coverage card');
 assert.ok(root.innerHTML.includes('class="muscle-row" data-muscle="Chest">'),
   'a muscle trained this workout gets a row with a bar');
+assert.ok(!root.innerHTML.includes('data-muscle="Lower back"'), 'the open rows start folded');
+assert.ok(root.innerHTML.includes('>Show 2 untrained</button>'), 'behind one toggle that counts them');
+store.saveSettings({ ...store.getSettings(), muscleFold: 'shown' });
+byId.clear();
+renderTrain(root);
 assert.ok(root.innerHTML.includes('class="muscle-row open" data-muscle="Lower back">'),
   'a machine without sets leaves its muscle open');
 assert.ok(root.innerHTML.includes('class="muscle-row open" data-muscle="Shoulders">'),
   'unvisited machines leave their muscles open');
 assert.ok(root.innerHTML.includes('1 of 3 muscles trained'), 'the line over the rows counts the trained ones');
+{ const { muscleFold, ...rest } = store.getSettings(); store.saveSettings(rest); }
 
 // --- locker: leads on the way in, collapses once training starts ---
 // The locker only matters at the start of a workout; from the first logged
@@ -2460,6 +2466,20 @@ const withPicker = (fn) => {
   assert.ok(!at(slots('k1', 'k2', 'k3', 'k4'), { entries: [{ machineId: 'k4', num: 4, label: 'Row', settings: {},
     sets: [{ reps: 10, weight: 40 }, { reps: 10, weight: 40 }, { reps: 10, weight: 40 }] }] }).includes('Closer: #4'),
   'nor one already done (its goal of three met)');
+  // a FREE slot without a set is where you merely stood, not a stop: like
+  // "Next" (nextOpenSlot), neither "Busy?" nor "Closer:" offers it (idleFree)
+  const free = (id) => ({ machineId: id, exercise: null, free: true });
+  const oneSet = (id) => ({ entries: [{ machineId: id, num: 0, label: 'x', settings: {}, sets: [{ reps: 10, weight: 40 }] }] });
+  const busyFree = at([...slots('k1', 'k2'), free('k3'), ...slots('k4')]);
+  assert.ok(!busyFree.includes('Busy? #3') && busyFree.includes('Busy? #4'),
+    '"Busy?" skips the merely opened pec deck and offers the next nearest open machine');
+  assert.ok(at([...slots('k1', 'k2'), free('k3'), ...slots('k4')], oneSet('k3')).includes('Busy? #3'),
+    'once the free slot has a set it is a stop again');
+  const closerFree = at([...slots('k1', 'k2', 'k3'), free('k4')]);
+  assert.ok(closerFree.includes('Busy? #3') && !closerFree.includes('Closer: #4'),
+    '"Closer:" skips the merely opened row');
+  assert.ok(at([...slots('k1', 'k2', 'k3'), free('k4')], oneSet('k4')).includes('Closer: #4'),
+    'and names it again once it has a set');
   store.clearActive();
   store.saveLayout(before);
 }
@@ -2542,11 +2562,37 @@ const withPicker = (fn) => {
   assert.deepEqual([p.trained, p.total, p.max], [5, 8, 3], 'trained = rows with a value; max = the busiest');
   store.saveActive(active);
   byId.clear();
-  const picker = withPicker(() => renderTrain(root));
-  const cov = root.innerHTML.match(/id="muscle-coverage"[\s\S]*?<\/div>/)[0];
+  let picker = withPicker(() => renderTrain(root));
+  // folded by default: the trained rows, most sets first (Quads and Glutes
+  // tie at 3 and keep region order), then ONE toggle row for the rest
+  const folded = root.innerHTML.match(/id="muscle-coverage"[\s\S]*?<\/div>/)[0];
+  assert.deepEqual([...folded.matchAll(/data-muscle="([^"]+)"/g)].map((m) => m[1]),
+    ['Quads', 'Glutes', 'Hamstrings', 'Chest', 'Triceps'], 'trained rows only, most sets first, ties in region order');
+  assert.ok(folded.includes('<button type="button" id="muscle-fold" class="muscle-fold" aria-expanded="false">Show 3 untrained</button>'),
+    'the untrained three fold behind one toggle, last in the list');
+  assert.equal(store.getSettings().muscleFold, undefined, 'folded is the default, nothing stored');
+  // the toggle unfolds IN PLACE (only #muscle-coverage changes) and persists
+  // device-locally — the user settings' stamp stays where it was
+  const stampBefore = store.getSettings().updatedAt;
+  const coverage = byId.get('#muscle-coverage');
+  const fold = { target: { closest: () => ({ id: 'muscle-fold', dataset: {} }) } };
+  const htmlBefore = root.innerHTML;
+  coverage.listeners.click(fold);
+  assert.equal(root.innerHTML, htmlBefore, 'no re-render of the overview: the scroll and the picker stay');
+  assert.equal(store.getSettings().muscleFold, 'shown', 'the unfold is stored');
+  assert.equal(store.getSettings().updatedAt, stampBefore, 'as a device-local key, under the old stamp');
+  const cov = coverage.innerHTML;
   assert.equal((cov.match(/class="muscle-row/g) ?? []).length, 8, 'eight rows for eight muscles');
-  assert.deepEqual([...cov.matchAll(/data-muscle="([^"]+)"/g)].map((m) => m[1]), p.rows.map((r) => r.muscle),
-    'rendered in the helper\'s order');
+  assert.deepEqual([...cov.matchAll(/data-muscle="([^"]+)"/g)].map((m) => m[1]),
+    ['Quads', 'Glutes', 'Hamstrings', 'Chest', 'Triceps', 'Lats', 'Biceps', 'Neck'],
+    'unfolded: the untrained rows follow, in the helper\'s order');
+  assert.ok(/Triceps[\s\S]*id="muscle-fold"[^>]*aria-expanded="true">Hide untrained<\/button>[\s\S]*data-muscle="Lats"/.test(cov),
+    'the toggle stays between the groups, above what it shows — the tap never moves it');
+  // persisted: a fresh render comes back unfolded
+  byId.clear();
+  picker = withPicker(() => renderTrain(root));
+  assert.ok(root.innerHTML.includes('aria-expanded="true">Hide untrained</button>')
+    && root.innerHTML.includes('data-muscle="Neck"'), 'a re-render keeps the card unfolded');
   assert.ok(root.innerHTML.includes('<p class="muted">5 of 8 muscles trained</p>'), 'the line above the rows counts the trained ones');
   assert.ok(cov.includes('Quads <span class="m-count">· 3 sets</span>'), 'whole numbers through plural');
   assert.ok(cov.includes('Hamstrings <span class="m-count">· 1½ sets</span>'), 'a half reads as ½');
@@ -2563,6 +2609,21 @@ const withPicker = (fn) => {
   byId.get('#muscle-coverage').listeners.click({ target: { closest: () => ({ dataset: { muscle: 'Lats' } }) } });
   assert.equal(picker.parts.get('.pick-muscle').value, 'Lats', 'the row sets the picker\'s muscle filter');
   assert.ok(picker.parts.get('.pick-chips').innerHTML.includes('#3 Lat pulldown'), 'and the picker lists the machine for it');
+  // a second tap on the toggle folds again, and that is stored too
+  byId.get('#muscle-coverage').listeners.click(fold);
+  assert.equal(store.getSettings().muscleFold, 'folded', 'the fold is stored');
+  assert.ok(!byId.get('#muscle-coverage').innerHTML.includes('data-muscle="Lats"')
+    && byId.get('#muscle-coverage').innerHTML.includes('>Show 3 untrained</button>'), 'and the open rows are gone again');
+  // nothing trained yet: every row shows, no toggle — folding all of them
+  // would leave an empty card
+  store.saveActive({ ...active, entries: [] });
+  byId.clear();
+  withPicker(() => renderTrain(root));
+  const none = root.innerHTML.match(/id="muscle-coverage"[\s\S]*?<\/div>/)[0];
+  assert.deepEqual([...none.matchAll(/data-muscle="([^"]+)"/g)].map((m) => m[1]), p.rows.map((r) => r.muscle),
+    'all eight open rows, in region order, despite the stored fold');
+  assert.ok(!none.includes('muscle-fold'), 'and no toggle');
+  { const { muscleFold, ...rest } = store.getSettings(); store.saveSettings(rest); }
   // the log screen's way back carries the same count when nothing is next:
   // every other machine at its goal (three sets, the app default) or trained
   // today, so neither the plan nor a suggestion has a stop left
