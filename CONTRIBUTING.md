@@ -43,9 +43,11 @@ The deliberate non-goals are the other half of that: no third-party
 accounts, no backend we operate, and no AI API calls (the AI tab is copy
 out / paste back, by design).
 
-- **Run tests:** `for f in test/*.test.mjs; do node "$f" || break; done` —
-  one file per module, plain `node:assert`, no framework. CI runs the same
-  glob, so a new module's tests need no workflow edit.
+- **Run tests:** `pnpm test` (or, with no install at all, `node --test
+  'test/*.test.mjs'`) — one file per module, plain `node:assert`, Node's
+  built-in runner, no framework; `node test/<module>.test.mjs` runs one file
+  alone. CI runs the same glob, so a new module's tests need no workflow
+  edit.
 - **Run the browser smoke tests:** `pnpm install`, then once
   `pnpm exec playwright install chromium`, then `pnpm run smoke`. They live
   in `smoke/` as `*.spec.mjs` — a new browser test belongs there, never in

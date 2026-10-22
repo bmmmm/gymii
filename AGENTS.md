@@ -22,8 +22,8 @@ it before writing or changing a test.
 
 - Dev server: `python3 serve.py [port]` → http://localhost:8437, serving
   `app/` (sends `no-store`; plain `http.server` served stale modules).
-- Logic tests: `for f in test/*.test.mjs; do node "$f"; done` (CI runs the
-  glob). `test/helpers/localstorage.mjs` must be a test's FIRST import. The
+- Logic tests: `pnpm test` (= `node --test 'test/*.test.mjs'`, Node's own
+  runner; one file: `node test/x.test.mjs`). `test/helpers/localstorage.mjs` must be a test's FIRST import. The
   stub DOM hands back EVERY selector — drive view switches explicitly.
 - Browser smoke: `pnpm run smoke` with the sandbox OFF — Chromium's launch
   (mach-port check-in) and `serve.py`'s port both die in it; setup in

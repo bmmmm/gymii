@@ -14,9 +14,17 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   5 to 64: parallel local Playwright workers overflowed it, macOS refused
   the overflow, and ~half the specs failed on "Failed to fetch dynamically
   imported module" — local-only, CI never saw it.
-- Logic tests: `for f in test/*.test.mjs; do node "$f"; done` — CI runs the
-  glob, so a new `test/<module>.test.mjs` is picked up without a workflow
-  edit. The localStorage stub lives ONCE, in
+- Logic tests: `pnpm test`, i.e. `node --test --test-reporter=spec
+  'test/*.test.mjs'` — Node's built-in runner, no dependency, so it also
+  runs before any install. Each file is still a plain script: the runner
+  starts it in its own process (the stub below stays per file), every file
+  runs even after one fails, and the summary names the failures;
+  `node test/<module>.test.mjs` runs one alone. The glob is QUOTED so node
+  expands it, not the shell — `test/helpers/` never matches. CI runs the
+  same glob, so a new `test/<module>.test.mjs` is picked up without a
+  workflow edit. Supported Node: `engines` says ≥22 (the glob needs ≥21);
+  CI runs `.node-version` (24, the LTS line), and the suite was green on
+  26 as well (2026-10-23). The localStorage stub lives ONCE, in
   `test/helpers/localstorage.mjs`: importing it installs it, which is why it
   must be a test's FIRST import — ESM evaluates a dependency completely
   before the importing module's own body runs, so the stub is in place ahead

@@ -19,10 +19,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version-file: .node-version
       # every test/*.test.mjs runs — a new module's tests must not need a
-      # workflow edit to be taken seriously
-      - run: for f in test/*.test.mjs; do echo "== $f"; node "$f" || exit 1; done
+      # workflow edit to be taken seriously. Node's own runner, no
+      # dependency: each file is still a plain script in its own process
+      # (the localStorage stub stays per file), every file runs even after
+      # one fails, and the summary names them all. The glob is quoted so
+      # node expands it — test/helpers/ never matches.
+      - run: node --test --test-reporter=spec 'test/*.test.mjs'
 
   # No build step means nothing parses the shipped scripts before a browser
   # does: a stray typo in app/js/app.js or app/sw.js sails through the logic tests
@@ -43,7 +47,7 @@ jobs:
           fetch-depth: 0 # the version gate below diffs against the pushed range
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version-file: .node-version
       - name: Every shipped script parses
         run: |
           for f in app/js/*.js app/sw.js; do
@@ -127,10 +131,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # before setup-node, or `cache: pnpm` has no pnpm to find
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Playwright is deliberately off onlyBuiltDependencies, so the browser

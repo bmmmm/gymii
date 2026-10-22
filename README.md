@@ -153,9 +153,10 @@ screen rather than pretending the set was saved.
 
 ## Contributing
 
-Vanilla HTML/CSS/JS (ES modules), zero dependencies. Tests are plain `node`,
-no runner — `for f in test/*.test.mjs; do node "$f"; done`. Notes for
-contributors and agents live in [AGENTS.md](AGENTS.md).
+Vanilla HTML/CSS/JS (ES modules), zero dependencies — everything that ships
+lives in `app/`, served as it is. Tests are plain `node`, run by Node's own
+runner — `node --test 'test/*.test.mjs'`. Notes for contributors and agents
+live in [AGENTS.md](AGENTS.md).
 
 Got a floor plan of your gym? Templates are meant to be shared — export it
 (Settings → Export gym template) and either open a

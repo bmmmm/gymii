@@ -27,7 +27,7 @@ of this template, done:
 <!-- Paste real command output. "Should work" is not verification. -->
 
 ```
-for f in test/*.test.mjs; do node "$f" || break; done
+node --test --test-reporter=spec 'test/*.test.mjs'
 ```
 
 ## Tests
