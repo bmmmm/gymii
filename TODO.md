@@ -1,5 +1,31 @@
 # TODO
 
+Shipped 2026-10-22 (`2026-10-22`): a code review across all modules, fixed
+in three parallel worktrees (data, editor, train/history). Sync: an edit
+landing during a push is no longer marked clean (per-gym edit generation),
+syncNow never throws on a full quota; imports: a backup keeps the device's
+unit and converts into it (`convertRecords`, shared with `setUnit`),
+untrusted workouts lose non-finite stamps and non-string names, backup
+tombstones MERGE with local ones, a template import is an edit (tombstones,
+stamps, pushed); editor: a label tap no longer presses the stepper's "−",
+the template browser wires once (two taps again), the floor can't shrink
+under its items, "Use the default (N)" clears a machine's set goal, the plan
+builder keeps typed text across chip taps and its draft across tab
+switches, unknown/malformed hashes route safely; train/history: one routine
+row per machine set, NaN-safe machine centres, one history read per log
+render, a content memo for `insights()`, the Muscles card and its filter
+count resistance machines only, like the hints.
+
+### 2026-10-22 — left open (review, deliberately)
+
+- The four long render closures (`renderGym` ~1450 lines, `renderLog`,
+  `renderSettingsView`, `renderPlanBuilder`) — splitting them is a refactor
+  of its own, best done when a module is touched anyway.
+- `store.js` mixes storage with pure domain code (plan-text parser, weekday
+  logic, placement geometry) — candidates for their own modules.
+- The sync edit counter is per tab: an edit in a second tab during this
+  tab's push is caught only by the next edit.
+
 Shipped 2026-10-21 (`2026-10-21`), orchestrated (a foundation commit, then
 four agents in parallel worktrees — icons, set goals + Next, muscle bars,
 cardio levels — merged B, D, C, A with the test-file tails resolved by
