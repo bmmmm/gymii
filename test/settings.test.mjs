@@ -52,8 +52,8 @@ globalThis.fetch = async (url, opts = {}) => {
     }
   }
   if (server.tokens && method === 'GET' && url.endsWith('/v1/gyms')) {
-    return response(200, server.blob
-      ? [{ gymId: server.blob.gymId, revision: server.revision, updatedAt: 'x' }] : []);
+    return response(200, [...(server.blob
+      ? [{ gymId: server.blob.gymId, revision: server.revision, updatedAt: 'x' }] : []), ...(server.foreign ?? [])]);
   }
   if (method === 'GET') {
     return server.blob ? response(200, server.blob, server.revision) : response(404);
@@ -404,6 +404,35 @@ discoverEl.open = true;
 await discoverEl.listeners.toggle();
 assert.ok(root.querySelector('#sync-discover-body').innerHTML.includes('already on this device'),
   'm3: an all-known server reads as done, not empty');
+
+// discovery: a gym id is the SERVER's — escaped into the selectors that find
+// its row again (cssStr), or a quote in it makes querySelector throw. The
+// body stub parses like a browser would: an unescaped `"` inside the
+// attribute value is a SyntaxError.
+{
+  const evil = 'x"] , [y';
+  server.foreign = [{ gymId: evil, revision: 1, updatedAt: '2026-10-01' }];
+  const seen = [];
+  const passRow = { hidden: true };
+  const adoptBtn = { dataset: { adopt: evil }, disabled: false, listeners: {},
+    addEventListener(type, fn) { this.listeners[type] = fn; } };
+  const body = { innerHTML: '',
+    querySelector(sel) {
+      seen.push(sel);
+      const value = sel.match(/^\[data-blob="((?:[^"\\]|\\.)*)"\] \[data-pass(-row)?\]$/);
+      if (!value) throw new SyntaxError(`'${sel}' is not a valid selector`);
+      return sel.endsWith('[data-pass-row]') ? passRow : { value: '' };
+    },
+    querySelectorAll: (sel) => (sel === '[data-adopt]' ? [adoptBtn] : []) };
+  byId.set('#sync-discover-body', body);
+  await discoverEl.listeners.toggle();
+  assert.ok(body.innerHTML.includes('data-adopt="x&quot;] , [y"'), 'the foreign gym is listed');
+  await adoptBtn.listeners.click(); // an E2E blob without a pass: unfold the key row
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(passRow.hidden, false, `the key row of exactly that blob unfolds — ${seen.join(' | ')}`);
+  server.foreign = null;
+  byId.delete('#sync-discover-body');
+}
 
 // #pair handoff: configured gym says why it cannot pair; unconfigured prefills
 setPendingPairCode('gymii-sync:v1:handoff');

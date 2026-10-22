@@ -5,7 +5,7 @@ import {
 } from './store.js';
 import {
   download, esc, twoTapConfirm, keepInView, preserveFocus, fmtDate, fmtTime, fmtAgo,
-  TIMER_SOUNDS, playTimerSound, parseDistance, fieldValue, THEMES, themeOf, applyTheme,
+  TIMER_SOUNDS, playTimerSound, parseDistance, fieldValue, THEMES, themeOf, applyTheme, cssStr,
 } from './ui.js';
 import { loadDemoData } from './demo.js';
 import {
@@ -844,8 +844,10 @@ function renderSettingsView(root) {
         } catch (err) {
           btn.disabled = false;
           if (err?.message === 'need-pass') {
-            // unfold the key field for exactly this blob
-            body.querySelector(`[data-blob="${blobId}"] [data-pass-row]`).hidden = false;
+            // unfold the key field for exactly this blob — its id is the
+            // SERVER's, so it is escaped into the selector (cssStr): a quote
+            // in it would make querySelector throw
+            body.querySelector(`[data-blob="${cssStr(blobId)}"] [data-pass-row]`).hidden = false;
             syncMsg.textContent = SYNC_ERRORS['need-pass'];
           } else {
             syncMsg.textContent = syncErrorText(err, 'Could not add the gym');
@@ -857,7 +859,7 @@ function renderSettingsView(root) {
       });
       body.querySelectorAll('[data-adopt-pass]').forEach((btn) => {
         btn.addEventListener('click', () => {
-          const pass = body.querySelector(`[data-blob="${btn.dataset.adoptPass}"] [data-pass]`)?.value ?? '';
+          const pass = body.querySelector(`[data-blob="${cssStr(btn.dataset.adoptPass)}"] [data-pass]`)?.value ?? '';
           adopt(btn.dataset.adoptPass, pass.trim() || null, btn);
         });
       });

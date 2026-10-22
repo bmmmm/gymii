@@ -539,8 +539,18 @@ assert.ok(/type="text" inputmode="decimal"[^>]*data-kind="decimal" class="edit-w
   'the set weight takes a comma');
 assert.equal(cardioChange('edit-weight', '12,5'), 12.5, 'a comma is the decimal mark (type=number made it 125)');
 assert.equal(cardioChange('edit-weight', 'x'), 12.5, 'refused input keeps the last good weight');
+// the reps read through fieldValue like the weight: an armed field left
+// empty (initNumericOverwrite) still means the value it shows greyed out —
+// raw t.value made it 1
+{
+  const target = { value: '', dataset: { ei: '0', si: '0', prevValue: '12' },
+    classList: { contains: (c) => c === 'edit-reps' }, closest: () => null };
+  list().listeners.change({ target });
+  assert.equal(target.value, 12, 'an armed, empty reps field keeps what it showed');
+}
 list().listeners.click(clickOn('.edit-save'));
 assert.equal(store.getWorkouts().find((w) => w.id === 'wdec').entries[0].sets[0].weight, 12.5, 'and Save stores 12.5');
+assert.equal(store.getWorkouts().find((w) => w.id === 'wdec').entries[0].sets[0].reps, 12, 'and the reps it showed');
 
 // --- machine chips: the first eight, "+N more", the shown one always ---
 // ten machines, trained one per day: x0 oldest … x9 newest
@@ -903,6 +913,60 @@ mem.set(layoutKey, savedLayout);
   assert.ok(row('Chest').includes('2 sets · 1 workout') && row('Chest').includes('width:100%'), 'the chest: two sets, the full bar');
   assert.ok(row('Triceps').includes('0 sets + 2 secondary · 1 workout') && row('Triceps').includes('width:50%'),
     'the triceps: two secondary sets, half the bar');
+  store.saveWorkouts([]);
+}
+
+// --- the heatmap's day line names a machine by its CURRENT number ---
+// like the chips, the chart and the path card; the entry's snapshot only
+// once the machine is gone
+{
+  const g = store.newLayout('Renumbered gym');
+  g.machines.push({ id: 'rn', num: 7, label: 'Row', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
+  store.saveLayout(g);
+  const t = new Date();
+  const at = new Date(t.getFullYear(), t.getMonth(), 1, 10).getTime();
+  store.saveWorkouts([{ id: 'hn1', startedAt: at, finishedAt: at + 3600e3, entries: [
+    { machineId: 'rn', num: 3, label: 'Row', settings: {}, sets: [{ reps: 10, weight: 40 }] },
+    { machineId: 'gone', num: 5, label: 'Old', settings: {}, sets: [{ reps: 10, weight: 40 }] },
+  ] }]);
+  enter(); // an entry resets the heatmap to this month
+  const cell = stubEl({ dataset: { day: '1' } });
+  byId.set('#hm-grid', stubEl({ querySelectorAll: () => [cell] }));
+  const info = stubEl();
+  byId.set('#hm-info', info);
+  openWorkouts(); // the heatmap lives on the Workouts screen
+  cell.listeners.click();
+  assert.ok(info.textContent.endsWith('#5, #7'), `live #7 for the renumbered machine, #5 for the gone one — ${info.textContent}`);
+  backToOverview();
+  store.saveWorkouts([]);
+}
+
+// --- the Muscles card counts resistance machines only, like the hints ---
+// stats.js's muscle hints never counted a treadmill tagged Calves; the card
+// did, so a row could read "3 sets" while its hint said it was untrained.
+// Nor are cardio sets "lost": they were never muscle sets.
+{
+  const g = store.newLayout('Cardio muscles gym');
+  g.machines.push(
+    { id: 'tr', num: 1, label: 'Treadmill', x: 0, y: 0, w: 4, h: 3, settingsFields: [], cardio: true, muscles: ['Calves'] },
+    { id: 'bk', num: 2, label: 'Bike', x: 6, y: 0, w: 4, h: 3, settingsFields: [], cardio: true },
+    { id: 'cr', num: 3, label: 'Calf raise', x: 12, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Calves'] },
+  );
+  store.saveLayout(g);
+  const t = Date.now();
+  const run = (id) => ({ machineId: id, num: 1, label: 'x', cardio: true, settings: {}, sets: [{ distance: 1000, seconds: 300 }] });
+  store.saveWorkouts([
+    { id: 'cm1', startedAt: t - 2 * 864e5, finishedAt: t - 2 * 864e5 + 3600e3, entries: [run('tr'), run('bk'), run('gone')] },
+    { id: 'cm2', startedAt: t - 864e5, finishedAt: t - 864e5 + 3600e3,
+      entries: [{ machineId: 'cr', num: 3, label: 'Calf raise', settings: {}, sets: [{ reps: 12, weight: 30 }] }] },
+  ]);
+  enter();
+  const row = (mu) => root.innerHTML.slice(root.innerHTML.indexOf(`data-muscle="${mu}"`)).split('</button>')[0];
+  assert.ok(row('Calves').includes('1 set · 1 workout'), `the treadmill is no calf set — ${row('Calves')}`);
+  assert.ok(!root.innerHTML.includes("can't be attributed"),
+    'cardio sets — tagged, untagged or of a deleted cardio machine — are not reported as lost');
+  const u = store.usageByMuscle(store.getWorkouts(), g);
+  assert.deepEqual(u.get('Calves'), { sets: 1, secondary: 0, workouts: 1 }, 'usageByMuscle skips cardio machines');
   store.saveWorkouts([]);
 }
 

@@ -11,7 +11,7 @@ import {
 } from './ui.js';
 import { lineChart, barChart } from './chart.js';
 import {
-  machineSeries, weeklyBuckets, insights, workoutPath, transitionCounts, seriesKey, sameSeries,
+  machineSeries, weeklyBuckets, insights, workoutPath, transitionCounts, seriesKey, sameSeries, quantile,
 } from './stats.js';
 import { drawLayout } from './map.js';
 import { startWorkoutFrom } from './train.js';
@@ -156,7 +156,6 @@ const decodeKey = (value) => {
     return null; // defensive: never a key of ours
   }
 };
-const entryMatches = sameSeries;
 
 // The overview: a sequence of cards, rendered in this order. Each is
 // { html(ctx) -> markup, wire(root, ctx) }; a new card is one entry here.
@@ -230,11 +229,16 @@ const muscleCard = {
       .sort((a, b) => weighted(b) - weighted(a) || a.mu.localeCompare(b.mu));
     const max = (rows[0] && weighted(rows[0])) || 1;
     // sets whose machine is gone or untagged — count them, or the card
-    // silently disagrees with the workout list's totals
-    const tagged = new Set(layout.machines.filter((m) => m.muscles?.length || m.secondaryMuscles?.length)
-      .map((m) => m.id));
-    const lost = byName.reduce((n, w) => n + w.entries.reduce(
-      (k, e) => k + (tagged.has(e.machineId) ? 0 : e.sets.length), 0), 0);
+    // silently disagrees with the workout list's totals. Cardio is no
+    // muscle set (usageByMuscle skips it, like the hints), so its sets
+    // are not "lost" either — tagged or not, live or (by the entry's
+    // flag) gone.
+    const byId = new Map(layout.machines.map((m) => [m.id, m]));
+    const lost = byName.reduce((n, w) => n + w.entries.reduce((k, e) => {
+      const m = byId.get(e.machineId);
+      if (m ? m.cardio : e.cardio) return k;
+      return k + (m?.muscles?.length || m?.secondaryMuscles?.length ? 0 : e.sets.length);
+    }, 0), 0);
     return `
     <section class="card">
       <h2>Muscles</h2>
@@ -456,7 +460,7 @@ const progressCard = {
       // the plateau hint for exactly this machine AND exercise — a hint
       // about another exercise on the same machine says nothing about
       // this chart
-      noteEl.innerHTML = hints.filter((it) => it.kind === 'plateau' && entryMatches(it, sel))
+      noteEl.innerHTML = hints.filter((it) => it.kind === 'plateau' && sameSeries(it, sel))
         .map((it) => hintHtml(it)).join('');
       const series = machineSeries(workouts, sel.machineId, sel.exercise, sel.grip);
       if (!series.length) { // an entry without sets: nothing to plot
@@ -491,7 +495,7 @@ const progressCard = {
       // Rewrites #chart-pick and nothing else — onSelect runs mid-gesture.
       const fillPick = (p) => {
         const w = p && workouts.find((x) => x.id === p.workoutId);
-        const e = w?.entries.find((x) => entryMatches(x, sel) && x.sets.length);
+        const e = w?.entries.find((x) => sameSeries(x, sel) && x.sets.length);
         pickEl.innerHTML = e ? `
           <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>${p.e1rm != null
             ? `<span class="muted">e1RM ${p.e1rm} ${esc(unit)}</span>` : ''}</div>
@@ -583,11 +587,7 @@ const pathEmpty = (ctx) => {
     : 'No live-logged workout trained this muscle.';
 };
 const routeLen = (p) => p.legs.reduce((n, l) => n + l.len, 0);
-const median = (xs) => {
-  const a = [...xs].sort((x, y) => x - y);
-  const m = a.length >> 1;
-  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
-};
+const median = (xs) => quantile([...xs].sort((x, y) => x - y), 0.5);
 const switches = (n) => `${n} ${n === 1 ? 'switch' : 'switches'}`;
 
 const pathCard = {
@@ -699,7 +699,10 @@ const heatmapCardHtml = ({ options }) => `
       <p id="hm-info" class="muted" role="status">Tap a day for details.</p>
     </section>`;
 
-function wireHeatmap(root, { workouts, s, unit }) {
+function wireHeatmap(root, { workouts, s, unit, layout }) {
+  // the CURRENT number of a machine still in the gym (the chips, the chart
+  // and the path card show that one too); the entry's snapshot once gone
+  const liveNum = new Map((layout?.machines ?? []).map((m) => [m.id, m.num]));
   const hmMachine = root.querySelector('#hm-machine');
   const hmGrid = root.querySelector('#hm-grid');
   const hmInfo = root.querySelector('#hm-info');
@@ -722,7 +725,7 @@ function wireHeatmap(root, { workouts, s, unit }) {
       const d = new Date(w.startedAt);
       if (d.getFullYear() !== y || d.getMonth() !== m) return;
       const sel = decodeKey(hmMachine.value);
-      const entries = sel ? w.entries.filter((e) => entryMatches(e, sel)) : w.entries;
+      const entries = sel ? w.entries.filter((e) => sameSeries(e, sel)) : w.entries;
       const sets = entries.reduce((n, e) => n + e.sets.length, 0);
       if (!sets) return;
       // an assisted set's weight is the help, not the load: no volume
@@ -734,7 +737,7 @@ function wireHeatmap(root, { workouts, s, unit }) {
       day.sets += sets;
       day.volume += volume;
       day.dist += dist;
-      entries.forEach((e) => day.nums.add(e.num));
+      entries.forEach((e) => day.nums.add(liveNum.get(e.machineId) ?? e.num));
       days.set(d.getDate(), day);
     });
 
@@ -948,7 +951,9 @@ function wireWorkoutList(root, list, items, s, layout, { readOnly = false } = {}
       st.weight = Math.max(0, parseDistance(fieldValue(t), false) ?? st.weight ?? 0);
       t.value = st.weight;
     } else if (t.classList.contains('edit-reps')) {
-      const v = Math.max(1, Math.round(parseFloat(t.value) || 1));
+      // fieldValue, like the weight: an armed field left empty still means
+      // the value it shows greyed out
+      const v = Math.max(1, Math.round(parseFloat(fieldValue(t)) || 1));
       t.value = v;
       editDraft.entries[+t.dataset.ei].sets[+t.dataset.si].reps = v;
     } else if (t.classList.contains('edit-distance')) {

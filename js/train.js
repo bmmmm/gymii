@@ -1,6 +1,6 @@
 import {
   getLayout, saveLayout, getSettings, saveSettings, getActive, saveActive, finishWorkout,
-  lastEntryFor, lastGripFor, getWorkouts, getPlans, savePlan, planFromText, uid,
+  getWorkouts, getPlans, savePlan, planFromText, uid,
   usageByMachine, layoutMuscles, distUnit, newLayout, addMachine, nextNum,
   ensureMachine, addMachineVariant, bindItemTo, machineTrainedWhole, newEntry, nameChipsFor, todayStatus, skipPlanDay, machineBrand,
   newestStampedSet, setAssistGoal, COMMON_GRIPS,
@@ -501,9 +501,11 @@ function renderStart(root, layout, message) {
   // #num chain, so renumbering in the gym doesn't split a routine.
   // An optional workout name outranks that chain: two routines on the
   // same machines but with different exercises stay apart once named.
+  // Unnamed, the key is the machine SET (sorted), not the order trained:
+  // A→B and B→A are one routine, one row.
   const routineKey = (w) => (w.name
     ? `name:${w.name}`
-    : [...new Set(w.entries.map((e) => e.machineId))].join('|'));
+    : machineSetKey(w.entries.map((e) => e.machineId)));
   const routines = [];
   const seen = new Set(last ? [routineKey(last)] : []);
   for (let i = workouts.length - 2; i >= 0 && routines.length < 4; i--) {
@@ -753,12 +755,20 @@ function trainedMuscles(active, layout, earlier = []) {
 }
 
 // The entries of workouts FINISHED today — "open today" also means not
-// trained in this morning's session.
-const finishedToday = (now = Date.now()) => {
+// trained in this morning's session. `workouts`: the list a render already
+// read, so the log screen parses storage once.
+const finishedToday = (now = Date.now(), workouts = getWorkouts()) => {
   const day = new Date(now).toDateString();
-  return getWorkouts().filter((w) => new Date(w.startedAt).toDateString() === day)
+  return workouts.filter((w) => new Date(w.startedAt).toDateString() === day)
     .flatMap((w) => w.entries);
 };
+
+// A machine's centre in grid units. Geometry from a hand-made template may
+// be missing: a NaN centre would poison every distance and weight, so a
+// missing coordinate or size reads as 0. One helper for the 🎲 pick, the
+// "Busy?" alternative and suggestNext.
+const finiteOr = (v, fb) => (Number.isFinite(Number(v)) ? Number(v) : fb);
+const machineCenter = (m) => [finiteOr(m.x, 0) + finiteOr(m.w, 0) / 2, finiteOr(m.y, 0) + finiteOr(m.h, 0) / 2];
 
 // 🎲 "Surprise me": a machine not trained yet this workout, drawn at random
 // with each candidate weighted by how many of its muscles are still open
@@ -772,10 +782,7 @@ const finishedToday = (now = Date.now()) => {
 // the picker's muscle filter, which narrows the draw when it can.
 // It only SUGGESTS — the caller never starts anything with it.
 export function surpriseMachine(layout, active = null, { rand = Math.random, earlier = [], muscle = '' } = {}) {
-  // geometry from a hand-made template may be missing: a NaN centre would
-  // poison every weight, so it counts as "somewhere in the middle"
-  const num = (v, fb) => (Number.isFinite(Number(v)) ? Number(v) : fb);
-  const center = (m) => [num(m.x, 0) + num(m.w, 0) / 2, num(m.y, 0) + num(m.h, 0) / 2];
+  const center = machineCenter;
   const done = new Set([...(active?.entries ?? []), ...earlier].filter((e) => e.sets.length).map((e) => e.machineId));
   // the filter's machines — primary or secondary, as the picker lists them
   const narrowed = muscle ? layout.machines.filter((m) => (m.muscles ?? []).includes(muscle)
@@ -998,7 +1005,8 @@ function showMapOverlay(layout, machine) {
 
 // Exact-match lookup for the logging screen (exercise-scoped entries at
 // multi-exercise machines); slotEntries aggregates a whole machine when the
-// slot's exercise is null. A slot is done once any of its entries has sets.
+// slot's exercise is null. Whether a slot is DONE is slotDone's call — its
+// set goal reached (below).
 const entryFor = (active, machineId, exercise = null, grip = null) =>
   active.entries.find((e) => sameSeries(e, { machineId, exercise, grip }));
 // a slot without a grip is a wildcard: it counts every grip
@@ -1034,13 +1042,12 @@ function twinShare(active, slot, layout, s) {
   let left = free.length;
   for (const [i, t] of twins.entries()) {
     const take = i === twins.length - 1 ? left
-      : Math.min(left, Math.max(0, (slotGoal(active, t, layout, s) ?? 1) - own[i]));
+      : Math.min(left, Math.max(0, (slotGoal(t, layout, s) ?? 1) - own[i]));
     if (t === slot) return own[i] + take;
     left -= take;
   }
   return sets.length;
 }
-const slotSetCount = twinShare;
 // A slot's SET GOAL — how many sets tick it off. COMPUTED, never stored:
 // the slot's own target (a plan's `3x10 80`, or the sets-only `{sets}` the
 // log screen's "Sets planned" stepper writes for this workout), else
@@ -1048,8 +1055,8 @@ const slotSetCount = twinShare;
 // the app default. A stored goal would go stale when the setting changes
 // mid-workout, and the slot shape is pinned by the tests. null when the
 // slot is unbound, its machine is gone, or the machine is cardio (a bout is
-// one set, never a tally). `active` is unused today; every caller has it.
-const slotGoal = (active, slot, layout, s) => slot.target?.sets
+// one set, never a tally).
+const slotGoal = (slot, layout, s) => slot.target?.sets
   || setGoalFor((layout?.machines ?? []).find((m) => m.id === slot.machineId), slot.exercise ?? null, s);
 // A target that names a load or a bout — what the log head, the prefill
 // and a twin's overview row can show; a sets-only {sets} is a goal, not one
@@ -1058,8 +1065,8 @@ const fullTarget = (t) => !!t && (t.reps != null || t.distance != null);
 // logged: the "Next" walk then keeps pulling the workout back to machines
 // with unfinished goals, in a free workout as much as in a planned one.
 const slotDone = (active, slot, layout, s) => {
-  const goal = slotGoal(active, slot, layout, s);
-  const n = slotSetCount(active, slot, layout, s);
+  const goal = slotGoal(slot, layout, s);
+  const n = twinShare(active, slot, layout, s);
   return goal ? n >= goal : n > 0;
 };
 
@@ -1074,11 +1081,11 @@ const slotLive = (layout, slot) =>
 // slots have one each), so total 0 = cardio or unbound slots only.
 function targetTally(active, layout, s) {
   const goals = active.plan
-    .map((p) => [p, slotLive(layout, p) ? slotGoal(active, p, layout, s) : null])
+    .map((p) => [p, slotLive(layout, p) ? slotGoal(p, layout, s) : null])
     .filter(([, goal]) => goal);
   return {
     total: goals.reduce((n, [, goal]) => n + goal, 0),
-    hit: goals.reduce((n, [p, goal]) => n + Math.min(slotSetCount(active, p, layout, s), goal), 0),
+    hit: goals.reduce((n, [p, goal]) => n + Math.min(twinShare(active, p, layout, s), goal), 0),
   };
 }
 
@@ -1089,7 +1096,8 @@ const workoutSetCount = (active) => active.entries.reduce((n, e) => n + e.sets.l
 // Session progress by muscle: one row per muscle of the layout in
 // MUSCLE_REGIONS order (muscles outside the pick list last, alphabetically),
 // its value the sets this workout — a primary set counts 1, a secondary ½
-// (History's Muscles card and stats.js weigh them the same). `trained` is
+// (History's Muscles card and stats.js weigh them the same, and like them
+// it counts resistance machines only — store's usageByMuscle). `trained` is
 // the rows with a value, `max` the busiest row's, for the bar lengths.
 // Exported for the tests; the overview's card and the log screen's
 // "Workout overview →" button read the same numbers.
@@ -1174,9 +1182,9 @@ function renderOverview(root, layout, active, message = '') {
     }
     const num = machine?.num ?? entries[0].num;
     const label = machine?.label ?? entries[0].label;
-    const slotSets = slotSetCount(active, slot, layout, s);
+    const slotSets = twinShare(active, slot, layout, s);
     const done = slotDone(active, slot, layout, s);
-    const goal = slotGoal(active, slot, layout, s);
+    const goal = slotGoal(slot, layout, s);
     // with a goal the status counts progress against it ("1/3 sets")
     const status = !slotSets && !done ? 'open'
       : `${done ? '✓ ' : ''}${slotSets}${goal ? `/${goal}` : ''} set${(goal ?? slotSets) === 1 ? '' : 's'}`;
@@ -1320,6 +1328,11 @@ function renderOverview(root, layout, active, message = '') {
 
 // --- binding a planned exercise to a real machine ---
 
+// A target of the other type than the machine it is bound to — a distance
+// at a strength machine, reps at a cardio one: it cannot be honoured, so
+// the binding drops it (from the slot AND the stored plan item).
+const targetMisfits = (target, machine) => !!target && !!machine.cardio !== (target.distance != null);
+
 // The moment the gym builds itself. Standing at the machine, one number
 // turns "Leg press" from a line in a trainer's note into machine #14 —
 // created under the note's own name when gymii doesn't know that number
@@ -1380,7 +1393,7 @@ function renderBind(root, layout, active) {
     // a machine of the other type can't honour this target's shape — said
     // out loud, never dropped in silence
     let message = '';
-    if (slot.target && !!machine.cardio !== (slot.target.distance != null)) {
+    if (targetMisfits(slot.target, machine)) {
       message = `Target dropped — #${machine.num} is not a ${machine.cardio ? 'strength' : 'cardio'} machine.`;
       delete slot.target;
     }
@@ -1399,7 +1412,7 @@ function renderBind(root, layout, active) {
         learn.grips.push(...more.grips);
         delete item.name;
         delete item.num;
-        if (item.target && !!machine.cardio !== (item.target.distance != null)) delete item.target;
+        if (targetMisfits(item.target, machine)) delete item.target;
         savePlan(plan);
       }
     }
@@ -1454,7 +1467,7 @@ function nextOpenSlot(active, layout, s, afterId, afterExercise = null, afterGri
   // the current block is done ("Next: <this machine>", and no "Busy?")
   const here = { machineId: afterId, exercise: afterExercise, grip: afterGrip };
   return order.find((slot) => slotLive(layout, slot) && !slotDone(active, slot, layout, s)
-    && !(slot.free && slotSetCount(active, slot, layout, s) === 0)
+    && !(slot.free && twinShare(active, slot, layout, s) === 0)
     && !(slot.machineId && sameSlot(slot, here))) ?? null;
 }
 
@@ -1491,7 +1504,7 @@ function planSlotIndex(active, layout, s, machineId, exercise = null, grip = nul
 // First open slot per machine wins (plan order = exercise order there).
 // Exported for the logic tests.
 export function nearbyAlternative(active, layout, machine, excludeMachineId = null, s = getSettings()) {
-  const center = (m) => [m.x + m.w / 2, m.y + m.h / 2];
+  const center = machineCenter;
   const [fx, fy] = center(machine);
   // the WALK, around walls and machines, like the "Closer:" line beside it
   // — one flood for every machine at once (stats.js walksCached), which the
@@ -1539,9 +1552,7 @@ export function suggestNext(active, layout, machine, { workouts = [], earlier = 
     .filter((e) => e.sets.length).map((e) => e.machineId));
   const candidates = (layout?.machines ?? []).filter((m) => m.id !== machine.id && !trainedIds.has(m.id));
   if (!candidates.length) return null;
-  // geometry from a hand-made template may be missing: no NaN centres
-  const num = (v, fb) => (Number.isFinite(Number(v)) ? Number(v) : fb);
-  const center = (m) => [num(m.x, 0) + num(m.w, 0) / 2, num(m.y, 0) + num(m.h, 0) / 2];
+  const center = machineCenter; // no NaN centres from a template's missing geometry
   const [fx, fy] = center(machine);
   const walks = walkableGrid(layout) ? walksCached(layout, machine, candidates) : null;
   const dist = (m) => (walks ? walks.get(m.id) ?? Infinity : Math.hypot(center(m)[0] - fx, center(m)[1] - fy));
@@ -1593,14 +1604,37 @@ const setWords = (st, type, s) => (type === 'cardio'
 
 // --- logging screen ---
 
+// store's lastEntryFor / lastGripFor over a list already read — the log
+// screen parses the history once per render (store.js reads storage on
+// every call). Same walk, same matches; test/train.test.mjs pins both
+// pairs against each other.
+const newestEntry = (workouts, match) => {
+  for (let i = workouts.length - 1; i >= 0; i--) {
+    const entry = workouts[i].entries.find((e) => match(e) && e.sets.length);
+    if (entry) return entry;
+  }
+  return null;
+};
+const anyGripOf = (machineId, exercise) => (e) => e.machineId === machineId
+  && (e.exercise ?? null) === (exercise ?? null);
+export function lastEntryIn(workouts, machineId, exercise = null, grip = null, { anyGrip = false } = {}) {
+  const sel = { machineId, exercise, grip };
+  return newestEntry(workouts, (e) => sameSeries(e, sel))
+    ?? (anyGrip && grip == null ? newestEntry(workouts, anyGripOf(machineId, exercise)) : null);
+}
+export function lastGripIn(workouts, machineId, exercise = null) {
+  return newestEntry(workouts, anyGripOf(machineId, exercise))?.grip ?? null;
+}
+
 // Resolves which entry the logging screen edits. At multi-exercise
 // machines (free weights) each exercise gets its own entry; until one is
 // picked (pickPending) there is no entry and no logging UI. Entries are
 // created eagerly so settings edits stick; set-less ones are dropped again
 // when the workout is finished. The snapshot itself (num/label, type flags,
 // exercise) is store's newEntry. `last` is the previous workout's entry for
-// set prefills.
-function resolveEntry(machine, active, layout, s) {
+// set prefills. `workouts`: the history renderLog read once for the whole
+// render.
+function resolveEntry(machine, active, layout, s, workouts) {
   const exercises = machine.exercises ?? [];
   const grips = machine.grips ?? [];
   const exercise = exercises.includes(active.currentExercise) ? active.currentExercise : null;
@@ -1615,7 +1649,7 @@ function resolveEntry(machine, active, layout, s) {
     if ('currentGrip' in active) {
       grip = grips.includes(active.currentGrip) ? active.currentGrip : null;
     } else {
-      const last = lastGripFor(machine.id, exercise);
+      const last = lastGripIn(workouts, machine.id, exercise);
       grip = active.plan.find((p) => p.machineId === machine.id && (p.exercise ?? null) === exercise
         && grips.includes(p.grip) && !slotDone(active, p, layout, s))?.grip
         ?? (grips.includes(last) ? last : null);
@@ -1623,7 +1657,7 @@ function resolveEntry(machine, active, layout, s) {
     }
   }
 
-  const last = lastEntryFor(machine.id, exercise, grip, { anyGrip: !grips.length });
+  const last = lastEntryIn(workouts, machine.id, exercise, grip, { anyGrip: !grips.length });
   let entry = entryFor(active, machine.id, exercise, grip);
   if (!entry) {
     entry = newEntry(machine, exercise, [], grip);
@@ -1652,7 +1686,12 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   }
 
   const s = getSettings();
-  const { exercises, grips, exercise, grip, pickPending, entry, last } = resolveEntry(machine, active, layout, s);
+  // The history, parsed ONCE per render: the prefill, the grip default,
+  // the hints, the assist goal, "finished today" and the Next suggestion
+  // all read this one list (each used to call getWorkouts() itself).
+  const workouts = getWorkouts();
+  const plans = getPlans();
+  const { exercises, grips, exercise, grip, pickPending, entry, last } = resolveEntry(machine, active, layout, s, workouts);
 
   const machineSlots = active.plan.filter((p) => p.machineId === machine.id);
   if (!machineSlots.length) { // free workouts grow the plan — a free slot
@@ -1685,8 +1724,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // names, across midnight into the next weekday (a Monday-evening crowd
   // says nothing about Monday morning). Date.now, so a test can pin the clock.
   const here = new Date(Date.now());
-  const workouts = getWorkouts();
-  const allHints = insights(workouts, layout, s, { plans: getPlans() });
+  const allHints = insights(workouts, layout, s, { plans });
   const hints = allHints.filter((it) =>
     it.machineId === machine.id && (it.kind === 'progress'
       ? (it.exercise ?? null) === (exercise ?? null) && (it.grip ?? null) === grip
@@ -1706,14 +1744,14 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // "the last set logged" would hand the 3x6 @ 100 block the 80 kg × 10 of
   // the block before it.
   const freshBlock = !!(target && currentSlot && entry?.sets.length
-    && slotSetCount(active, currentSlot, layout, s) === 0);
+    && twinShare(active, currentSlot, layout, s) === 0);
   const def = pickPending ? null
     : nextSetDefaults(freshBlock ? { ...entry, sets: [] } : entry, lastSets, type, s, target);
   // At an assisted machine: what you train FOR — said by you (a chip
   // tap, kept on the machine) or, until you say it, read from your history.
   // stats.js assistGoalAt: the SAME goal the progress and plateau hints use
   const goal = !pickPending && type === 'assisted'
-    ? assistGoalAt(getWorkouts(), layout, getPlans(), { machineId: machine.id, exercise, grip }) : null;
+    ? assistGoalAt(workouts, layout, plans, { machineId: machine.id, exercise, grip }) : null;
   // What this machine rests by default, and what it rests TODAY. A rest
   // changed mid-workout is a fact about this workout ("shoulders are cold
   // today"), not about the machine — it lives on the active workout, dies
@@ -1731,8 +1769,8 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   let setPos = null;
   let targetDone = false;
   const refreshGoal = () => {
-    setGoal = currentSlot ? slotGoal(active, currentSlot, layout, s) : null;
-    setPos = setGoal ? Math.min(slotSetCount(active, currentSlot, layout, s) + 1, setGoal) : null;
+    setGoal = currentSlot ? slotGoal(currentSlot, layout, s) : null;
+    setPos = setGoal ? Math.min(twinShare(active, currentSlot, layout, s) + 1, setGoal) : null;
     // a cardio bout with a plan target is done after one, without one it
     // is never "done" — the log button stays primary
     targetDone = !!(currentSlot && (target || setGoal) && slotDone(active, currentSlot, layout, s));
@@ -1754,7 +1792,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   // The plan has nothing open: a SUGGESTION instead (suggestNext) — what to
   // try next, on the same Next button, never a plan slot until it is taken
   const suggested = nextSlot ? null
-    : suggestNext(active, layout, machine, { workouts, earlier: finishedToday() });
+    : suggestNext(active, layout, machine, { workouts, earlier: finishedToday(Date.now(), workouts) });
   const nextMachine = nextSlot?.machineId
     ? layout.machines.find((m) => m.id === nextSlot.machineId) : suggested;
   // an unbound next stop is still a next stop — it just asks which
@@ -2524,7 +2562,6 @@ const DIM_LIT_MS = 130;
 // The last seconds before zero are never dimmed — look up, the tone is next.
 const DIM_ENDGAME_SECS = 5;
 
-// --- rest timer ---
 // The FACT is `active.restUntil`, an epoch deadline on the workout: it
 // survives a reload, it is what the inline row and the overlay both read,
 // and it dies with the workout (finishWorkout's allow-list). Everything

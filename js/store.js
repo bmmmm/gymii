@@ -1250,8 +1250,12 @@ const muscleIndex = (layout) => new Map((layout?.machines ?? []).map((m) => [m.i
 // → Map<muscle, {sets, workouts}>
 // `secondary` counts the sets where the muscle was only SECONDARY (a chest
 // press for the triceps) — shown apart, and worth half in stats.js.
+// RESISTANCE machines only, like stats.js's resistanceMuscles: a treadmill
+// tagged Calves is not a calf set, and the card must not disagree with the
+// muscle hints printed under its rows.
 export function usageByMuscle(workouts, layout) {
-  const muscles = muscleIndex(layout);
+  const cardio = new Set((layout?.machines ?? []).filter((m) => m.cardio).map((m) => m.id));
+  const muscles = new Map([...muscleIndex(layout)].filter(([id]) => !cardio.has(id)));
   const usage = new Map();
   workouts.forEach((w) => {
     const seen = new Set(); // count each workout once per muscle
