@@ -2,8 +2,9 @@ import {
   getLayout, saveLayout, newLayout, uid, importData, defaultOutline, exportGymTemplate,
   getSettings, saveSettings, usageByMachine, getActive, ownBrand, setGymBrand, matchBrand,
   MUSCLE_REGIONS, MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS, MACHINE_BRANDS, MAP_LAYERS, nextNum,
-  COMMON_GRIPS, freeSpot, WALL_SNAPPED,
+  COMMON_GRIPS,
 } from './store.js';
+import { freeSpot, WALL_SNAPPED } from './geometry.js';
 import {
   esc, download, twoTapConfirm, keepInView, preserveFocus, machineIcon, fieldValue,
 } from './ui.js';

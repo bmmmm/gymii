@@ -54,6 +54,10 @@ exist because breaking them was once a real bug.
   failures announce AND rethrow). Shared invariants live as store helpers
   (`bindOrCreateMachine`, `newEntry`, `nameChipsFor`) — extend, never
   re-inline. `js/persist.js` — origin durability.
+  Pure logic split off it, all storage-free: `js/geometry.js` (placement),
+  `js/weekday.js` (due/missed/done date maths, no imports), and
+  `js/plantext.js` (the plan-text parser/printer — it imports store.js,
+  which imports `planFromImport` back, call-time only).
 - Cross-module traps: sets are strength `{reps, weight}`, cardio
   `{distance, seconds}`, bodyweight = ADDED weight, assisted = the ASSIST
   (less is stronger, no volume; ui.js `entryKind` reads the flag), and `at` is optional —
@@ -65,9 +69,9 @@ exist because breaking them was once a real bug.
   mode without a secure context); frozen public
   API; `docs/sync-protocol.md` is the wire contract.
 - `js/app.js` — hash-router; `#gym` is deliberately NOT in the tabbar.
-- `js/map.js` — shared floor-map renderer (imports only `esc` and store's
-  placement geometry — `freeSpot`, `overlapsSolid`, `WALL_SNAPPED` are
-  re-exported; every id
+- `js/map.js` — shared floor-map renderer (imports only `esc` and the
+  placement geometry of `js/geometry.js` — `freeSpot`, `overlapsSolid`,
+  `WALL_SNAPPED` are re-exported; every id
   into an attribute goes through `esc()` — template files are untrusted);
   `js/gym.js` — the editor (everything starts locked, every mutation via
   `save()`) and never imports from train.js/plan.js.

@@ -14,6 +14,7 @@ import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
+const plantext = await import(new URL('../js/plantext.js', import.meta.url).href);
 
 const X = '"><img src=x onerror=alert(1)>';
 // inert = the payload reached the markup, and only as text
@@ -240,7 +241,7 @@ store.saveSettings({ ...store.getSettings(), unit: 'kg', restSeconds: 90, weight
   const l = layoutOf();
   l.machines.push({ id: 'm7', num: 7, label: 'Leg press', x: 10, y: 10, w: 3, h: 3, settingsFields: [] });
   store.importData(template(l));
-  const { plan } = store.planFromImport({
+  const { plan } = plantext.planFromImport({
     app: 'gymii',
     kind: 'workout-plan',
     name: 'AI',

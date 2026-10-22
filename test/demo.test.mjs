@@ -16,6 +16,7 @@ import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
+const weekday = await import(new URL('../js/weekday.js', import.meta.url).href);
 const demo = await import(new URL('../js/demo.js', import.meta.url).href);
 const stats = await import(new URL('../js/stats.js', import.meta.url).href);
 
@@ -295,7 +296,7 @@ for (const offset of [0, 10 * 60000]) {
   assert.equal(today.length, 1, 'exactly one workout lands on the load day');
   assert.ok(today[0].finishedAt <= night + 60000,
     'the today workout never reaches further than a minute past now');
-  assert.equal(store.planDayState(
+  assert.equal(weekday.planDayState(
     b.plans.find((p) => p.id === 'demo-plan-pull'), b.workouts, night).state,
   'done', 'pull still reads done on a night load');
 }
@@ -317,12 +318,12 @@ dst.workouts.forEach((w) => {
 for (let d = 0; d < 7; d++) {
   const now = NOW + d * 86400000;
   const built = demo.buildDemoData({ now, settings: KG });
-  const state = (id) => store.planDayState(
+  const state = (id) => weekday.planDayState(
     built.plans.find((p) => p.id === id), built.workouts, now).state;
   assert.equal(state('demo-plan-push'), 'missed', `push missed (day ${d})`);
   assert.equal(state('demo-plan-pull'), 'done', `pull done (day ${d})`);
   assert.equal(state('demo-plan-core'), 'due', `core due (day ${d})`);
-  assert.equal(store.todayStatus(built.plans, built.workouts, now).plan.id,
+  assert.equal(weekday.todayStatus(built.plans, built.workouts, now).plan.id,
     'demo-plan-core', `due wins the headline (day ${d})`);
   checkTiming(built, `day ${d}`);
   assert.deepEqual(worthALook(built, now), SHOWN, `the four hints show on day ${d}`);

@@ -8,10 +8,11 @@
 
 import {
   getLayout, ensureMachine, addMachineVariant, bindItemTo, machineTrainedWhole, getPlans, savePlan, deletePlan,
-  lastEntryFor, getSettings, getWorkouts, usualWeekday, uid, distUnit,
-  layoutMuscles, isUnbound,
-  parsePlanText, planItemsFrom, planToText, nameChipsFor,
+  lastEntryFor, getSettings, getWorkouts, uid, distUnit,
+  layoutMuscles, nameChipsFor,
 } from './store.js';
+import { isUnbound, parsePlanText, planItemsFrom, planToText } from './plantext.js';
+import { usualWeekday } from './weekday.js';
 import { drawLayout } from './map.js';
 import {
   esc, twoTapConfirm, stepperField, plural, keepInView, fmtDuration, parseDuration, parseDistance,

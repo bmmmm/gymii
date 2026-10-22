@@ -6,6 +6,7 @@ import { failWritesAfter } from './helpers/localstorage.mjs'; // FIRST: installs
 import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
+const plantext = await import(new URL('../js/plantext.js', import.meta.url).href);
 const {
   startWorkoutFrom, renderTrain, nearbyAlternative, nextSetDefaults, dimDelaySeconds,
   screenKey, goToHub, goToStart, goToPlans, restLeft, restNextUp, surpriseMachine, muscleProgress, suggestNext,
@@ -445,7 +446,7 @@ assert.equal(store.getLayout().machines.length, 0, 'and creates no machine when 
 // same wiring on the start screen: a saved plan routes there instead of
 // onboarding, and its no-machines branch quick-starts identically
 store.clearActive();
-store.savePlan(store.planFromText('Leg press 3x10 80'));
+store.savePlan(plantext.planFromText('Leg press 3x10 80'));
 byId.clear();
 goToStart(); // the tab root is the hub; quick start lives on the start screen
 renderTrain(root);
@@ -728,7 +729,7 @@ store.saveWorkouts([{
 // an undated plan keeps the onboarding gate shut without giving the hero
 // a weekday status — the fallback path stays reachable
 store.savePlans([]);
-store.savePlan(store.planFromText('Leg press 3x10 80'));
+store.savePlan(plantext.planFromText('Leg press 3x10 80'));
 goToHub();
 byId.clear();
 renderTrain(root);
@@ -1746,7 +1747,7 @@ const withPicker = (fn) => {
   // two lines with one name write back into THEIR OWN item
   fresh();
   store.clearActive();
-  const two = store.planFromText('Leg press 3x10 80\nLeg press 3x12 50');
+  const two = plantext.planFromText('Leg press 3x10 80\nLeg press 3x12 50');
   store.savePlan(two);
   startWorkoutFrom({ planId: two.id, entries: two.items });
   for (const [i, num] of [[1, '15'], [0, '14']]) {
@@ -1767,7 +1768,7 @@ const withPicker = (fn) => {
     '#2 Dumbbells: Biceps curls 3x10 12\n#2 Dumbbells: Shoulder press 3x8 14']) {
     fresh();
     store.clearActive();
-    const p = store.planFromText(note);
+    const p = plantext.planFromText(note);
     store.savePlan(p);
     startWorkoutFrom({ planId: p.id, entries: p.items });
     const num = note.slice(1, note.indexOf(' '));
@@ -1793,7 +1794,7 @@ const withPicker = (fn) => {
   // the same NAME twice on one number is one movement, not a new exercise
   {
     fresh();
-    const p = store.planFromText('#14 Leg press 3x10 80\n#14 Leg press 3x6 100');
+    const p = plantext.planFromText('#14 Leg press 3x10 80\n#14 Leg press 3x6 100');
     store.savePlan(p);
     startWorkoutFrom({ planId: p.id, entries: p.items });
     for (const i of [0, 1]) {
@@ -2041,7 +2042,7 @@ const withPicker = (fn) => {
 
   // an unbound line naming a grip teaches it to the machine it binds to
   store.clearActive();
-  const gp = store.planFromText('#12 Cable column: Pushdown [Rope] 3x12 25');
+  const gp = plantext.planFromText('#12 Cable column: Pushdown [Rope] 3x12 25');
   store.savePlan(gp);
   startWorkoutFrom({ planId: gp.id, entries: gp.items });
   byId.clear();
@@ -2086,7 +2087,7 @@ const withPicker = (fn) => {
   g.machines.push({ id: 'm3', num: 3, label: 'Leg press', x: 0, y: 0, w: 4, h: 3, settingsFields: [] });
   store.saveLayout(g);
   store.clearActive();
-  const p = store.planFromText('#3 Leg press 3x10 80\nCalf raise 3x15 60');
+  const p = plantext.planFromText('#3 Leg press 3x10 80\nCalf raise 3x15 60');
   store.savePlan(p);
   startWorkoutFrom({ planId: p.id, entries: p.items });
   byId.clear();
@@ -2137,7 +2138,7 @@ const withPicker = (fn) => {
   store.saveLayout(g);
   store.clearActive();
   store.saveWorkouts([]);
-  const p = store.planFromText('#14 Leg press 3x10 80\n#14 Leg press 3x6 100\n#15 Calf raise 3x15 60\n#16 Hack squat 3x8 50');
+  const p = plantext.planFromText('#14 Leg press 3x10 80\n#14 Leg press 3x6 100\n#15 Calf raise 3x15 60\n#16 Hack squat 3x8 50');
   store.savePlan(p);
   startWorkoutFrom({ planId: p.id, entries: p.items });
   assert.equal(store.getActive().plan.length, 4, 'a restart keeps both twins: their targets differ');
@@ -2226,7 +2227,7 @@ const withPicker = (fn) => {
   store.clearActive();
   store.saveWorkouts([]);
   // the twins apart: the light block leads, the heavy one comes after the calves
-  const p = store.planFromText('#14 Leg press 3x10 80\n#15 Calf raise 3x15 60\n#14 Leg press 3x6 100\n#16 Hack squat 3x8 50');
+  const p = plantext.planFromText('#14 Leg press 3x10 80\n#15 Calf raise 3x15 60\n#14 Leg press 3x6 100\n#16 Hack squat 3x8 50');
   store.savePlan(p);
   startWorkoutFrom({ planId: p.id, entries: p.items });
   const logSet = (w, r) => {

@@ -1,5 +1,11 @@
 # TODO
 
+Shipped 2026-10-22 (`2026-10-22b`): store.js split — the placement
+geometry (`js/geometry.js`) and the weekday date maths (`js/weekday.js`),
+both pure and import-free, and the plan-text parser/printer
+(`js/plantext.js`) left the data layer (1995 → 1513 lines); the writers
+(`addMachine`, `skipPlanDay`) stay in store.js. No behaviour change.
+
 Shipped 2026-10-22 (`2026-10-22`): a code review across all modules, fixed
 in three parallel worktrees (data, editor, train/history). Sync: an edit
 landing during a push is no longer marked clean (per-gym edit generation),
@@ -21,8 +27,6 @@ count resistance machines only, like the hints.
 - The four long render closures (`renderGym` ~1450 lines, `renderLog`,
   `renderSettingsView`, `renderPlanBuilder`) — splitting them is a refactor
   of its own, best done when a module is touched anyway.
-- `store.js` mixes storage with pure domain code (plan-text parser, weekday
-  logic, placement geometry) — candidates for their own modules.
 - The sync edit counter is per tab: an edit in a second tab during this
   tab's push is caught only by the next edit.
 

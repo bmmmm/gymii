@@ -3,12 +3,12 @@
 // with the fixture registry, the SVG symbol builders and the geometry and
 // collision helpers all three surfaces share. Nothing here imports the
 // editor: the dependency runs one way, gym.js -> map.js. The solid-item
-// placement geometry lives in store.js, whose addMachine places machines
+// placement geometry lives in geometry.js, which store.js's addMachine uses
 // too (quick start, the picker's create-on-miss) — one rule, two callers.
 import { esc, machineIcon } from './ui.js';
-import { WALL_SNAPPED, overlapsSolid, isSolid, SNAP } from './store.js';
+import { WALL_SNAPPED, overlapsSolid, isSolid, SNAP } from './geometry.js';
 
-export { WALL_SNAPPED, overlapsSolid, freeSpot } from './store.js';
+export { WALL_SNAPPED, overlapsSolid, freeSpot } from './geometry.js';
 
 // Map furniture beyond machines. Entrances, doors and windows snap onto
 // the nearest wall and render as floor-plan symbols; the rest are boxes.

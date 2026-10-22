@@ -9,15 +9,16 @@
 
 import {
   getSettings, getGyms, createGym, setActiveGym, clearActive,
-  saveLayout, saveWorkouts, savePlans, startOfDay, convertWeight, convertDistance,
+  saveLayout, saveWorkouts, savePlans, convertWeight, convertDistance,
   newEntry, closeVisits,
 } from './store.js';
+import { startOfDay } from './weekday.js';
 
 const DEMO_GYM_NAME = 'Demo';
 
 // Local midnight `daysBack` days ago, via setDate() — fixed 86400000-ms
 // multiples would shift every workout on the far side of a DST transition
-// by an hour (store.js's planDueDay uses the same pattern).
+// by an hour (weekday.js's planDueDay uses the same pattern).
 const dayStartBack = (now, daysBack) => {
   const d = startOfDay(now);
   d.setDate(d.getDate() - daysBack);

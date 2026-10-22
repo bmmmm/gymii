@@ -249,6 +249,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   (`active.plan[i].target` — startWorkoutFrom copies targets onto slots),
   not just stored plans; leaving them out silently turned an 80 kg goal
   into an 80 lbs one mid-workout.
+  The plan text lives in `js/plantext.js` (split off store.js; it writes
+  only through store's helpers):
   `parsePlanLine()`/`parsePlanText()` read a trainer's note ("Leg press
   3x10 80", "#7 Chest press 3x8-12 40kg", "Treadmill 20min"): set and
   weight terms are cut FIRST so a leftover leading number is unambiguous,
@@ -322,6 +324,18 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   covers IndexedDB and the Cache API and leaves Web Storage out of its
   numbers entirely, so it is shown as context beside this count, never
   instead of it.
+- `js/geometry.js`, `js/weekday.js`, `js/plantext.js` — split off store.js
+  (2026-10-22) so the data layer holds storage and its invariants, not
+  every rule that happens to read a plan. geometry.js (placement:
+  `WALL_SNAPPED`, `isSolid`, `overlapsSolid`, `SNAP`, `freeSpot`) and
+  weekday.js (`startOfDay`, `dayKey`, `planDueDay`, `planNextDay`,
+  `planDayState`, `todayStatus`, `usualWeekday`) are pure and import
+  nothing; their one writer stays in store.js (`addMachine`,
+  `skipPlanDay`). plantext.js reads and prints plan text and persists only
+  through store's helpers; store.js imports `planFromImport` back for
+  `importData` — an ES-module cycle that is safe because neither module
+  calls the other while it loads. Keep it that way: no top-level call
+  across the two.
 - `js/persist.js` — origin DURABILITY, deliberately not part of store.js
   (that file is the localStorage layer; this one asks the browser to keep
   it, and stubs `navigator.storage` rather than `localStorage`). It
@@ -514,8 +528,8 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   an item — both now need a deliberate double tap first, and a second one
   takes it back (gym.js owns the gesture). Also exports `findMachineByNum`, the collision helpers
   (`fits`, plus `overlapsSolid`/`freeSpot`/`WALL_SNAPPED` re-exported from
-  store.js, which owns the placement geometry because its `addMachine`
-  places machines too; `snap()` rounds to store.js's exported `SNAP`, the
+  geometry.js, which owns the placement geometry because store.js's
+  `addMachine` places machines too; `snap()` rounds to geometry.js's `SNAP`, the
   same constant `freeSpot` steps by, so a placed item lands where a drag
   would), `snapDoorToWall`, `FIXTURES`, `ITEM_COLORS`. Its `path` and `pathWeights` opts draw the
   walking-path overlay (view-only: the editor ignores them) — one line plus
@@ -535,8 +549,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   its number). Its class is `.machine-glyph`, deliberately not the span's
   `.machine-icon`: that CSS rule's 18px font-size would size an SVG text in
   user units. It imports `esc` and `machineIcon` from ui.js and the
-  placement geometry from store.js (which imports only the import-free
-  stats.js and merge.js) — keep it
+  placement geometry from geometry.js (which imports nothing) — keep it
   free of gym/train/plan imports so the cycle cannot reappear. Every id
   interpolated into an attribute goes through `esc()`, and so do colors
   and machine numbers; geometry is drawn from a `Number()` copy
@@ -1270,7 +1283,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   (`at` to `at`, visit `in` to `out`), never `at − startedAt`: a workout
   whose date was edited before `shiftWorkout` existed moved `startedAt`
   alone, so that gap is garbage for it while `at`-to-`at` stays true. It
-  keeps a COPY of store's `startOfDay` (store.js holds the definition;
+  keeps a COPY of weekday.js's `startOfDay` (weekday.js holds the definition;
   importing it would end the no-imports rule) and test/stats.test.mjs pins
   the two equal across a DST day. Weeks start on Monday and are stepped with
   `setDate()`, never 7 × 86400000. The rules, their thresholds and their
@@ -1303,7 +1316,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   (Settings promises removal; the registry self-heals). Data is authored
   in kg/metres and converted in one pass through store's
   `convertWeight`/`convertDistance` when the display unit is lbs (plan
-  targets included). Day maths goes through store's `startOfDay` +
+  targets included). Day maths goes through weekday.js's `startOfDay` +
   `setDate()`, never fixed 86400000-ms steps (DST). The last four weeks
   are stamped like a live-logged workout — `at` on every set, `visits`
   (one carries `busy`) and `rir` on strength sets — so the insight rules

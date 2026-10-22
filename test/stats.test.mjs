@@ -14,6 +14,7 @@ import './helpers/localstorage.mjs'; // FIRST: store.js (the DST pin) needs the 
 import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
+const weekday = await import(new URL('../js/weekday.js', import.meta.url).href);
 const stats = await import(new URL('../js/stats.js', import.meta.url).href);
 
 // The zone really is in effect — otherwise every DST assertion below would
@@ -73,14 +74,14 @@ const W = (startedAt, entries, extra = {}) => ({
   id: `w${++wid}`, startedAt, finishedAt: startedAt + 3600e3, entries, ...extra,
 });
 
-// --- startOfDay: the copy in stats.js equals store.js's, across DST days ---
+// --- startOfDay: the copy in stats.js equals weekday.js's, across DST days ---
 {
   let probes = 0;
   for (const [y, mo, d] of [[2026, 2, 29], [2026, 9, 25]]) {
     const end = new Date(y, mo, d + 1, 4).getTime();
     for (let t = new Date(y, mo, d - 1, 20).getTime(); t < end; t += 15 * 60000) {
-      assert.equal(stats.startOfDay(t).getTime(), store.startOfDay(t).getTime(),
-        `startOfDay copy drifted from store.js at ${new Date(t).toISOString()}`);
+      assert.equal(stats.startOfDay(t).getTime(), weekday.startOfDay(t).getTime(),
+        `startOfDay copy drifted from weekday.js at ${new Date(t).toISOString()}`);
       probes++;
     }
   }

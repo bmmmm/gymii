@@ -15,10 +15,10 @@
 
 const DAY_MS = 86400000; // only to ROUND calendar-day differences, never to step
 
-// Local midnight as a Date. A COPY of store.js's startOfDay — store.js holds
-// THE definition; this module imports nothing, so test/stats.test.mjs pins
-// the two equal across a DST day. Exported for that pin only: callers
-// import store.js's.
+// Local midnight as a Date. A COPY of weekday.js's startOfDay — weekday.js
+// holds THE definition; this module imports nothing, so test/stats.test.mjs
+// pins the two equal across a DST day. Exported for that pin only: callers
+// import weekday.js's.
 export const startOfDay = (date) => {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);

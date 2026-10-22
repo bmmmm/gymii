@@ -5,6 +5,7 @@ import { mem, failWritesAfter } from './helpers/localstorage.mjs'; // FIRST: ins
 import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
+const geometry = await import(new URL('../js/geometry.js', import.meta.url).href);
 
 // build a layout
 const layout = store.newLayout('Test layout');
@@ -360,7 +361,7 @@ assert.equal(store.getLayout().machines.length, 2, 'quick layout saves cleanly')
   const g = store.newLayout('Occupied');
   g.machines.push({ id: 'u', num: 9, label: 'Moved here', x: 7, y: 2, w: 4, h: 3 });
   const m = store.addMachine(g, 1, 'Next');
-  assert.ok(!store.overlapsSolid(g, m, m.x, m.y, m.w, m.h), 'a new machine lands on a free spot, not on #9');
+  assert.ok(!geometry.overlapsSolid(g, m, m.x, m.y, m.w, m.h), 'a new machine lands on a free spot, not on #9');
   // …and a packed small floor still never stacks two machines on one spot
   const tiny = store.newLayout('Tiny');
   tiny.grid = { w: 6, h: 6 };

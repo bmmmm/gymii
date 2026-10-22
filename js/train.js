@@ -1,11 +1,13 @@
 import {
   getLayout, saveLayout, getSettings, saveSettings, getActive, saveActive, finishWorkout,
-  getWorkouts, getPlans, savePlan, planFromText, uid,
+  getWorkouts, getPlans, savePlan, uid,
   usageByMachine, layoutMuscles, distUnit, newLayout, addMachine, nextNum,
-  ensureMachine, addMachineVariant, bindItemTo, machineTrainedWhole, newEntry, nameChipsFor, todayStatus, skipPlanDay, machineBrand,
+  ensureMachine, addMachineVariant, bindItemTo, machineTrainedWhole, newEntry, nameChipsFor, skipPlanDay, machineBrand,
   newestStampedSet, setAssistGoal, COMMON_GRIPS,
   switchMachine, rateLastSet, usageByMuscle, MUSCLE_GROUPS, setGoalFor, setTargetSets, lastEntryIn, lastGripIn,
 } from './store.js';
+import { planFromText } from './plantext.js';
+import { todayStatus } from './weekday.js';
 import { drawLayout, usagePayload, findMachineByNum } from './map.js';
 import { ambientWorkoutStart, ambientFinished } from './sync.js';
 import { renderPlanBuilder, DAY_LABELS } from './plan.js';

@@ -1,8 +1,9 @@
 import {
   getLayout, getWorkouts, saveWorkouts, getSettings, saveSettings, getActive, deleteWorkout,
-  updateWorkout, distUnit, workoutFromText, newEntry, nameChipsFor,
+  updateWorkout, distUnit, newEntry, nameChipsFor,
   layoutMuscles, usageByMuscle, workoutsWithMuscle, shiftWorkout, getPlans,
 } from './store.js';
+import { workoutFromText } from './plantext.js';
 import {
   esc, fmtDate, fmtDay, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
   dateValue, timeValue, machineChain, keepInView, minsBetween, fmtDuration,

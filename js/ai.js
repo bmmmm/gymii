@@ -4,8 +4,9 @@
 
 import {
   getLayout, getWorkouts, getSettings, saveSettings, importData, distUnit,
-  getActive, getPlans, planFromImport, savePlan, ownBrand,
+  getActive, getPlans, savePlan, ownBrand,
 } from './store.js';
+import { planFromImport } from './plantext.js';
 import { openPlanBuilder } from './train.js';
 import { twoTapConfirm, plural, dateValue } from './ui.js';
 

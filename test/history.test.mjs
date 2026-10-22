@@ -8,6 +8,7 @@ import { mem } from './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
+const weekday = await import(new URL('../js/weekday.js', import.meta.url).href);
 // a Progress chip / heatmap key: stats.js's seriesKey, the (machine, exercise, grip) triple
 const K = (machineId, exercise = null, grip = null) => JSON.stringify([machineId, exercise, grip]);
 const { fmtDay: fmtDayOf } = await import(new URL('../js/ui.js', import.meta.url).href);
@@ -572,7 +573,7 @@ assert.ok(root.innerHTML.includes('+1 more'), 'and the count says what is still 
 
 // --- This week: four tiles, twelve weekly bars, the picked week's list ---
 // Relative to today, or the fixtures would age out of the twelve weeks.
-const monday = store.startOfDay(Date.now());
+const monday = weekday.startOfDay(Date.now());
 monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
 const weekAt = (weeksBack, hour) => {
   const d = new Date(monday);
@@ -666,7 +667,7 @@ root.querySelector('#week-tiles').listeners.click(clickOn('.tile', { metric: 'mi
 // the week tiles). History reads every workout, so nothing here depends
 // on a filter.
 const dayAt = (daysBack, hour) => {
-  const d = store.startOfDay(Date.now());
+  const d = weekday.startOfDay(Date.now());
   d.setDate(d.getDate() - daysBack);
   d.setHours(hour);
   return d.getTime();

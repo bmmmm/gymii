@@ -7,6 +7,8 @@ import './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../js/store.js', import.meta.url).href);
+const weekday = await import(new URL('../js/weekday.js', import.meta.url).href);
+const plantext = await import(new URL('../js/plantext.js', import.meta.url).href);
 const { startWorkoutFrom, renderTrain, goToStart, goToPlans, goToHub } =
   await import(new URL('../js/train.js', import.meta.url).href);
 const { renderPlanBuilder } = await import(new URL('../js/plan.js', import.meta.url).href);
@@ -54,7 +56,7 @@ store.savePlans([]);
 
 // nums resolve against the current gym; an unknown num keeps its item as
 // an UNBOUND one (it binds on the gym floor) instead of dropping it
-const { plan: imported, unbound } = store.planFromImport({
+const { plan: imported, unbound } = plantext.planFromImport({
   app: 'gymii',
   kind: 'workout-plan',
   name: '  Push day  ',
@@ -87,13 +89,13 @@ assert.deepEqual(imported.items, [
 ], 'items resolve, sanitize targets, cardio gets distance/seconds, rest unbound');
 
 // a name that matches a machine label binds without any num
-assert.deepEqual(store.planFromImport({ items: [{ name: 'leg press', sets: 3 }] }).plan.items, [
+assert.deepEqual(plantext.planFromImport({ items: [{ name: 'leg press', sets: 3 }] }).plan.items, [
   { machineId: 'm2', exercise: null, target: { sets: 3, reps: 10, weight: 0 } },
 ], 'a label match binds by name alone');
 
 // a pasted cardio target may carry its level — whole, from 1 up; 0 or junk
 // is none, and a strength item never has one
-assert.deepEqual(store.planFromImport({ items: [
+assert.deepEqual(plantext.planFromImport({ items: [
   { num: 4, distance: 2000, seconds: 900, level: 5 }, { num: 4, seconds: 600, level: 0 },
   { num: 4, seconds: 600, level: 2.6 }, { num: 4, seconds: 600, level: 'x' }, { num: 1, sets: 3, level: 5 },
 ] }).plan.items.map((it) => it.target), [
@@ -101,7 +103,7 @@ assert.deepEqual(store.planFromImport({ items: [
   { distance: 1000, seconds: 600, level: 3 }, { distance: 1000, seconds: 600 }, { sets: 3, reps: 10, weight: 0 },
 ], 'a pasted level is kept whole; 0 and junk are none; a strength target has none');
 
-assert.throws(() => store.planFromImport({ items: [] }), /no items/);
+assert.throws(() => plantext.planFromImport({ items: [] }), /no items/);
 
 assert.equal(store.importData({ app: 'gymii', kind: 'workout-plan', name: 'X', items: [{ num: 1 }] }),
   'workout-plan', 'importData accepts the workout-plan kind');
@@ -303,12 +305,12 @@ assert.ok(root.innerHTML.includes('last: '), 'plan row shows when it was last do
 
 // --- days: import sanitizing, builder chips, Save & start ---
 
-const { plan: dayPlan } = store.planFromImport({
+const { plan: dayPlan } = plantext.planFromImport({
   app: 'gymii', kind: 'workout-plan', name: 'D', days: [4, 1, 9, 4, -1, 2.5],
   items: [{ num: 1 }],
 });
 assert.deepEqual(dayPlan.days, [1, 4], 'days dedupe, sort and drop junk');
-assert.ok(!('days' in store.planFromImport({ items: [{ num: 1 }] }).plan),
+assert.ok(!('days' in plantext.planFromImport({ items: [{ num: 1 }] }).plan),
   'no days key when absent');
 
 store.savePlans([]);
@@ -393,84 +395,84 @@ store.saveWorkouts([]);
 // --- reading a plan out of typed lines ---
 
 const s = store.getSettings();
-assert.deepEqual(store.parsePlanLine('Leg press 3x10 80', s),
+assert.deepEqual(plantext.parsePlanLine('Leg press 3x10 80', s),
   { name: 'Leg press', target: { sets: 3, reps: 10, weight: 80 } },
   'sets x reps and a bare weight');
-assert.deepEqual(store.parsePlanLine('#7 Chest press 3x8-12 40kg', s),
+assert.deepEqual(plantext.parsePlanLine('#7 Chest press 3x8-12 40kg', s),
   { name: 'Chest press', num: 7, target: { sets: 3, reps: 8, weight: 40 } },
   'a marked num binds later; a rep range targets its low end');
-assert.deepEqual(store.parsePlanLine('12. Lat pulldown 4 sets x 12 reps @ 45', s),
+assert.deepEqual(plantext.parsePlanLine('12. Lat pulldown 4 sets x 12 reps @ 45', s),
   { name: 'Lat pulldown', num: 12, target: { sets: 4, reps: 12, weight: 45 } },
   'spelled-out sets/reps, "N." num marker and an @ weight');
-assert.deepEqual(store.parsePlanLine('Treadmill 20min', s),
+assert.deepEqual(plantext.parsePlanLine('Treadmill 20min', s),
   { name: 'Treadmill', target: { distance: 0, seconds: 1200 } },
   'a duration alone makes it cardio');
-assert.deepEqual(store.parsePlanLine('Rowing 2km 15min', s),
+assert.deepEqual(plantext.parsePlanLine('Rowing 2km 15min', s),
   { name: 'Rowing', target: { distance: 2000, seconds: 900 } },
   'distance + duration, converted to the display unit');
 // a cardio line's level — the machine's resistance step — in three
 // spellings, before or after the duration, never part of the name
-assert.deepEqual(store.parsePlanLine('Rower 20min L5', s),
+assert.deepEqual(plantext.parsePlanLine('Rower 20min L5', s),
   { name: 'Rower', target: { distance: 0, seconds: 1200, level: 5 } }, '"L5" after the duration');
-assert.deepEqual(store.parsePlanLine('Rower L5 20min', s),
+assert.deepEqual(plantext.parsePlanLine('Rower L5 20min', s),
   { name: 'Rower', target: { distance: 0, seconds: 1200, level: 5 } }, 'or before it');
-assert.deepEqual(store.parsePlanLine('Bike 2km level 7', s),
+assert.deepEqual(plantext.parsePlanLine('Bike 2km level 7', s),
   { name: 'Bike', target: { distance: 2000, seconds: 0, level: 7 } }, '"level 7" spelled out');
-assert.deepEqual(store.parsePlanLine('#4 Bike: Intervals 15min lvl 3', s),
+assert.deepEqual(plantext.parsePlanLine('#4 Bike: Intervals 15min lvl 3', s),
   { name: 'Bike', num: 4, exercise: 'Intervals', target: { distance: 0, seconds: 900, level: 3 } },
   '"lvl 3" too, next to a num and an exercise');
-assert.equal(store.parsePlanLine('bike 15min l9', s).target.level, 9, 'case-insensitive');
-assert.deepEqual(store.parsePlanLine('Rower 20min L0', s),
+assert.equal(plantext.parsePlanLine('bike 15min l9', s).target.level, 9, 'case-insensitive');
+assert.deepEqual(plantext.parsePlanLine('Rower 20min L0', s),
   { name: 'Rower', target: { distance: 0, seconds: 1200 } }, 'L0 names no level');
-assert.deepEqual(store.parsePlanLine('Rower L5', s), { name: 'Rower L5' },
+assert.deepEqual(plantext.parsePlanLine('Rower L5', s), { name: 'Rower L5' },
   'a level alone makes no cardio line — a duration or distance does — so it stays in the name, visible');
-assert.deepEqual(store.parsePlanLine('Leg press 3x10 80 L5', s),
+assert.deepEqual(plantext.parsePlanLine('Leg press 3x10 80 L5', s),
   { name: 'Leg press L5', target: { sets: 3, reps: 10, weight: 80 } },
   'a strength line has no level: the token stays in the name, visible');
-assert.deepEqual(store.parsePlanLine('Elliptical 20min', s),
+assert.deepEqual(plantext.parsePlanLine('Elliptical 20min', s),
   { name: 'Elliptical', target: { distance: 0, seconds: 1200 } }, 'an "l" inside a word is no level');
-assert.deepEqual(store.parsePlanLine('Cable crossover', s),
+assert.deepEqual(plantext.parsePlanLine('Cable crossover', s),
   { name: 'Cable crossover' }, 'a bare name is a valid item — targets are optional');
-assert.equal(store.parsePlanLine('Push day:', s), null, 'a heading is not an exercise');
-assert.equal(store.parsePlanLine('   ', s), null, 'blank lines drop');
-assert.equal(store.parsePlanLine('3x10', s), null, 'a set term with no movement drops');
+assert.equal(plantext.parsePlanLine('Push day:', s), null, 'a heading is not an exercise');
+assert.equal(plantext.parsePlanLine('   ', s), null, 'blank lines drop');
+assert.equal(plantext.parsePlanLine('3x10', s), null, 'a set term with no movement drops');
 // a bare leading number stays in the name — "45 degree leg press" is not #45
-assert.deepEqual(store.parsePlanLine('45 degree leg press 3x10', s),
+assert.deepEqual(plantext.parsePlanLine('45 degree leg press 3x10', s),
   { name: '45 degree leg press', target: { sets: 3, reps: 10, weight: 0 } },
   'an unmarked leading number is part of the name');
 
 // lbs in the note convert into a kg gym
-assert.equal(store.parsePlanLine('Bench 3x10 100lb', s).target.weight, 45.5,
+assert.equal(plantext.parsePlanLine('Bench 3x10 100lb', s).target.weight, 45.5,
   'a note written in lbs converts to the display unit');
 
-assert.equal(store.parsePlanText('Leg press 3x10 80\n\nDay B:\nTreadmill 20min', s).length, 2,
+assert.equal(plantext.parsePlanText('Leg press 3x10 80\n\nDay B:\nTreadmill 20min', s).length, 2,
   'parsePlanText drops blanks and headings');
 
 // --- the grip: "[Rope]", cut out before anything else ---
-assert.deepEqual(store.parsePlanLine('#9 Cable tower: Triceps pushdown [Rope] 3x12 25', s),
+assert.deepEqual(plantext.parsePlanLine('#9 Cable tower: Triceps pushdown [Rope] 3x12 25', s),
   { name: 'Cable tower', num: 9, exercise: 'Triceps pushdown', grip: 'Rope', target: { sets: 3, reps: 12, weight: 25 } },
   'machine, exercise, grip and target in one line');
-assert.deepEqual(store.parsePlanLine('#9 Cable tower [Rope] 3x12', s),
+assert.deepEqual(plantext.parsePlanLine('#9 Cable tower [Rope] 3x12', s),
   { name: 'Cable tower', num: 9, grip: 'Rope', target: { sets: 3, reps: 12, weight: 0 } }, 'a grip without an exercise');
-assert.deepEqual(store.parsePlanLine('Lat pulldown / row 3x10 50', s),
+assert.deepEqual(plantext.parsePlanLine('Lat pulldown / row 3x10 50', s),
   { name: 'Lat pulldown / row', target: { sets: 3, reps: 10, weight: 50 } }, 'a slash stays part of the name');
-assert.deepEqual(store.parsePlanLine('#4 Row [ ] 3x10 40', s),
+assert.deepEqual(plantext.parsePlanLine('#4 Row [ ] 3x10 40', s),
   { name: 'Row', num: 4, target: { sets: 3, reps: 10, weight: 40 } }, 'empty brackets name no grip');
 {
   const g = store.newLayout('Grip gym');
   g.machines.push({ id: 'ct', num: 9, label: 'Cable tower', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
     exercises: ['Triceps pushdown'], grips: ['Rope', 'V-bar'] });
   const note = '#9 Cable tower: Triceps pushdown [Rope] 3x12 25\n#9 Cable tower: Triceps pushdown [Chain] 3x10 30\nFace pull [Rope] 3x15 15';
-  const items = store.planItemsFrom(store.parsePlanText(note, s), g);
+  const items = plantext.planItemsFrom(plantext.parsePlanText(note, s), g);
   assert.equal(items[0].grip, 'Rope', 'a grip the machine offers binds with it');
   assert.equal('grip' in items[1], false, 'an unknown grip falls away on a bound item');
   assert.equal(items[2].grip, 'Rope', 'an unbound item keeps its grip for the binding');
-  const text = store.planToText(items, g, s);
+  const text = plantext.planToText(items, g, s);
   assert.equal(text.split('\n')[0], '#9 Cable tower: Triceps pushdown [Rope] 3x12 25', 'the grip is written back');
-  assert.deepEqual(store.planItemsFrom(store.parsePlanText(text, s), g), items, 'text → list → text holds');
+  assert.deepEqual(plantext.planItemsFrom(plantext.parsePlanText(text, s), g), items, 'text → list → text holds');
   const keep = store.getLayout();
   store.saveLayout(g);
-  const { workout } = store.workoutFromText('#9 Cable tower: Triceps pushdown [Rope] 3x12 25\n#9 Cable tower: Triceps pushdown [Chain] 3x10 30', 1000, s);
+  const { workout } = plantext.workoutFromText('#9 Cable tower: Triceps pushdown [Rope] 3x12 25\n#9 Cable tower: Triceps pushdown [Chain] 3x10 30', 1000, s);
   assert.deepEqual(workout.entries.map((e) => e.grip ?? null), ['Rope', null],
     'a back-logged note keeps a known grip on its entry, and only a known one');
   if (keep) store.saveLayout(keep);
@@ -480,26 +482,26 @@ assert.deepEqual(store.parsePlanLine('#4 Row [ ] 3x10 40', s),
   const g = store.newLayout('Bracket gym');
   g.machines.push({ id: 'cb', num: 3, label: 'Cable', x: 0, y: 0, w: 4, h: 3, settingsFields: [],
     exercises: ['Curl [EZ]'], grips: ['Rope'] });
-  assert.deepEqual(store.parsePlanLine('#3 Cable: Curl [EZ] [Rope] 3x10 20', s),
+  assert.deepEqual(plantext.parsePlanLine('#3 Cable: Curl [EZ] [Rope] 3x10 20', s),
     { name: 'Cable', num: 3, exercise: 'Curl [EZ]', grip: 'Rope', target: { sets: 3, reps: 10, weight: 20 } },
     'the last bracket group is the grip, the first stays in the exercise');
-  const items = store.planItemsFrom(store.parsePlanText('#3 Cable: Curl [EZ] [Rope] 3x10 20\n#3 Cable: Curl [EZ] 3x10', s), g);
+  const items = plantext.planItemsFrom(plantext.parsePlanText('#3 Cable: Curl [EZ] [Rope] 3x10 20\n#3 Cable: Curl [EZ] 3x10', s), g);
   assert.deepEqual(items.map((it) => [it.exercise, it.grip ?? null]), [['Curl [EZ]', 'Rope'], ['Curl [EZ]', null]],
     'with a grip and without: the bracketed exercise survives binding');
-  const text = store.planToText(items, g, s);
+  const text = plantext.planToText(items, g, s);
   assert.equal(text, '#3 Cable: Curl [EZ] [Rope] 3x10 20\n#3 Cable: Curl [EZ] [] 3x10',
     'written back with empty brackets where no grip follows a bracketed name');
-  assert.deepEqual(store.planItemsFrom(store.parsePlanText(text, s), g), items, 'list → text → list holds');
+  assert.deepEqual(plantext.planItemsFrom(plantext.parsePlanText(text, s), g), items, 'list → text → list holds');
   // an UNBOUND item has no machine to ask what the brackets were
-  const loose = store.planItemsFrom(store.parsePlanText('Curl [EZ] []\n#12 Bench: Press [Smith] [] 3x8 60\nRow [Rope]', s), null);
+  const loose = plantext.planItemsFrom(plantext.parsePlanText('Curl [EZ] []\n#12 Bench: Press [Smith] [] 3x8 60\nRow [Rope]', s), null);
   assert.deepEqual(loose.map((it) => [it.name, it.exercise, it.grip ?? null]),
     [['Curl [EZ]', null, null], ['Bench', 'Press [Smith]', null], ['Row', null, 'Rope']], 'empty brackets name no grip');
-  const looseText = store.planToText(loose, null, s);
+  const looseText = plantext.planToText(loose, null, s);
   assert.equal(looseText, 'Curl [EZ] []\n#12 Bench: Press [Smith] [] 3x8 60\nRow [Rope]', 'and are written back');
-  assert.deepEqual(store.planItemsFrom(store.parsePlanText(looseText, s), null), loose,
+  assert.deepEqual(plantext.planItemsFrom(plantext.parsePlanText(looseText, s), null), loose,
     'list → text → list holds for unbound items too');
   g.machines[0].grips = ['EZ'];
-  assert.equal(store.planItemsFrom(store.parsePlanText('#3 Cable: Curl [EZ] 3x10', s), g)[0].grip, 'EZ',
+  assert.equal(plantext.planItemsFrom(plantext.parsePlanText('#3 Cable: Curl [EZ] 3x10', s), g)[0].grip, 'EZ',
     'a real grip of that name still wins');
 }
 
@@ -568,7 +570,7 @@ const roundTripItems = [
   { machineId: null, name: 'Cable crossover', exercise: null, num: 21, target: { sets: 3, reps: 12, weight: 25 } },
   { machineId: null, name: 'Plank', exercise: null },
 ];
-const note = store.planToText(roundTripItems, gym, s);
+const note = plantext.planToText(roundTripItems, gym, s);
 assert.equal(note, [
   '#1 Chest press 3x10 80',
   '#2 Dumbbells: Biceps curls 4x12 15',
@@ -578,21 +580,21 @@ assert.equal(note, [
   '#21 Cable crossover 3x12 25',
   'Plank',
 ].join('\n'), 'items serialise to the note they would have been written as');
-assert.deepEqual(store.planItemsFrom(store.parsePlanText(note, s), gym), roundTripItems,
+assert.deepEqual(plantext.planItemsFrom(plantext.parsePlanText(note, s), gym), roundTripItems,
   'and read back into exactly the same items');
 
 // a bare weight of 0 is left out and comes back as 0
-assert.equal(store.planToText([{ machineId: 'm1', exercise: null, target: { sets: 3, reps: 10, weight: 0 } }], gym, s),
+assert.equal(plantext.planToText([{ machineId: 'm1', exercise: null, target: { sets: 3, reps: 10, weight: 0 } }], gym, s),
   '#1 Chest press 3x10', 'a zero weight is not written out');
-assert.equal(store.planToText([{ machineId: 'c1', exercise: null, target: { distance: 0, seconds: 0, level: 5 } }], gym, s),
+assert.equal(plantext.planToText([{ machineId: 'c1', exercise: null, target: { distance: 0, seconds: 0, level: 5 } }], gym, s),
   '#4 Treadmill', 'a level with neither distance nor time is not written out — alone it would read back as a name');
 
 // only a marked num unlocks the "machine: exercise" reading — otherwise
 // the colon stays part of the name instead of eating half of it
-assert.deepEqual(store.parsePlanLine('Day A: Leg press 3x10', s),
+assert.deepEqual(plantext.parsePlanLine('Day A: Leg press 3x10', s),
   { name: 'Day A: Leg press', target: { sets: 3, reps: 10, weight: 0 } },
   'without a #num a colon does not split off an exercise');
-assert.deepEqual(store.parsePlanLine('#2 Dumbbells: Shoulder press 3x10 20', s),
+assert.deepEqual(plantext.parsePlanLine('#2 Dumbbells: Shoulder press 3x10 20', s),
   { name: 'Dumbbells', num: 2, exercise: 'Shoulder press', target: { sets: 3, reps: 10, weight: 20 } },
   'with a #num it names a movement at that machine');
 
@@ -610,7 +612,7 @@ root.querySelector('#ob-read').listeners.click();
 assert.equal(store.getPlans().length, 1, 'reading the note saves a plan');
 const typed = store.getPlans()[0];
 assert.equal(typed.items.length, 3, 'every line became an item');
-assert.ok(typed.items.every((it) => store.isUnbound(it)),
+assert.ok(typed.items.every((it) => plantext.isUnbound(it)),
   'without a gym every item starts unbound');
 assert.equal(store.getLayout(), null, 'reading a plan does NOT create a gym');
 assert.ok(root.innerHTML.includes('Edit plan'), 'review opens in the builder');
@@ -699,7 +701,7 @@ assert.deepEqual(store.getActive().plan[2].target, { distance: 2000, seconds: 75
 
 store.clearActive();
 store.saveWorkouts([]);
-const past = store.workoutFromText(
+const past = plantext.workoutFromText(
   '#14 Leg press 3x10 85\n#42 Pec deck 2x12 30\nSome unknown thing 3x10\nRowing 2km 10min',
   Date.UTC(2026, 7, 4, 17), s);
 assert.deepEqual(past.skipped, ['Some unknown thing', 'Rowing'],
@@ -715,8 +717,8 @@ assert.ok(!('at' in past.workout.entries[0].sets[0]),
 assert.ok(!('finishedAt' in past.workout), 'an unknown duration stays unknown');
 assert.ok(store.getLayout().machines.some((m) => m.num === 42 && m.label === 'Pec deck'),
   'an unknown #num creates that machine, like binding does');
-assert.throws(() => store.workoutFromText('nothing here 3x', Date.now(), s), /No line named a machine/);
-assert.throws(() => store.workoutFromText('', Date.now(), s), /No exercises found/);
+assert.throws(() => plantext.workoutFromText('nothing here 3x', Date.now(), s), /No line named a machine/);
+assert.throws(() => plantext.workoutFromText('', Date.now(), s), /No exercises found/);
 
 // history stays chronological no matter which order writers use
 store.saveWorkouts([
@@ -804,17 +806,17 @@ const dayMs = 86400000;
 const madeLongAgo = { createdAt: noon.getTime() - 90 * dayMs };
 
 const duePlan = { id: 'pd', name: 'Push day', days: [dow], items: [], ...madeLongAgo };
-assert.equal(store.planDayState(duePlan, [], noon).state, 'due', "today's plan is due");
-assert.equal(store.planDueDay(duePlan, noon).getDay(), dow, 'the due day is today');
-assert.equal(store.planNextDay(duePlan, noon).getDay(), dow,
+assert.equal(weekday.planDayState(duePlan, [], noon).state, 'due', "today's plan is due");
+assert.equal(weekday.planDueDay(duePlan, noon).getDay(), dow, 'the due day is today');
+assert.equal(weekday.planNextDay(duePlan, noon).getDay(), dow,
   'and the next one is that weekday again');
 
 // trained today -> done, and the sentence turns into a receipt
 const doneToday = [{ id: 'wt', startedAt: noon.getTime() - 3600000, planId: 'pd', entries: [] }];
-assert.equal(store.planDayState(duePlan, doneToday, noon).state, 'done',
+assert.equal(weekday.planDayState(duePlan, doneToday, noon).state, 'done',
   'a workout logged today closes it out');
 // older workouts have no planId — the name still links them
-assert.equal(store.planDayState(duePlan,
+assert.equal(weekday.planDayState(duePlan,
   [{ id: 'wo', startedAt: noon.getTime() - 3600000, name: 'Push day', entries: [] }], noon).state,
 'done', 'a pre-planId workout is matched by name');
 
@@ -823,41 +825,41 @@ assert.equal(store.planDayState(duePlan,
 // running, and saying "you missed Monday" every week would be nagging.
 const missedPlan = { id: 'pm', name: 'Leg day', days: [back(1)], items: [], ...madeLongAgo };
 const lastCycle = [{ id: 'wp', startedAt: noon.getTime() - 8 * dayMs, planId: 'pm', entries: [] }];
-assert.equal(store.planDayState(missedPlan, lastCycle, noon).state, 'missed',
+assert.equal(weekday.planDayState(missedPlan, lastCycle, noon).state, 'missed',
   'a day that went by, on a plan that was running');
-assert.equal(store.planDayState(missedPlan, [], noon).state, 'clear',
+assert.equal(weekday.planDayState(missedPlan, [], noon).state, 'clear',
   'a plan nobody has started is not "missed" every week');
-assert.equal(store.planDayState(missedPlan,
+assert.equal(weekday.planDayState(missedPlan,
   [...lastCycle, { id: 'w', startedAt: noon.getTime() - 2 * 3600000, planId: 'pm', entries: [] }],
   noon).state, 'clear', 'and it clears once it was trained since');
 
 // a day BEFORE the plan existed was never missed
-assert.equal(store.planDayState(
+assert.equal(weekday.planDayState(
   { ...missedPlan, createdAt: noon.getTime() }, [], noon).state, 'clear',
 'a plan created today did not miss yesterday');
 
 // skipping settles this cycle only
 store.savePlans([missedPlan]);
 store.skipPlanDay('pm', noon);
-assert.equal(store.planDayState(store.getPlans()[0], lastCycle, noon).state, 'skipped',
+assert.equal(weekday.planDayState(store.getPlans()[0], lastCycle, noon).state, 'skipped',
   'skipped for now');
 const nextWeek = new Date(noon.getTime() + 7 * dayMs);
 const trainedAfterSkip = [{ id: 'ws', startedAt: noon.getTime() + dayMs, planId: 'pm', entries: [] }];
-assert.equal(store.planDayState(store.getPlans()[0], trainedAfterSkip, nextWeek).state, 'missed',
+assert.equal(weekday.planDayState(store.getPlans()[0], trainedAfterSkip, nextWeek).state, 'missed',
   'the skip settles one cycle, not a permanent free pass');
-assert.equal(store.planDayState(store.getPlans()[0], lastCycle, nextWeek).state, 'clear',
+assert.equal(weekday.planDayState(store.getPlans()[0], lastCycle, nextWeek).state, 'clear',
   'but a plan left alone after a skip goes quiet rather than nagging on');
 
 // --- todayStatus picks the most actionable plan ---
 
 store.saveWorkouts([]);
-assert.equal(store.todayStatus([], [], noon), null, 'no dated plans, nothing to say');
-assert.equal(store.todayStatus([{ id: 'x', name: 'Untagged', items: [] }], [], noon), null,
+assert.equal(weekday.todayStatus([], [], noon), null, 'no dated plans, nothing to say');
+assert.equal(weekday.todayStatus([{ id: 'x', name: 'Untagged', items: [] }], [], noon), null,
   'plans without weekdays stay silent');
-assert.equal(store.todayStatus([missedPlan, duePlan], [], noon).plan.id, 'pd',
+assert.equal(weekday.todayStatus([missedPlan, duePlan], [], noon).plan.id, 'pd',
   "what's due today outranks what was missed");
-assert.equal(store.todayStatus([duePlan], doneToday, noon).state, 'done');
-const restStatus = store.todayStatus(
+assert.equal(weekday.todayStatus([duePlan], doneToday, noon).state, 'done');
+const restStatus = weekday.todayStatus(
   [{ id: 'pr', name: 'Pull day', days: [(dow + 2) % 7], items: [], ...madeLongAgo }], [], noon);
 assert.equal(restStatus.state, 'rest', 'nothing outstanding reads as a rest day');
 assert.equal(restStatus.next.getDay(), (dow + 2) % 7, 'and names when the next one lands');
@@ -870,12 +872,12 @@ const on = (weekday, weeksAgo) => ({
   startedAt: noon.getTime() - weeksAgo * 7 * dayMs - ((dow - weekday + 7) % 7) * dayMs,
   entries: [],
 });
-assert.equal(store.usualWeekday(rhythmPlan, [on(back(1), 1), on(back(1), 2)]), null,
+assert.equal(weekday.usualWeekday(rhythmPlan, [on(back(1), 1), on(back(1), 2)]), null,
   'two workouts are not a rhythm');
 const tueish = [on(back(1), 1), on(back(1), 2), on(back(1), 3), on(back(4), 4)];
-assert.equal(store.usualWeekday(rhythmPlan, tueish), back(1),
+assert.equal(weekday.usualWeekday(rhythmPlan, tueish), back(1),
   'three of four on the same weekday is');
-assert.equal(store.usualWeekday(rhythmPlan,
+assert.equal(weekday.usualWeekday(rhythmPlan,
   [on(back(1), 1), on(back(2), 2), on(back(3), 3)]), null,
 'a scattered week suggests nothing');
 
@@ -908,7 +910,7 @@ store.saveWorkouts([]);
 store.savePlans([]);
 
 // --- the Plans screen: the hub tile's own, smaller surface ---
-store.savePlans([store.planFromText('Leg press 3x10 80')]);
+store.savePlans([plantext.planFromText('Leg press 3x10 80')]);
 goToPlans();
 byId.clear();
 renderTrain(root);
@@ -982,7 +984,7 @@ goToHub();
   g.machines.push({ id: 'a1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles: [] });
   store.saveLayout(g);
   store.saveTombstones({ machines: [] });
-  const items = store.planItemsFrom(store.parsePlanText(
+  const items = plantext.planItemsFrom(plantext.parsePlanText(
     '#14 Leg press 3x10 80\n#14 Calf raise 3x15 60\nBike 20min'), null);
   byId.clear();
   byId.set('#plan-text', null); // the list view is on screen
@@ -1053,13 +1055,13 @@ goToHub();
 }
 
 // --- the minus the app shows on an assisted machine reads back as the assist ---
-assert.deepEqual(store.parsePlanLine('#17 Assisted pull-up 3x8 -25', s).target, { sets: 3, reps: 8, weight: 25 },
+assert.deepEqual(plantext.parsePlanLine('#17 Assisted pull-up 3x8 -25', s).target, { sets: 3, reps: 8, weight: 25 },
   '"3x8 -25": 8 reps at 25 kg assist, not a rep range 8–25');
-assert.deepEqual(store.parsePlanLine('#17 Assisted pull-up 3x8 @ −25', s).target, { sets: 3, reps: 8, weight: 25 },
+assert.deepEqual(plantext.parsePlanLine('#17 Assisted pull-up 3x8 @ −25', s).target, { sets: 3, reps: 8, weight: 25 },
   'the true minus sign too');
-assert.deepEqual(store.parsePlanLine('Leg press 3x8-12 80', s).target, { sets: 3, reps: 8, weight: 80 },
+assert.deepEqual(plantext.parsePlanLine('Leg press 3x8-12 80', s).target, { sets: 3, reps: 8, weight: 80 },
   'an attached hyphen is still a rep range');
-assert.deepEqual(store.parsePlanLine('Leg press 3x8 – 12 80', s).target, { sets: 3, reps: 8, weight: 80 },
+assert.deepEqual(plantext.parsePlanLine('Leg press 3x8 – 12 80', s).target, { sets: 3, reps: 8, weight: 80 },
   'and so is a dash with spaces');
 
 // --- a muscle only ever SECONDARY still finds its machines in the builder ---
