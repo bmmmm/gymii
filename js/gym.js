@@ -6,6 +6,9 @@ import {
 } from './store.js';
 import { freeSpot, WALL_SNAPPED } from './geometry.js';
 import {
+  layoutDiff, applySide, foreignOnly, clone, same,
+} from './layoutdiff.js';
+import {
   esc, download, twoTapConfirm, keepInView, preserveFocus, machineIcon, fieldValue,
 } from './ui.js';
 import {
@@ -73,93 +76,90 @@ function itemsExtent(layout) {
   return { w: Math.ceil(w), h: Math.ceil(h) };
 }
 
-// --- undo entries ---
-// An undo entry is what one edit CHANGED, part by part — each machine and
-// shape by id, each structural field — never a snapshot of the whole
-// layout. Undo and redo write that side of it onto the layout as stored
-// IN THE TAP: a snapshot written back is a render-time copy (store.js,
-// ensureMachine), and saveLayout tombstones every id such a copy lacks — a
-// machine an ambient sync pull or another tab brought in meanwhile would
-// die on every device, and their changes to the other parts would be
-// reverted.
-const STRUCTURAL = ['name', 'grid', 'meta', 'outline'];
-const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const isRecord = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+// How a machine's text field is written, for the card and the list alike:
+// trimmed text in, what the field shows afterwards out.
+const MACHINE_TEXT = {
+  label: (m, v) => { m.label = v || `Machine ${m.num}`; return m.label; },
+  // absent, never empty: exports and templates stay clean
+  model: (m, v) => { if (v) m.model = v; else delete m.model; return v; },
+  docUrl: (m, v) => { m.docUrl = v; return v; },
+};
 
-function layoutDiff(a, b) {
-  const changes = STRUCTURAL.filter((field) => !same(a[field], b[field]))
-    .map((field) => ({ field, before: clone(a[field]), after: clone(b[field]) }));
-  ['machines', 'shapes'].forEach((coll) => {
-    const la = a[coll] ?? [];
-    const lb = b[coll] ?? [];
-    const ia = new Map(la.map((it, i) => [it.id, i]));
-    const ib = new Map(lb.map((it, i) => [it.id, i]));
-    new Set([...ia.keys(), ...ib.keys()]).forEach((id) => {
-      const before = la[ia.get(id)] ?? null;
-      const after = lb[ib.get(id)] ?? null;
-      if (same(before, after)) return;
-      changes.push({
-        coll, id, before: clone(before), after: clone(after), at: { before: ia.get(id), after: ib.get(id) },
-      });
-    });
-  });
-  return changes;
-}
+// Swatch row for picking an item accent color (empty = default look).
+const colorRow = (current) => `<div class="swatch-row">
+    <button type="button" class="swatch none${!current ? ' sel' : ''}" data-color="" aria-label="default color"></button>
+    ${ITEM_COLORS.map((c) => `<button type="button" class="swatch${current === c ? ' sel' : ''}"
+      data-color="${c}" style="background:${c}" aria-label="color ${c}"></button>`).join('')}
+  </div>`;
 
-// Only the keys the edit changed, so a key another writer set since
-// survives (a grip Train taught the machine whose type is being undone).
-function writeKeys(target, want, was) {
-  new Set([...Object.keys(want), ...Object.keys(was)]).forEach((k) => {
-    if (same(want[k], was[k])) return;
-    if (k in want) target[k] = clone(want[k]);
-    else delete target[k];
-  });
-}
+// Layer chips, for every shape that can end up under another one: zones,
+// walls and free-standing furniture. Wall-snapped fixtures are left out —
+// they glue to a wall in their own layer, where stacking means nothing.
+// Machines are left out too: fits() keeps them from overlapping at all.
+const layerRow = (item) => `
+    <div class="field-block"><span>Layer — what sits in front of what</span>
+      <div class="chip-select" id="item-layer">
+        ${MAP_LAYERS.map((l) => `<button type="button"
+          class="chip${(item.z ?? 0) === l.z ? ' sel' : ''}" data-z="${l.z}">${esc(l.label)}</button>`).join('')}
+      </div>
+    </div>`;
 
-// side: 'before' undoes the entry, 'after' redoes it. A part the edit
-// changed that another writer deleted since stays deleted.
-function applySide(target, changes, side) {
-  const other = side === 'before' ? 'after' : 'before';
-  changes.forEach((c) => {
-    const want = c[side];
-    const was = c[other];
-    if (c.field) {
-      if (isRecord(want) && isRecord(was) && isRecord(target[c.field])) writeKeys(target[c.field], want, was);
-      else if (want === undefined) delete target[c.field];
-      else target[c.field] = clone(want);
-      return;
-    }
-    const list = (target[c.coll] ??= []);
-    const i = list.findIndex((it) => it.id === c.id);
-    if (!want) {
-      if (i !== -1) list.splice(i, 1);
-    } else if (i === -1) {
-      if (!was) list.splice(Math.min(c.at[side], list.length), 0, clone(want));
-    } else if (was) {
-      writeKeys(list[i], want, was);
-    } else {
-      list[i] = clone(want);
-    }
+// --- the machine list editor's pure parts (its wiring lives in renderGym) ---
+const TYPE_OPTIONS = [['', 'Strength'], ['cardio', 'Cardio'], ['bodyweight', 'Bodyweight'], ['assisted', 'Assisted']];
+// ids from a template are untrusted text; `CSS` does not exist in the
+// logic tests' Node, where the selector is never resolved anyway
+const cssId = (id) => (typeof CSS === 'undefined' ? id : CSS.escape(id));
+const machineType = (m) => (m.cardio ? 'cardio' : m.bodyweight ? 'bodyweight' : m.assisted ? 'assisted' : '');
+// A muscle tap cycles off → primary → secondary → off. Primary muscles
+// live in `muscles` (the list everything has always read), secondary ones
+// in `secondaryMuscles` — worth half a set in History, absent when empty
+// (exercises' lifecycle), so older clients just ignore them.
+const cycleMuscle = (m, mu) => {
+  const primary = m.muscles ?? [];
+  const secondary = m.secondaryMuscles ?? [];
+  if (primary.includes(mu)) {
+    m.muscles = primary.filter((x) => x !== mu);
+    // never twice: a muscle may already sit in both lists (a client that
+    // knows no secondary muscles tagged it primary again)
+    m.secondaryMuscles = [...secondary.filter((x) => x !== mu), mu];
+  } else if (secondary.includes(mu)) {
+    m.secondaryMuscles = secondary.filter((x) => x !== mu);
+  } else {
+    m.muscles = [...primary, mu];
+  }
+  if (!m.secondaryMuscles?.length) delete m.secondaryMuscles;
+};
+// chip state for a muscle: ' sel' primary, ' secondary' (dashed) secondary
+const muscleClass = (m, mu) => ((m.muscles ?? []).includes(mu) ? ' sel'
+  : (m.secondaryMuscles ?? []).includes(mu) ? ' secondary' : '');
+// ...and for a screen reader: aria-pressed alone says the state (mixed =
+// secondary), so a chip's name stays its muscle's whatever the state
+const musclePressed = (m, mu) => ((m.muscles ?? []).includes(mu) ? 'true'
+  : (m.secondaryMuscles ?? []).includes(mu) ? 'mixed' : 'false');
+// A list row's muscles in ONE fixed order (the pick list's, others
+// after, by name), whatever their state: a chip turning secondary stays
+// where the thumb is, so the second tap — removing it — lands on it.
+const rowMuscles = (m) => [...new Set([...(m.muscles || []), ...(m.secondaryMuscles || [])])]
+  .sort((a, b) => {
+    const ia = MUSCLE_GROUPS.indexOf(a);
+    const ib = MUSCLE_GROUPS.indexOf(b);
+    return (ia === -1) - (ib === -1) || ia - ib || a.localeCompare(b);
   });
-}
-
-// Another writer's changes minus what `mine` changed: a part only it
-// touched comes whole; a part both touched keeps only its other keys (a
-// part one side deleted or added whole is this edit's call).
-function foreignOnly(theirs, mine) {
-  const key = (c) => (c.field ? `f:${c.field}` : `${c.coll}:${c.id}`);
-  const own = new Map(mine.map((c) => [key(c), c]));
-  return theirs.flatMap((c) => {
-    const m = own.get(key(c));
-    if (!m) return [c];
-    if (![c.before, c.after, m.before, m.after].every(isRecord)) return [];
-    const mineKeys = new Set(Object.keys({ ...m.before, ...m.after })
-      .filter((k) => !same(m.before[k], m.after[k])));
-    const pick = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !mineKeys.has(k)));
-    return [{ ...c, before: pick(c.before), after: pick(c.after) }];
-  });
-}
+// the type flags are mutually exclusive; absent = strength, and a flag is
+// deleted (never set false) to keep exports clean
+const TYPE_FLAGS = ['cardio', 'bodyweight', 'assisted'];
+const setType = (m, flag) => {
+  TYPE_FLAGS.forEach((f) => delete m[f]);
+  if (TYPE_FLAGS.includes(flag)) m[flag] = true;
+};
+// Focus is handed on only when the control HAD it — a keyboard or screen-
+// reader user, whom a re-render would drop onto <body>. A tap on a phone
+// never focuses a chip (iOS), and a programmatic focus there could pop
+// the "+ Muscle" picker nobody asked for, or close the keyboard of a
+// field still being typed in.
+const hadFocus = (el) => typeof document !== 'undefined' && document.activeElement === el;
+const option = (value, label, selected) =>
+  `<option value="${esc(value)}"${selected ? ' selected' : ''}>${esc(label)}</option>`;
 
 export function focusMachine(id) {
   pendingFocus = id;
@@ -281,14 +281,6 @@ export function renderGym(root) {
   // every waiting field first, so whichever control saves, a field is
   // written exactly as its own `change` writes it — never '' or untrimmed.
   const staged = new Map();
-  // How a machine's text field is written, for the card and the list alike:
-  // trimmed text in, what the field shows afterwards out.
-  const MACHINE_TEXT = {
-    label: (m, v) => { m.label = v || `Machine ${m.num}`; return m.label; },
-    // absent, never empty: exports and templates stay clean
-    model: (m, v) => { if (v) m.model = v; else delete m.model; return v; },
-    docUrl: (m, v) => { m.docUrl = v; return v; },
-  };
   // `saved`: save() already wrote this text — written again it would undo
   // whatever another writer stored for that key since (a sync rename)
   const stageText = (m, field, text) => staged.set(`${m.id}:${field}`, { m, field, text, saved: false });
@@ -752,25 +744,6 @@ export function renderGym(root) {
     });
   }
 
-  // Swatch row for picking an item accent color (empty = default look).
-  const colorRow = (current) => `<div class="swatch-row">
-    <button type="button" class="swatch none${!current ? ' sel' : ''}" data-color="" aria-label="default color"></button>
-    ${ITEM_COLORS.map((c) => `<button type="button" class="swatch${current === c ? ' sel' : ''}"
-      data-color="${c}" style="background:${c}" aria-label="color ${c}"></button>`).join('')}
-  </div>`;
-
-  // Layer chips, for every shape that can end up under another one: zones,
-  // walls and free-standing furniture. Wall-snapped fixtures are left out —
-  // they glue to a wall in their own layer, where stacking means nothing.
-  // Machines are left out too: fits() keeps them from overlapping at all.
-  const layerRow = (item) => `
-    <div class="field-block"><span>Layer — what sits in front of what</span>
-      <div class="chip-select" id="item-layer">
-        ${MAP_LAYERS.map((l) => `<button type="button"
-          class="chip${(item.z ?? 0) === l.z ? ' sel' : ''}" data-z="${l.z}">${esc(l.label)}</button>`).join('')}
-      </div>
-    </div>`;
-
   const wireLayerRow = (item) => {
     props.querySelector('#item-layer').addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
@@ -801,61 +774,6 @@ export function renderGym(root) {
   // get their type, brand and muscles fixed in one pass without a tap on
   // the plan per machine. Same fields, same invariants (absent flags,
   // brand only when it differs from the gym's), same save().
-  const TYPE_OPTIONS = [['', 'Strength'], ['cardio', 'Cardio'], ['bodyweight', 'Bodyweight'], ['assisted', 'Assisted']];
-  // ids from a template are untrusted text; `CSS` does not exist in the
-  // logic tests' Node, where the selector is never resolved anyway
-  const cssId = (id) => (typeof CSS === 'undefined' ? id : CSS.escape(id));
-  const machineType = (m) => (m.cardio ? 'cardio' : m.bodyweight ? 'bodyweight' : m.assisted ? 'assisted' : '');
-  // A muscle tap cycles off → primary → secondary → off. Primary muscles
-  // live in `muscles` (the list everything has always read), secondary ones
-  // in `secondaryMuscles` — worth half a set in History, absent when empty
-  // (exercises' lifecycle), so older clients just ignore them.
-  const cycleMuscle = (m, mu) => {
-    const primary = m.muscles ?? [];
-    const secondary = m.secondaryMuscles ?? [];
-    if (primary.includes(mu)) {
-      m.muscles = primary.filter((x) => x !== mu);
-      // never twice: a muscle may already sit in both lists (a client that
-      // knows no secondary muscles tagged it primary again)
-      m.secondaryMuscles = [...secondary.filter((x) => x !== mu), mu];
-    } else if (secondary.includes(mu)) {
-      m.secondaryMuscles = secondary.filter((x) => x !== mu);
-    } else {
-      m.muscles = [...primary, mu];
-    }
-    if (!m.secondaryMuscles?.length) delete m.secondaryMuscles;
-  };
-  // chip state for a muscle: ' sel' primary, ' secondary' (dashed) secondary
-  const muscleClass = (m, mu) => ((m.muscles ?? []).includes(mu) ? ' sel'
-    : (m.secondaryMuscles ?? []).includes(mu) ? ' secondary' : '');
-  // ...and for a screen reader: aria-pressed alone says the state (mixed =
-  // secondary), so a chip's name stays its muscle's whatever the state
-  const musclePressed = (m, mu) => ((m.muscles ?? []).includes(mu) ? 'true'
-    : (m.secondaryMuscles ?? []).includes(mu) ? 'mixed' : 'false');
-  // A list row's muscles in ONE fixed order (the pick list's, others
-  // after, by name), whatever their state: a chip turning secondary stays
-  // where the thumb is, so the second tap — removing it — lands on it.
-  const rowMuscles = (m) => [...new Set([...(m.muscles || []), ...(m.secondaryMuscles || [])])]
-    .sort((a, b) => {
-      const ia = MUSCLE_GROUPS.indexOf(a);
-      const ib = MUSCLE_GROUPS.indexOf(b);
-      return (ia === -1) - (ib === -1) || ia - ib || a.localeCompare(b);
-    });
-  // the type flags are mutually exclusive; absent = strength, and a flag is
-  // deleted (never set false) to keep exports clean
-  const TYPE_FLAGS = ['cardio', 'bodyweight', 'assisted'];
-  const setType = (m, flag) => {
-    TYPE_FLAGS.forEach((f) => delete m[f]);
-    if (TYPE_FLAGS.includes(flag)) m[flag] = true;
-  };
-  // Focus is handed on only when the control HAD it — a keyboard or screen-
-  // reader user, whom a re-render would drop onto <body>. A tap on a phone
-  // never focuses a chip (iOS), and a programmatic focus there could pop
-  // the "+ Muscle" picker nobody asked for, or close the keyboard of a
-  // field still being typed in.
-  const hadFocus = (el) => typeof document !== 'undefined' && document.activeElement === el;
-  const option = (value, label, selected) =>
-    `<option value="${esc(value)}"${selected ? ' selected' : ''}>${esc(label)}</option>`;
 
   // A machine's number from its field, the card's or a list row's: a number
   // is a machine's identity in plans and on the map, so a taken one is
