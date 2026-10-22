@@ -74,7 +74,8 @@ exist because breaking them was once a real bug.
   `WALL_SNAPPED` are re-exported; every id
   into an attribute goes through `esc()` — template files are untrusted);
   `js/gym.js` — the editor (everything starts locked, every mutation via
-  `save()`) and never imports from train.js/plan.js.
+  `save()`) and never imports from train.js/plan.js; `js/layoutdiff.js` —
+  its pure undo diff engine, no imports.
 - `js/train.js` — hub, guided workout, rest timer (the rest belongs to the
   WORKOUT); `js/plan.js` — the plan builder, works without a gym.
 - `js/history.js` — overview (week, progress, paths, muscles, with the hints

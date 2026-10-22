@@ -56,7 +56,9 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `ui` (the shared
   helpers, `keepFocus`'s positional stand-in, incl. the four DOM-facing ones over hand-made stubs — the file
   runs under Pacific/Auckland, where local-vs-UTC actually differs),
-  `gym` (editor wiring, drag integration, staged text vs. another control's save, undo/redo and `save()` against another writer),
+  `gym` (editor wiring, drag integration, staged text vs. another control's save, undo/redo and `save()` against another writer), `layoutdiff` (the pure undo
+  engine: diff/apply round trip, `foreignOnly` keeping another writer's
+  keys, undo/redo onto a layout a merge replaced — no localStorage stub),
   `demo` (generator determinism, entry invariants, weekday plan states,
   unit conversion, load-replaces-gym), `ai` (export plans section,
   paste-back new-vs-replace flow), `templates` (the community-library

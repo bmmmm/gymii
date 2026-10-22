@@ -156,7 +156,7 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   THE TAP — `ensureMachine(num, name, target)` (bind-or-create + save),
   `addMachineVariant(id, { exercises, grips })`, or `getLayout()` right there;
   the gym editor's `save()` and its undo/redo both read the stored layout IN
-  THE TAP (`foreignOnly`/`applySide`, gym.js). `uid()` is crypto-random, 16
+  THE TAP (`foreignOnly`/`applySide`, js/layoutdiff.js). `uid()` is crypto-random, 16
   chars; legacy 8-char ids stay valid, and ids deliberately carry no
   device marker (they travel into AI exports). Backups are `v: 2`
   (tombstones included, deletes stay dead across restore); v1 files import
@@ -686,7 +686,13 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   one entry per completed edit via the local `save()` wrapper — every
   mutation must go through `save()`, never `saveLayout()` directly. An
   entry is what the edit CHANGED (`layoutDiff`: each machine and shape by
-  id, each of name/grid/meta/outline), never a snapshot. `save()` first
+  id, each of name/grid/meta/outline), never a snapshot. The engine —
+  `layoutDiff`, `applySide`, `foreignOnly` — is `js/layoutdiff.js`, pure
+  and import-free like merge.js, pinned directly by
+  test/layoutdiff.test.mjs; gym.js owns only the history stack and when
+  to call it. The editor's other pure helpers (`MACHINE_TEXT`, the
+  colour/layer rows, the list editor's muscle/type helpers) sit at module
+  scope above `renderGym`, which keeps only what closes over its state. `save()` first
   takes in what another writer stored since the editor's render (a sync
   pull, Train teaching a grip: `getLayout()` in the tap,
   `foreignOnly(layoutDiff(lastSaved, stored), changes)` applied with
