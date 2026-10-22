@@ -400,7 +400,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
 - `js/app.js` — hash-router, renders views into `#view`. The `#gym`
   route is deliberately NOT in the tabbar (the map is a setup tool, not a
   daily surface — user decision); it is reached via links in onboarding,
-  Settings and the Train hub's Gym tile. Don't re-add the tab. The
+  Settings and the Train hub's Gym tile. Don't re-add the tab. A route is
+  an OWN key of `routes` (`Object.hasOwn` — `#toString` found the
+  prototype's and rendered blank), anything else is Train; a malformed
+  `#pair=%E0` is caught (URIError) and scrubbed to `#settings` like a good
+  one, instead of throwing before the first render. The
   tabbar shows an emoji icon over each label with a Material-style pill
   behind the active tab's icon — pure CSS off the existing `.active`
   toggle, no router logic involved. Before the first render it calls ui.js's
@@ -554,7 +558,20 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   text goes through `matchBrand`; a hint line counts the brands machines
   carry as their OWN — `ownBrand`, so a copy of the gym's is not listed).
   The Layout view re-renders itself now (brand chips, list edits), so the
-  Templates card's browser comes back when it was open (`tplOpen`). The
+  Templates card's browser comes back when it was open (`tplOpen`) — from
+  the manifest fetched once per open (`tplManifest`; "Load template…"
+  fetches afresh), and its panel is wired ONCE per node (`dataset.wired`,
+  delegated click/change): a second click listener from a second fill
+  armed AND confirmed a template in one tap. FLOOR SIZE: the width/height
+  steppers (and the card's Number) are `numberStepper`s — a `<label for>`
+  BESIDE the stepper, never a `<label>` around it, which handed a tap on
+  the text to the "−" button; each ± carries an aria-label ("Decrease
+  floor width"). The floor shrinks only down to what is on it
+  (`itemsExtent`, min 20) — an item past the new edge was drawn off the
+  floor where no tap reaches it — and `#floor-msg` says why in place.
+  `redraw()` runs per pointermove, so it reads no storage: the map mode is
+  closure state the Colors/Usage chips keep current, the Usage counts are
+  computed once per editor render (`usageCache`). The
   machine card shows the resolved brand as ONE LINE (`.brand-line`) with a
   `.linkish` "Different brand?" inline; `brandOpen` (closure state, reset in
   `select()`) folds out a search field that filters the chips IN PLACE on
@@ -575,7 +592,11 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   app default it inherits while empty, a whole number from 1 up pins it,
   empty (or anything else) deletes the key; committed on `change` through
   the local `save()` like `#m-num`, hidden for a cardio machine (no goal
-  there). Per-exercise goals (`exerciseSets`, written on the log screen's
+  there). Typing can NOT empty it (an armed field restores its number on a
+  blur without input), so a pinned goal shows "Set for this machine. Use
+  the default (3)" (`#m-sets-pinned`, a `.linkish` `#m-sets-default`) —
+  the way back to inheriting; field and line update in place, never
+  through a card re-render (a `change` fires inside the next tap). Per-exercise goals (`exerciseSets`, written on the log screen's
   "Keep N sets for #7 · Curl") are only READ here, as one muted line "Per
   exercise: Curl 4 · Row 2"; removing an exercise chip prunes its entry
   and deletes the map when empty (locker-style, like the list itself).
@@ -1023,9 +1044,18 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   parsing the same note grammar as the onboarding note. List/Text chips
   switch between the stepper list and the plain note
   (`planToText`/`parsePlanText`); every switch AND `persist()` go through
-  `fromText()`, so the text is authoritative while it is on screen. Nothing
+  `fromText()`, so the text is authoritative while it is on screen; the
+  other re-renders reachable in Text view (name chips, day chips, "Set
+  <day>") take the note in first via `pullText()` and print it back AS
+  TYPED (`state.text`, kept on every `input`), never re-serialised. Nothing
   persists until Save — which is what lets an imported AI draft, or a
   routine seeded from history, be reviewed and trimmed before it sticks.
+  The draft lives ON the caller's builder state (`opts.draftState`: draft,
+  view, typed note — train.js's `builder` object, alive until Save/Cancel/
+  Back), because a tab switch re-renders the Train tab from scratch: a
+  fresh deep copy per render lost every edit. The name field writes the
+  draft on `input` for the same reason. Target steppers and the bind
+  number read through `fieldValue()`.
 - `js/history.js` — two screens in one module, switched by module state like
   train.js (no hash sub-routes; `#history` stays one route). The OVERVIEW is
   what a glance needs: This week (tiles, a bar chart of the last 12 weeks,

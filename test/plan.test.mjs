@@ -1111,4 +1111,74 @@ assert.deepEqual(store.parsePlanLine('Leg press 3x8 – 12 80', s).target, { set
     'an unbound item: the ? badge and the name, no icon for a machine that is not there yet');
 }
 
+// --- the draft lives on the builder state: a tab switch re-renders, it does not reset ---
+{
+  const g = store.newLayout('Draft gym');
+  g.machines.push({ id: 'd1', num: 1, label: 'Chest press', x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Chest'] });
+  g.machines.push({ id: 'd2', num: 2, label: 'Leg press', x: 6, y: 0, w: 4, h: 3, settingsFields: [], muscles: ['Quads'] });
+  store.saveLayout(g);
+  store.clearActive();
+  store.savePlans([{ id: 'pd', name: 'Stored', items: [{ machineId: 'd1', exercise: null, target: { sets: 3, reps: 10, weight: 20 } }] }]);
+  // through train.js, as the app does it: the builder state is train's `builder`
+  byId.clear();
+  goToPlans();
+  renderTrain(root);
+  // a builder an earlier block left open outranks the screen: leave it
+  if (root.innerHTML.includes('id="plan-back"')) root.querySelector('#plan-back').listeners.click();
+  byId.clear();
+  renderTrain(root);
+  root.querySelector('#plan-list').listeners.click(fakeClick({
+    dataset: { pid: 'pd' }, classList: { contains: (c) => c === 'row-open' },
+  }));
+  assert.ok(root.innerHTML.includes('Edit plan'), 'the row opens the stored plan in the builder');
+  byId.set('#plan-text', null); // the list view is on screen
+  root.querySelector('#machine-chips').listeners.click(fakeClick({ dataset: { id: 'd2' } }));
+  root.querySelector('#plan-name').listeners.input({ target: { value: 'Renamed ' } });
+  renderTrain(root); // away to History and back
+  assert.ok(root.innerHTML.includes('Edit plan'), 'the builder is still open');
+  assert.ok(root.innerHTML.includes('id="t-sets-1"'), 'the machine added before the switch is still there');
+  assert.ok(root.innerHTML.includes('value="Renamed "'), 'and so is the name typed without a blur');
+  assert.deepEqual(store.getPlans()[0].items.map((it) => it.machineId), ['d1'], 'nothing was saved behind Save');
+  root.querySelector('#plan-cancel').listeners.click();
+
+  // a plan from scratch in the Text view: the note as typed survives a re-render
+  const opts = {};
+  byId.clear();
+  renderPlanBuilder(root, opts, () => {});
+  assert.ok(root.innerHTML.includes('id="plan-text"'), 'a new plan opens as text');
+  const ta = root.querySelector('#plan-text');
+  ta.value = 'Leg press 3x10 80\nChest pr';
+  ta.listeners.input();
+  renderPlanBuilder(root, opts, () => {});
+  assert.equal(root.querySelector('#plan-text').value, 'Leg press 3x10 80\nChest pr',
+    'the half-typed note comes back verbatim');
+
+  // Text view: a day chip, "Set <day>" and a name chip pull the note first
+  root.querySelector('#plan-text').value = 'Leg press 3x10 80\nChest press 3x8 40';
+  root.querySelector('#day-chips').listeners.click(fakeClick({ dataset: { day: '1' } }));
+  assert.equal(root.querySelector('#plan-text').value, 'Leg press 3x10 80\nChest press 3x8 40',
+    'a day chip keeps the typed text (it used to re-serialise the empty draft over it)');
+  assert.deepEqual(opts.draftState.draft.items.map((it) => it.machineId), ['d2', 'd1'], 'and took its exercises in');
+  assert.deepEqual(opts.draftState.draft.days, [1]);
+  root.querySelector('#plan-text').value = 'Leg press 4x8 90';
+  root.querySelector('#name-chips').listeners.click(fakeClick({ dataset: { name: 'Legs' } }));
+  assert.equal(root.querySelector('#plan-text').value, 'Leg press 4x8 90', 'a name chip keeps it too');
+  assert.equal(opts.draftState.draft.items.length, 1);
+  // text that reads as no exercise is kept as typed, the items stay
+  root.querySelector('#plan-text').value = '???';
+  root.querySelector('#day-chips').listeners.click(fakeClick({ dataset: { day: '2' } }));
+  assert.equal(root.querySelector('#plan-text').value, '???', 'unreadable text is not thrown away');
+  assert.equal(opts.draftState.draft.items.length, 1, 'nor does it empty the plan');
+
+  // a stepper read while ARMED: the field is empty, its value in the stash
+  root.querySelector('#plan-text').value = 'Leg press 3x10 80';
+  root.querySelector('#view-chips').listeners.click(fakeClick({ dataset: { view: 'list' } }));
+  byId.set('#plan-text', null);
+  const t0 = opts.draftState.draft.items[0].target;
+  root.querySelector('#plan-items').listeners.change({ target: { id: 't-sets-0', value: '', dataset: { prevValue: '5' } } });
+  root.querySelector('#plan-items').listeners.change({ target: { id: 't-reps-0', value: '', dataset: { prevValue: '12' } } });
+  assert.deepEqual([t0.sets, t0.reps], [5, 12], 'sets and reps read what the field shows, not 1');
+  store.savePlans([]);
+}
+
 console.log('workout plans: all assertions passed');
