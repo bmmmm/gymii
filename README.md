@@ -9,7 +9,7 @@ ever sees ciphertext.
 
 **→ [bmmmm.github.io/gymii](https://bmmmm.github.io/gymii/)** — installable, works offline.
 
-![The first start: a six-step tour, the welcome screen, an empty gym floor that says what to do, and the tour again from Settings](docs/first-start.gif)
+![The first start: a six-step tour, the welcome screen, an empty gym floor that says what to do, and the tour again from Settings](docs/media/first-start.gif)
 
 New here? A one-minute tour opens on the first start — and waits in
 Settings → Help whenever you want it again.

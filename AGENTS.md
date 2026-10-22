@@ -3,16 +3,14 @@
 Minimal gym workout tracker. Vanilla HTML/CSS/JS (ES modules), **no build
 step**, all data in localStorage. Mobile-first, dark-only.
 
-**Everything that ships lives in `app/`** — the directory Pages publishes
-and `serve.py` serves, so `app/js/store.js` is `js/store.js` in the browser.
-The repo root holds tests, docs and tooling only; none of it is deployed.
+**Everything that ships lives in `app/`** — what Pages publishes and
+`serve.py` serves (`app/js/store.js` is `js/store.js` in the browser). The
+root holds tests, docs and tooling; none of it deploys.
 
-**The app that ships stays dependency-free — nothing from `node_modules`
-ever reaches the browser; its test infrastructure is not.** The dev
-dependencies are `@playwright/test` (browser smoke suite, `smoke/`) and
-`@biomejs/biome` (lint, `biome.jsonc`), and two CI tripwires keep the line where it is: no file in `app/` may
-mention `node_modules`, and the deploy job refuses to run if an install is
-present in `app/`.
+**The shipped app stays dependency-free; its tooling is not.** Dev
+dependencies: `@playwright/test` (smoke suite, `smoke/`) and
+`@biomejs/biome` (lint). Two CI tripwires hold the line: no file in `app/`
+may mention `node_modules`, and the deploy refuses an install in `app/`.
 
 ## Run & verify
 
@@ -22,17 +20,16 @@ it before writing or changing a test.
 
 - Dev server: `python3 serve.py [port]` → http://localhost:8437, serving
   `app/` (sends `no-store`; plain `http.server` served stale modules).
-- Logic tests: `pnpm test` (= `node --test 'test/*.test.mjs'`, Node's own
-  runner; one file: `node test/x.test.mjs`). `test/helpers/localstorage.mjs` must be a test's FIRST import. The
-  stub DOM hands back EVERY selector — drive view switches explicitly.
+- Logic tests: `pnpm test` (Node's own runner over `test/*.test.mjs`; one
+  file: `node test/x.test.mjs`). `test/helpers/localstorage.mjs` must be a
+  test's FIRST import. The stub DOM hands back EVERY selector — drive view
+  switches explicitly.
 - Browser smoke: `pnpm run smoke` with the sandbox OFF — Chromium's launch
-  (mach-port check-in) and `serve.py`'s port both die in it; setup in
-  docs/testing.md. A new browser spec goes in `smoke/`
-  as `*.spec.mjs`, NEVER in `test/`. A spec that flakes twice in a month is
+  (mach-port check-in) and `serve.py`'s port both die in it. A new browser
+  spec goes in `smoke/` as `*.spec.mjs`, NEVER in `test/`. A spec that flakes twice in a month is
   rewritten or deleted. `grep -rn` needs `--exclude-dir=node_modules`.
-- Lint: `pnpm run lint` (Biome, lint only — no formatter). A rule turned
-  off in `biome.jsonc` carries its reason there; fix findings, don't
-  silence them. Prefix a deliberately unused parameter with `_`.
+- Lint: `pnpm run lint` (Biome, no formatter). Fix findings, don't silence
+  them — a rule off in `biome.jsonc` states why; an unused parameter takes `_`.
 - Dependabot: adopt locally via `pnpm add -D <pkg>@latest` (respects the
   cooldown), never merge in the UI.
 - Touch targets are 44px as real boxes (documented exceptions `.hm-cell`,
@@ -60,24 +57,24 @@ exist because breaking them was once a real bug.
   migrations, sync stamps + tombstones, shared invariant helpers, write
   failures announce AND rethrow). Shared invariants live as store helpers
   (`bindOrCreateMachine`, `newEntry`, `nameChipsFor`) — extend, never
-  re-inline. `app/js/persist.js` — origin durability.
-  Pure logic split off it, all storage-free: `app/js/geometry.js` (placement),
+  re-inline. `app/js/persist.js` — origin durability. Pure logic split off
+  it, all storage-free: `app/js/geometry.js` (placement),
   `app/js/weekday.js` (due/missed/done date maths, no imports), and
   `app/js/plantext.js` (the plan-text parser/printer — it imports store.js,
   which imports `planFromImport` back, call-time only).
 - Cross-module traps: sets are strength `{reps, weight}`, cardio
   `{distance, seconds}`, bodyweight = ADDED weight, assisted = the ASSIST
-  (less is stronger, no volume; ui.js `entryKind` reads the flag), and `at` is optional —
-  every consumer guards (`st.reps * st.weight || 0`). Stored weights and
-  distances are in the DISPLAY unit: a new such field must be converted by
-  `setUnit()` too. A stepper field is read only via `fieldValue()` (ui.js)
+  (less is stronger, no volume; ui.js `entryKind` reads the flag), and `at`
+  is optional — every consumer guards (`st.reps * st.weight || 0`). Stored
+  weights and distances are in the DISPLAY unit: a new such field must be
+  converted by `setUnit()` too. A stepper field is read only via `fieldValue()` (ui.js)
   — an armed field is empty while it still shows its value.
-- `app/js/sync.js` + `app/js/merge.js` — cross-device sync (E2E, or explicit plain
-  mode without a secure context); frozen public
-  API; `docs/sync-protocol.md` is the wire contract.
+- `app/js/sync.js` + `app/js/merge.js` — cross-device sync (E2E, or
+  explicit plain mode without a secure context); frozen public API;
+  `docs/sync-protocol.md` is the wire contract.
 - `app/js/app.js` — hash-router; `#gym` is deliberately NOT in the tabbar,
-  nor is `#tour` (`app/js/tour.js`, the guided tour — once on a device's first
-  start, again from Settings → Help).
+  nor is `#tour` (`app/js/tour.js`, the guided tour — once on a device's
+  first start, again from Settings → Help).
 - `app/js/map.js` — shared floor-map renderer (imports only `esc` and the
   placement geometry of `app/js/geometry.js` — `freeSpot`, `overlapsSolid`,
   `WALL_SNAPPED` are re-exported; every id
@@ -149,17 +146,19 @@ Push both or the mirror drifts: `git push origin main && git push github main`.
 Dependabot/CodeQL PRs on GitHub are signals only — fix locally and push to
 both remotes, never merge in the GitHub UI.
 
-CI runs the logic tests, parses every shipped script (`static-checks` — the
-one job that would catch a typo in app/js/app.js, since nothing else loads the
-files) plus an `app/sw.js` SHELL cross-check, Biome `lint` and the `smoke`
-suite — all five gate the deploy — and deploys Pages from main; every asset reference must stay RELATIVE (project subpath).
-DONE = deployed, and a deploy says which build it is: any push to main that
-touches `app/js/`, `app/css/`, `app/index.html` or `app/sw.js` must bump `APP_VERSION` in
-`app/js/version.js` to the deploy date in the SAME push, or `static-checks` goes
-red before Pages sees it — a second deploy on the same day takes a letter
-(`2026-09-02b`), since the gate wants the FILE changed and two builds must
-not share one name. Settings shows the string; a PWA updates itself in
-the background, so it is the only way to tell what is installed.
+CI runs the logic tests, parses every shipped script (`static-checks` —
+nothing else loads app/js/app.js), cross-checks the `app/sw.js` SHELL list,
+lints (Biome) and runs the `smoke` suite — all five gate the deploy of
+`app/` to Pages from main; every asset reference stays RELATIVE (project
+subpath). DONE = deployed, and a deploy says which build it is: a push to
+main touching `app/js/`, `app/css/`, `app/index.html` or `app/sw.js` must
+bump `APP_VERSION` in `app/js/version.js` to the deploy date in the SAME
+push, or `static-checks` goes red — a second deploy that day takes a letter
+(`2026-09-02b`): the gate wants the FILE changed, and two builds must not
+share a name. Settings shows the string; a PWA updates itself in the
+background, so it is the only way to tell what is installed. The deploy's
+entry goes on top of [CHANGELOG.md](CHANGELOG.md); TODO.md holds open work
+only.
 Community template PRs are adopted locally like Dependabot ones, never merged
 in the UI. The mechanics — workflow names, the Pages "Multiple artifacts"
 trap, the template manifest and its gate — live in
