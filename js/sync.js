@@ -21,7 +21,7 @@ import {
   getWorkouts, saveWorkouts,
   getPlans, savePlans,
   getTombstones, saveTombstones,
-  getSettings, restoreSettings, setUnit, convertWeight, convertDistance,
+  getSettings, restoreSettings, setUnit, convertRecords, convertWeightStep,
   getSyncConfig, saveSyncConfig, getSyncKey, saveSyncKey,
   onStoreChange, getPendingDeletes, savePendingDeletes,
   cleanLayout, cleanWorkout, cleanPlan, cleanSettings,
@@ -322,22 +322,15 @@ const same = (a, b) => JSON.stringify(canon(a)) === JSON.stringify(canon(b));
 // Unit normalization at the wire (docs/sync-protocol.md § Envelope): stored
 // weights and distances are in the DISPLAY unit, so the losing side is
 // converted before anything merges. This is the transport's job — merge.js
-// compares records, it does not know what a kilogram is.
-function convertBout(o, unit) {
-  if (o.weight != null) o.weight = convertWeight(o.weight, unit);
-  if (o.distance != null) o.distance = convertDistance(o.distance, unit);
-}
-
+// compares records, it does not know what a kilogram is. The field-walk is
+// store's (convertRecords), shared with setUnit and the backup import.
 function normalizeUnits(remote, unit) {
   if (!remote || (remote.userSettings?.unit ?? unit) === unit) return remote;
   const copy = JSON.parse(JSON.stringify(remote));
-  (copy.workouts ?? []).forEach((w) => (w.entries ?? []).forEach(
-    (e) => (e.sets ?? []).forEach((s) => convertBout(s, unit))));
-  (copy.plans ?? []).forEach((p) => (p.items ?? []).forEach(
-    (i) => { if (i.target) convertBout(i.target, unit); }));
+  convertRecords({ workouts: copy.workouts ?? [], plans: copy.plans ?? [] }, unit);
   copy.userSettings = { ...copy.userSettings, unit };
   if (copy.userSettings.weightStep != null) {
-    copy.userSettings.weightStep = Math.max(0.5, convertWeight(copy.userSettings.weightStep, unit));
+    copy.userSettings.weightStep = convertWeightStep(copy.userSettings.weightStep, unit);
   }
   return copy;
 }
@@ -478,7 +471,10 @@ async function runSync(gid, cfg, keyMaterial) {
     // dirty flag, M2): both sides are where they were — done. Without the
     // flag every visibility pull would re-push and bump the revision,
     // making the other devices re-download an unchanged blob forever.
-    if (got.kind === 'unchanged' && cfg.dirty !== true) return { rev, salt };
+    // Read fresh, not from `cfg`: an edit may have landed during the GET.
+    if (got.kind === 'unchanged' && getSyncConfig(gid)?.dirty !== true) {
+      return { rev, salt, gen: editGen(gid) };
+    }
     let remote = null;
     if (got.kind === 'blob') {
       rev = got.revision;
@@ -505,9 +501,12 @@ async function runSync(gid, cfg, keyMaterial) {
     if (!plainMode && !salt) salt = bytesToB64(randomBytes(SALT_BYTES));
 
     const payload = reconcile(gid, remote, rid);
+    // the edits this payload holds — taken in the same synchronous step, so
+    // syncNow can tell an edit made during the push's awaits from these
+    const gen = editGen(gid);
     // a 304 with the dirty flag up still lands here: the blob is
     // unchanged but the local side is not, so the edit gets pushed
-    if (remote && same(payload, remote)) return { rev, salt };
+    if (remote && same(payload, remote)) return { rev, salt, gen };
 
     // eslint-disable-next-line no-await-in-loop
     const envelope = plainMode
@@ -515,7 +514,7 @@ async function runSync(gid, cfg, keyMaterial) {
       : await encryptPayload(payload, pass, salt, rid);
     // eslint-disable-next-line no-await-in-loop
     const put = await push(cfg, rid, rev, envelope);
-    if (put.kind === 'ok') return { rev: put.revision, salt };
+    if (put.kind === 'ok') return { rev: put.revision, salt, gen };
     // 409: someone else pushed. Re-GET, re-merge, re-PUT — that loop IS
     // the conflict protocol.
   }
@@ -545,9 +544,14 @@ export async function syncNow(gid) {
   const cfg = getSyncConfig(gid);
   if (!cfg) return { status: 'error', detail: 'not-configured' };
   const keyMaterial = getSyncKey(gid);
+  // bookkeeping only: a refused write (quota) is already announced by the
+  // store's banner, and must not turn the frozen { status } answer into a
+  // thrown error the Settings card never expects
   const record = (patch) => {
-    const current = getSyncConfig(gid);
-    if (current) saveSyncConfig(gid, { ...current, ...patch });
+    try {
+      const current = getSyncConfig(gid);
+      if (current) saveSyncConfig(gid, { ...current, ...patch });
+    } catch { /* store announced it (onWriteError) */ }
   };
   if (!cfg.plain && !keyMaterial?.pass) {
     record({ lastError: 'no-key' });
@@ -558,12 +562,15 @@ export async function syncNow(gid) {
     return { status: 'error', detail: 'unknown-gym' };
   }
   try {
-    const { rev, salt } = await runSync(gid, cfg, keyMaterial);
+    const { rev, salt, gen } = await runSync(gid, cfg, keyMaterial);
     if (keyMaterial && salt !== keyMaterial.salt) saveSyncKey(gid, { ...keyMaterial, salt });
-    // a completed run means local state is on the server (or unchanged) —
-    // the dirty flag the ambient triggers raise comes down here
+    // a completed run means the state it pushed is on the server (or
+    // unchanged) — the dirty flag comes down here, but ONLY if no edit
+    // landed after that state was taken: one made during the PUT's await is
+    // not in the blob, and lowering the flag over it would let the
+    // follow-up run's 304 end without ever pushing it
     record({
-      rev, lastSyncAt: Date.now(), lastError: null, dirty: false,
+      rev, lastSyncAt: Date.now(), lastError: null, ...(editGen(gid) === gen ? { dirty: false } : {}),
     });
     notifySyncActivity();
     return { status: 'synced' };
@@ -722,9 +729,18 @@ const inFlight = new Map(); // gid -> { again }
 // the ambient wiring never ran. reconcile's echoes through the bulk
 // writers are filtered by the same `applying` flag that guards the
 // ambient debounce.
+// Next to the flag, a per-gym EDIT GENERATION in module state counts every
+// such write: runSync reports the generation its pushed state was taken at,
+// and syncNow lowers the flag only if it is still current — an edit made
+// while the PUT was in flight raised a flag that must survive the run.
+// Per tab: another tab's edit during this tab's push is not seen (the Web
+// Lock serializes syncs, not edits).
+const edits = new Map(); // gid -> generation
+const editGen = (gid) => edits.get(gid) ?? 0;
 onStoreChange(() => {
   if (applying) return;
   const { activeId } = getGyms();
+  edits.set(activeId, editGen(activeId) + 1);
   const cfg = getSyncConfig(activeId);
   if (cfg && cfg.dirty !== true) saveSyncConfig(activeId, { ...cfg, dirty: true });
 });
@@ -774,10 +790,8 @@ async function flushPendingDeletes() {
   for (const entry of queue) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      const res = await fetch(
-        `${String(entry.server).replace(/\/+$/, '')}/v1/gyms/${encodeURIComponent(entry.remoteId)}`,
-        { method: 'DELETE', headers: { Authorization: `Bearer ${entry.token}` } },
-      );
+      const res = await fetch(blobUrl(entry, entry.remoteId),
+        { method: 'DELETE', headers: { Authorization: `Bearer ${entry.token}` } });
       if (!res.ok && res.status !== 404 && (entry.tries ?? 0) + 1 < 5) {
         keep.push({ ...entry, tries: (entry.tries ?? 0) + 1 });
       }

@@ -4,7 +4,7 @@
 // its own independent implementation), the 409 loop, unit normalization at
 // the wire, and the promise that sync credentials never enter a backup.
 // Run with: node test/sync.test.mjs
-import { mem, useStore } from './helpers/localstorage.mjs'; // FIRST: installs the stub
+import { mem, useStore, failWritesAfter } from './helpers/localstorage.mjs'; // FIRST: installs the stub
 import { strict as assert } from 'node:assert';
 
 // Two devices, one process: the store keeps no state of its own beyond
@@ -1034,6 +1034,55 @@ try {
   } finally {
     Date.now = realNow;
   }
+}
+
+// --- 20. an edit made while the push is in flight is pushed after all ---
+// syncNow lowered the dirty flag once runSync returned — over an edit that
+// landed during the PUT's await and is not in the blob. The follow-up run
+// (the ambient `again`) then got a 304 with the flag down and never pushed.
+{
+  await sync.ambientSettled(); // the settings block's edits fired runs of their own
+  devices.R = new Map();
+  useDevice('R');
+  seedRegistry();
+  srv = fakeServer();
+  sync.initAmbientSync({ editDebounceMs: 0, pullThrottleMs: 0 }); // wired by 14; retune only
+  const enabledR = await sync.enableSync(gid, { server: 'http://sync.local', token: 'tok-20' });
+  assert.equal(enabledR.sync.status, 'synced', '20: setup');
+  const passR = JSON.parse(
+    Buffer.from(enabledR.code.slice('gymii-sync:v1:'.length), 'base64url').toString()).pass;
+  srv.hook = () => { store.savePlan({ id: 'mid-push', name: 'Made during the PUT', items: [] }); };
+  store.savePlan({ id: 'before-push', name: 'Before', items: [] });
+  await sync.ambientSettled();
+  const ids = (await decryptBlob(srv.blob, passR)).plans.map((p) => p.id).sort();
+  assert.deepEqual(ids, ['before-push', 'mid-push'], '20: the mid-push edit reached the server');
+  assert.equal(store.getSyncConfig(gid).dirty, false, '20: and only then did the flag come down');
+
+  // a manual Sync now sees it the same way: the flag survives the run
+  srv.hook = () => { store.savePlan({ id: 'mid-manual', name: 'During a manual sync', items: [] }); };
+  sync.initAmbientSync({ editDebounceMs: 60000 }); // the edit must not start its own run
+  store.saveSyncConfig(gid, { ...store.getSyncConfig(gid), dirty: true });
+  assert.equal((await sync.syncNow(gid)).status, 'synced', '20: manual sync');
+  assert.equal(store.getSyncConfig(gid).dirty, true, '20: an edit during the PUT keeps the flag up');
+  srv.log.length = 0;
+  assert.equal((await sync.syncNow(gid)).status, 'synced', '20: the next run');
+  assert.deepEqual(methods(srv), ['GET', 'PUT'], '20: a 304 with the flag up pushes');
+  assert.ok((await decryptBlob(srv.blob, passR)).plans.some((p) => p.id === 'mid-manual'), '20: and it arrived');
+  sync.initAmbientSync({ editDebounceMs: 0 });
+  await sync.ambientFinished(); // the debounced timer from the hook's edit, run now and cancelled
+
+  // --- 21. a refused bookkeeping write never turns { status } into a throw ---
+  srv.mode = 'offline';
+  failWritesAfter(0);
+  let outcome;
+  try {
+    outcome = await sync.syncNow(gid);
+  } finally {
+    failWritesAfter(Infinity);
+    srv.mode = null;
+  }
+  assert.deepEqual(outcome, { status: 'offline' }, '21: quota while recording the error: still an answer');
+  await sync.ambientSettled();
 }
 
 console.log('sync client: all assertions passed');

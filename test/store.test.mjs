@@ -1053,4 +1053,79 @@ assert.deepEqual(movedBare, { id: 'wn', startedAt: -5, entries: [] },
   store.saveWorkouts(before);
 }
 
+// --- a backup's tombstones MERGE with the local ones (max `at` per id) ---
+// The local ones may not have reached the server yet: a workout deleted
+// offline came back when an older backup replaced the sidecar wholesale.
+{
+  store.clearAll();
+  store.saveWorkouts([{ id: 'keep', startedAt: 1, entries: [] }, { id: 'gone', startedAt: 2, entries: [] }]);
+  const file = store.exportBackup(); // still holds 'gone', no tombstone for it
+  file.tombstones.workouts = [{ id: 'old', at: 50 }, { id: 'both', at: 900 }, { id: 'x"><b>', at: 1 }];
+  store.deleteWorkout('gone'); // offline, not pushed
+  const deletedAt = store.getTombstones().workouts[0].at;
+  const t = store.getTombstones();
+  t.workouts.push({ id: 'both', at: 100 });
+  store.saveTombstones(t);
+  store.importData(JSON.parse(JSON.stringify(file)));
+  const byId = Object.fromEntries(store.getTombstones().workouts.map((x) => [x.id, x.at]));
+  assert.equal(byId.gone, deletedAt, 'the local, unpushed tombstone survives the restore');
+  assert.equal(byId.old, 50, "the file's own tombstones join it");
+  assert.equal(byId.both, 900, 'one id on both sides keeps the later `at`');
+  assert.equal('x"><b>' in byId, false, 'a tombstone without a safe id is no tombstone');
+  const merge = await import(new URL('../js/merge.js', import.meta.url).href);
+  const after = merge.mergeWorkouts(store.getWorkouts(), [], store.getTombstones().workouts, []);
+  assert.deepEqual(after.items.map((w) => w.id), ['keep'], 'so the next merge keeps the deleted workout dead');
+  store.clearAll();
+}
+
+// --- a gym template on a synced gym is an EDIT, not a restore ---
+// It replaces the layout: the machines it drops are tombstoned and what it
+// brings is stamped fresh, so a merge with the old remote layout neither
+// resurrects the old machines nor lets the remote's older structure win.
+{
+  store.clearAll();
+  const merge = await import(new URL('../js/merge.js', import.meta.url).href);
+  const realNow = Date.now;
+  let clock = 1_800_000_000_000;
+  Date.now = () => clock;
+  try {
+    const old = store.newLayout('Old floor');
+    old.machines.push({ id: 'old1', num: 1, label: 'Old press', x: 0, y: 0, w: 4, h: 3, settingsFields: [], muscles: [] });
+    store.saveLayout(old);
+    const remote = JSON.parse(JSON.stringify(store.getLayout())); // what the server still holds
+    clock += 60000;
+    let notified = 0;
+    const off = store.onStoreChange(() => { notified += 1; });
+    const tpl = store.newLayout('Template floor');
+    tpl.grid = { w: 30, h: 20 };
+    tpl.outline = [{ x: 0, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 20 }, { x: 0, y: 20 }];
+    tpl.machines.push({ id: 'tpl1', num: 1, label: 'New press', x: 2, y: 2, w: 4, h: 3, settingsFields: [], muscles: [] });
+    store.importData({ app: 'gymii', kind: 'gym-template', v: 1, gym: tpl });
+    off();
+    assert.ok(notified >= 1, 'a template import notifies — sync pushes it');
+    assert.equal('updatedAt' in tpl.machines[0], false, "the caller's object is not stamped");
+    const local = store.getLayout();
+    assert.equal(local.updatedAt, clock, 'the structure is stamped fresh');
+    assert.equal(local.machines[0].updatedAt, clock, 'so is every machine it brings');
+    assert.deepEqual(store.getTombstones().machines.map((x) => x.id), ['old1'], 'the dropped machine is tombstoned');
+    const merged = merge.mergeLayout(local, remote, store.getTombstones(), {});
+    assert.deepEqual(merged.merged.machines.map((m) => m.id), ['tpl1'], 'after a merge the old machine stays gone');
+    assert.equal(merged.merged.name, 'Template floor', 'and the template structure wins over the older remote one');
+    assert.deepEqual(merged.merged.grid, { w: 30, h: 20 });
+  } finally {
+    Date.now = realNow;
+  }
+  store.clearAll();
+}
+
+// --- the queued blob deletes are gymii data: counted, and reset ---
+{
+  store.clearAll();
+  const empty = store.storedBytes();
+  store.savePendingDeletes([{ server: 'https://sync.example', token: 't'.repeat(500), remoteId: 'r1' }]);
+  assert.ok(store.storedBytes() - empty > 500, 'storedBytes counts gymii.sync.pendingDeletes');
+  store.clearAll();
+  assert.equal(mem.has('gymii.sync.pendingDeletes'), false, 'a factory reset takes the queue (and its tokens) too');
+}
+
 console.log('store roundtrip: all assertions passed');
