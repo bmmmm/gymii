@@ -51,7 +51,11 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   no automation can take; everything up to the prefilled field is
   verified. Device A shows the QR, device B's camera app scans it.
   *Expect:* gymii opens with the pairing field prefilled. Needs the
-  `gymii-sync` server running.
+  `gymii-sync` server running. On an iPhone it opens in Safari, so also:
+  *Expect:* the "Sync code received" card on top; "Copy sync code", then
+  gymii from the Home Screen → Settings → Sync → paste → Pair works there.
+  The card keys on `navigator.standalone === false` — record whether a
+  Safari tab really reports `false` (Chromium only fakes it).
 - [ ] **Weight tapped, then Log set at once.** On the log screen tap the
   weight field and immediately tap "✓ Log set". *Expect:* the value the
   field showed is logged, not 0.

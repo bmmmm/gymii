@@ -5,6 +5,16 @@ the `APP_VERSION` it went out as where it had one (Settings shows the
 installed build). Moved verbatim out of TODO.md on 2026-10-23, which now
 holds open work only.
 
+## 2026-11-05
+
+Shipped 2026-11-05 (`2026-11-05`): re-pairing an iPhone whose gymii lives
+on the Home Screen. A pairing QR's camera link opens Safari, and Safari's
+storage is not the Home Screen app's — pairing the tab left the app
+unpaired. A scanned code in an Apple browser tab now gets a "Sync code
+received" card on top of Settings with "Copy sync code", to paste into the
+Home Screen app's Sync card; the tab can still pair itself as before. The
+QR's own caption says so on the showing device.
+
 ## 2026-10-23
 
 Shipped 2026-10-23 (`2026-10-23b`): the repo restructured, no behaviour

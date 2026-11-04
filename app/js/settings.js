@@ -91,6 +91,16 @@ export function setPendingPairCode(code) {
   pendingPairCode = String(code ?? '').trim() || null;
 }
 
+// A Safari tab on an Apple device — the one place a scanned link can land
+// in the WRONG gymii. The camera opens links in the browser, never in a
+// Home Screen web app, and WebKit keeps that app's storage apart from the
+// browser's by design: pairing the tab leaves the Home Screen gymii exactly
+// as unpaired as before. `navigator.standalone` is Apple's own flag (false
+// in a tab, true in the Home Screen app) and absent everywhere else —
+// Android's installed PWAs share the browser's storage, so nothing there
+// needs the detour. Node ≥21 has a navigator too, without the flag.
+const inAppleBrowserTab = () => globalThis.navigator?.standalone === false;
+
 // The QR carries this page's own URL with the code in the fragment, so the
 // phone's camera opens gymii directly and Settings prefills itself. In
 // Node (tests) there is no location — the raw code is fine there.
@@ -205,8 +215,9 @@ const codeBlock = (code, plain, withQr) => `
   ${withQr ? `<div class="sync-qr">${(() => {
     try { return qrSvg(pairUrl(code)); } catch { return ''; }
   })()}</div>
-  <p class="muted">Scan with the other device's camera — it opens gymii with
-    the code already filled in. Or copy the text below.</p>` : ''}
+  <p class="muted">Scan with the other device's camera — it opens gymii in the
+    browser with the code already filled in. Or copy the text below: gymii on an
+    iPhone's Home Screen keeps its own data apart from Safari, so paste it there.</p>` : ''}
   <code id="sync-code-out" class="synccode">${esc(code)}</code>
   <button id="sync-copy" class="btn">Copy sync code</button>
   <div class="notice">${plain
@@ -341,8 +352,27 @@ function renderSettingsView(root) {
   const shownQr = codeOnceQr;
   codeOnce = null;
   codeOnceQr = false;
+  // a scanned #pair= code, consumed by THIS render too (the end of this
+  // function prefills it); in an Apple browser tab it also gets the card
+  // below, the bridge to a Home Screen gymii that the camera cannot reach
+  const scanned = pendingPairCode;
+  pendingPairCode = null;
+  const handOver = scanned && inAppleBrowserTab();
   root.innerHTML = `
     <h1>Settings</h1>
+    ${handOver ? `
+    <section class="card" id="sync-handover">
+      <h2>Sync code received</h2>
+      <p class="muted">The camera opened gymii in the browser. gymii on your Home Screen
+        keeps its own data, apart from the browser's — to pair that one, copy the code,
+        open gymii from the Home Screen and paste it under Settings → Sync →
+        "Have a sync code?".</p>
+      <code class="synccode">${esc(scanned)}</code>
+      <button id="sync-handover-copy" class="btn btn-primary">Copy sync code</button>
+      <p id="sync-handover-msg" class="muted" role="status"></p>
+      <p class="muted">Using gymii right here in the browser instead? Pair it in the
+        Sync card below.</p>
+    </section>` : ''}
 
     <section class="card">
       <h2>Workout</h2>
@@ -885,12 +915,27 @@ function renderSettingsView(root) {
     renderSettings(root);
   });
 
-  // A scanned #pair= link parked its code here (app.js) — consume it into
-  // the pairing field, or say plainly why it cannot pair right now. Never
-  // auto-pair: the user sees which server the code names, then taps Pair.
-  if (pendingPairCode) {
-    const scanned = pendingPairCode;
-    pendingPairCode = null;
+  // The hand-over card's one action. No re-render: the card lives exactly
+  // one render, and the code must still be on screen if the clipboard is
+  // refused — the fallback is selecting it by hand.
+  const handoverBtn = root.querySelector('#sync-handover-copy');
+  if (handOver) {
+    handoverBtn.addEventListener('click', async () => {
+      const msg = root.querySelector('#sync-handover-msg');
+      try {
+        await navigator.clipboard.writeText(scanned);
+        msg.textContent = 'Copied — now open gymii from your Home Screen and paste it under Sync.';
+      } catch {
+        msg.textContent = 'Clipboard blocked by the browser — select the code above and copy it by hand.';
+      }
+    });
+  }
+
+  // A scanned #pair= link parked its code (app.js), taken over at the top —
+  // consume it into the pairing field, or say plainly why it cannot pair
+  // right now. Never auto-pair: the user sees which server the code names,
+  // then taps Pair.
+  if (scanned) {
     if (activeGym.demo) {
       root.querySelector('#data-msg').textContent = 'The demo gym never syncs — switch to a real gym and scan again.';
     } else if (getSyncState(gid).configured) {
@@ -898,7 +943,9 @@ function renderSettingsView(root) {
     } else {
       root.querySelector('#sync-code').value = scanned;
       root.querySelector('#sync-msg').textContent = 'Sync code received — check it and tap Pair.';
-      keepInView(root, '#sync-pair');
+      // with the hand-over card on top, the route's scroll reset already
+      // shows the card; jumping down to Pair would hide it
+      if (!handOver) keepInView(root, '#sync-pair');
     }
   }
 }

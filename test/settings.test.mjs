@@ -447,6 +447,37 @@ assert.equal(root.querySelector('#sync-code').value, 'gymii-sync:v1:handoff',
   'm3: an unconfigured gym prefills the pairing field');
 assert.ok(root.querySelector('#sync-msg').textContent.includes('tap Pair'),
   'm3: and never auto-pairs');
+assert.ok(!root.innerHTML.includes('id="sync-handover"'),
+  'no hand-over card where navigator.standalone is absent (Node, Android, desktop)');
+
+// #pair handoff in an Apple browser tab: the camera opened Safari, whose
+// storage is NOT the Home Screen app's — the card hands the code over
+Object.defineProperty(globalThis.navigator, 'standalone', { configurable: true, value: false });
+setPendingPairCode('gymii-sync:v1:<handover>');
+renderSettings(root);
+assert.ok(root.innerHTML.includes('id="sync-handover"'), 'an Apple tab shows the hand-over card');
+assert.ok(root.innerHTML.includes('gymii-sync:v1:&lt;handover&gt;'),
+  'with the code on screen, escaped — the fallback when the clipboard is refused');
+assert.equal(root.querySelector('#sync-code').value, 'gymii-sync:v1:<handover>',
+  'and the tab itself can still pair: the field is prefilled as before');
+clipboard = { text: null, fail: false };
+await root.querySelector('#sync-handover-copy').listeners.click();
+assert.equal(clipboard.text, 'gymii-sync:v1:<handover>', 'Copy puts exactly the scanned code on the clipboard');
+assert.ok(root.querySelector('#sync-handover-msg').textContent.includes('Home Screen'),
+  'and says where to paste it');
+clipboard.fail = true;
+await root.querySelector('#sync-handover-copy').listeners.click();
+assert.ok(root.querySelector('#sync-handover-msg').textContent.includes('by hand'),
+  'a refused clipboard points at the code on screen');
+clipboard.fail = false;
+renderSettings(root);
+assert.ok(!root.innerHTML.includes('id="sync-handover"'), 'the card lives one render, like the code it carries');
+Object.defineProperty(globalThis.navigator, 'standalone', { configurable: true, value: true });
+setPendingPairCode('gymii-sync:v1:handoff');
+renderSettings(root);
+assert.ok(!root.innerHTML.includes('id="sync-handover"'),
+  'the Home Screen app itself never sends anyone elsewhere');
+delete globalThis.navigator.standalone;
 
 // --- the Storage card ---
 // A microtask flush: the card paints synchronously from the last known
