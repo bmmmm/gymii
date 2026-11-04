@@ -466,13 +466,57 @@ browser's storage) Settings also renders a "Sync code received" card on
 top with the code and "Copy sync code", the bridge into the Home Screen
 app; the tab can still pair itself below. The card lives one render, like
 `codeOnce`, and its Copy never re-renders, so the on-screen code stays as
-the fallback for a refused clipboard. Discovery (`listRemoteGyms`/`adoptRemoteGym`): unknown blobs
+the fallback for a refused clipboard. The way around that detour is the
+in-app scanner (§ app/js/settings.js, decoder § app/js/qrscan.js): the
+gymii that scans is the gymii that pairs, so a Home Screen app reads the
+QR itself — another device's, or the one `gymii-cli invite` prints in a
+terminal. Discovery (`listRemoteGyms`/`adoptRemoteGym`): unknown blobs
 probe-first — plain adopts directly, encrypted needs that gym's own
 passphrase (per-gym keys), a wrong one leaves no local state; the
 adopted placeholder entry is re-stamped to epoch 0 so the blob's real
 name wins the LWW merge instead of being pushed back out. The
 Settings-tab badge (`#sync-badge`, app.js `updateSyncBadge`) feeds on
 `syncHealth()`/`onSyncActivity` — accent = pending, danger = error.
+
+## `app/js/qrscan.js`
+
+The reading half of qr.js, for Settings → Sync → "Scan QR code". Pure —
+an RGBA frame in, text or null out — and its only import is qr.js: the
+GF tables, the block table, the masks, the format and version words and
+the function-pattern map are qr.js's exported ones, so a symbol qr.js
+draws is one this reads by construction, and the spec lives in one place.
+Hand-written because Safari has no `BarcodeDetector` and an iPhone is the
+device that needs it; a library would be the shipped app's first
+dependency. Scope is what gymii and gymii-cli write — byte mode, level M,
+versions 1–15; anything else answers null like a blurred frame, and the
+scanner keeps looking.
+
+The pipeline is ZXing's shape. Binarisation is jsQR's (8 px blocks, a
+black point per block, the mean of the 5×5 around it), so glare and a
+vignette are fine, plus a 1 px vertical closing. Finders by the 1:1:3:1:1
+run signature, cross-checked down and across — and the cross-check first
+closes light gaps under 45 % of a module inside dark runs: a terminal
+whose line spacing leaves a hairline between text rows runs it straight
+through every finder's core (the row boundary falls inside the core),
+several pixels high once the QR fills the frame. Trios are ranked by
+size, legs and right angle; the cross product gives the orientation, and
+a mirrored symbol reads transposed. The bottom-right alignment pattern is
+found by 5×5 template score (≥ 22 of 25) around two guesses: the
+parallelogram, and a perspective one built from the finders' own module
+sizes (projective weight √(size at TL / size there)) at the module size
+predicted there — under keystone the parallelogram alone was 7–11 modules
+off, and a symbol held at an angle read nothing. Then a homography from
+the four points, module-centre sampling, format info by Hamming distance
+≤ 3 (BCH keeps L/Q/H words out of reach), version info from v7 (a
+mismatch retries at the size it names), unmask, de-interleave,
+Reed-Solomon (Berlekamp-Massey, Chien, Forney, syndromes re-checked, so a
+miscorrection never returns text), and the byte segment via TextDecoder.
+
+Cost: 15–40 ms per 640 px frame on a desktop, sensor static the slowest.
+test/qrscan.test.mjs is the contract: every symbol comes out of qr.js and
+through a synthetic camera — rotation, keystone, noise, a glare gradient,
+mirror, inversion, a terminal's half blocks with hairlines and tall
+cells, scratches up to and past what Reed-Solomon carries.
 
 ## `app/js/app.js`
 
@@ -815,6 +859,21 @@ from 1 up, unreadable text keeps the value it had, and the field is read
 through `fieldValue` like the weight step (an armed field left empty
 still means what it showed). The weight step is a decimal TEXT field
 (§ app/js/history.js, "12,5").
+
+The pairing scanner (`#sync-scan`, unconfigured Sync card only) renders
+only where `navigator.mediaDevices.getUserMedia` exists — secure contexts,
+so never next to the unencrypted variant. One camera session, module-wide
+(`scan`): every render stops it first, the decode loop stops it once its
+`<video>` has left the DOM (a tab switch), and `visibilitychange` to
+hidden stops it — the camera light never outlives the view. The loop
+decodes the centred square of the video (≤ 720 px, every 120 ms after the
+previous decode), the same square the preview shows (`object-fit:
+cover`). A gymii code — `pairCodeFrom`: the bare code or a `#pair=` link —
+fills `#sync-code` and says "tap Pair": never auto-pairs, exactly like a
+scanned link. Another QR keeps it looking, with a hint; the camera's
+refusals (`NotAllowedError`, `NotReadableError`, anything else = no
+camera) are messages that fold the panel. smoke/scan.spec.mjs stands a
+`canvas.captureStream()` in for the camera.
 
 ## `app/js/train.js`
 

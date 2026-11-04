@@ -138,7 +138,12 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   the hub, and an empty gym floor explains itself without moving
   "+ Machine". `seedDemoGym` starts on `#settings` for that reason: on
   `#train` an empty install redirects to `#tour`, and the reload after
-  seeding would boot back into it.
+  seeding would boot back into it. And the pairing scanner
+  (`scan.spec.mjs`, a `canvas.captureStream()` standing in for
+  `getUserMedia`): a pairing QR fills the field, stops the camera and
+  pairs nothing; another QR keeps it looking, the open panel passes the
+  320px measures, Cancel stops the camera; leaving the tab mid-scan stops
+  it too.
   A NEW browser spec goes in
   `smoke/` as `*.spec.mjs`, NEVER in `test/` — `testMatch` is pinned
   because Playwright's collector imports whatever it matches and would run

@@ -92,7 +92,8 @@ exist because breaking them was once a real bug.
   `app/js/ui.js` — shared helpers (formatting, steppers,
   keyboard centring, timer sound).
 - `app/js/settings.js` — the Settings tab (units, gyms, backups, Sync card);
-  `app/js/qr.js` — hand-written QR encoder for pairing; `app/js/version.js` —
+  `app/js/qr.js` — hand-written QR encoder for pairing, `app/js/qrscan.js` its
+  decoder (the in-app scanner; it reads qr.js's own tables); `app/js/version.js` —
   `APP_VERSION`, bumped with every deploy.
 - `app/js/demo.js` — deterministic demo gym, found by its `demo` flag, never by
   name; `app/js/ai.js` — copy/paste export, deliberately NO AI API.

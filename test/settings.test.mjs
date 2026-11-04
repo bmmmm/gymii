@@ -79,7 +79,7 @@ Object.defineProperty(globalThis.navigator, 'clipboard', {
 });
 
 const store = await import(new URL('../app/js/store.js', import.meta.url).href);
-const { renderSettings, setPendingPairCode } = await import(new URL('../app/js/settings.js', import.meta.url).href);
+const { renderSettings, setPendingPairCode, pairCodeFrom } = await import(new URL('../app/js/settings.js', import.meta.url).href);
 
 // --- DOM stubs: stable per selector, stateful classList for the two-tap ---
 // The stub answers EVERY selector, rendered or not (AGENTS.md), so every
@@ -478,6 +478,42 @@ renderSettings(root);
 assert.ok(!root.innerHTML.includes('id="sync-handover"'),
   'the Home Screen app itself never sends anyone elsewhere');
 delete globalThis.navigator.standalone;
+
+// --- the pairing scanner: the device that pairs reads the QR itself ---
+// Only the parts Node can reach: the button's presence, the camera's
+// refusals, and what counts as a sync code. The camera loop itself runs in
+// smoke/scan.spec.mjs, on Chromium's fake camera.
+assert.ok(!root.innerHTML.includes('id="sync-scan"'),
+  'no Scan button without navigator.mediaDevices — Node, or a page without HTTPS');
+let camera = null; // the DOMException name getUserMedia rejects with
+Object.defineProperty(globalThis.navigator, 'mediaDevices', {
+  configurable: true,
+  value: { getUserMedia: async () => { throw Object.assign(new Error('camera'), { name: camera }); } },
+});
+renderSettings(root);
+assert.ok(root.innerHTML.includes('id="sync-scan"'), 'a Scan button where the browser offers a camera');
+assert.ok(/<video[^>]*playsinline/.test(root.innerHTML),
+  'an inline video: iOS would take it fullscreen otherwise');
+for (const [name, says] of [['NotAllowedError', 'refused'], ['NotReadableError', 'busy'], ['NotFoundError', 'No camera']]) {
+  camera = name;
+  root.querySelector('#sync-msg').textContent = '';
+  await root.querySelector('#sync-scan').listeners.click();
+  assert.ok(root.querySelector('#sync-msg').textContent.includes(says), `${name} says why, in words`);
+  assert.equal(root.querySelector('#sync-scanner').hidden, true, `${name}: the panel folds again`);
+  assert.equal(root.querySelector('#sync-scan').hidden, false, `${name}: and the Scan button is back`);
+}
+assert.equal(root.querySelector('#sync-code').value, 'gymii-sync:v1:handoff', 'a failed scan leaves the field alone');
+delete globalThis.navigator.mediaDevices;
+
+assert.equal(pairCodeFrom('gymii-sync:v1:abc'), 'gymii-sync:v1:abc', 'a bare code is the code');
+assert.equal(pairCodeFrom('  gymii-sync:v1:abc\n'), 'gymii-sync:v1:abc', 'trimmed');
+assert.equal(pairCodeFrom(`https://example.org/gymii/#pair=${encodeURIComponent('gymii-sync:v1:a+b/c')}`),
+  'gymii-sync:v1:a+b/c', 'a pairing link gives up its code, unescaped');
+assert.equal(pairCodeFrom('https://example.org/#pair=%E0'), null, 'a malformed escape is no code');
+assert.equal(pairCodeFrom('https://example.org/#pair=https%3A%2F%2Fevil.example'), null,
+  'a link whose fragment is not a sync code is no code');
+assert.equal(pairCodeFrom('WIFI:S:gym;T:WPA;P:secret;;'), null, 'some other QR in view is no code');
+assert.equal(pairCodeFrom(''), null, 'nor is nothing');
 
 // --- the Storage card ---
 // A microtask flush: the card paints synchronously from the last known
