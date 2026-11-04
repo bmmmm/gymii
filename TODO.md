@@ -56,6 +56,14 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   gymii from the Home Screen → Settings → Sync → paste → Pair works there.
   The card keys on `navigator.standalone === false` — record whether a
   Safari tab really reports `false` (Chromium only fakes it).
+- [ ] **Scan in-app on a real iPhone, inside the Home Screen app** —
+  Settings → Sync → "Scan QR code", pointed at `gymii-cli invite` in a
+  terminal and at another device's QR. *Expect:* one camera prompt, the
+  rear camera inline in the card (not fullscreen), the field filled
+  within a second or two, the camera light off right after, and off too
+  on Cancel, on a tab switch and on leaving the app. The decoder only
+  ever met synthetic frames and Chromium's canvas camera; record
+  distance and terminal (font, line spacing) where it struggles.
 - [ ] **Weight tapped, then Log set at once.** On the log screen tap the
   weight field and immediately tap "✓ Log set". *Expect:* the value the
   field showed is logged, not 0.

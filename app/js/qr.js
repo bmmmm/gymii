@@ -2,8 +2,12 @@
 // Zero dependencies and no DOM at module level: the tables below ARE the
 // spec (ISO/IEC 18004), everything else is arithmetic over them.
 // Version 15-M holds 412 bytes; our payloads are sync URLs of ~250 chars.
+//
+// The tables and the function-pattern builder are exported for js/qrscan.js,
+// the reading half: decoder and encoder share ONE copy of the spec, so a
+// symbol this file draws is, by construction, a symbol that one reads.
 
-const MAX_VERSION = 15;
+export const MAX_VERSION = 15;
 const QUIET = 4; // quiet zone in modules — the spec's minimum for a scanner
 
 // Block structure per version (index = version - 1) at EC level M:
@@ -11,7 +15,7 @@ const QUIET = 4; // quiet zone in modules — the spec's minimum for a scanner
 //  group2Blocks, group2DataCodewords]. Group 2 blocks always carry exactly
 // one data codeword more than group 1 blocks — that is why interleaving
 // needs the column walk below rather than a flat concat.
-const BLOCKS_M = [
+export const BLOCKS_M = [
   [10, 1, 16, 0, 0],   //  1 — 16 data codewords total
   [16, 1, 28, 0, 0],   //  2
   [26, 1, 44, 0, 0],   //  3
@@ -37,7 +41,7 @@ const ALIGN = [
 ];
 
 // The eight data masks, keyed by mask id. Applied to data modules only.
-const MASKS = [
+export const MASKS = [
   (r, c) => (r + c) % 2 === 0,
   (r) => r % 2 === 0,
   (_r, c) => c % 3 === 0,
@@ -51,8 +55,8 @@ const MASKS = [
 // ---------------------------------------------------------------- GF(256)
 
 // QR's field is GF(2^8) modulo x^8 + x^4 + x^3 + x^2 + 1 (0x11D), generator 2.
-const GF_EXP = new Uint8Array(512);
-const GF_LOG = new Uint8Array(256);
+export const GF_EXP = new Uint8Array(512);
+export const GF_LOG = new Uint8Array(256);
 {
   let x = 1;
   for (let i = 0; i < 255; i++) {
@@ -177,7 +181,7 @@ function interleave(words, version) {
 
 // -------------------------------------------------------------- placement
 
-function formatValue(mask) {
+export function formatValue(mask) {
   // 5 data bits = EC level (M is 0b00) << 3 | mask id, then BCH(15,5) with
   // generator 0x537, XOR-masked with 0x5412 so an all-zero format is not
   // an all-light area.
@@ -187,14 +191,14 @@ function formatValue(mask) {
   return (((data << 10) | rem) ^ 0x5412) & 0x7fff;
 }
 
-function versionValue(version) {
+export function versionValue(version) {
   // 6 version bits + BCH(18,6) with generator 0x1F25, no XOR mask.
   let rem = version;
   for (let i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >>> 11) * 0x1f25);
   return ((version << 12) | rem) & 0x3ffff;
 }
 
-function buildFunctionPatterns(version) {
+export function buildFunctionPatterns(version) {
   const size = version * 4 + 17;
   const m = Array.from({ length: size }, () => new Array(size).fill(0));
   const fixed = Array.from({ length: size }, () => new Array(size).fill(false));

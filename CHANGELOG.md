@@ -7,6 +7,16 @@ holds open work only.
 
 ## 2026-11-05
 
+Shipped 2026-11-05 (`2026-11-05b`): a pairing QR can be scanned inside
+gymii itself — Settings → Sync → "Scan QR code" — so the Home Screen app
+on an iPhone pairs directly, from another device's QR or from the one
+`gymii-cli invite` prints in a terminal. The decoder (`js/qrscan.js`) is
+hand-written, as the encoder is: Safari has no BarcodeDetector. It reads
+symbols held at an angle, mirrored, inverted, under glare and through a
+terminal's half blocks; a scan fills the pairing field and never pairs by
+itself, and the camera stops on success, Cancel, a tab switch or the app
+going to the background.
+
 Shipped 2026-11-05 (`2026-11-05`): re-pairing an iPhone whose gymii lives
 on the Home Screen. A pairing QR's camera link opens Safari, and Safari's
 storage is not the Home Screen app's — pairing the tab left the app

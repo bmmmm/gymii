@@ -15,6 +15,7 @@ import {
 } from './sync.js';
 import { ensurePersisted, isPersisted, estimateOrigin } from './persist.js';
 import { qrSvg } from './qr.js';
+import { decodeQr } from './qrscan.js';
 import { APP_VERSION } from './version.js';
 
 // --- the Storage card ---
@@ -100,6 +101,136 @@ export function setPendingPairCode(code) {
 // Android's installed PWAs share the browser's storage, so nothing there
 // needs the detour. Node ≥21 has a navigator too, without the flag.
 const inAppleBrowserTab = () => globalThis.navigator?.standalone === false;
+
+// --- the pairing scanner ---
+// Reads a pairing QR with THIS device's camera, so the gymii that scans is
+// the gymii that pairs — the way in for a Home Screen app on an iPhone,
+// which the camera app can never open (above), and the short way from the
+// QR `gymii-cli invite` prints in a terminal. Decoding is js/qrscan.js,
+// hand-written: Safari has no BarcodeDetector. getUserMedia only exists in
+// a secure context, so the button only renders where it can work. Never
+// auto-pairs: a scan fills the field, the user reads the server and taps
+// Pair — exactly like a scanned #pair= link.
+const SCAN_EVERY_MS = 120;
+const SCAN_SIDE = 720; // px square handed to the decoder: more costs time, less costs reach
+
+const canScan = () => typeof globalThis.navigator?.mediaDevices?.getUserMedia === 'function';
+
+/**
+ * The sync code inside a scanned text: the bare code, or a pairing link
+ * (…#pair=<code> — what the Sync card's QR and gymii-cli carry). Anything
+ * else, some other QR in view, answers null. Exported for the logic tests.
+ */
+export function pairCodeFrom(text) {
+  let code = String(text ?? '').trim();
+  const at = code.indexOf('#pair=');
+  if (at >= 0) {
+    try { code = decodeURIComponent(code.slice(at + 6)).trim(); } catch { return null; }
+  }
+  return code.startsWith('gymii-sync:') ? code : null;
+}
+
+// One camera, module-wide. Every render stops it first, the loop stops it
+// once its video has left the DOM (a tab switch), and the page going to the
+// background stops it too — the camera light never stays on behind a view
+// that no longer shows it.
+let scan = null; // { stream, timer, video, onHide } while the camera runs
+
+function stopScan() {
+  const s = scan;
+  if (!s) return;
+  scan = null;
+  clearTimeout(s.timer);
+  if (s.onHide) document.removeEventListener('visibilitychange', s.onHide);
+  for (const t of s.stream?.getTracks() ?? []) t.stop();
+  if (s.stream) s.video.srcObject = null;
+}
+
+// …and puts the card back: the panel folds, the Scan button returns.
+function endScan(root, text) {
+  stopScan();
+  root.querySelector('#sync-scanner').hidden = true;
+  root.querySelector('#sync-scan').hidden = false;
+  if (text !== undefined) root.querySelector('#sync-msg').textContent = text;
+}
+
+const CAMERA_ERRORS = {
+  NotAllowedError: 'Camera access was refused — allow it in the browser\'s settings, or paste the code.',
+  NotReadableError: 'The camera is busy in another app — close that and try again, or paste the code.',
+};
+
+async function startScan(root) {
+  stopScan();
+  const video = root.querySelector('#sync-scan-video');
+  const hint = root.querySelector('#sync-scan-hint');
+  const session = { stream: null, timer: 0, video, onHide: null };
+  scan = session;
+  root.querySelector('#sync-scan').hidden = true;
+  root.querySelector('#sync-scanner').hidden = false;
+  root.querySelector('#sync-msg').textContent = '';
+  // the panel opens where the button was — make sure the picture is on screen
+  keepInView(root, '#sync-scanner');
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    });
+  } catch (err) {
+    if (scan === session) {
+      endScan(root, CAMERA_ERRORS[err?.name] ?? 'No camera available here — paste the code instead.');
+    }
+    return;
+  }
+  // cancelled, re-rendered or navigated away while the permission prompt was up
+  if (scan !== session || !video.isConnected) {
+    for (const t of stream.getTracks()) t.stop();
+    return;
+  }
+  session.stream = stream;
+  session.onHide = () => {
+    if (document.hidden) endScan(root, 'Camera stopped while gymii was in the background — scan again.');
+  };
+  document.addEventListener('visibilitychange', session.onHide);
+  video.muted = true; // with playsinline, what lets iOS play it without a tap
+  video.srcObject = stream;
+  video.play().catch(() => { /* autoplay covers it; frames just arrive later */ });
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const tick = () => {
+    if (scan !== session) return;
+    if (!video.isConnected) { stopScan(); return; }
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (vw && vh) {
+      let text;
+      try {
+        // the centred square — exactly what the square preview shows
+        const side = Math.min(vw, vh);
+        const out = Math.min(side, SCAN_SIDE);
+        if (canvas.width !== out) { canvas.width = out; canvas.height = out; }
+        ctx.drawImage(video, (vw - side) / 2, (vh - side) / 2, side, side, 0, 0, out, out);
+        text = decodeQr(ctx.getImageData(0, 0, out, out));
+      } catch {
+        endScan(root, 'This browser will not hand the camera picture over — paste the code instead.');
+        return;
+      }
+      const code = text === null ? null : pairCodeFrom(text);
+      if (code) {
+        endScan(root, 'Sync code scanned — check it and tap Pair.');
+        root.querySelector('#sync-code').value = code;
+        keepInView(root, '#sync-pair');
+        return;
+      }
+      if (text !== null) {
+        hint.textContent = 'That QR code is not a gymii sync code — point at the one your terminal or other device shows.';
+      }
+    }
+    session.timer = setTimeout(tick, SCAN_EVERY_MS);
+  };
+  tick();
+}
 
 // The QR carries this page's own URL with the code in the fragment, so the
 // phone's camera opens gymii directly and Settings prefills itself. In
@@ -283,9 +414,17 @@ function syncCard(gym, shownCode, shownQr) {
             placeholder="gymii-sync:v1:…">
           <button id="sync-pair" class="btn btn-inline">Pair</button>
         </div>
+        ${canScan() ? `<button id="sync-scan" class="btn">Scan QR code</button>
+        <div id="sync-scanner" class="sync-scanner" hidden>
+          <video id="sync-scan-video" autoplay playsinline muted aria-label="Camera"></video>
+          <p id="sync-scan-hint" class="muted" role="status">Hold the QR code inside the
+            square — the one your terminal or the other device shows.</p>
+          <button id="sync-scan-cancel" class="btn">Cancel</button>
+        </div>` : ''}
       </div>
       <p class="muted">Pairing joins this gym to a device that already syncs — paste the
-        code that device showed you. Both sides then merge into one history.</p>
+        code that device showed you, or scan its QR. Both sides then merge into one
+        history.</p>
     </section>`;
   }
   return `
@@ -343,6 +482,7 @@ export function renderSettings(root) {
 }
 
 function renderSettingsView(root) {
+  stopScan(); // its video is about to be replaced — see `scan`
   const s = getSettings();
   const gyms = getGyms();
   const activeGym = gyms.list.find((p) => p.id === gyms.activeId);
@@ -723,6 +863,10 @@ function renderSettingsView(root) {
       syncMsg.textContent = syncErrorText(err, 'Pairing failed');
     }
   });
+
+  // the scanner — both buttons exist only where canScan() rendered them
+  root.querySelector('#sync-scan')?.addEventListener('click', () => startScan(root));
+  root.querySelector('#sync-scan-cancel')?.addEventListener('click', () => endScan(root, ''));
 
   const nowBtn = root.querySelector('#sync-now');
   nowBtn?.addEventListener('click', async () => {
