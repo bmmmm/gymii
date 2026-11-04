@@ -457,7 +457,16 @@ string — hard black/white, cameras need the contrast) wrapping
 lookup, parks the code via `setPendingPairCode` (the focusMachine
 handoff) and `location.replace('#settings')` so the credential never
 enters browser history — Settings prefills the field and never
-auto-pairs. Discovery (`listRemoteGyms`/`adoptRemoteGym`): unknown blobs
+auto-pairs. The camera opens that link in the BROWSER, and on Apple
+devices a Home Screen web app keeps its storage apart from the browser's
+(WebKit, by design): pairing the Safari tab leaves the Home Screen gymii
+unpaired. So in an Apple browser tab (`navigator.standalone === false`,
+Apple's own flag, absent elsewhere — Android's installed PWAs share the
+browser's storage) Settings also renders a "Sync code received" card on
+top with the code and "Copy sync code", the bridge into the Home Screen
+app; the tab can still pair itself below. The card lives one render, like
+`codeOnce`, and its Copy never re-renders, so the on-screen code stays as
+the fallback for a refused clipboard. Discovery (`listRemoteGyms`/`adoptRemoteGym`): unknown blobs
 probe-first — plain adopts directly, encrypted needs that gym's own
 passphrase (per-gym keys), a wrong one leaves no local state; the
 adopted placeholder entry is re-stamped to epoch 0 so the blob's real
