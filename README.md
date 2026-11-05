@@ -54,6 +54,15 @@ Settings → Help whenever you want it again.
   home too — noted at the start, out of the way once you're logging. 🏁 in
   the machine header finishes the workout right where you logged the last
   set, and removing a set takes two taps — it has no undo.
+- ⚡ **Minimal mode** — one chip on the Train screen turns it into a single
+  screen without the tab bar: tap an exercise (the ones you trained last come
+  first), confirm ONE value — the weight, the reps for bodyweight, time +
+  distance for cardio — and ✓ Log. Want the reps too? "+ Reps" adds the
+  field for that exercise. "+ New" adds a machine by name, Done finishes, and
+  a workout left open for hours closes itself at its last set. A dumbbell
+  flies on every set, a new best rains trophies, Done gets a parade — with a
+  silly one-liner each time (🎉 Fun turns it off; reduced motion keeps only
+  the line). Same data as the full app, which is one tap away.
 - 📋 **Plans** — start with the plan you already have: type it in the way
   it's written (`Leg press 3x10 80`, `#7 Chest press 3x8-12 40kg`,
   `Treadmill 20min`) and gymii reads it — no gym needed yet. At the machine

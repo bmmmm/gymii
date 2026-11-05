@@ -65,7 +65,9 @@ exist because breaking them was once a real bug.
 - Cross-module traps: sets are strength `{reps, weight}`, cardio
   `{distance, seconds}`, bodyweight = ADDED weight, assisted = the ASSIST
   (less is stronger, no volume; ui.js `entryKind` reads the flag), and `at`
-  is optional — every consumer guards (`st.reps * st.weight || 0`). Stored
+  is optional — every consumer guards (`st.reps * st.weight || 0`). Reps are
+  optional too: Minimal mode logs `{weight, at}` — a field not on screen is
+  ABSENT, never 0/null (`setStr` "80", AI export `null`). Stored
   weights and distances are in the DISPLAY unit: a new such field must be
   converted by `setUnit()` too. A stepper field is read only via `fieldValue()` (ui.js)
   — an armed field is empty while it still shows its value.
@@ -84,6 +86,10 @@ exist because breaking them was once a real bug.
   its pure undo diff engine, no imports.
 - `app/js/train.js` — hub, guided workout, rest timer (the rest belongs to the
   WORKOUT); `app/js/plan.js` — the plan builder, works without a gym.
+- `app/js/minimal.js` — Minimal mode: `#train` as one screen, no tabbar,
+  while device-local `settings.minimal` is on (app.js swaps the renderer,
+  ui.js `reroute()`). Same `active` and helpers; imports train.js, never the
+  reverse; its fun sits on `#fun-layer`, outside #view.
 - `app/js/history.js` — overview (week, progress, paths, muscles, with the hints
   of stats.js where they apply) +
   Workouts screen (list, editor, back-logging); `app/js/chart.js` — its charts;

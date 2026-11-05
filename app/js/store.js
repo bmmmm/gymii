@@ -921,19 +921,23 @@ export function shiftWorkout(w, delta) {
 }
 
 // Moves the active workout into history; entries without sets are dropped.
-export function finishWorkout(active) {
+// `now` is when it finished — the moment, not necessarily the call: Minimal
+// mode closes a workout left open for hours at the time of its LAST set
+// (minimal.js), so History does not read a 9-hour workout. The open visit
+// closes then too. `updatedAt` stays the WRITE's stamp: it is sync's clock,
+// not a moment of the workout (see shiftWorkout).
+export function finishWorkout(active, { now = Date.now() } = {}) {
   const entries = active.entries.filter((e) => e.sets.length);
   if (!entries.length) {
     clearActive();
     return null;
   }
-  const now = Date.now();
   const visits = closeVisits(active.visits, now, entries);
   const workout = {
     id: active.id,
     startedAt: active.startedAt,
     finishedAt: now,
-    updatedAt: now,
+    updatedAt: Date.now(),
     entries,
     ...(visits ? { visits } : {}),
     ...(active.locker ? { locker: active.locker } : {}),

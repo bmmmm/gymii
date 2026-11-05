@@ -1,6 +1,6 @@
 // Small shared UI helpers.
 
-import { distUnit, MUSCLE_REGIONS } from './store.js';
+import { distUnit, MUSCLE_REGIONS, getSettings, saveSettings } from './store.js';
 import { SOURCES } from './stats.js'; // stats.js imports nothing: no cycle
 
 // Local-time values for the date/time inputs — toISOString would shift a
@@ -354,14 +354,17 @@ export const entryKind = (e) => (e?.cardio ? 'cardio' : e?.bodyweight ? 'bodywei
 // One set, rendered compactly; the entry's kind is passed in rather than
 // sniffed from the shape (`true` is the old bodyweight flag). An assisted
 // set reads as a minus: the counterweight takes that much off. A cardio
-// set's resistance step, when logged, trails as "L5". HTML-ready.
+// set's resistance step, when logged, trails as "L5". Reps are OPTIONAL on
+// a weighted set (Minimal mode logs the weight alone): such a set reads
+// "80", never "80×undefined" — the unit is setsSummary's to add. HTML-ready.
+const timesReps = (st) => (st.reps != null ? `×${st.reps}` : '');
 export const setStr = (st, settings, kind = 'strength') => esc(st.distance != null
   ? `${st.distance} ${distUnit(settings)} · ${fmtDuration(st.seconds)}${st.level ? ` · L${st.level}` : ''}`
   : kind === true || kind === 'bodyweight'
-    ? (st.weight ? `BW+${st.weight}×${st.reps}` : `BW×${st.reps}`)
+    ? (st.weight ? `BW+${st.weight}${timesReps(st)}` : `BW${timesReps(st)}`)
     : kind === 'assisted'
-      ? `${st.weight ? `−${st.weight}` : 0}×${st.reps}`
-      : `${st.weight ?? 0}×${st.reps}`);
+      ? `${st.weight ? `−${st.weight}` : 0}${timesReps(st)}`
+      : `${st.weight ?? 0}${timesReps(st)}`);
 
 // --- machine icons ---
 // One glyph per machine so it is recognised at a glance in every list.
@@ -448,6 +451,34 @@ export function preserveFocus(root, render) {
   // setSelectionRange throws on inputs that don't support selection (email,
   // number); the focus alone is the part that matters.
   try { next.setSelectionRange(keep.start, keep.end); } catch { /* not selectable */ }
+}
+
+// --- re-routing in place ---
+// app.js's router owns what a route renders, and app.js imports every view —
+// so a view that changes WHICH renderer a route uses (Train's Minimal switch)
+// cannot call the router without an import cycle. It asks through this event
+// instead; app.js listens once and runs route() again: no hash change, no
+// reload. A no-op in Node, where there is no window.
+export const REROUTE = 'gymii:reroute';
+export function reroute() {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new Event(REROUTE));
+  }
+}
+
+// The Minimal switch — a view toggle ON the view it changes (AGENTS.md): the
+// Train hub, the workout overview and the Minimal view itself carry it, one
+// 44px chip with the same id. `settings.minimal` is device-local (NOT in
+// merge.js USER_SETTINGS): each device decides for itself, nothing syncs,
+// and the settings stamp does not move. Off is the key's ABSENCE.
+export const minimalToggleHtml = (on) => `<button type="button" id="minimal-toggle"
+    class="chip mode-toggle${on ? ' sel' : ''}" aria-pressed="${on}">Minimal</button>`;
+export function wireMinimalToggle(root) {
+  root.querySelector('#minimal-toggle')?.addEventListener('click', () => {
+    const { minimal, ...rest } = getSettings();
+    saveSettings(minimal ? rest : { ...rest, minimal: true });
+    reroute();
+  });
 }
 
 // --- display theme ---

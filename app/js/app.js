@@ -1,15 +1,22 @@
 import { renderTrain, isFirstRun } from './train.js';
+import { renderMinimal } from './minimal.js';
 import { renderTour, spotTabs } from './tour.js';
 import { renderGym } from './gym.js';
 import { renderHistory } from './history.js';
 import { renderAi } from './ai.js';
 import { renderSettings, setPendingPairCode } from './settings.js';
-import { initSteppers, initNumericOverwrite, initFocusCentering, applyTheme } from './ui.js';
+import { initSteppers, initNumericOverwrite, initFocusCentering, applyTheme, REROUTE } from './ui.js';
 import { initAmbientSync, syncHealth, onSyncActivity } from './sync.js';
 import { onWriteError, getSettings } from './store.js';
 
+// Minimal mode (device-local `settings.minimal`, switched on the Train hub,
+// the workout overview and the Minimal view itself) swaps the Train ROUTE's
+// renderer — one screen, no tabbar (route() below). Every other route,
+// deep links and #tour included, renders as ever, with the tabbar.
+const minimalOn = () => !!getSettings().minimal;
+
 const routes = {
-  train: renderTrain,
+  train: (v) => (minimalOn() ? renderMinimal(v, { entry: true }) : renderTrain(v)),
   gym: renderGym,
   // a tab tap is an ENTRY: History opens on its overview, this month
   history: (v) => renderHistory(v, { entry: true }),
@@ -73,6 +80,8 @@ function route() {
     return;
   }
   spotTabs([]); // the tour's tab marks never outlive it
+  // no tabbar in Minimal mode: the hidden bar is the one-screen promise
+  document.body.classList.toggle('minimal-mode', tab === 'train' && minimalOn());
   const view = document.getElementById('view');
   view.innerHTML = '';
   view.scrollTop = 0;
@@ -97,6 +106,8 @@ initAmbientSync(); // M2: pull on open/visible, debounced push after edits
 onSyncActivity(updateSyncBadge);
 onWriteError(showStorageAlert);
 window.addEventListener('hashchange', route);
+// the Minimal switch re-routes in place (ui.js reroute): same hash, no reload
+window.addEventListener(REROUTE, route);
 route();
 
 // Offline support; relative path keeps the registration subpath-safe.

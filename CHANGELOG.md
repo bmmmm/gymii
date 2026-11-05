@@ -7,6 +7,22 @@ holds open work only.
 
 ## 2026-11-05
 
+Shipped 2026-11-05 (`2026-11-05d`): Minimal mode. One "Minimal" chip on the
+Train screen (and on a running workout's overview) turns Train into a single
+screen without the tab bar: tap an exercise — the ones trained last come
+first — confirm ONE value (the weight; reps on a bodyweight machine; time +
+distance on cardio) and ✓ Log. "+ Reps", "+ Weight" or "+ Level" adds the
+second field for that exercise, today's sets sit above the button (two taps
+remove one), "+ New" adds a machine by name — or picks the one that already
+has it — and Done finishes in two taps; a workout left open for three hours
+closes itself at its last set. A dumbbell flies on every set, a new best
+rains trophies, Done gets a parade, each with a silly one-liner (🎉 Fun
+turns it off; reduced motion keeps the line, still). Same workout, same
+data as the full app, which is one tap away; the setting stays on the
+device. Sets logged with just the weight read as "80" everywhere — History,
+its editor, the AI export (null = not recorded) — and no longer trip the
+assisted-machine hints.
+
 Shipped 2026-11-05 (`2026-11-05c`): pairing, the second time round. A gym
 that already holds workouts, plans or machines now asks on Pair what
 becomes of them — "Merge both" (as before), "Keep separate" (the synced

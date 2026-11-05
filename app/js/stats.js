@@ -853,7 +853,10 @@ export function assistGoal(machine, points = [], targetReps = null) {
     if (b.weight < a.weight) return { goal: 'strength', observed: true, basis: 'trend' };
     if (b.weight === a.weight && b.reps > a.reps) return { goal: 'endurance', observed: true, basis: 'trend' };
   }
-  const reps = targetReps ?? pts[pts.length - 1]?.top.reps ?? null;
+  // a top set without reps (Minimal mode logs the assist alone) reads 0 in
+  // the series: it says nothing about the rep range, so it is no basis
+  const lastReps = pts[pts.length - 1]?.top.reps;
+  const reps = targetReps ?? (lastReps > 0 ? lastReps : null);
   if (reps == null) return { goal: 'strength', observed: true, basis: 'none' };
   return { goal: reps >= 12 ? 'endurance' : 'strength', observed: true, basis: 'reps' };
 }
@@ -1112,7 +1115,9 @@ function plateauRule(ws, settings, now, layout = null, plans = []) {
 function assistPlateau(series, goal, unit, now) {
   const all = series.filter((p) => p.kind === 'assisted');
   const step = all[all.length - 1]?.top.weight;
-  const pts = goal === 'endurance' ? all.filter((p) => p.top.weight === step) : all;
+  // the rep record needs reps: a workout logged as the assist alone (Minimal
+  // mode, top.reps 0) would otherwise read as eight "0 reps" in a row
+  const pts = goal === 'endurance' ? all.filter((p) => p.top.weight === step && p.top.reps > 0) : all;
   if (pts.length < 8 || daysBetween(pts[pts.length - 1].t, now) >= RECENT_DAYS) return [];
   // unassisted already (0 kg): no lower to reach — not a plateau
   if (goal === 'strength' && pts.slice(-6).some((p) => p.top.weight === 0)) return [];

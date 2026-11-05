@@ -54,7 +54,12 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   matrix, RS vectors, full decode round-trip, penalty rules, overflow), `train` (guided-plan
   construction, hub/start/plans navigation), `tour` (step walk, seen
   mark without a sync stamp, the unit question and its default step,
-  `isFirstRun`), `plan` (stored plans, the note parser/serialiser, AI
+  `isFirstRun`), `minimal` (Minimal mode: series chips, the record per kind,
+  the one-liners with an injected chance, extras incl. junk, the set shapes
+  real taps log — `{weight, at}` without reps — the auto-close at the last
+  set, "+ New" without twins, the fun switch through a recorder stage
+  (`setFunStage`), the remove guard; the view writes a workout renderTrain
+  renders), `plan` (stored plans, the note parser/serialiser, AI
   import, binding, targets), `history` (the two screens and the
   entry reset, name filter, week card, hints, progress chips/range/pick,
   walking paths, muscle card + filter, heatmap state, full editor,
@@ -143,7 +148,15 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `getUserMedia`): a pairing QR fills the field, stops the camera and
   pairs nothing; another QR keeps it looking, the open panel passes the
   320px measures, Cancel stops the camera; leaving the tab mid-scan stops
-  it too. And pairing a gym that holds records (`pair.spec.mjs`): Pair
+  it too. And Minimal mode (`minimal.spec.mjs`): the hub's switch
+  swaps #train in place and hides the tabbar, "+ New" Leg press picks the
+  demo's #5 instead of a twin, sets land as `{weight, at}` and with "+ Reps"
+  as `{weight, reps, at}`, the screen passes the 44px / 16px / no-overflow
+  measures, the switch back continues the workout in the full view
+  and History reads it without "undefined"; the fun layer takes no tap (a
+  trial click through a running effect), its motifs leave the DOM, reduced
+  motion leaves the line and no running animation, fun off leaves nothing.
+  And pairing a gym that holds records (`pair.spec.mjs`): Pair
   unfolds the merge / separate / replace choice with the server named, the
   open choice passes the 320px measures, Replace's first tap only arms,
   and nothing reaches the server before a choice (the pairings themselves
