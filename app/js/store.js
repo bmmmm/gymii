@@ -245,6 +245,16 @@ export function deleteGym(id) {
   return true;
 }
 
+// Empties one gym's synced records — layout, workouts, plans and their
+// tombstones — WITHOUT a tombstone for anything it drops: pairing with
+// "replace" (sync.js) hands the gym to the server's copy, and a tombstone
+// here would reach that server as a delete of records it still holds. The
+// registry entry, the workout in progress and the sync bookkeeping stay.
+export function clearGymData(gid) {
+  ['layout', 'workouts', 'plans', 'tombstones'].forEach((part) => localStorage.removeItem(scopedKey(gid, part)));
+  touched();
+}
+
 // --- tombstones (sync groundwork) ---
 // A delete must leave a trace or a future merge with another device would
 // resurrect the record from the other side's copy. Sidecar lists — never

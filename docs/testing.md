@@ -143,7 +143,12 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   `getUserMedia`): a pairing QR fills the field, stops the camera and
   pairs nothing; another QR keeps it looking, the open panel passes the
   320px measures, Cancel stops the camera; leaving the tab mid-scan stops
-  it too.
+  it too. And pairing a gym that holds records (`pair.spec.mjs`): Pair
+  unfolds the merge / separate / replace choice with the server named, the
+  open choice passes the 320px measures, Replace's first tap only arms,
+  and nothing reaches the server before a choice (the pairings themselves
+  run against fake servers in test/sync.test.mjs § 23 and
+  test/settings.test.mjs).
   A NEW browser spec goes in
   `smoke/` as `*.spec.mjs`, NEVER in `test/` — `testMatch` is pinned
   because Playwright's collector imports whatever it matches and would run

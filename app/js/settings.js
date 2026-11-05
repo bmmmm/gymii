@@ -1,5 +1,5 @@
 import {
-  getSettings, saveSettings, getLayout,
+  getSettings, saveSettings, getLayout, getWorkouts, getPlans,
   getGyms, createGym, renameGym, deleteGym, setActiveGym, setUnit,
   exportGymTemplate, exportBackup, importData, clearAll, storedBytes,
 } from './store.js';
@@ -9,7 +9,7 @@ import {
 } from './ui.js';
 import { loadDemoData } from './demo.js';
 import {
-  getSyncState, getSyncCode, enableSync, pairWithCode, syncNow, disableSync,
+  getSyncState, getSyncCode, enableSync, pairWithCode, describeSyncCode, syncNow, disableSync,
   updateSyncServer, e2eAvailable,
   mintPairingCode, listDevices, revokeDevice, listRemoteGyms, adoptRemoteGym,
 } from './sync.js';
@@ -270,6 +270,8 @@ const SYNC_ERRORS = {
   'need-pass': 'This gym is encrypted — its own sync passphrase is needed to add it.',
   decrypt: 'That passphrase does not open this gym.',
   gone: 'That gym is no longer on the server.',
+  'mode-mismatch': 'The server keeps this gym in another mode (encrypted or not) than the code says — '
+    + 'ask the other device for a fresh code.',
   'qr-overflow': 'This code is too long for a QR — copy the text instead.',
 };
 
@@ -360,9 +362,39 @@ const codeBlock = (code, plain, withQr) => `
     sync, nobody without it can (not whoever runs the server, not us). Lose every
     paired device and the code, and the data is gone. There is no recovery.`}</div>`;
 
+// What the active gym already holds, as a phrase ("3 workouts and 1 plan")
+// — '' for a gym with nothing in it, which pairing merges without asking.
+function heldRecords() {
+  const parts = [
+    [getWorkouts().length, 'workout'], [getPlans().length, 'plan'],
+    [getLayout()?.machines?.length ?? 0, 'machine'],
+  ].filter(([n]) => n > 0).map(([n, word]) => `${n} ${word}${n === 1 ? '' : 's'}`);
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : (parts[0] ?? '');
+}
+
+// The pairing choice, for a gym that already holds records: merge is the
+// common case and leads; replace is the one that loses something here, so
+// it sits last behind the two-tap, and downloads a backup before it runs.
+const pairChoice = (gym, held) => `
+        <div id="sync-pair-choice" class="field-block" hidden>
+          <p id="sync-pair-about" class="muted">"${esc(gym.name)}" already holds ${esc(held)}.
+            What should happen to them?</p>
+          <p id="sync-pair-server" class="muted"></p>
+          <button id="sync-pair-merge" class="btn btn-primary">Merge both</button>
+          <button id="sync-pair-separate" class="btn">Keep separate</button>
+          <button id="sync-pair-replace" class="btn btn-danger">Replace this gym's data</button>
+          <p id="sync-pair-msg" class="muted" role="status"></p>
+          <p class="muted">Merge: this gym and the synced one become one history —
+            nothing is lost on either side. Keep separate: the synced gym arrives as a
+            new gym, and "${esc(gym.name)}" stays exactly as it is, unsynced. Replace:
+            a backup of everything downloads first, then this gym holds only what the
+            server has.</p>
+        </div>`;
+
 function syncCard(gym, shownCode, shownQr) {
   const state = getSyncState(gym.id);
   if (!state.configured) {
+    const held = heldRecords();
     // No secure context (a plain-http page, e.g. the one-container setup on
     // a LAN address) means the browser refuses crypto.subtle: E2E cannot
     // run here, so the card offers the one thing that can — unencrypted
@@ -414,6 +446,7 @@ function syncCard(gym, shownCode, shownQr) {
             placeholder="gymii-sync:v1:…">
           <button id="sync-pair" class="btn btn-inline">Pair</button>
         </div>
+        ${held ? pairChoice(gym, held) : ''}
         ${canScan() ? `<button id="sync-scan" class="btn">Scan QR code</button>
         <div id="sync-scanner" class="sync-scanner" hidden>
           <video id="sync-scan-video" autoplay playsinline muted aria-label="Camera"></video>
@@ -423,8 +456,9 @@ function syncCard(gym, shownCode, shownQr) {
         </div>` : ''}
       </div>
       <p class="muted">Pairing joins this gym to a device that already syncs — paste the
-        code that device showed you, or scan its QR. Both sides then merge into one
-        history.</p>
+        code that device showed you, or scan its QR. ${held
+    ? 'This gym already holds records, so Pair asks first whether to merge them.'
+    : 'Both sides then merge into one history.'}</p>
     </section>`;
   }
   return `
@@ -469,7 +503,9 @@ function syncCard(gym, shownCode, shownQr) {
       <p class="muted">Turning sync off removes the ${state.plain
     ? 'server and the token' : 'server, the token and the key'} from
         this device only. Your floor plan, workouts and plans stay exactly where they
-        are.</p>
+        are. The token stays valid on the server — whoever holds a copy of this
+        device's code can still use it — so retire it from another device, under
+        Devices.</p>
     </section>`;
 }
 
@@ -845,6 +881,46 @@ function renderSettingsView(root) {
     }
   });
 
+  // One pairing, three ways for the records this gym already holds (see
+  // pairWithCode). No code block afterwards: the other device showed it.
+  // While one runs, every way into it is locked — a second tap would pair
+  // the same code twice, two modes at once.
+  const pairButtons = () => ['#sync-pair', '#sync-pair-merge', '#sync-pair-separate', '#sync-pair-replace']
+    .map((sel) => root.querySelector(sel)).filter(Boolean);
+  const pair = async (mode) => {
+    const raw = root.querySelector('#sync-code').value;
+    // with the choice open, its own line answers: the status line sits
+    // above the field, scrolled away
+    const choice = root.querySelector('#sync-pair-choice');
+    const out = choice && !choice.hidden ? root.querySelector('#sync-pair-msg') : syncMsg;
+    pairButtons().forEach((b) => { b.disabled = true; });
+    out.textContent = 'Pairing…';
+    try {
+      // before anything else: the one copy of what "replace" gives up
+      if (mode === 'replace') download('gymii-backup.json', exportBackup());
+      const { sync, shared } = await pairWithCode(gid, raw, { mode });
+      renderSettings(root); // "separate": the synced gym is the active one now
+      // paired but not synced (offline right after the check): the synced
+      // records are still on their way, and the message must not say otherwise
+      const done = sync.status === 'synced';
+      const lead = {
+        merge: 'Paired.',
+        separate: `Paired as a new gym — "${activeGym.name}" stays as it was, unsynced.${done ? ''
+          : ' The synced records arrive with the next sync that works.'}`,
+        replace: done ? 'Paired — this gym now holds the synced data; the backup downloaded first.'
+          : 'Paired — this gym\'s own records are cleared (the backup downloaded first); the synced'
+            + ' data arrives with the next sync that works.',
+      }[mode];
+      root.querySelector('#sync-msg').textContent = `${lead} ${syncResultText(sync)}${shared
+        ? ' This code had been used before: whoever used it keeps that access, and this'
+          + ' device got a token of its own. If none of your devices used it, revoke it'
+          + ' under Devices.' : ''}`;
+    } catch (err) {
+      pairButtons().forEach((b) => { b.disabled = false; });
+      out.textContent = syncErrorText(err, 'Pairing failed');
+    }
+  };
+
   const pairBtn = root.querySelector('#sync-pair');
   pairBtn?.addEventListener('click', async () => {
     const raw = root.querySelector('#sync-code').value;
@@ -852,16 +928,41 @@ function renderSettingsView(root) {
       syncMsg.textContent = 'Paste the sync code from your other device first.';
       return;
     }
-    pairBtn.disabled = true;
+    let about;
     try {
-      // no code block here: the other device already showed it
-      const { sync } = await pairWithCode(gid, raw);
-      renderSettings(root);
-      root.querySelector('#sync-msg').textContent = `Paired. ${syncResultText(sync)}`;
+      about = describeSyncCode(raw);
     } catch (err) {
-      pairBtn.disabled = false;
       syncMsg.textContent = syncErrorText(err, 'Pairing failed');
+      return;
     }
+    // an empty gym has nothing to decide about
+    if (!heldRecords()) {
+      await pair('merge');
+      return;
+    }
+    // records arrived after this card rendered (another tab, a sync): the
+    // choice is not in it yet — render it, and give the code back
+    if (!root.querySelector('#sync-pair-choice')) {
+      renderSettings(root);
+      root.querySelector('#sync-code').value = raw;
+    }
+    // the server line sits IN the choice: the status line is above the
+    // field, scrolled away once the choice is in view
+    root.querySelector('#sync-pair-choice').hidden = false;
+    root.querySelector('#sync-pair-server').textContent = `This code joins a gym on ${about.server}${about.plain
+      ? ' — unencrypted' : ''}.`;
+    root.querySelector('#sync-pair-msg').textContent = '';
+    root.querySelector('#sync-msg').textContent = '';
+    keepInView(root, '#sync-pair-merge');
+  });
+  root.querySelector('#sync-pair-merge')?.addEventListener('click', () => pair('merge'));
+  root.querySelector('#sync-pair-separate')?.addEventListener('click', () => pair('separate'));
+  const replaceBtn = root.querySelector('#sync-pair-replace');
+  replaceBtn?.addEventListener('click', () => {
+    // the first tap only arms — no re-render, or the armed node is gone
+    if (!twoTapConfirm(replaceBtn, 'Tap again — backup first, then replace',
+      "Replace this gym's data")) return null;
+    return pair('replace');
   });
 
   // the scanner — both buttons exist only where canScan() rendered them

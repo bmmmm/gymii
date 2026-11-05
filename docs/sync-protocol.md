@@ -182,8 +182,17 @@ settings, plus the sync-relevant sidecars:
   nothing enforces that — so the redeemer's FIRST request with the invite
   token is `GET /v1/tokens`, and if that token's `self` entry already
   carries a `lastSeenAt`, another device adopted it: the redeemer leaves it
-  alone and says so instead of cutting that device off. A redeemer that adopts the code's token (the
-  browser) ignores the flag. Parsers ignore fields they do not know.
+  alone and says so instead of cutting that device off. The browser
+  redeems the same way since `2026-11-05c`: `GET /v1/tokens` first, then
+  `POST /v1/tokens` under the invite's name (`"<name> (another device)"`
+  when the invite was seen), its first sync with that token, then
+  `DELETE` of the unseen invite — after that first sync, and retried after
+  later ones until the server answers `204`, `404` or `409`. A server
+  without the token API, one that records no sightings at all (no token in
+  the list carries `lastSeenAt` — the inviting device's never lacks it on
+  a server that tracks), or an answer the redeemer cannot read leaves it
+  adopting the code's token as M1 did; a refusal (`401`) is a dead code.
+  Parsers ignore fields they do not know.
 
 ## Sync flow (client)
 

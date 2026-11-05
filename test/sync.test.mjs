@@ -94,9 +94,12 @@ function fakeServer(initial = {}) {
     // API plus real bearer checking; null keeps the M1/M2 behavior
     tokens: null,
     gymsList: null, // override for GET /v1/gyms (discovery listing)
+    // record a token's first sighting the way the server does: AFTER the
+    // answer, so the request that causes it never sees it
+    sightings: false,
     ...initial,
   };
-  globalThis.fetch = async (url, opts = {}) => {
+  const handle = async (url, opts = {}) => {
     const method = opts.method ?? 'GET';
     const headers = lower(opts.headers);
     s.log.push({ url, method, headers, body: opts.body });
@@ -114,7 +117,10 @@ function fakeServer(initial = {}) {
         }
         if (method === 'POST') {
           const body = JSON.parse(opts.body || '{}');
-          const n = s.tokens.length + 1;
+          // a running count: after a revoke, length + 1 would hand out a
+          // token (and hash) that is still live
+          s.minted = (s.minted ?? s.tokens.length) + 1;
+          const n = s.minted;
           const t = {
             token: `minted-${n}`,
             hash: '0'.repeat(60) + String(n).padStart(4, '0'),
@@ -161,6 +167,14 @@ function fakeServer(initial = {}) {
       return response(204);
     }
     return response(405);
+  };
+  globalThis.fetch = async (url, opts = {}) => {
+    const res = await handle(url, opts);
+    if (s.sightings && s.tokens) {
+      const holder = s.tokens.find((t) => lower(opts.headers).authorization === `Bearer ${t.token}`);
+      if (holder && !holder.lastSeenAt) holder.lastSeenAt = '2026-11-05T10:00:00Z';
+    }
+    return res;
   };
   return s;
 }
@@ -1139,6 +1153,239 @@ try {
     fireWindow('storage', { key: null, newValue: null }); // a clear()
   });
   assert.equal(store.getSyncConfig(gid).dirty, false, '22: sync bookkeeping and other gyms do not count');
+  sync.initAmbientSync({ editDebounceMs: 0 });
+}
+
+// --- 23. pairing, the second time round: invites retire, the gym decides ---
+// (sync-protocol.md § Invite codes; pairWithCode's `mode`.) The browser
+// trades an invite's token for its own and retires the invite, so a code
+// left on a screen is dead once it paired — unless someone had used it
+// before, which the server's sighting tells (`self.lastSeenAt`). And a gym
+// that already holds records says what becomes of them: merge, a separate
+// gym, or replaced by the server's copy (without a single tombstone).
+{
+  sync.initAmbientSync({ editDebounceMs: 60000 }); // no run may start on its own
+  const encode = (body) => `gymii-sync:v1:${Buffer.from(JSON.stringify(body)).toString('base64url')}`;
+  const bearerOf = (r) => r.headers.authorization?.replace('Bearer ', '');
+  const ids = (list) => list.map((x) => x.id).sort();
+
+  // the inviting device: one workout on the server
+  devices.I = new Map();
+  useDevice('I');
+  seedRegistry('Studio');
+  // named after every phone here (seedRegistry stamps 100): the gym name is
+  // last-writer-wins, and this test is about the synced name arriving
+  store.restoreGymEntry({ id: gid, name: 'Studio', updatedAt: 200 });
+  store.saveWorkouts([workout('w-studio', 3000)]);
+  srv = fakeServer({
+    sightings: true,
+    tokens: [{
+      token: 'tok-23', hash: 'f'.repeat(64), mintedAt: '2026-09-01T00:00:00Z', name: 'mac', lastSeenAt: '2026-11-01T00:00:00Z',
+    }],
+  });
+  assert.equal((await sync.enableSync(gid, { server: 'http://box:8639', token: 'tok-23' })).sync.status, 'synced', '23: setup');
+  const passI = store.getSyncKey(gid).pass;
+  const invite = async (name) => {
+    useDevice('I');
+    const { code } = await sync.mintPairingCode(gid, name);
+    return { code, token: JSON.parse(Buffer.from(code.slice(14), 'base64url').toString()).token };
+  };
+  const OWN = sync.getSyncCode(gid); // the inviting device's own code (no invite)
+  const fresh = (name, records = []) => {
+    devices[name] = new Map();
+    useDevice(name);
+    seedRegistry('Phone gym');
+    if (records.length) store.saveWorkouts(records);
+  };
+
+  // a) merge, with an invite: the FIRST request asks about the token, then
+  // this device mints its own and retires the invite once it is in place
+  const inv = await invite('iphone');
+  fresh('J', [workout('w-phone', 4000)]);
+  srv.log.length = 0;
+  const a = await sync.pairWithCode(gid, inv.code);
+  assert.equal(a.sync.status, 'synced', '23a: an invite pairs');
+  assert.equal(a.gid, gid, '23a: merge keeps the gym it was asked to pair');
+  assert.equal('shared' in a, false, '23a: a fresh invite is no shared one');
+  assert.deepEqual([srv.log[0].method, srv.log[0].url.endsWith('/v1/tokens'), bearerOf(srv.log[0])],
+    ['GET', true, inv.token], '23a: the invite token\'s first request is the token list');
+  const ownJ = store.getSyncConfig(gid).token;
+  assert.notEqual(ownJ, inv.token, '23a: the device syncs with a token of its own');
+  assert.ok(srv.log.filter((r) => r.url.includes('/v1/gyms/')).every((r) => bearerOf(r) === ownJ),
+    '23a: the invite token never touches a blob');
+  assert.equal(srv.tokens.some((t) => t.token === inv.token), false, '23a: the invite is retired');
+  assert.equal(srv.tokens.find((t) => t.token === ownJ).name, 'iphone', '23a: under the name the invite carried');
+  assert.deepEqual(ids(store.getWorkouts()), ['w-phone', 'w-studio'], '23a: merge — one history');
+  fresh('J2');
+  await assert.rejects(() => sync.pairWithCode(gid, inv.code), /code-used/,
+    '23a: the same code, scanned again, is dead');
+  assert.equal(store.getSyncConfig(gid), null, '23a: and pairs nothing');
+
+  // b) a second redeemer finds the invite seen: it mints alongside, leaves
+  // the token to whoever holds it, and says so
+  const inv2 = await invite('tablet');
+  srv.tokens.find((t) => t.token === inv2.token).lastSeenAt = '2026-11-05T09:00:00Z';
+  fresh('K');
+  const b = await sync.pairWithCode(gid, inv2.code);
+  assert.equal(b.sync.status, 'synced', '23b: it still pairs');
+  assert.equal(b.shared, true, '23b: and says the code had been used');
+  assert.ok(srv.tokens.some((t) => t.token === inv2.token), '23b: the other device keeps its token');
+  assert.equal(srv.tokens.find((t) => t.token === store.getSyncConfig(gid).token).name,
+    'tablet (another device)', '23b: the new token is told apart by name');
+
+  // c) a server without the token API: the code's token is adopted as before
+  const kept = srv.tokens;
+  srv.tokens = null; // M1/M2 behavior — GET /v1/tokens is no list
+  fresh('L');
+  const c = await sync.pairWithCode(gid, encode({
+    server: 'http://box:8639', token: 'tok-23', pass: passI, gymId: gid, invite: true,
+  }));
+  assert.equal(c.sync.status, 'synced', '23c: pairs');
+  assert.equal(store.getSyncConfig(gid).token, 'tok-23', '23c: by adopting the code\'s token');
+  srv.tokens = kept;
+
+  // d) keep separate: the synced gym arrives next to this one
+  fresh('M', [workout('w-mine', 5000)]);
+  const d = await sync.pairWithCode(gid, OWN, { mode: 'separate' });
+  useDevice('M');
+  assert.equal(d.sync.status, 'synced', '23d: pairs');
+  assert.notEqual(d.gid, gid, '23d: into a gym of its own');
+  assert.equal(store.getGyms().activeId, d.gid, '23d: which is the active one now');
+  assert.equal(store.getGyms().list.find((g) => g.id === d.gid).name, 'Studio', '23d: under the synced name');
+  assert.deepEqual(ids(store.getWorkouts()), ['w-phone', 'w-studio'], '23d: holding the synced history');
+  assert.equal(store.getSyncConfig(gid), null, '23d: the old gym stays unsynced');
+  store.setActiveGym(gid);
+  assert.deepEqual(ids(store.getWorkouts()), ['w-mine'], '23d: and exactly as it was');
+  assert.equal(store.getGyms().list.find((g) => g.id === gid).name, 'Phone gym', '23d: name included');
+  const onServer = async () => ids((await decryptBlob(srv.blob, passI)).workouts);
+  assert.equal((await onServer()).includes('w-mine'), false, '23d: none of it reached the server');
+  // a dead code takes its new gym back with it
+  fresh('M2', [workout('w-mine', 5000)]);
+  await assert.rejects(() => sync.pairWithCode(gid, encode({
+    server: 'http://box:8639', token: 'tok-dead', pass: passI, gymId: gid,
+  }), { mode: 'separate' }), /code-used/, '23d: a refused code');
+  assert.deepEqual(store.getGyms().list.map((g) => g.id), [gid], '23d: leaves no gym behind');
+  assert.equal(store.getGyms().activeId, gid, '23d: and the old one active');
+
+  // e) replace: the server's copy, whole — and not one tombstone on the way
+  const replaceable = () => {
+    fresh('N', [workout('w-gone', 6000)]);
+    store.savePlans([{ id: 'p-gone', name: 'Old plan', updatedAt: 6000, items: [] }]);
+    store.saveTombstones({ workouts: [{ id: 'w-studio', at: 9e12 }] }); // a delete waiting to travel
+    store.saveActive({ id: 'w-running', startedAt: 7000, entries: [] });
+  };
+  const untouched = (what) => {
+    assert.deepEqual(ids(store.getWorkouts()), ['w-gone'], `23e: ${what} — workouts untouched`);
+    assert.deepEqual(ids(store.getPlans()), ['p-gone'], `23e: ${what} — plans untouched`);
+    assert.equal(store.getTombstones().workouts.length, 1, `23e: ${what} — tombstones untouched`);
+    assert.equal(store.getSyncConfig(gid), null, `23e: ${what} — nothing configured`);
+  };
+  replaceable();
+  await assert.rejects(() => sync.pairWithCode(gid, encode({
+    server: 'http://box:8639', token: 'tok-23', pass: 'not-the-pass', gymId: gid,
+  }), { mode: 'replace' }), /decrypt/, '23e: a copy this cannot read is refused');
+  untouched('a wrong passphrase');
+  const blob23 = srv.blob;
+  srv.blob = null; // the fake holds one blob: this is "not on the server"
+  await assert.rejects(() => sync.pairWithCode(gid, OWN, { mode: 'replace' }), /gone/,
+    '23e: so is a copy that is not there');
+  srv.blob = blob23;
+  untouched('a missing blob');
+  srv.mode = 'offline';
+  await assert.rejects(() => sync.pairWithCode(gid, OWN, { mode: 'replace' }), /offline/,
+    '23e: and a server out of reach');
+  srv.mode = null;
+  useDevice('N');
+  untouched('offline');
+  // the probe passes, then the token is refused: everything comes back
+  const baseFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    const res = await baseFetch(url, opts);
+    if (url.includes('/v1/gyms/')) srv.mode = 'auth'; // after the probe's GET
+    return res;
+  };
+  try {
+    await assert.rejects(() => sync.pairWithCode(gid, OWN, { mode: 'replace' }), /code-used/,
+      '23e: a refusal after the probe');
+  } finally {
+    globalThis.fetch = baseFetch;
+    srv.mode = null;
+  }
+  useDevice('N');
+  untouched('a refusal after the probe');
+  assert.equal(store.getGyms().list.find((g) => g.id === gid).name, 'Phone gym', '23e: the name came back too');
+
+  const e = await sync.pairWithCode(gid, OWN, { mode: 'replace' });
+  useDevice('N');
+  assert.equal(e.sync.status, 'synced', '23e: replace pairs');
+  assert.equal(e.gid, gid, '23e: in place');
+  assert.deepEqual(ids(store.getWorkouts()), ['w-phone', 'w-studio'], '23e: the server\'s history, whole');
+  assert.deepEqual(store.getPlans(), [], '23e: and nothing of the old plans');
+  assert.deepEqual(store.getTombstones().workouts, [], '23e: no tombstone made, the waiting one dropped');
+  assert.deepEqual(await onServer(), ['w-phone', 'w-studio'], '23e: the server lost nothing');
+  assert.equal(store.getActive()?.id, 'w-running', '23e: the workout in progress stays');
+  assert.equal(store.getGyms().list.find((g) => g.id === gid).name, 'Studio', '23e: the synced name wins');
+
+  // f) a retry is no second device: the first try's own request left the
+  // sighting (it failed further on — here, the copy was missing)
+  const inv3 = await invite('watch');
+  fresh('P', [workout('w-p', 8000)]);
+  srv.blob = null;
+  await assert.rejects(() => sync.pairWithCode(gid, inv3.code, { mode: 'replace' }), /gone/, '23f: setup');
+  srv.blob = blob23;
+  assert.ok(srv.tokens.find((t) => t.token === inv3.token).lastSeenAt, '23f: the first try was sighted');
+  const f = await sync.pairWithCode(gid, inv3.code, { mode: 'replace' });
+  assert.equal(f.sync.status, 'synced', '23f: the retry pairs');
+  assert.equal('shared' in f, false, '23f: and does not call its own sighting another device');
+  assert.equal(srv.tokens.some((t) => t.token === inv3.token), false, '23f: the invite is retired');
+  assert.equal(srv.tokens.find((t) => t.token === store.getSyncConfig(gid).token).name, 'watch',
+    '23f: under the plain name');
+
+  // g) the invite's retirement survives a failed DELETE: owed in the config,
+  // retried after the next sync that works, never sent along with a code
+  const inv4 = await invite('ipad');
+  const hash4 = srv.tokens.find((t) => t.token === inv4.token).hash;
+  fresh('Q');
+  const plainFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    if (opts?.method === 'DELETE') throw new TypeError('fetch failed');
+    return plainFetch(url, opts);
+  };
+  let g;
+  try {
+    g = await sync.pairWithCode(gid, inv4.code);
+  } finally {
+    globalThis.fetch = plainFetch;
+  }
+  assert.equal(g.sync.status, 'synced', '23g: pairs although the DELETE failed');
+  assert.ok(srv.tokens.some((t) => t.token === inv4.token), '23g: the invite is still there');
+  assert.equal(store.getSyncConfig(gid).retire, hash4, '23g: and owed');
+  assert.equal(JSON.parse(Buffer.from(g.code.slice(14), 'base64url').toString()).retire, undefined,
+    '23g: the debt stays out of the code');
+  assert.equal((await sync.syncNow(gid)).status, 'synced', '23g: the next sync');
+  assert.equal(srv.tokens.some((t) => t.token === inv4.token), false, '23g: retires it');
+  assert.equal('retire' in store.getSyncConfig(gid), false, '23g: and the debt is paid');
+  store.saveSyncConfig(gid, { ...store.getSyncConfig(gid), retire: 'e'.repeat(64) });
+  await sync.syncNow(gid);
+  assert.equal('retire' in store.getSyncConfig(gid), false, '23g: one already revoked (404) is paid too');
+
+  // h) a server that lists tokens but records no sightings cannot tell a
+  // fresh invite from a used one: the code's token is adopted, never retired
+  // — a device of an older build may hold it already
+  srv.sightings = false;
+  srv.tokens.forEach((t) => { delete t.lastSeenAt; });
+  const inv5 = await invite('laptop');
+  fresh('R');
+  srv.log.length = 0;
+  const h = await sync.pairWithCode(gid, inv5.code);
+  assert.equal(h.sync.status, 'synced', '23h: pairs');
+  assert.equal(store.getSyncConfig(gid).token, inv5.token, '23h: on the code\'s token');
+  assert.equal(srv.log.some((r) => r.method === 'POST' || r.method === 'DELETE'), false,
+    '23h: minting and retiring nothing');
+  assert.ok(srv.tokens.some((t) => t.token === inv5.token), '23h: the invite stays');
+
+  await assert.rejects(() => sync.pairWithCode(gid, OWN, { mode: 'twice' }), /bad-mode/,
+    '23: an unknown mode is refused');
   sync.initAmbientSync({ editDebounceMs: 0 });
 }
 

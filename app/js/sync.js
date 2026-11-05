@@ -16,7 +16,7 @@
 // the gym's registry entry travels next to it as `gymEntry`.
 
 import {
-  getGyms, setActiveGym, createGym, restoreGymEntry,
+  getGyms, setActiveGym, createGym, deleteGym, restoreGymEntry, clearGymData,
   getLayout, restoreLayout,
   getWorkouts, saveWorkouts,
   getPlans, savePlans,
@@ -184,7 +184,7 @@ function parseSyncCode(code) {
     throw new Error('bad-code');
   }
   const {
-    server, token, pass, gymId, plain,
+    server, token, pass, gymId, plain, invite,
   } = data ?? {};
   // The mode rides in the code: a plain code carries no passphrase — there
   // is deliberately no key material that could later pretend to be E2E.
@@ -195,7 +195,16 @@ function parseSyncCode(code) {
     pass: pass ? String(pass) : null,
     gymId: String(gymId),
     plain: plain === true,
+    invite: invite === true,
   };
+}
+
+// What a code says about itself, for the card to show BEFORE anything
+// happens (which server it joins) — never its token or its passphrase.
+// Throws 'bad-code' exactly where pairWithCode would.
+export function describeSyncCode(code) {
+  const { server, plain, invite } = parseSyncCode(code);
+  return { server, plain, invite };
 }
 
 // --- talking to the server ---
@@ -573,6 +582,7 @@ export async function syncNow(gid) {
       rev, lastSyncAt: Date.now(), lastError: null, ...(editGen(gid) === gen ? { dirty: false } : {}),
     });
     notifySyncActivity();
+    await retireInvite(gid); // after the card heard: it shows nothing of it
     return { status: 'synced' };
   } catch (e) {
     const status = e instanceof SyncFail ? e.status : 'error';
@@ -630,27 +640,167 @@ export async function enableSync(gid, { server, token, plain } = {}) {
   return { code: getSyncCode(gid), sync: await syncNow(gid) };
 }
 
+// An invite's token was minted for whoever redeems the code
+// (sync-protocol.md § Invite codes), so the browser trades it for a token
+// of its own and retires it — the code still on the other screen (a QR, a
+// terminal's scrollback) is dead once it paired. This is the FIRST request
+// with that token: the server records a sighting only after answering, so
+// a `lastSeenAt` on its own entry means someone used the code before. Then
+// that device keeps it — this one mints alongside and says so, never
+// cutting the other off. A sighting THIS page caused (an earlier try that
+// failed further on) is no other device: `askedInvites` remembers the
+// invites asked about here. (A reload forgets them; the retry then mints
+// alongside and says so — the cautious side.) A server without the token
+// API, one that does not track sightings (no `lastSeenAt` on ANY token —
+// the inviting device's own is always seen), or an answer this cannot
+// read leaves the old way: adopt the code's token as it is. Only a
+// refusal is final.
+const askedInvites = new Set();
+
+async function inviteEntry(server, token) {
+  try {
+    const res = await tokenApi({ server, token }, 'GET', '/v1/tokens');
+    if (!res.ok) return null;
+    const list = await res.json();
+    if (!Array.isArray(list) || !list.some((d) => d?.lastSeenAt)) return null;
+    const entry = list.find((d) => d?.self === true);
+    if (!entry?.hash) return null;
+    const seen = !!entry.lastSeenAt && !askedInvites.has(entry.hash);
+    askedInvites.add(entry.hash);
+    return { ...entry, seen };
+  } catch (e) {
+    if (e instanceof SyncFail && e.status === 'auth') throw new Error('code-used');
+    return null; // offline, or a body that is no list: adopt
+  }
+}
+
+async function mintOwnToken(server, token, entry) {
+  const shared = entry.seen;
+  const base = String(entry.name ?? '').trim() || 'Paired device';
+  const name = (shared ? `${base} (another device)` : base).slice(0, 64);
+  try {
+    const res = await tokenApi({ server, token }, 'POST', '/v1/tokens', { name });
+    if (res.status !== 201) return null;
+    const minted = await res.json();
+    if (!minted?.token) return null;
+    return { token: String(minted.token), retire: shared ? null : entry.hash, shared };
+  } catch (e) {
+    if (e instanceof SyncFail && e.status === 'auth') throw new Error('code-used');
+    return null;
+  }
+}
+
+// "Replace" hands this gym to the server's copy, so that copy has to be
+// there and readable BEFORE a single local record goes.
+async function probeBlob(cfg, gymId, pass, plain) {
+  let got;
+  try {
+    got = await pull(cfg, gymId, 0);
+  } catch (e) {
+    if (e instanceof SyncFail && e.status === 'auth') throw new Error('code-used');
+    if (e instanceof SyncFail && e.status === 'offline') throw new Error('offline');
+    throw e;
+  }
+  if (got.kind !== 'blob') throw new Error('gone');
+  if (plain !== !!got.envelope.plain) throw new Error('mode-mismatch');
+  if (plain) return;
+  try {
+    await decryptEnvelope(got.envelope, pass);
+  } catch {
+    throw new Error('decrypt');
+  }
+}
+
+// The invite a redeemed pairing still owes the server (`cfg.retire`, its
+// hash): retired after a sync that worked — this device's own token is in
+// place by then — and tried again after every later one until the server
+// says it is gone. Two tokens under one name in the Devices list would
+// otherwise invite revoking the wrong one. Never throws: the sync it
+// follows already succeeded.
+async function retireInvite(gid) {
+  const cfg = getSyncConfig(gid);
+  if (!cfg?.retire) return;
+  try {
+    const res = await tokenApi(cfg, 'DELETE', `/v1/tokens/${encodeURIComponent(cfg.retire)}`);
+    // 404: already gone; 409 can never succeed (it would be the last token)
+    if (!(res.ok || res.status === 404 || res.status === 409)) return;
+    const now = getSyncConfig(gid);
+    if (now?.retire === cfg.retire) {
+      const { retire: _done, ...rest } = now;
+      saveSyncConfig(gid, rest);
+    }
+  } catch { /* offline, or refused: the next sync tries again */ }
+}
+
+export const PAIR_MODES = ['merge', 'separate', 'replace'];
+
 // Second device: the code carries server, token, passphrase and the blob's
 // gymId; the salt arrives with the first blob. The local gym keeps its own
 // id — `remoteId` maps it onto the blob, so pairing binds whichever gym the
 // user picked to the shared one. Discovering a fresh device's other gyms
 // via GET /v1/gyms is M3.
-export async function pairWithCode(gid, code) {
+// `mode` says what becomes of the records this gym already holds:
+// - 'merge' (the default): both sides become one history (merge.js);
+// - 'separate': the synced gym arrives as ONE MORE gym, active from here,
+//   and this one stays exactly as it was, unsynced;
+// - 'replace': this gym gives up its own records — no tombstones, so the
+//   server's copy loses nothing — and holds what the server has. The card
+//   downloads a backup first; this only refuses where the copy is missing
+//   or unreadable, before anything local changes.
+// → { gid (the gym that syncs now), code, sync, shared? } — `shared`: the
+// invite had been used before, and its token stays with that device.
+export async function pairWithCode(gid, code, { mode = 'merge' } = {}) {
   const gym = getGyms().list.find((g) => g.id === gid);
   if (!gym) throw new Error('unknown-gym');
   if (gym.demo) throw new Error('demo-gym');
+  if (!PAIR_MODES.includes(mode)) throw new Error('bad-mode');
   const {
-    server, token, pass, gymId, plain,
+    server, token: codeToken, pass, gymId, plain, invite,
   } = parseSyncCode(code);
   // The mode was decided when the blob was first enabled and travels in the
   // code: a plain code pairs plain even on a secure page (the blob IS
   // readable — pretending otherwise here would be theater), and an E2E code
   // cannot pair where the browser refuses crypto.
   if (!plain && !e2eAvailable()) throw new Error('no-crypto');
-  const before = { cfg: getSyncConfig(gid), key: getSyncKey(gid) };
+  const entry = invite ? await inviteEntry(server, codeToken) : null;
+  if (mode === 'replace') await probeBlob({ server, token: codeToken }, gymId, pass, plain);
+  const own = entry ? await mintOwnToken(server, codeToken, entry) : null;
+  const token = own?.token ?? codeToken;
+
+  let target = gid;
+  let undo = () => {};
+  if (mode === 'separate') {
+    // the placeholder name lasts one sync — epoch 0, so the blob's wins
+    // (the same re-stamp as adoptRemoteGym)
+    target = createGym('Synced gym');
+    restoreGymEntry({ id: target, name: 'Synced gym', updatedAt: 0 });
+    undo = () => {
+      deleteGym(target);
+      setActiveGym(gid);
+    };
+  } else if (mode === 'replace') {
+    const kept = withGym(gid, () => ({
+      layout: getLayout(), workouts: getWorkouts(), plans: getPlans(), tombstones: getTombstones(),
+    }));
+    clearGymData(gid);
+    // the server's name wins too: this gym takes on the synced one whole
+    restoreGymEntry({ ...gym, updatedAt: 0 });
+    undo = () => withGym(gid, () => {
+      if (kept.layout) restoreLayout(kept.layout);
+      saveWorkouts(kept.workouts);
+      savePlans(kept.plans);
+      saveTombstones(kept.tombstones);
+      restoreGymEntry(gym);
+    });
+  }
+
+  const before = { cfg: getSyncConfig(target), key: getSyncKey(target) };
+  // `retire`: the invite this device's own token replaces — syncNow
+  // retires it after the first sync that works, and keeps trying
+  const retire = own?.retire ? { retire: own.retire } : {};
   if (plain) {
-    saveSyncKey(gid, null);
-    saveSyncConfig(gid, {
+    saveSyncKey(target, null);
+    saveSyncConfig(target, {
       v: 1,
       server,
       token,
@@ -659,24 +809,26 @@ export async function pairWithCode(gid, code) {
       rev: 0,
       lastSyncAt: null,
       lastError: null,
+      ...retire,
     });
   } else {
-    saveSyncKey(gid, { v: 1, pass, salt: null });
-    saveSyncConfig(gid, {
-      v: 1, server, token, remoteId: gymId, rev: 0, lastSyncAt: null, lastError: null,
+    saveSyncKey(target, { v: 1, pass, salt: null });
+    saveSyncConfig(target, {
+      v: 1, server, token, remoteId: gymId, rev: 0, lastSyncAt: null, lastError: null, ...retire,
     });
   }
-  const sync = await syncNow(gid);
+  const sync = await syncNow(target);
   // A refused token is a dead code — most often an invite another device
   // already redeemed, whose token that device then retired. Keep nothing of
   // it: a config holding a dead token would read as "paired" while every
   // sync fails, so the gym goes back to exactly what it was.
   if (sync.status === 'auth') {
-    saveSyncConfig(gid, before.cfg);
-    saveSyncKey(gid, before.key);
+    saveSyncConfig(target, before.cfg);
+    saveSyncKey(target, before.key);
+    undo();
     throw new Error('code-used');
   }
-  return { code: getSyncCode(gid), sync };
+  return { gid: target, code: getSyncCode(target), sync, ...(own?.shared ? { shared: true } : {}) };
 }
 
 // Turning sync off drops the credentials, never the data.
