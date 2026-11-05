@@ -193,7 +193,11 @@ export function download(filename, data) {
   a.href = URL.createObjectURL(blob);
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(a.href);
+  // WebKit (iOS) reads the file AFTER click() returns — revoked at once, the
+  // download can fail. A minute is plenty; unref (Node only — a browser
+  // timer id is a number) keeps a test run from waiting for it
+  const url = a.href;
+  setTimeout(() => URL.revokeObjectURL(url), 60_000).unref?.();
 }
 
 export const fmtDate = (ts) =>

@@ -242,6 +242,145 @@ assert.equal(pairBtn.disabled, false, 'the button is usable again after the fail
 assert.equal(store.getSyncConfig(realId), null, 'a bad code configures nothing');
 assert.ok(!root.innerHTML.includes('class="synccode"'), 'and mints no key');
 
+// --- pairing a gym that already holds records: it asks first ---
+// (merge / keep separate / replace — pairWithCode's `mode`; the logic is
+// test/sync.test.mjs § 23, this is the card's half.) The code is a plain
+// one by hand: the fake has no blob yet, so a merge pushes the first.
+{
+  const plainCode = `gymii-sync:v1:${Buffer.from(JSON.stringify({
+    server: 'https://sync.example.org', token: 'tok-ui', gymId: 'g-ui', plain: true,
+  })).toString('base64url')}`;
+  const homeName = store.getGyms().list.find((g) => g.id === realId).name;
+  const unpair = (id) => {
+    store.saveSyncConfig(id, null);
+    store.saveSyncKey(id, null);
+  };
+  const resetServer = () => { server.blob = null; server.revision = 0; };
+  renderSettings(root);
+  assert.match(root.innerHTML, /already holds 1 workout and 1 machine/,
+    'the choice names what this gym holds');
+  assert.match(root.innerHTML, /id="sync-pair-choice" class="field-block" hidden/,
+    'and stays folded until Pair is tapped');
+  const choice = root.querySelector('#sync-pair-choice');
+  choice.hidden = true;
+  root.querySelector('#sync-code').value = plainCode;
+  await root.querySelector('#sync-pair').listeners.click();
+  assert.equal(choice.hidden, false, 'Pair unfolds the choice');
+  assert.equal(root.querySelector('#sync-pair-server').textContent,
+    'This code joins a gym on https://sync.example.org — unencrypted.', 'naming the server first');
+  assert.equal(store.getSyncConfig(realId), null, 'nothing is paired yet');
+  assert.equal(server.revision, 0, 'and nothing sent');
+
+  // replace: the first tap only arms, and arms without a re-render
+  const replaceBtn = root.querySelector('#sync-pair-replace');
+  const before = root.innerHTML;
+  assert.equal(replaceBtn.listeners.click(), null, 'one tap does not pair');
+  assert.ok(replaceBtn.classList.contains('armed'), 'it arms');
+  assert.equal(root.innerHTML, before, 'with the armed node still on screen');
+  assert.equal(store.getSyncConfig(realId), null, 'still nothing paired');
+
+  // a refusal answers IN the open choice (the status line is scrolled
+  // away), and every way into pairing is usable again
+  const choiceButtons = ['#sync-pair', '#sync-pair-merge', '#sync-pair-separate', '#sync-pair-replace']
+    .map((sel) => root.querySelector(sel));
+  globalThis.document = { createElement: () => ({ click() {} }) };
+  try {
+    root.querySelector('#sync-msg').textContent = '';
+    await replaceBtn.listeners.click(); // armed: the copy is not there yet
+  } finally {
+    delete globalThis.document;
+  }
+  assert.equal(root.querySelector('#sync-pair-msg').textContent, 'That gym is no longer on the server.',
+    'a refused replace says why, next to the buttons');
+  assert.equal(root.querySelector('#sync-msg').textContent, '', 'not in the line above');
+  assert.deepEqual(choiceButtons.map((b) => b.disabled), [false, false, false, false],
+    'and unlocks every button');
+  replaceBtn.classList.remove('armed');
+
+  // merge — while it runs, no other way into pairing takes a tap
+  const merging = root.querySelector('#sync-pair-merge').listeners.click();
+  assert.deepEqual(choiceButtons.map((b) => b.disabled), [true, true, true, true],
+    'a pairing in flight locks all four buttons');
+  await merging;
+  assert.equal(root.querySelector('#sync-msg').textContent, 'Paired. Synced.', 'merge pairs');
+  assert.equal(store.getSyncConfig(realId).remoteId, 'g-ui', 'onto the code\'s gym');
+  assert.equal(server.revision, 1, 'and pushed the merged gym');
+  unpair(realId); // the blob stays: the two pairings below read it
+
+  // keep separate: the synced gym is the active one afterwards
+  renderSettings(root);
+  root.querySelector('#sync-code').value = plainCode;
+  await root.querySelector('#sync-pair-separate').listeners.click();
+  const sepId = store.getGyms().activeId;
+  assert.notEqual(sepId, realId, 'separate pairs a new gym, now active');
+  assert.equal(root.querySelector('#sync-msg').textContent,
+    `Paired as a new gym — "${homeName}" stays as it was, unsynced. Synced.`);
+  assert.equal(store.getSyncConfig(realId), null, 'the old gym stays unsynced');
+  assert.ok(store.getWorkouts().some((w) => w.id === 'w1'), 'the new gym holds the synced history');
+  unpair(sepId);
+  store.deleteGym(sepId);
+  store.setActiveGym(realId);
+
+  // replace, second tap: the backup downloads BEFORE anything is asked of
+  // the server, and the server's copy (the merge's) is what stays
+  const downloads = [];
+  globalThis.document = { createElement: () => ({ click() { downloads.push(this.download); } }) };
+  try {
+    store.saveWorkouts([...store.getWorkouts(), {
+      id: 'w-local', startedAt: 5000, finishedAt: 6000, entries: [],
+    }]);
+    renderSettings(root);
+    root.querySelector('#sync-code').value = plainCode;
+    const btn = root.querySelector('#sync-pair-replace');
+    btn.classList.add('armed');
+    await btn.listeners.click();
+    assert.deepEqual(downloads, ['gymii-backup.json'], 'replace downloads a backup first');
+    assert.match(root.querySelector('#sync-msg').textContent,
+      /^Paired — this gym now holds the synced data; the backup downloaded first\. Synced\.$/);
+    assert.equal(store.getWorkouts().some((w) => w.id === 'w-local'), false,
+      'and the local-only workout is gone');
+    assert.ok(store.getWorkouts().some((w) => w.id === 'w1'), 'the server\'s copy is what stays');
+
+    // the copy was there, then the server went quiet: paired, but the
+    // message must not claim the synced data arrived
+    unpair(realId);
+    const held = { layout: store.getLayout(), workouts: store.getWorkouts(), plans: store.getPlans() };
+    store.saveWorkouts([...store.getWorkouts(), {
+      id: 'w-local2', startedAt: 7000, finishedAt: 8000, entries: [],
+    }]);
+    renderSettings(root);
+    root.querySelector('#sync-code').value = plainCode;
+    const realFetch = globalThis.fetch;
+    let gets = 0;
+    globalThis.fetch = async (url, opts = {}) => {
+      if ((opts.method ?? 'GET') === 'GET' && url.includes('/v1/gyms/') && ++gets > 1) {
+        throw new TypeError('fetch failed'); // the probe got through, the sync does not
+      }
+      return realFetch(url, opts);
+    };
+    try {
+      btn.classList.add('armed');
+      await btn.listeners.click();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    assert.match(root.querySelector('#sync-msg').textContent,
+      /^Paired — this gym's own records are cleared \(the backup downloaded first\); the synced data arrives with the next sync that works\. Offline/,
+      'replace, then offline: the message says what is true');
+    assert.equal(store.getWorkouts().length, 0, 'the gym waits empty for its copy');
+    assert.ok(store.getSyncConfig(realId), 'paired all the same');
+    // what the rest of this file reads: back to the gym before this case
+    if (held.layout) store.restoreLayout(held.layout);
+    store.saveWorkouts(held.workouts);
+    store.savePlans(held.plans);
+  } finally {
+    delete globalThis.document;
+  }
+  unpair(realId);
+  resetServer();
+  renderSettings(root);
+}
+
 // --- turning sync on: the code is shown, exactly once ---
 
 root.querySelector('#sync-server').value = 'https://sync.example.org';

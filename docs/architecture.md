@@ -439,11 +439,45 @@ never cuts the others, and the server refuses the last token (409 →
 `last-token`). `self` in `listDevices` is server-computed, and its
 `lastSeenAt`/`kind` pass through untouched. A minted pairing code carries
 `invite: true`; `getSyncCode` (this device's OWN token) never does — a
-redeemer like gymii-cli revokes an invite token once its own works, so a
-flag on an own code would cut a live device off (test-pinned). So a code
-can be dead when it arrives: `pairWithCode` keeps nothing when its first
-sync answers `auth` — config and key go back to what they were and it
-throws `code-used`, never a "paired" gym on a dead token. The Sync
+redeemer retires an invite token once its own works, so a flag on an own
+code would cut a live device off (test-pinned). The browser is such a
+redeemer (since `2026-11-05c`, like gymii-cli): on an invite
+`pairWithCode`'s FIRST request is `GET /v1/tokens` — the server records a
+sighting only after answering, so `self.lastSeenAt` there means someone
+used the code before — then it mints its own token under the invite's
+name, syncs with it and retires the invite, so a code left on a screen or
+in a terminal's scrollback is dead once it paired. A seen invite is
+shared, never cut: the browser mints alongside ("… (another device)"),
+leaves the invite alone and answers `shared: true` for the card to say
+so. A sighting this page caused itself (a try that failed further on, e.g.
+Replace refused) is no second device: the module's `askedInvites` set
+remembers the invites asked about here, so the retry still retires (a
+reload forgets — then it mints alongside, the cautious side). The retire
+is a debt in the config (`cfg.retire`, the invite's hash, never in a
+code): `syncNow` pays it after every sync that works until the server
+answers 2xx, 404 or 409, so an offline moment right after pairing leaves
+no second token under the same name for good. A server without the token
+API, one that records no sightings (no `lastSeenAt` on ANY token — the
+inviting device's own is always seen; there a used invite cannot be told
+from a fresh one, and an older-build device may hold it), or an answer it
+cannot read falls back to adopting the code's token as before — only a
+refusal is final.
+So a code can be dead when it arrives: `pairWithCode` keeps nothing when
+its first sync answers `auth` — config and key go back to what they were
+and it throws `code-used`, never a "paired" gym on a dead token.
+`pairWithCode(gid, code, { mode })` also says what becomes of the records
+the gym already holds (`PAIR_MODES`; the card asks only when there are
+any): `merge`, the default, is the union; `separate` pairs a NEW gym
+(epoch-0 placeholder entry as in adoption, active afterwards) and leaves
+the old one untouched and unsynced; `replace` probes the blob first
+(missing → `gone`, unreadable → `decrypt`, unreachable → `offline` — and
+nothing local touched), then empties the gym through store's
+`clearGymData` — NO tombstones, so the server loses nothing, and pending
+local ones go with the rest; the workout in progress stays — and
+re-stamps its entry to epoch 0 so the server's name wins. A refusal after
+that puts the records back (`separate`: the new gym goes again). Every
+mode answers `gid`, the gym that syncs now. `describeSyncCode` reads a
+code's server and mode for the card without its token or passphrase. The Sync
 card's backup hint (settings.js `backupHint`) reads that list at most
 once per 10 min per gym, cached in module state so re-renders neither
 refetch nor drop it; only `kind:"backup"` ever triggers it. Both writers
@@ -874,6 +908,31 @@ scanned link. Another QR keeps it looking, with a hint; the camera's
 refusals (`NotAllowedError`, `NotReadableError`, anything else = no
 camera) are messages that fold the panel. smoke/scan.spec.mjs stands a
 `canvas.captureStream()` in for the camera.
+
+Pairing a gym that already holds records asks first (`heldRecords()`:
+workouts, plans, machines). Pair checks the code (`describeSyncCode`, a bad
+one is a message at once), then unfolds `#sync-pair-choice` — rendered
+hidden, only for such a gym — with the server it joins written INTO the
+choice (the status line sits above the field, out of view once the choice
+is) and nothing sent yet. "Merge both" leads as the primary button; "Keep
+separate" pairs a new gym and leaves this one as it is; "Replace this
+gym's data" is `btn-danger` behind the two-tap (its first tap re-renders
+nothing) and downloads a full backup (`exportBackup`) before
+`pairWithCode` runs (ui.js `download()` revokes its object URL a minute
+later, not at once: WebKit reads the file after `click()` returns). While a
+pairing runs, all four buttons (Pair and the three choices) are disabled —
+one code, one mode. With the choice open, progress and refusals go to its
+own `#sync-pair-msg` under the buttons; the result after success goes to
+the re-rendered card's status line. Paired but not synced (offline after
+Replace's probe) says the synced data is still on its way, never that it
+arrived. Records that appear after the card rendered (another tab) leave
+no choice to unfold: Pair re-renders, gives the code back to the field
+and unfolds then. An empty gym pairs on Pair, as before. A code that
+had been used (`shared`) says so in the result line and points to Devices.
+"Turn off sync" says the token stays valid on the server: retire it from
+another device. Turning sync off revokes nothing by itself — the token may
+be shared (M1, or an own code re-used on a second device), and a copy of
+this device's code kept as the "only key" must not die with it.
 
 ## `app/js/train.js`
 

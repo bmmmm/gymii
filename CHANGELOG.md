@@ -7,6 +7,26 @@ holds open work only.
 
 ## 2026-11-05
 
+Shipped 2026-11-05 (`2026-11-05c`): pairing, the second time round. A gym
+that already holds workouts, plans or machines now asks on Pair what
+becomes of them — "Merge both" (as before), "Keep separate" (the synced
+gym arrives as a new gym, this one stays as it is, unsynced) or "Replace
+this gym's data" (two taps; a full backup downloads first, then the gym
+holds what the server has — without a single tombstone, so the server
+loses nothing). A gym with nothing in it pairs right away, as it did. An
+invite code ("Pair another device", `gymii-cli invite`) is now traded for
+the phone's own token and retired once that works, so a code left on a
+screen or in a terminal is dead after it paired; a code someone had used
+before keeps working for them, and this device says so and gets a token of
+its own — a retry after a failed first try is no "someone else", and an
+invite the phone could not retire at once (offline) goes with its next
+sync. On a server that records no sightings the code's token is adopted as
+before. The pairing buttons lock while one runs, a refusal shows right
+under them, a Replace that went offline after its check says the data is
+still on its way, and the backup download keeps its file alive long
+enough for iOS to save it. "Turn off sync" now says the token stays valid
+on the server.
+
 Shipped 2026-11-05 (`2026-11-05b`): a pairing QR can be scanned inside
 gymii itself — Settings → Sync → "Scan QR code" — so the Home Screen app
 on an iPhone pairs directly, from another device's QR or from the one

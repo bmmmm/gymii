@@ -56,14 +56,20 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   gymii from the Home Screen → Settings → Sync → paste → Pair works there.
   The card keys on `navigator.standalone === false` — record whether a
   Safari tab really reports `false` (Chromium only fakes it).
-- [ ] **Scan in-app on a real iPhone, inside the Home Screen app** —
-  Settings → Sync → "Scan QR code", pointed at `gymii-cli invite` in a
-  terminal and at another device's QR. *Expect:* one camera prompt, the
-  rear camera inline in the card (not fullscreen), the field filled
-  within a second or two, the camera light off right after, and off too
-  on Cancel, on a tab switch and on leaving the app. The decoder only
-  ever met synthetic frames and Chromium's canvas camera; record
-  distance and terminal (font, line spacing) where it struggles.
+- [ ] **Scan in-app on a real iPhone: the camera's way out** — scanning
+  `gymii-cli invite` in a terminal and pairing from it inside the Home
+  Screen app works (confirmed 2026-11-05). Still open: *Expect* the
+  camera light off right after a scan, and off too on Cancel, on a tab
+  switch and on leaving the app; a second device's QR reads as well as
+  the terminal's. Record distance and terminal (font, line spacing) where
+  it struggles — the decoder otherwise only met synthetic frames.
+- [ ] **Pair → "Replace this gym's data" inside the Home Screen app** —
+  the backup downloads before anything is replaced. *Expect:* iOS offers
+  the file (save/share sheet) and the pairing goes on after it; record
+  what a standalone web app does with the download, since that is the
+  only copy of what Replace gives up. Afterwards Devices on the other
+  device lists the phone under the invite's name, and the invite's own
+  entry is gone.
 - [ ] **Weight tapped, then Log set at once.** On the log screen tap the
   weight field and immediately tap "✓ Log set". *Expect:* the value the
   field showed is logged, not 0.
