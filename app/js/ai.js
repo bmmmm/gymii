@@ -10,7 +10,7 @@ import { planFromImport } from './plantext.js';
 import { openPlanBuilder } from './train.js';
 import { twoTapConfirm, plural, dateValue } from './ui.js';
 
-export const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps]; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; for entries marked assisted:true (a counterweight machine like an assisted pull-up) the weight is the ASSISTANCE — less is stronger, 0 = unassisted — and the machine's "assistGoal", when present, says whether I train there for less assistance ("strength") or more reps at the same assistance ("endurance"); an "exercise" field names one movement at a multi-exercise machine like a free-weight area; a machine's "secondaryMuscles" are worked less than its "muscles" (count a set as half for them); a "grip" field names the attachment or grip it was done with (a rope and a V-bar on one cable tower are separate progressions — never mix their numbers); a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis, and null there means the set has no timestamp; a fourth element, when present, is RIR, reps in reserve, 0–3, 3 = three or more; absent = not rated — except on cardio entries, where the fourth element is the level, the machine's resistance step (a whole number from 1; absent = none logged), so a cardio set reads [distance, seconds, seconds-offset or null, level]). A workout's "visits", when present, is the route I walked: [num, seconds in, seconds out] per machine, in order, seconds since the workout started; a fourth element is the num of a machine I skipped because it was busy.
+export const DEFAULT_PROMPT = `You are my strength training coach. Below is my gym setup and my full workout log as JSON (sets are [weight, reps], where null in either place means it was not recorded — a set logged as just the weight has no reps; entries marked cardio:true use [distance, seconds] instead, distance in the unit given; for entries marked bodyweight:true the weight is ADDED weight on top of bodyweight, 0 = bodyweight only; for entries marked assisted:true (a counterweight machine like an assisted pull-up) the weight is the ASSISTANCE — less is stronger, 0 = unassisted — and the machine's "assistGoal", when present, says whether I train there for less assistance ("strength") or more reps at the same assistance ("endurance"); an "exercise" field names one movement at a multi-exercise machine like a free-weight area; a machine's "secondaryMuscles" are worked less than its "muscles" (count a set as half for them); a "grip" field names the attachment or grip it was done with (a rope and a V-bar on one cable tower are separate progressions — never mix their numbers); a third tuple element, when present, is seconds since the workout started — sets without it predate timing and are excluded from time analysis, and null there means the set has no timestamp; a fourth element, when present, is RIR, reps in reserve, 0–3, 3 = three or more; absent = not rated — except on cardio entries, where the fourth element is the level, the machine's resistance step (a whole number from 1; absent = none logged), so a cardio set reads [distance, seconds, seconds-offset or null, level]). A workout's "visits", when present, is the route I walked: [num, seconds in, seconds out] per machine, in order, seconds since the workout started; a fourth element is the num of a machine I skipped because it was busy.
 
 Analyze my progress: trends per machine, plateaus, and muscle-group imbalances. Then suggest concrete targets for my next workout — weight × reps per machine — and one or two practical tips.
 
@@ -198,7 +198,8 @@ export function buildAiExport() {
     kind: 'ai-export',
     unit: settings.unit,
     note: `every num is the machine's current num in gym.machines (a machine deleted since keeps ` +
-      `the num it was logged under); sets are [weight, reps]; entries with cardio:true use [distance, seconds], distance in ${
+      `the num it was logged under); sets are [weight, reps] (null = not recorded: a set logged as ` +
+      `just the weight has no reps); entries with cardio:true use [distance, seconds], distance in ${
       distUnit(settings)}; bodyweight:true entries log ADDED weight (0 = bodyweight only); ` +
       'assisted:true entries log the ASSISTANCE (less = stronger, 0 = unassisted); ' +
       'a third element, when present, is seconds since the workout started (sets logged before ' +
@@ -270,7 +271,11 @@ export function buildAiExport() {
             // set's level — one slot serves both, since a cardio set is
             // never rated; null holds the third slot when the set has no `at`
             sets: e.sets.map((st) => {
-              const base = e.cardio ? [st.distance, st.seconds] : [st.weight, st.reps];
+              // reps are optional (Minimal mode logs the weight alone) and a
+              // Minimal bodyweight set may carry no added weight: a missing
+              // value is null in its place, which the prompt and the note
+              // read as "not recorded" — never a guessed 0
+              const base = e.cardio ? [st.distance, st.seconds] : [st.weight ?? null, st.reps ?? null];
               const fourth = e.cardio ? (st.level >= 1 ? st.level : null)
                 : st.rir != null ? st.rir : null;
               if (st.at == null && fourth == null) return base;

@@ -553,6 +553,38 @@ list().listeners.click(clickOn('.edit-save'));
 assert.equal(store.getWorkouts().find((w) => w.id === 'wdec').entries[0].sets[0].weight, 12.5, 'and Save stores 12.5');
 assert.equal(store.getWorkouts().find((w) => w.id === 'wdec').entries[0].sets[0].reps, 12, 'and the reps it showed');
 
+// --- reps are optional (Minimal mode logs the weight alone) ---
+store.saveWorkouts([...store.getWorkouts(), {
+  id: 'wbare', startedAt: Date.UTC(2026, 7, 12, 10), finishedAt: Date.UTC(2026, 7, 12, 11),
+  entries: [entry('mbare', 9, 'Hip thrust', [{ weight: 60, at: Date.UTC(2026, 7, 12, 10, 5) }, { weight: 60 }]),
+    { ...entry('mbw', 10, 'Dip bar', [{ reps: 12 }]), bodyweight: true }],
+}]);
+render();
+assert.ok(list().innerHTML.includes('Hip thrust') && list().innerHTML.includes('60, 60'),
+  'the list shows the workout, its sets as "60, 60"');
+assert.ok(!list().innerHTML.includes('undefined'), 'the list reads a weight-only set without "undefined"');
+list().listeners.click(clickOn('.edit-w', { wid: 'wbare' }));
+{
+  const html = list().innerHTML;
+  assert.ok(!html.includes('undefined'), 'the editor shows no "undefined" either');
+  assert.ok(/class="edit-reps" data-ei="0" data-si="0"\s+value="" aria-label="Reps"/.test(html),
+    'a set without reps: an empty reps field');
+  assert.ok(/class="edit-weight"\s+data-ei="1" data-si="0" value=""/.test(html), 'a bodyweight set without a weight: an empty one');
+  const change = (cls, ei, si, value) => {
+    const target = { value, dataset: { ei: String(ei), si: String(si) }, classList: { contains: (c) => c === cls }, closest: () => null };
+    list().listeners.change({ target });
+    return target.value;
+  };
+  assert.equal(change('edit-reps', 0, 0, ''), '', 'left empty, it stays empty');
+  assert.equal(change('edit-reps', 0, 1, '8'), 8, 'filled, it sets the reps');
+  assert.equal(change('edit-weight', 1, 0, ''), '', 'an empty weight writes nothing either');
+  list().listeners.click(clickOn('.edit-save'));
+  const saved = store.getWorkouts().find((w) => w.id === 'wbare');
+  assert.deepEqual(saved.entries[0].sets, [{ weight: 60, at: Date.UTC(2026, 7, 12, 10, 5) }, { weight: 60, reps: 8 }],
+    'Save keeps the untouched set rep-less and gives the filled one its reps');
+  assert.deepEqual(saved.entries[1].sets, [{ reps: 12 }], 'and the bodyweight set weight-less — absent, never 0');
+}
+
 // --- machine chips: the first eight, "+N more", the shown one always ---
 // ten machines, trained one per day: x0 oldest … x9 newest
 store.saveWorkouts(Array.from({ length: 10 }, (_, i) => ({

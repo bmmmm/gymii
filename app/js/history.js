@@ -947,16 +947,22 @@ function wireWorkoutList(root, list, items, s, layout, { readOnly = false } = {}
     if (!editDraft) return;
     const t = e.target;
     if (t.classList.contains('edit-weight')) {
-      // a decimal text field: "12,5" is 12.5 (type=number turned it into 125)
+      // a decimal text field: "12,5" is 12.5 (type=number turned it into
+      // 125). Unreadable keeps what the set had — and a set that had no
+      // weight (a Minimal-mode bodyweight set) keeps having none
       const st = editDraft.entries[+t.dataset.ei].sets[+t.dataset.si];
-      st.weight = Math.max(0, parseDistance(fieldValue(t), false) ?? st.weight ?? 0);
-      t.value = st.weight;
+      const v = parseDistance(fieldValue(t), false);
+      if (v != null) st.weight = Math.max(0, v);
+      t.value = st.weight ?? '';
     } else if (t.classList.contains('edit-reps')) {
       // fieldValue, like the weight: an armed field left empty still means
-      // the value it shows greyed out
-      const v = Math.max(1, Math.round(parseFloat(fieldValue(t)) || 1));
-      t.value = v;
-      editDraft.entries[+t.dataset.ei].sets[+t.dataset.si].reps = v;
+      // the value it shows greyed out. Reps are optional (Minimal mode logs
+      // the weight alone): a field left empty writes nothing, a filled one
+      // sets them
+      const st = editDraft.entries[+t.dataset.ei].sets[+t.dataset.si];
+      const v = Math.round(parseFloat(fieldValue(t)));
+      if (Number.isFinite(v)) st.reps = Math.max(1, v);
+      t.value = st.reps ?? '';
     } else if (t.classList.contains('edit-distance')) {
       const st = editDraft.entries[+t.dataset.ei].sets[+t.dataset.si];
       st.distance = parseDistance(t.value, getSettings().unit === 'kg') ?? st.distance;
@@ -1132,10 +1138,10 @@ function editWorkoutHtml(w, s, layout, gripMsg = null) {
               <input type="number" inputmode="numeric" class="edit-level" data-ei="${ei}" data-si="${si}"
                 value="${st.level >= 1 ? esc(st.level) : ''}" aria-label="Level">` : `
               ${e.bodyweight ? 'BW+' : e.assisted ? '−' : ''}<input type="text" inputmode="decimal" autocomplete="off" data-kind="decimal" class="edit-weight"
-                data-ei="${ei}" data-si="${si}" value="${esc(st.weight)}"
+                data-ei="${ei}" data-si="${si}" value="${esc(st.weight ?? '')}"
                 aria-label="${e.bodyweight ? 'Extra weight' : e.assisted ? 'Assist' : 'Weight'} (${esc(s.unit)})"> ${esc(s.unit)} ×
               <input type="number" inputmode="numeric" class="edit-reps" data-ei="${ei}" data-si="${si}"
-                value="${esc(st.reps)}" aria-label="Reps">`}
+                value="${esc(st.reps ?? '')}" aria-label="Reps">`}
             </span>
             <button class="x set-del" data-ei="${ei}" data-si="${si}" aria-label="Remove set ${si + 1}">✕</button>
           </div>`).join('') || '<p class="muted">No sets left — removed on save.</p>'}

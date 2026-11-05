@@ -62,7 +62,18 @@ display unit, m/mi via `distUnit()`; seconds unit-less), bodyweight
 reuses `{reps, weight}` with weight = ADDED weight, assisted with weight =
 the ASSIST of a counterweight machine (less is stronger; it counts as no
 volume anywhere — ui.js `workoutTotals`, stats.js `weeklyBuckets`, the
-heatmap; `setUnit` converts it like any weight). Live-logged sets also
+heatmap; `setUnit` converts it like any weight). REPS ARE OPTIONAL on a
+strength or assisted set: Minimal mode (app/js/minimal.js) logs `{weight,
+at}` alone unless "+ Reps" is on for that series, and a Minimal bodyweight
+set is `{reps, at}` without a weight unless "+ Weight" is — a field not on
+screen is ABSENT, never 0 or null. Every reader guards: ui.js `setStr` reads
+"80" (never "80×undefined"), train.js `setWords` "80 kg", History's editor
+shows an empty field and writes reps (or a weight) only once one is typed,
+the AI export puts `null` in the tuple's place (the prompt and the note say
+null = not recorded), `nextSetDefaults` prefills 10 reps, and stats.js
+derives nothing from absent reps: no e1RM, no volume, no beaten target, no
+assist rep range or rep record (docs/insights.md). Pinned in
+test/ui, history, ai, stats, train and minimal. Live-logged sets also
 carry `at` (epoch ms, stamped at log time) — older sets lack it, and so
 must sets added by editing or back-logging; every consumer must guard.
 Strength, bodyweight and assisted sets may also carry `rir` (0..3, 3 = "3 or more";
@@ -317,6 +328,12 @@ data they never saved. Only the transition is announced, so a run of
 failing writes raises one banner and the next good write reports `null`;
 `getWriteError()` reads the current state. No retry, no queue, no second
 store — `app/js/app.js` shows `#storage-alert` and the user acts.
+`finishWorkout(active, { now })` takes the moment the workout ENDED
+(default `Date.now()`, every older call unchanged): Minimal mode's
+auto-close passes its last set's `at`, so a workout left open for hours
+reads as what it was; `finishedAt` and the open visit's `out` take it, the
+`updatedAt` stamp stays the write's (sync's clock, not a moment — the
+`shiftWorkout` rule).
 ORDER INVARIANT in `finishWorkout()`: `saveWorkouts()` FIRST, then
 `clearActive()`. `removeItem` cannot fail, `setItem` can — the other
 order deletes a finished workout that never reached history. Same rule
@@ -554,7 +571,22 @@ cells, scratches up to and past what Reed-Solomon carries.
 
 ## `app/js/app.js`
 
-Hash-router, renders views into `#view`. The `#gym`
+Hash-router, renders views into `#view`. MINIMAL MODE swaps the Train
+ROUTE's renderer: with the device-local `settings.minimal` on, `#train`
+renders app/js/minimal.js's `renderMinimal(view, { entry: true })` instead
+of `renderTrain`, and route() puts `body.minimal-mode` on, which hides the
+tabbar (and drops #view's bottom room for it); every other route — #history,
+#settings, #gym, a `#pair=…` deep link, #tour — renders as ever, with the
+tabbar, and the class comes off. The switch (ui.js `minimalToggleHtml` /
+`wireMinimalToggle`: the Train hub, the workout overview, the Minimal view's
+head) writes the setting and calls ui.js `reroute()`, which dispatches
+`gymii:reroute` on window; app.js listens once and runs route() again —
+same hash, no reload, no history entry. An event and not a call because
+app.js imports every view: a view importing the router back would be a
+cycle, and train.js must not import minimal.js either (minimal.js imports
+train.js). The overview carries the switch as well as the hub because a
+running workout never shows the hub: without it, a workout continued in the
+full view could not go back. The `#gym`
 route is deliberately NOT in the tabbar (the map is a setup tool, not a
 daily surface — user decision); it is reached via links in onboarding,
 Settings and the Train hub's Gym tile. Don't re-add the tab. `#tour`
@@ -1007,8 +1039,16 @@ audibly leaked the first note, so a tone fired right after "Log set"
 and again at zero. The sound must only play at zero. The tone is `settings.timerSound`, picked from the
 data-driven `TIMER_SOUNDS` via `playTimerSound()` — the Settings chips
 preview each sound on tap (the tap is the gesture).
+`ensureSlot(active, machineId, exercise, grip)` is the plan-slot growth the
+log screen does on render (a free slot for a machine without one, a sibling
+slot for a fresh exercise or grip at a scoped machine), exported so Minimal
+mode grows the SAME slots for the sets it logs — the overview lists only
+slots; `endRest()` is exported for Minimal mode too (a set logged there ends
+a running rest like rest 0 here, and its Done stops the machinery like
+finish()). `onTrainTab()` is false under `body.minimal-mode`: the Train pill
+is active there, but renderTrain does not own #view.
 `nextSetDefaults` is exported for the logic tests (same precedent as
-`nearbyAlternative`); its behavior contract is pinned by the
+`nearbyAlternative`) and Minimal mode's prefill; its behavior contract is pinned by the
 "prefill matrix" block in test/train.test.mjs: once a set is logged
 this workout its last set is the prefill — history (or a plan target)
 only seeds the first set; a cardio set's `level` rides that same chain
@@ -1313,6 +1353,100 @@ left as the preferred spot): the old modulo stacked a new machine onto
 whatever already stood there, and on a packed floor it may overlap but
 — as long as the grid holds the item at all — never lands on another
 solid item's exact spot.
+
+## `app/js/minimal.js`
+
+Minimal mode: the Train route as ONE screen (app.js § routing) — tap a
+series, confirm one value, ✓ Log. Out of scope by design: rest timer, plans,
+weekdays, the map, grips UI, RIR, locker, muscles. Invariants:
+- SAME DATA. It writes the one `active` the full view continues — started
+  through train.js `startWorkoutFrom(null, machineId)` (so `active` is valid
+  there), the current machine moved only through store's `switchMachine`
+  (visits stay true), the slot grown through train.js `ensureSlot`, entries
+  through store's `newEntry` (machine settings prefilled from the last entry,
+  like `resolveEntry`), sets stamped `at: Date.now()`. A workout already
+  running — from either view, plan slots and all — goes on. Nothing is
+  migrated; the one new shape is a weighted set without reps (§ store.js
+  "Set shapes").
+- Everything a tap needs is read IN the tap (`getActive`, `getLayout`,
+  `getWorkouts`) — never a render-time copy, which would resurrect what a
+  rest Skip or a sync changed meanwhile, or tombstone a synced machine.
+- THE CHIPS (`seriesChips`): one per SERIES — store's (machine, exercise,
+  grip) triple, so a cable tower's rope stays its own progression — newest
+  set first over the running workout and the history, each once; then every
+  other machine by number (a multi-exercise machine offers each exercise).
+  Only loggable series: the machine exists, an exercise it lists, a grip it
+  offers. Eight show, the rest behind "+N more" (the selected one always
+  shows); "+ New" is last. The pick is module state; on route entry it
+  follows the workout's current machine.
+- ONE FIELD per kind (`entryKind` of the entry once it holds sets, else of
+  the machine): strength/assisted the weight (step `settings.weightStep`),
+  bodyweight the reps, cardio time + distance (`distUnit`). Prefill: train.js
+  `nextSetDefaults` over this workout's entry and the history's last entry of
+  the series — no plan target. Fields are read through `fieldValue` only; an
+  unreadable one logs its prefill.
+- EXTRAS: one chip per series switches a second field on — "+ Reps"
+  (strength/assisted), "+ Weight" (bodyweight, added weight), "+ Level"
+  (cardio; 0 = none, written from 1 up). Stored device-local as
+  `settings.minimalExtras` = `{"<machineId>|<exercise or empty>": ["reps"]}`;
+  a backup may carry someone else's, so `readExtras` takes own keys, arrays
+  and known field names only, `toggleExtra` rewrites the map clean
+  (`Object.fromEntries`, so "__proto__" stays a plain key), and none of it
+  reaches markup. `buildSet` writes exactly what is on screen: a field not
+  shown is ABSENT.
+- TODAY'S SETS of the series sit above ✓ Log: the running workout's as
+  chips, a finished workout's of today read-only. A chip's first tap arms it
+  ("✕ remove?", `twoTapConfirm`) and does NOT re-render — the armed node
+  must survive to the second tap; the second removes the set by its rendered
+  index, checked against its `at` (two sets can share a millisecond). After a
+  log or a removal `keepInView('#min-log')`.
+- "+ NEW": the only free text in the view. A name matching a machine label
+  case-insensitively (spaces collapsed) IS that machine (`machineNamed`) —
+  no twin, no retype. Else `ensureMachine(nextNum(layout), name)` and the kind
+  chip's flag (`cardio`/`bodyweight`; Weight = strength, no flag) on the
+  layout read fresh in the same tap, then saved — the ensureMachine pattern.
+- LIFECYCLE: the first set starts the workout; "Done" finishes it, two taps
+  (`twoTapConfirm`, never `confirm()`), then `endRest()`, `ensurePersisted()`
+  and `ambientFinished()` like train.js `finish()`. AUTO-CLOSE (`autoClose`,
+  every render and every log tap): a running workout whose newest set (else
+  its start) is older than 3 h is finished at THAT set (`finishWorkout`'s
+  `now`), one with no set and that old is dropped (finishWorkout drops an
+  empty one); the view says so.
+- No rest timer here: a log ends a rest still running from the full view
+  (train.js `endRest`), as a set logged there with rest 0 would.
+- THE FUN — decided by pure functions, played on a stage. `occasionFor`
+  picks the set's occasion on the state BEFORE it is stored: a new best
+  (`isNewBest`: strength the heaviest weight, assisted the least assist,
+  bodyweight the most reps, cardio the longest distance, at the same
+  distance the shorter time like stats.js `topCardio`; a series' first set
+  beats nothing), else the day's first set — a comeback after 14 days
+  without any workout — else a plain set. `funPlan` maps it to a motion
+  (toss, rain + a walker for a best, a parade for Done, the idle stroller)
+  and a line; `settings.minimalFun === false` (device-local, the 🎉 Fun
+  chip; absent = on) is nothing at all, reduced motion is the line alone,
+  and the stroller says nothing. `pickLine(occasion, { rand, last })` is pure
+  with an injectable chance and never repeats the line said last; `LINES` holds
+  40+ English one-liners by occasion — friendly-silly, never about bodies or
+  weight loss, never guilt or pressure, no real people or brands.
+- THE STAGE (`domStage`, swapped for a recorder by the tests via
+  `setFunStage`): one `#fun-layer` on <body>, OUTSIDE #view, so no re-render
+  cuts a motif off; `pointer-events: none`, `aria-hidden="true"`, fixed and
+  clipped — it never takes a tap and never shifts the layout. Emoji only (no
+  image files, no colors of its own to validate). Sprites are placed once and
+  animated by the Web Animations API on `transform`/`opacity` only, at most 24
+  at a time, each removed on finish within ~2.5 s; every animation pauses
+  while `document.hidden` and plays on when visible. The idle stroller is
+  checked every 15 s while `#min-view` is on screen: visible page, a set in
+  the running workout, 45 s since the last motif, then a coin flip. The set
+  is stored BEFORE any of it starts.
+- `settings.minimal`, `minimalExtras` and `minimalFun` are device-local —
+  not in merge.js `USER_SETTINGS`, so nothing syncs and the settings stamp
+  stays put.
+Pinned by test/minimal.test.mjs (chips, records, lines, extras incl. junk,
+set shapes through the real taps, auto-close, "+ New", the fun switch, the
+remove guard) and smoke/minimal.spec.mjs (the switch and the hidden tabbar,
+sets with and without reps, back to the full view and History, taps
+through a running effect, reduced motion).
 
 ## `app/js/plan.js`
 
