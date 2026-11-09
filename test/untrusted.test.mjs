@@ -578,10 +578,13 @@ store.saveLayout({ ...hostileLayout(), grid: { w: `60${X}`, h: `40${X}` } });
 renderGym(fresh());
 {
   const props = root.querySelector('#props');
-  inert(props.innerHTML, 'gym editor, layout card');
+  // the floor's size sits on the editor's Floor card, behind "Edit floor plan"
+  props.querySelector('#map-open').listeners.click();
+  inert(props.innerHTML, 'gym editor, floor card');
   assert.ok(props.innerHTML.includes('id="floor-w" type="number" inputmode="numeric" value="60&quot;'),
     'gym editor: floor width escaped');
   assert.ok(props.innerHTML.includes('value="40&quot;'), 'gym editor: floor height escaped');
+  root.querySelector('#map-done').listeners.click();
   props.querySelector('#edit-machines').listeners.click();
   inert(props.innerHTML, 'gym editor, machine list');
   assert.ok(props.innerHTML.includes('data-field="num"\n            value="1&quot;'),

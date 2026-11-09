@@ -714,8 +714,8 @@ one gets the solid outline (`.unlocked`) and the corner handle, and the
 floor outline only hands out its vertex/midpoint handles while it is the
 unlocked one. On a phone a tap that drifts used to shove a whole zone
 across the floor, and the resize handle sat exactly where the thumb grabs
-an item — both now need a deliberate double tap first, and a second one
-takes it back (gym.js owns the gesture). Also exports `findMachineByNum`, the collision helpers
+an item — both now need a deliberate unlock first (a double tap, or the
+editor's Move toggle), and the same gesture takes it back (gym.js owns it). Also exports `findMachineByNum`, the collision helpers
 (`fits`, plus `overlapsSolid`/`freeSpot`/`WALL_SNAPPED` re-exported from
 geometry.js, which owns the placement geometry because store.js's
 `addMachine` places machines too; `snap()` rounds to geometry.js's `SNAP`, the
@@ -755,13 +755,47 @@ split exists to prevent).
 
 ## `app/js/gym.js`
 
-Floor-plan editor (renderer imported from map.js).
+The Gym screen and its floor-plan editor (renderer imported from map.js).
+TWO MODES, one closure (`mapOpen`, `setMapOpen()`): the PAGE — Machines
+card first (`#machines-add` leads it, as "+ Machine"), then a Floor plan
+card holding a read-only `#floor-preview` (a tap on a machine there opens
+its card) and `#map-open`, then Location and Templates (the layout name
+lives there) — and the EDITOR, `#map-editor`, shown in its place: add
+buttons, the plan, the item bar, the find row and the Floor card. The
+plan was the screen's first thing and the least important one, and on
+a 320px phone a 3×2 machine is ~13×9 px — a drag on it was a lottery.
+`setMapOpen` puts `map-editing` on `<body>` (CSS hides the tabbar, app.js
+`route()` drops the class on EVERY route, so leaving the Gym from the
+editor never strands the app without its tabbar), resets drag/tap state,
+and on the way out drops a selection that only exists on the plan
+(zones, walls, outline) and every lock. The machine card on the page
+starts with "‹ All of the gym" and offers "Show on the floor plan"
+(`#props-map`: opens the editor on it, pulsed). Unlocking happens only in
+the editor: `addItem` from the page just opens the card.
+THE ITEM BAR (`#item-bar`, ONE delegated click listener, contents
+replaced per render) sits right under the plan — above the Colors/Usage
+chips, so the arrows fit a 568px-tall screen — and names the selection
+with a `#item-move` chip (`aria-pressed`) that toggles `unlockedId`, the
+same state as the double tap. While unlocked it shows a D-pad (`nudge`:
+one `SNAP` unit per tap; a machine/zone that would overlap hops over the
+neighbour to the next spot that `fits()`, stopping at the floor's edge;
+wall-snapped fixtures re-snap to their wall; for the outline it moves the
+picked corner `selectedVertex`) and −/+ size buttons (`resize`: a wall's
+length along its axis, a wall piece's width around its centre, else
+width/height, refused when it would not fit). Every step is one `save()`,
+so one undo entry. DRAG FROM ANYWHERE: with an item unlocked, a
+pointerdown that misses it starts a RELATIVE move of that item
+(`drag.pending` holds the down point); only once the contact travels past
+`TAP_SLOP` does it move — a contact that never travels is replayed as an
+ordinary tap (`tapOn(..., deferred = true)`, which selects but never
+counts toward a double tap), and a `pointercancel` replays nothing.
 An empty floor (no machine, no shape) explains itself ON the floor:
 `#floor-empty`, an overlay inside `.floor-wrap` toggled by `redraw()`,
 so it goes with the first item and comes back with an undo to nothing
 without shifting the toolbar the thumb just used; its "Load a
-ready-made gym" presses the Templates card's `#load-template` (the
-Layout view shows while nothing is selected) and scrolls to it.
+ready-made gym" closes the editor, presses the Templates card's
+`#load-template` (the page shows while nothing is selected) and scrolls
+to it.
 Polygon outline with vertex/midpoint editing; wall-snapped fixtures
 (entrance/door/window) glue to the nearest wall segment with rotation +
 flips. EVERYTHING ON THE MAP STARTS LOCKED — machines, zones, walls,
@@ -773,7 +807,8 @@ on any selection change, and never persisted: re-entering the Gym is always
 a read-only starting point) drives map.js's handles AND the pointerdown
 guard, which starts no drag at all — neither move nor resize — on a locked
 item. A freshly added item is unlocked (`addItem`): you just made it on
-purpose. The props card's last line names the current state.
+purpose — in the editor; from the page it only opens its card. The item
+bar's Move chip names the current state.
 A DRAG IS NOT A TAP: `lastTap` carries the down point and pointermove drops
 it once the contact travels past `TAP_SLOP`, or two quick drags on the same
 item would pair into a double tap and lock it again mid-arrangement.
@@ -792,11 +827,11 @@ so whichever control saves, a field is persisted exactly as its own
 changes nothing and records no undo step. Undo/redo drop staged text. A
 field abandoned without a blur keeps its raw text until its next `change`
 or an undo.
-BRAND: the Layout view's Machines card owns the `MACHINE_BRANDS` chips +
+BRAND: the page's Machines card owns the `MACHINE_BRANDS` chips +
 free text (`#gym-brands`, writes through store's `setGymBrand`; typed
 text goes through `matchBrand`; a hint line counts the brands machines
 carry as their OWN — `ownBrand`, so a copy of the gym's is not listed).
-The Layout view re-renders itself now (brand chips, list edits), so the
+The page re-renders itself now (brand chips, list edits), so the
 Templates card's browser comes back when it was open (`tplOpen`) — from
 the manifest fetched once per open (`tplManifest`; "Load template…"
 fetches afresh), and its panel is wired ONCE per node (`dataset.wired`,
@@ -872,8 +907,9 @@ Location card holds `meta.postcode` and an `#gym-osm` search link built by
 `osmUrl()` (exported for the tests) — the card is NOT re-rendered on a
 meta edit (that would fight the keyboard), so `bindMeta` refreshes the
 link's href and `hidden` by hand.
-Find-by-number row above the map: a hit selects the machine
-(props open) and pulses it via `highlightId`; the next pointerdown on
+Find-by-number row (on the page under its header, in the editor under the
+plan, hidden there while something is selected — the item bar names it):
+a hit selects the machine (props open) and pulses it via `highlightId`; the next pointerdown on
 the map clears the pulse. `focusMachine(id)` is the in-memory handoff
 for the log screen's ✏️ button (same pattern as train's
 `openPlanBuilder`): the next `renderGym()` consumes it — selects the
@@ -922,7 +958,9 @@ nothing and records no step.
 
 ## `app/js/settings.js`
 
-The Settings tab (units, gyms, backups, the Sync card
+The Settings tab (units, gyms, backups, the Sync card; the gym's own
+screen is a link inside "Your gyms" — "Edit this gym's machines and floor
+plan" — no card of its own, the plan is not that important
 — the sync half is docs/sync-plan.md; a Help card links `#tour`). `renderSettings()` is wrapped
 whole in `preserveFocus` (every field in it is covered once). The Workout
 card's steppers write one settings key each on `change`: the rest timer

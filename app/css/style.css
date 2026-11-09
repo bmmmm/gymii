@@ -239,6 +239,9 @@ a.btn { text-decoration: none; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* a stepper beside a long label is wider than a 320px card: it drops
+     under the label instead of sticking out past the card's edge */
+  flex-wrap: wrap;
   gap: 12px;
   margin: 12px 0;
   font-size: 15px;
@@ -418,6 +421,36 @@ svg .fixture-icon, svg .zone-label, svg .machine-glyph { font-family: system-ui,
 svg .zone-label { fill: #5f6d7d; font-weight: 600; letter-spacing: 0.04em; }
 
 .floor-wrap { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
+
+/* The floor plan editor is a mode of #gym that takes the whole view: no
+   tabbar while it is open (gym.js toggles the class, app.js clears it on
+   every route), so #view no longer keeps the bar's room at the bottom. */
+body.map-editing #tabbar { display: none; }
+body.map-editing #view { padding-bottom: calc(24px + env(safe-area-inset-bottom) + var(--kb, 0px)); }
+.map-editor .toolbar .btn { flex: 1 1 0; }
+.map-editor .toolbar-sub .btn { flex: 1 1 22%; }
+.floor-preview { border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+  background: var(--surface); margin: 4px 0 10px; }
+.floor-preview svg { display: block; width: 100%; }
+.floor-preview .machine-box { cursor: pointer; }
+
+/* the selected item's tools, right under the plan */
+.item-bar { margin-top: 10px; }
+.item-hint { margin: 4px 0; }
+.item-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.item-name { min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-head .chip { flex: none; }
+.nudge { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px 24px; margin: 10px 0 4px; }
+.dpad { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); gap: 4px; }
+.dpad .btn, .sizer .btn { width: 44px; min-height: 44px; margin: 0; padding: 0; font-size: 20px; line-height: 1; }
+.dp-up { grid-area: 1 / 2; }
+.dp-left { grid-area: 2 / 1; }
+.dp-right { grid-area: 2 / 3; }
+.dp-down { grid-area: 3 / 2; }
+/* label over its −/+ pair: a narrow column that fits BESIDE the arrows at
+   320px — under them, the pad would push the sizes off a short screen */
+.sizer { display: grid; grid-template-columns: 44px 44px; gap: 2px 4px; font-size: 15px; text-align: center; }
+.sizer span { grid-column: 1 / -1; }
 
 svg.floor { display: block; width: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
 

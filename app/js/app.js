@@ -82,6 +82,8 @@ function route() {
   spotTabs([]); // the tour's tab marks never outlive it
   // no tabbar in Minimal mode: the hidden bar is the one-screen promise
   document.body.classList.toggle('minimal-mode', tab === 'train' && minimalOn());
+  // the Gym's floor plan editor hides the tabbar too — only while it is open
+  document.body.classList.remove('map-editing');
   const view = document.getElementById('view');
   view.innerHTML = '';
   view.scrollTop = 0;

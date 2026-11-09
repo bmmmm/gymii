@@ -8,6 +8,7 @@ const layout = (page) => page.evaluate(async () => (await import('/js/store.js')
 
 test('gym: tapping the Floor width label does not press minus', async ({ page }) => {
   await page.goto('/#gym');
+  await page.locator('#map-open').click(); // the floor's size is set in the editor
   const before = (await layout(page)).grid.w;
   await page.locator('label[for="floor-w"]').click();
   await page.waitForTimeout(200);
@@ -17,6 +18,7 @@ test('gym: tapping the Floor width label does not press minus', async ({ page })
 
 test('gym: floor cannot shrink under its machines, hint shows', async ({ page }) => {
   await page.goto('/#gym');
+  await page.locator('#map-open').click();
   const L = await layout(page);
   const extent = Math.max(...L.machines.map((m) => m.x + m.w), ...L.shapes.map((s) => s.x + s.w));
   const down = page.locator('#floor-w').locator('xpath=..').locator('.step-down');

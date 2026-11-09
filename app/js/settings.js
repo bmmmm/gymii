@@ -631,16 +631,9 @@ function renderSettingsView(root) {
         History and sync.</p>
     </section>
 
-    <section class="card">
-      <h2>Gym</h2>
-      <a class="btn" href="#gym">Open the gym</a>
-      <p class="muted">Draw the floor plan, number the machines and edit their
-        muscles, settings, exercises and grips.</p>
-    </section>
-
-    <!-- Singular above = the active gym's floor plan; plural here = every
-         gym you train at. The two sections sit next to each other, so the
-         headings have to carry that difference on their own. -->
+    <!-- Every gym you train at, and the way into the active one's machines
+         and floor plan — one card, not a card of its own up top: the plan
+         is optional, and Train → Gym is the everyday way in. -->
     <section class="card">
       <h2>Your gyms</h2>
       <div class="chip-select" id="gym-chips">
@@ -649,6 +642,7 @@ function renderSettingsView(root) {
       </div>
       <label class="field"><span>Gym name</span>
         <input id="gym-rename" type="text" value="${esc(activeGym.name)}"></label>
+      <a class="btn" href="#gym">Edit this gym's machines and floor plan</a>
       <div class="row">
         <input id="gym-new-name" type="text" placeholder="New gym name">
         <button id="gym-add" class="btn btn-inline">Add gym</button>
