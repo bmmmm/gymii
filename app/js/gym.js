@@ -4,7 +4,7 @@ import {
   MUSCLE_REGIONS, MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS, MACHINE_BRANDS, MAP_LAYERS, nextNum,
   COMMON_GRIPS,
 } from './store.js';
-import { freeSpot, WALL_SNAPPED } from './geometry.js';
+import { freeSpot, WALL_SNAPPED, SNAP } from './geometry.js';
 import {
   layoutDiff, applySide, foreignOnly, clone, same,
 } from './layoutdiff.js';
@@ -184,6 +184,7 @@ export function renderGym(root) {
   // opening the Gym is always a read-only starting point.
   let unlockedId = null;
   let lastTap = null; // { id, t, x, y } — the last contact that still counts as a tap
+  let mapOpen = false; // the floor plan editor mode (see setMapOpen)
   // The Machines card's list editor: open stays open while you hop between
   // the map and the card, so a round of "tap machine, fix it, back" never
   // re-expands it by hand. Dies with the editor like everything else here.
@@ -215,34 +216,44 @@ export function renderGym(root) {
         <button id="redo" class="btn btn-inline" aria-label="Redo" disabled>↪</button>
       </div>
     </div>
-    ${getActive()
+    <div id="gym-back">${getActive()
     ? '<p class="muted"><a href="#train">← Back to your workout</a></p>'
-    : '<a href="#train" class="back-row">‹ Train</a>'}
-    <div class="toolbar">
-      <button id="add-room" class="btn">+ Zone</button>
-      <button id="add-wall" class="btn">+ Wall</button>
-      <button id="add-machine" class="btn btn-primary">+ Machine</button>
+    : '<a href="#train" class="back-row">‹ Train</a>'}</div>
+    <!-- THE FLOOR PLAN EDITOR is a mode of this screen, not the screen
+         itself: the Gym opens on its machines and details, and the plan
+         takes the whole view (no tabbar) only behind "Edit floor plan". -->
+    <div id="map-editor" class="map-editor" hidden>
+      <button type="button" id="map-done" class="back-row">‹ Done — back to the gym</button>
+      <div class="toolbar">
+        <button id="add-machine" class="btn btn-primary">+ Machine</button>
+        <button id="add-other" class="btn" aria-expanded="false" aria-controls="add-menu">+ Zone, wall, more…</button>
+      </div>
+      <div class="toolbar toolbar-sub" id="add-menu" hidden>
+        <button id="add-room" class="btn">▭ Zone</button>
+        <button id="add-wall" class="btn">▬ Wall</button>
+        ${Object.entries(FIXTURES).map(([key, f]) =>
+          `<button class="btn add-fixture" data-fixture="${key}">${f.icon} ${f.label}</button>`).join('')}
+      </div>
+      <div class="floor-wrap"><svg id="floor" class="floor" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="floor-empty" id="floor-empty" hidden>
+          <p>An empty floor. Add the machines you use with <strong>+ Machine</strong>,
+            or start from a ready-made gym — zones, walls and the rest are optional.</p>
+          <button type="button" id="floor-empty-tpl" class="btn btn-inline">Load a ready-made gym</button>
+        </div>
+      </div>
+      <!-- the item bar first: on a short phone the arrows must not sit
+           below the view toggles, a whole row further off-screen -->
+      <div id="item-bar" class="item-bar"></div>
+      <div class="map-mode" id="map-mode">
+        <button type="button" class="chip" data-mode="custom">Colors</button>
+        <button type="button" class="chip" data-mode="usage">Usage</button>
+      </div>
     </div>
-    <div class="toolbar toolbar-sub">
-      ${Object.entries(FIXTURES).map(([key, f]) =>
-        `<button class="btn add-fixture" data-fixture="${key}">${f.icon} ${f.label}</button>`).join('')}
-    </div>
-    <div class="row">
+    <div class="row" id="find-row">
       <input id="find-num" type="number" inputmode="numeric" min="1" placeholder="Machine #">
       <button id="find-go" class="btn btn-inline">Find</button>
     </div>
     <p class="muted" id="find-err"></p>
-    <div class="floor-wrap"><svg id="floor" class="floor" xmlns="http://www.w3.org/2000/svg"></svg>
-      <div class="floor-empty" id="floor-empty" hidden>
-        <p>An empty floor. Add the machines you use with <strong>+ Machine</strong>,
-          or start from a ready-made gym — zones, walls and the rest are optional.</p>
-        <button type="button" id="floor-empty-tpl" class="btn btn-inline">Load a ready-made gym</button>
-      </div>
-    </div>
-    <div class="map-mode" id="map-mode">
-      <button type="button" class="chip" data-mode="custom">Colors</button>
-      <button type="button" class="chip" data-mode="usage">Usage</button>
-    </div>
     <div id="props"></div>
   `;
 
@@ -260,6 +271,12 @@ export function renderGym(root) {
   // and goes with the first item (and with an undo back to nothing)
   // without moving the toolbar the thumb just used.
   const floorEmpty = root.querySelector('#floor-empty');
+  const itemBar = root.querySelector('#item-bar');
+  const findRow = root.querySelector('#find-row');
+  // The read-only preview on the Floor plan card (page mode, nothing
+  // selected): renderPropsCard hands its node over, a re-render of the
+  // card replaces it.
+  let previewSvg = null;
   const redraw = () => {
     floorEmpty.hidden = !!(layout.machines.length || layout.shapes?.length);
     drawLayout(svg, layout, {
@@ -267,14 +284,61 @@ export function renderGym(root) {
       usage: usageMode ? (usageCache ??= usagePayload(usageByMachine())) : null,
       highlightId: findHighlightId, unlockedId,
     });
+    if (previewSvg && !mapOpen) {
+      drawLayout(previewSvg, layout, {
+        usage: usageMode ? (usageCache ??= usagePayload(usageByMachine())) : null,
+      });
+    }
   };
-  // the Templates card sits below the map in the Layout view — which is
-  // what shows while nothing is selected, and on an empty floor nothing is
+
+  // --- page mode vs. map mode ---
+  // The Gym opens on its machines and details; the floor plan is one card
+  // there. Editing the plan is a mode that takes the whole view — no
+  // tabbar (body.map-editing), the plan at the top, the selected item's
+  // tools right under it — and "Done" brings the page back. Never
+  // persisted: re-entering the Gym always starts on the page.
+  const mapEditor = root.querySelector('#map-editor');
+  const gymBack = root.querySelector('#gym-back');
+  const title = root.querySelector('h1');
+  const setMapOpen = (open) => {
+    mapOpen = open;
+    mapEditor.hidden = !open;
+    gymBack.hidden = open;
+    title.textContent = open ? 'Floor plan' : 'Gym';
+    if (typeof document !== 'undefined') document.body.classList.toggle('map-editing', open);
+    if (!open) {
+      // the page shows machines only; a zone or a corner has no card there
+      if (selectedId && !layout.machines.some((m) => m.id === selectedId)) selectedId = null;
+      selectedVertex = null;
+      unlockedId = null;
+      findHighlightId = null;
+    }
+    drag = null;
+    lastTap = null;
+    addMenu.hidden = true;
+    addOther.setAttribute?.('aria-expanded', 'false');
+    root.scrollTo?.(0, 0);
+    redraw();
+    renderProps();
+  };
+  root.querySelector('#map-done').addEventListener('click', () => {
+    selectedId = null;
+    setMapOpen(false);
+  });
+  const addMenu = root.querySelector('#add-menu');
+  const addOther = root.querySelector('#add-other');
+  addOther.addEventListener('click', () => {
+    addMenu.hidden = !addMenu.hidden;
+    addOther.setAttribute?.('aria-expanded', String(!addMenu.hidden));
+  });
+  // the Templates card is on the page, below the Floor plan card
   root.querySelector('#floor-empty-tpl').addEventListener('click', () => {
+    selectedId = null;
+    setMapOpen(false);
     const load = props.querySelector('#load-template');
     if (!load) return;
     load.click();
-    load.closest('.card').scrollIntoView({ block: 'start' });
+    load.closest?.('.card')?.scrollIntoView?.({ block: 'start' });
   });
   // Touch targets are sized from the SVG's on-screen width, so re-render
   // on resize/orientation change. Observing the element (not window)
@@ -461,6 +525,32 @@ export function renderGym(root) {
     }
 
     const target = e.target.closest('[data-id]');
+    // DRAG FROM ANYWHERE. While an item is unlocked, a contact anywhere
+    // else on the plan moves THAT item, relative to the finger — like a
+    // trackpad: a 2×3 machine on a phone is smaller than the thumb that
+    // would have to land on it, and then hides under it. Whether it was a
+    // drag is only known once it travels past TAP_SLOP; a contact that
+    // never does is a TAP after all, and pointerup hands it to tapOn()
+    // (select that item, or empty floor deselects). A contact ON the
+    // unlocked item, or on its resize handle, takes the path below as ever.
+    const free = unlockedId && unlockedId !== OUTLINE_ID ? findItem(layout, unlockedId) : null;
+    if (free && target?.dataset.id !== free.id) {
+      const p = svgPoint(e);
+      drag = {
+        mode: 'move', item: free, offX: p.x - free.x, offY: p.y - free.y, moved: false,
+        pending: { target, x: p.x, y: p.y, clientX: e.clientX, clientY: e.clientY },
+      };
+      try { svg.setPointerCapture(e.pointerId); } catch { /* synthetic events have no active pointer */ }
+      e.preventDefault();
+      return;
+    }
+    tapOn(target, e);
+  });
+
+  // A contact that selects, toggles the lock, or (on an unlocked item)
+  // starts its own move or resize. `deferred`: the contact already ended
+  // (a drag-from-anywhere that turned out to be a tap), so it starts no drag.
+  function tapOn(target, e, deferred = false) {
     if (!target) {
       lastTap = null;
       if (selectedId !== null || selectedVertex !== null) {
@@ -517,7 +607,7 @@ export function renderGym(root) {
     // starts no drag at all — neither a move nor a resize. Reading the lock
     // from before select() also means a stale handle from a render that
     // raced the re-lock cannot stretch anything.
-    if (!wasUnlocked) {
+    if (!wasUnlocked || deferred) {
       drag = null;
       redraw();
       e.preventDefault();
@@ -530,7 +620,7 @@ export function renderGym(root) {
     try { svg.setPointerCapture(e.pointerId); } catch { /* synthetic events have no active pointer */ }
     redraw();
     e.preventDefault();
-  });
+  }
 
   svg.addEventListener('pointermove', (e) => {
     // A contact that travels is a drag, not a tap — drop it from the
@@ -542,6 +632,11 @@ export function renderGym(root) {
     }
     if (!drag) return;
     const p = svgPoint(e);
+    if (drag.pending) {
+      // a drag from elsewhere on the plan: a tap until it travels
+      if (Math.hypot(p.x - drag.pending.x, p.y - drag.pending.y) <= TAP_SLOP) return;
+      drag.pending = null;
+    }
     if (drag.mode === 'vertex') {
       const v = layout.outline[drag.index];
       const nx = clamp(snap(p.x), 0, layout.grid.w);
@@ -600,8 +695,15 @@ export function renderGym(root) {
     redraw();
   });
 
-  const endDrag = () => {
+  const endDrag = (e) => {
     if (!drag) return;
+    if (drag.pending) {
+      // it never travelled: a tap on whatever was under it
+      const { target, clientX, clientY } = drag.pending;
+      drag = null;
+      if (e?.type !== 'pointercancel') tapOn(target, { clientX, clientY, preventDefault() {} }, true);
+      return;
+    }
     const it = drag.item;
     if (it && drag.mode === 'resize' && it.kind === 'line' && Math.abs(it.w) < 1 && Math.abs(it.h) < 1) {
       it.w = 3; // never leave an invisible zero-length wall behind
@@ -652,8 +754,9 @@ export function renderGym(root) {
     save();
     select(item.id);
     // you just created this on purpose, so it starts unlocked — otherwise
-    // every new item would need a double tap before it could be placed
-    unlockedId = item.id;
+    // every new item would need a double tap before it could be placed.
+    // Added from the page (the Machines card), it only opens its card.
+    if (mapOpen) unlockedId = item.id;
     lastTap = null;
     renderProps();
     redraw();
@@ -664,6 +767,159 @@ export function renderGym(root) {
   root.querySelector('#add-machine').addEventListener('click', () => addItem('machine'));
   root.querySelectorAll('.add-fixture').forEach((btn) => {
     btn.addEventListener('click', () => addItem('fixture', btn.dataset.fixture));
+  });
+  // the menu folds away once it has done its job, so the plan moves up again
+  root.querySelector('#add-menu').addEventListener('click', (e) => {
+    if (e.target.closest?.('.btn')) {
+      addMenu.hidden = true;
+      addOther.setAttribute?.('aria-expanded', 'false');
+    }
+  });
+
+  // --- the item bar: Move, the arrows and the size steps ---
+  // A drag on a phone is coarse: a grid unit is ~5 px on a 320 px screen.
+  // The arrows move the unlocked item by exactly one unit per tap and the
+  // size steps grow or shrink it by one — all 44 px buttons, independent of
+  // how small the item is drawn. Same rules as a drag: the floor's edge
+  // stops it, and a solid item never lands on another one (an arrow hops
+  // OVER a neighbour to the next free spot instead of sticking to it,
+  // which a one-unit step otherwise could never get past).
+  const unlockedItem = () => (unlockedId && unlockedId !== OUTLINE_ID && unlockedId === selectedId
+    ? findItem(layout, unlockedId) : null);
+
+  const nudge = (dx, dy) => {
+    if (selectedId === OUTLINE_ID) {
+      if (unlockedId !== OUTLINE_ID || selectedVertex === null) return;
+      const v = layout.outline[selectedVertex];
+      layout.outline[selectedVertex] = {
+        x: clamp(v.x + dx * SNAP, 0, layout.grid.w), y: clamp(v.y + dy * SNAP, 0, layout.grid.h),
+      };
+    } else {
+      const it = unlockedItem();
+      if (!it) return;
+      if (WALL_SNAPPED.has(it.fixture)) {
+        // along its wall it moves; across, it glues itself back on
+        it.x += dx * SNAP;
+        it.y += dy * SNAP;
+        snapDoorToWall(layout, it);
+      } else {
+        const minX = -Math.min(it.w, 0);
+        const maxX = layout.grid.w - Math.max(it.w, 0);
+        const minY = -Math.min(it.h, 0);
+        const maxY = layout.grid.h - Math.max(it.h, 0);
+        let { x, y } = it;
+        do {
+          x += dx * SNAP;
+          y += dy * SNAP;
+          if (x < minX || x > maxX || y < minY || y > maxY) return; // the edge, nothing free before it
+        } while (!fits(layout, it, x, y, it.w, it.h));
+        it.x = x;
+        it.y = y;
+      }
+    }
+    save(); // a step that changed nothing writes nothing
+    redraw();
+  };
+
+  const resize = (dw, dh) => {
+    const it = unlockedItem();
+    if (!it) return;
+    if (it.kind === 'line') {
+      // a wall grows along its own direction, from its start
+      const alongX = Math.abs(it.w) >= Math.abs(it.h);
+      const len = alongX ? it.w : it.h;
+      const next = len + (Math.sign(len) || 1) * dw;
+      if (Math.abs(next) < 1) return; // never an invisible wall
+      if (alongX) it.w = clamp(next, -it.x, layout.grid.w - it.x);
+      else it.h = clamp(next, -it.y, layout.grid.h - it.y);
+    } else if (WALL_SNAPPED.has(it.fixture)) {
+      // wider or narrower around its own middle, still on its wall
+      const w = Math.max(1, it.w + dw);
+      it.x += (it.w - w) / 2;
+      it.w = w;
+      snapDoorToWall(layout, it);
+    } else {
+      const minSize = it.kind === 'fixture' ? 1 : 2; // as the corner handle
+      const w = clamp(it.w + dw, minSize, layout.grid.w - it.x);
+      const h = clamp(it.h + dh, minSize, layout.grid.h - it.y);
+      if (!fits(layout, it, it.x, it.y, w, h)) return;
+      it.w = w;
+      it.h = h;
+    }
+    save();
+    redraw();
+  };
+
+  // Lock and unlock from the bar — the same state the double tap toggles.
+  const toggleMove = () => {
+    if (!selectedId) return;
+    unlockedId = unlockedId === selectedId ? null : selectedId;
+    lastTap = null;
+    redraw();
+    renderProps();
+  };
+
+  const itemName = (item) => {
+    if (!item.kind) return `#${item.num}${item.label ? ` ${item.label}` : ''}`;
+    if (item.kind === 'rect') return item.label ? `Zone · ${item.label}` : 'Zone';
+    if (item.kind === 'line') return 'Wall';
+    return FIXTURES[item.fixture]?.label ?? 'Element';
+  };
+  const arrowsHtml = `
+    <div class="dpad" role="group" aria-label="Move one step">
+      <button type="button" class="btn dp-up" data-dx="0" data-dy="-1" aria-label="Move up">↑</button>
+      <button type="button" class="btn dp-left" data-dx="-1" data-dy="0" aria-label="Move left">←</button>
+      <button type="button" class="btn dp-right" data-dx="1" data-dy="0" aria-label="Move right">→</button>
+      <button type="button" class="btn dp-down" data-dx="0" data-dy="1" aria-label="Move down">↓</button>
+    </div>`;
+  const sizeRow = (label, what, dw, dh) => `
+    <span>${label}</span>
+    <button type="button" class="btn" data-dw="${-dw}" data-dh="${-dh}" aria-label="Decrease ${what}">−</button>
+    <button type="button" class="btn" data-dw="${dw}" data-dh="${dh}" aria-label="Increase ${what}">+</button>`;
+
+  function renderItemBar() {
+    if (!mapOpen) {
+      itemBar.innerHTML = '';
+      return;
+    }
+    const outline = selectedId === OUTLINE_ID;
+    const item = outline ? null : selectedId && findItem(layout, selectedId);
+    if (!outline && !item) {
+      itemBar.innerHTML = `<p class="muted item-hint">Tap an item on the plan to select it —
+        or find a machine by its number below.</p>`;
+      return;
+    }
+    const unlocked = unlockedId === selectedId;
+    let tools = '';
+    if (unlocked && outline) {
+      tools = selectedVertex === null
+        ? '<p class="muted">Drag a white corner to reshape the floor, or tap one to move it with the arrows. A hollow dot between two corners adds one.</p>'
+        : `<div class="nudge">${arrowsHtml}</div>`;
+    } else if (unlocked) {
+      const sizes = item.kind === 'line' ? sizeRow('Length', 'length', 1, 0)
+        : WALL_SNAPPED.has(item.fixture) ? sizeRow('Width', 'width', 1, 0)
+          : sizeRow('Width', 'width', 1, 0) + sizeRow('Height', 'height', 0, 1);
+      tools = `<div class="nudge">${arrowsHtml}<div class="sizer">${sizes}</div></div>
+        <p class="muted">Or drag anywhere on the plan to move it${WALL_SNAPPED.has(item.fixture)
+    ? ' along its wall' : ''}.</p>`;
+    }
+    itemBar.innerHTML = `
+      <div class="item-head">
+        <span class="item-name">${esc(outline ? 'Floor outline' : itemName(item))}</span>
+        <button type="button" id="item-move" class="chip${unlocked ? ' sel' : ''}"
+          aria-pressed="${unlocked}">${unlocked ? '🔓 Moving' : '🔒 Move'}</button>
+      </div>
+      ${tools}`;
+  }
+
+  // ONE delegated listener on the persistent bar: its contents are
+  // replaced on every selection or lock change
+  itemBar.addEventListener('click', (e) => {
+    const btn = e.target.closest?.('button');
+    if (!btn) return;
+    if (btn.id === 'item-move') toggleMove();
+    else if (btn.dataset.dx !== undefined) nudge(Number(btn.dataset.dx), Number(btn.dataset.dy));
+    else if (btn.dataset.dw !== undefined) resize(Number(btn.dataset.dw), Number(btn.dataset.dh));
   });
 
   // "find a machine by number" — mirrors the Train picker's number lookup.
@@ -818,13 +1074,9 @@ export function renderGym(root) {
   // what "no own brand" means, so it is no option.
   const brandChoices = (gymBrand) => [...new Set([...MACHINE_BRANDS, ...layout.machines.map((m) => m.brand)])]
     .filter((b) => b && b !== gymBrand);
-  // The card's last line names the lock state (machines, zones, furniture).
-  const lockHint = (item) => `<p class="muted">${unlockedId === item.id
-    ? '🔓 Unlocked — drag it on the plan to move it, drag the handle to resize. Double-tap it again to lock.'
-    : '🔒 Locked so it cannot be nudged by accident. Double-tap it on the plan to move or resize it.'}</p>`;
 
   function machineListHtml() {
-    if (!layout.machines.length) return '<p class="muted">No machines yet — tap + Machine above the plan.</p>';
+    if (!layout.machines.length) return '<p class="muted">No machines yet — tap + Machine above.</p>';
     const gymBrand = layout.meta?.brand || '';
     const brands = brandChoices(gymBrand); // like the machine card
     const rows = [...layout.machines].sort((a, b) => a.num - b.num).map((m) => {
@@ -991,13 +1243,46 @@ export function renderGym(root) {
     });
   }
 
+  function bindFloorSize() {
+    // The floor shrinks only down to what is on it (itemsExtent): past
+    // that a machine would sit off the floor, drawn where no tap reaches.
+    // The field stops there and says why, without a re-render.
+    const floorMsg = props.querySelector('#floor-msg');
+    const onFloor = (inputId, key) => {
+      props.querySelector(inputId).addEventListener('change', (e) => {
+        const want = clamp(Math.round(parseFloat(e.target.value) || 20), 20, 200);
+        const min = clamp(itemsExtent(layout)[key], 20, 200);
+        const v = Math.max(want, min);
+        floorMsg.hidden = v === want;
+        floorMsg.textContent = v === want ? ''
+          : `The plan's items reach to ${min} — move them in first to make the floor ${
+            key === 'w' ? 'narrower' : 'shorter'}.`;
+        e.target.value = v;
+        if (layout.grid[key] === v) return; // refused down to where it was: nothing to save
+        layout.grid[key] = v;
+        layout.outline.forEach((p) => { // keep the outline on the shrunk floor
+          p.x = Math.min(p.x, layout.grid.w);
+          p.y = Math.min(p.y, layout.grid.h);
+        });
+        save();
+        redraw();
+      });
+    };
+    onFloor('#floor-w', 'w');
+    onFloor('#floor-h', 'h');
+  }
+
   // Every props re-render replaces the whole card, and a chip tap is a
   // re-render — so the text field you were typing in would lose the caret
   // and the keyboard mid-word. preserveFocus puts both back (the fields
   // stage their value on `input`, so nothing typed is lost either).
   function renderProps() {
     cardRefreshDue = false;
+    previewSvg = null; // the card that held it is about to be replaced
     preserveFocus(props, renderPropsCard);
+    renderItemBar();
+    // in the editor, a selected item's tools and card follow the bar
+    findRow.hidden = mapOpen && !!selectedId;
   }
 
   function renderPropsCard() {
@@ -1011,8 +1296,8 @@ export function renderGym(root) {
         <section class="card">
           <h2>Floor outline</h2>
           <p class="muted">${layout.outline.length} corners. ${unlockedId === OUTLINE_ID
-    ? '🔓 Unlocked — drag a white corner to reshape the floor, tap a hollow dot between two corners to add one. Double-tap the outline again to lock.'
-    : '🔒 Locked so the floor cannot be reshaped by accident. Double-tap the outer wall to unlock its corners.'}</p>
+    ? '🔓 Unlocked — drag a white corner to reshape the floor, tap a hollow dot between two corners to add one. Turn off Move above to lock it again.'
+    : '🔒 Locked so the floor cannot be reshaped by accident. Turn on Move above to unlock its corners.'}</p>
           <button id="del-vertex" class="btn btn-danger" ${canDelete ? '' : 'disabled'}>
             ${selectedVertex === null
               ? 'Tap a corner to delete it'
@@ -1060,22 +1345,25 @@ export function renderGym(root) {
           : gymBrand
             ? `Every machine is ${esc(gymBrand)} unless its own card says otherwise.`
             : 'Set once — every machine is that brand unless its own card says otherwise.';
-      props.innerHTML = `
+      const emptyFloor = !(layout.machines.length || layout.shapes?.length);
+      // In the editor, nothing selected: the floor itself. Everything else
+      // about the gym lives on the page.
+      if (mapOpen) {
+        props.innerHTML = `
         <section class="card">
-          <h2>Layout</h2>
-          <!-- "Layout name", not "Gym name": Settings owns the gym's own name
-               (the one you switch between) — this one travels with the
-               exported template. Two different names, so they say so. -->
-          <label class="field"><span>Layout name</span><input id="gym-name" type="text" value="${esc(layout.name)}"></label>
+          <h2>Floor</h2>
           ${numberStepper('Floor width', 'floor-w', layout.grid.w, { step: 5, min: 20 })}
           ${numberStepper('Floor height', 'floor-h', layout.grid.h, { step: 5, min: 20 })}
           <p class="muted" id="floor-msg" role="status" hidden></p>
-          <p class="muted">Add rooms, walls and machines, then drag them into place.
-          Everything on the plan is 🔒 locked: a tap only opens an item for
-          editing. Double-tap an item to unlock it for moving and resizing,
-          double-tap again to lock it. Tap the outer wall to reshape the floor
-          outline.</p>
-        </section>
+          <p class="muted">Everything on the plan starts 🔒 locked: a tap only
+          selects an item and opens its card. Turn on Move (or double-tap the
+          item) to move it — with the arrows, or by dragging anywhere on the
+          plan. Tap the outer wall to reshape the floor outline.</p>
+        </section>`;
+        bindFloorSize();
+        return;
+      }
+      props.innerHTML = `
         <section class="card">
           <h2>Machines</h2>
           <div class="field-block"><span>Brand — tap to set, tap again to clear</span>
@@ -1089,9 +1377,20 @@ export function renderGym(root) {
             </div>
             <p class="muted">${brandHint}</p>
           </div>
+          <button id="machines-add" class="btn btn-primary">+ Machine</button>
           <button id="edit-machines" class="btn">${listOpen
     ? 'Hide the list' : `Edit all machines (${layout.machines.length})`}</button>
           ${listOpen ? refusedHtml + machineListHtml() : ''}
+        </section>
+        <section class="card">
+          <h2>Floor plan</h2>
+          ${emptyFloor
+    ? `<p class="muted">No floor plan yet — and gymii works without one. Drawn,
+              it shows where each machine stands, finds a free one nearby and
+              traces your walking paths.</p>`
+    : `<div class="floor-preview"><svg id="floor-preview" xmlns="http://www.w3.org/2000/svg"
+              role="img" aria-label="Floor plan — tap a machine to open it"></svg></div>`}
+          <button id="map-open" class="btn">${emptyFloor ? 'Draw the floor plan' : 'Edit floor plan'}</button>
         </section>
         <section class="card">
           <h2>Location</h2>
@@ -1111,6 +1410,10 @@ export function renderGym(root) {
         </section>
         <section class="card">
           <h2>Templates</h2>
+          <!-- "Layout name", not "Gym name": Settings owns the gym's own name
+               (the one you switch between) — this one travels with the
+               exported template. Two different names, so they say so. -->
+          <label class="field"><span>Layout name</span><input id="gym-name" type="text" value="${esc(layout.name)}"></label>
           <button id="load-template" class="btn">Load template…</button>
           <button id="save-template" class="btn">Save as template</button>
           <div id="template-browser"></div>
@@ -1176,32 +1479,21 @@ export function renderGym(root) {
         layout.name = e.target.value.trim() || 'My gym';
         save();
       });
-      // The floor shrinks only down to what is on it (itemsExtent): past
-      // that a machine would sit off the floor, drawn where no tap reaches.
-      // The field stops there and says why, without a re-render.
-      const floorMsg = props.querySelector('#floor-msg');
-      const onFloor = (inputId, key) => {
-        props.querySelector(inputId).addEventListener('change', (e) => {
-          const want = clamp(Math.round(parseFloat(e.target.value) || 20), 20, 200);
-          const min = clamp(itemsExtent(layout)[key], 20, 200);
-          const v = Math.max(want, min);
-          floorMsg.hidden = v === want;
-          floorMsg.textContent = v === want ? ''
-            : `The plan's items reach to ${min} — move them in first to make the floor ${
-              key === 'w' ? 'narrower' : 'shorter'}.`;
-          e.target.value = v;
-          if (layout.grid[key] === v) return; // refused down to where it was: nothing to save
-          layout.grid[key] = v;
-          layout.outline.forEach((p) => { // keep the outline on the shrunk floor
-            p.x = Math.min(p.x, layout.grid.w);
-            p.y = Math.min(p.y, layout.grid.h);
-          });
-          save();
-          redraw();
-        });
-      };
-      onFloor('#floor-w', 'w');
-      onFloor('#floor-h', 'h');
+      props.querySelector('#machines-add').addEventListener('click', () => {
+        addItem('machine');
+        root.scrollTo?.(0, 0); // its card stands where the overview began
+      });
+      props.querySelector('#map-open').addEventListener('click', () => setMapOpen(true));
+      // the preview is a way into a machine's card, nothing more: it moves
+      // nothing, so a plain tap is all it takes
+      previewSvg = props.querySelector('#floor-preview');
+      previewSvg?.addEventListener('click', (e) => {
+        const id = e.target.closest?.('[data-id]')?.dataset.id;
+        if (!id || !layout.machines.some((m) => m.id === id)) return;
+        select(id);
+        root.scrollTo?.(0, 0);
+      });
+      if (previewSvg) redraw();
       return;
     }
 
@@ -1222,7 +1514,7 @@ export function renderGym(root) {
           ? `; the gym's is ${esc(gymBrand)}` : ''}.`
         : gymBrand
           ? `<strong>${esc(gymBrand)}</strong> — the gym's brand.`
-          : 'No brand — set the gym\'s on the Layout card, or this machine\'s own.';
+          : 'No brand — set the gym\'s on the Machines card, or this machine\'s own.';
       const chipRow = (options, selected) => options.map((o) =>
         `<button type="button" class="chip${selected.includes(o) ? ' sel' : ''}"
           data-value="${esc(o)}">${esc(o)}</button>`).join('');
@@ -1231,7 +1523,10 @@ export function renderGym(root) {
         `<button type="button" class="chip${muscleClass(item, o)}" aria-pressed="${musclePressed(item, o)}"
           data-value="${esc(o)}">${esc(o)}${muscleClass(item, o) === ' secondary' ? ' ½' : ''}</button>`).join('');
 
+      // On the page a machine's card stands in for the whole overview, so
+      // it says the way back; in the editor the plan is right above it.
       props.innerHTML = `
+        ${mapOpen ? '' : '<button type="button" id="props-back" class="back-row">‹ All of the gym</button>'}
         <section class="card">
           <h2>Machine <span class="machine-icon" aria-hidden="true">${machineIcon(item)}</span></h2>
           ${numberStepper('Number', 'm-num', item.num)}
@@ -1308,10 +1603,17 @@ export function renderGym(root) {
           </div>
           <label class="field"><span>Doc link</span><input id="m-doc" type="text" inputmode="url"
             placeholder="https://…" value="${esc(stagedText(item, 'docUrl', item.docUrl || ''))}"></label>
-          ${lockHint(item)}
+          ${mapOpen ? '' : '<button id="props-map" class="btn">🗺 Show on the floor plan</button>'}
           <button id="del-item" class="btn btn-danger">Delete machine</button>
         </section>`;
 
+      if (!mapOpen) {
+        props.querySelector('#props-back').addEventListener('click', () => select(null));
+        props.querySelector('#props-map').addEventListener('click', () => {
+          findHighlightId = item.id; // pulse it, so the eye finds it on the plan
+          setMapOpen(true);
+        });
+      }
       props.querySelector('#m-num').addEventListener('change', (e) => changeNum(item, e.target));
       // "Sets per visit": a whole number from 1 up pins the machine's set
       // goal (store's `targetSets`); empty — or anything else — inherits the
@@ -1519,7 +1821,6 @@ export function renderGym(root) {
             <div id="z-color">${colorRow(item.color)}</div>
           </div>
           ${layerRow(item)}
-          ${lockHint(item)}
           <button id="del-item" class="btn btn-danger">Delete</button>
         </section>`;
       wireColorRow('#z-color', item);

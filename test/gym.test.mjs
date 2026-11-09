@@ -47,6 +47,7 @@ function stubEl() {
     querySelector: () => stubEl(),
     querySelectorAll: () => [],
     classList: { toggle() {}, add() {}, remove() {} },
+    setAttribute() {}, // the Floor plan card's preview is drawn into one
   };
   return el;
 }
@@ -59,7 +60,15 @@ function fakeRoot() {
   floor.getScreenCTM = () => ({
     inverse: () => ({ a: 1 / S, b: 0, c: 0, d: 1 / S, e: -PAD, f: -PAD }),
   });
-  const cache = new Map([['#floor', floor]]);
+  // #props caches its nodes too, so a test can reach the page's buttons
+  // (Edit floor plan, + Machine) the last render wired
+  const props = stubEl();
+  const propsCache = new Map();
+  props.querySelector = (sel) => {
+    if (!propsCache.has(sel)) propsCache.set(sel, stubEl());
+    return propsCache.get(sel);
+  };
+  const cache = new Map([['#floor', floor], ['#props', props]]);
   return {
     floor,
     innerHTML: '',
@@ -71,6 +80,11 @@ function fakeRoot() {
   };
 }
 
+// The Gym opens on its page; the plan is edited behind "Edit floor plan"
+// (the Floor plan card's #map-open). The handlers below run either way —
+// the editor is a mode of the same render — but what a fresh item or the
+// item bar does depends on it, as the user sees it.
+const openMap = (root) => root.querySelector('#props').querySelector('#map-open').listeners.click.at(-1)();
 const at = (ux, uy) => ({ clientX: (ux + PAD) * S, clientY: (uy + PAD) * S });
 // what e.target.closest() must answer for a tap on an item body / its
 // resize handle (the outline-handle probe comes first and returns null)
@@ -229,6 +243,7 @@ assert.deepEqual([f1.x, f1.y], [16, 20], 'fixture still moves onto free floor');
 
 // --- a freshly added item starts UNLOCKED: you just made it on purpose ---
 root = gymWith([]);
+openMap(root);
 root.querySelector('#add-machine').listeners.click[0]();
 const fresh = store.getLayout().machines[0];
 dragSeq(root.floor, onItem(fresh.id), [fresh.x + 2, fresh.y + 1.5],
@@ -1049,6 +1064,7 @@ const openWithSyncedGrip = () => {
 // --- a stepper's label names the INPUT, never wraps the ± (a tap on the text pressed "−") ---
 {
   const { root, props } = gymWithProps([mk('m1', 1, 10, 10)]);
+  openMap(root); // the floor's size is set in the editor, on its Floor card
   for (const [label, id] of [['Floor width', 'floor-w'], ['Floor height', 'floor-h']]) {
     assert.ok(props.innerHTML.includes(`<div class="field"><label for="${id}">${label}</label>`),
       `${label}: a <label for> beside the stepper`);
@@ -1056,7 +1072,7 @@ const openWithSyncedGrip = () => {
       && props.innerHTML.includes(`aria-label="Increase ${label.toLowerCase()}">+</button>`), `${label}: ± say what they change`);
   }
   assert.ok(!/<label class="field"><span>[^<]*<\/span>\s*<div class="stepper"/.test(props.innerHTML),
-    'no label wraps a stepper on the Layout card');
+    'no label wraps a stepper on the Floor card');
   fire(root.floor, 'pointerdown', { ...at(11, 11), target: onItem('m1') });
   fire(root.floor, 'pointerup');
   assert.ok(props.innerHTML.includes('<div class="field"><label for="m-num">Number</label>')
@@ -1065,7 +1081,8 @@ const openWithSyncedGrip = () => {
 
 // --- the floor shrinks only down to what is on it ---
 {
-  const { props } = gymWithProps([mk('m1', 1, 40, 10), { ...mk('m2', 2, 10, 30), h: 4 }]);
+  const { root, props } = gymWithProps([mk('m1', 1, 40, 10), { ...mk('m2', 2, 10, 30), h: 4 }]);
+  openMap(root);
   const msg = props.querySelector('#floor-msg');
   const changeFloor = (sel, value) => {
     const el = { value };
@@ -1083,6 +1100,7 @@ const openWithSyncedGrip = () => {
   assert.equal(msg.hidden, true, 'and clears the hint');
   // with nothing on it, the floor's own floor (20) applies
   const empty = gymWithProps([]);
+  openMap(empty.root);
   const el = { value: '5' };
   last(empty.props.querySelector('#floor-w'), 'change')({ target: el });
   assert.equal(el.value, 20, 'an empty floor still keeps its minimum of 20');
@@ -1159,6 +1177,122 @@ const openWithSyncedGrip = () => {
   assert.deepEqual(reads.filter((k) => /workouts|settings/.test(k)), [],
     'eight moves, eight redraws — no storage read among them');
   store.saveSettings({ ...store.getSettings(), mapColors: 'custom' });
+}
+
+// --- the Gym opens on its page: + Machine there opens the card, nothing unlocked ---
+{
+  const root = gymWith([]);
+  const props = root.querySelector('#props');
+  assert.ok(props.innerHTML.includes('id="map-open"') && props.innerHTML.includes('Draw the floor plan'),
+    'an empty gym offers to draw the plan — on a card, not as the screen');
+  props.querySelector('#machines-add').listeners.click.at(-1)();
+  const m = store.getLayout().machines[0];
+  assert.ok(m, 'the Machines card adds a machine without opening the plan');
+  assert.ok(props.innerHTML.includes('id="props-back"') && props.innerHTML.includes('id="props-map"'),
+    'its card opens on the page, with the way back and the way onto the plan');
+  openMap(root);
+  dragSeq(root.floor, onItem(m.id), [m.x + 1, m.y + 1], [m.x + 9, m.y + 1]);
+  assert.equal(machineAt(m.id).x, m.x, 'added from the page, it is not unlocked on the plan');
+  assert.ok(!props.innerHTML.includes('id="props-back"'), 'in the editor the card needs no way back');
+}
+
+// --- Done leaves the editor: a zone has no card on the page ---
+{
+  const root = gymWith([], [{ id: 'z1', kind: 'rect', label: '', x: 5, y: 5, w: 10, h: 8 }]);
+  openMap(root);
+  dragSeq(root.floor, onItem('z1'), [6, 6], [6, 6]);
+  assert.ok(root.querySelector('#props').innerHTML.includes('<h2>Zone</h2>'), 'the zone is selected');
+  root.querySelector('#map-done').listeners.click[0]();
+  const html = root.querySelector('#props').innerHTML;
+  assert.ok(html.includes('<h2>Floor plan</h2>') && html.includes('<h2>Machines</h2>'),
+    'Done brings the page back, its overview');
+  assert.equal(root.querySelector('#item-bar').innerHTML, '', 'and the item bar is empty');
+}
+
+// --- DRAG FROM ANYWHERE: once unlocked, a drag elsewhere moves the unlocked item ---
+{
+  const root = gymWith([mk('m1', 1, 10, 10), mk('m2', 2, 30, 10)]);
+  openMap(root);
+  doubleTap(root.floor, 'm1', [12, 11.5]);
+  const floorAt = { closest: () => null };
+  dragSeq(root.floor, floorAt, [40, 30], [45, 32]);
+  assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [15, 12],
+    'a drag on empty floor moves the unlocked machine by the finger\'s distance');
+  dragSeq(root.floor, onItem('m2'), [32, 11.5], [32, 15.5]);
+  assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [15, 16],
+    'a drag that starts on another item moves the unlocked one too');
+  assert.deepEqual([machineAt('m2').x, machineAt('m2').y], [30, 10], 'not the one under the finger');
+  // a contact that does not travel past the slop is a TAP after all
+  dragSeq(root.floor, onItem('m2'), [32, 11.5], [32.6, 11.9]);
+  assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [15, 16], 'a wobbling tap moves nothing');
+  assert.ok(root.querySelector('#item-bar').innerHTML.includes('>#2<'), 'it selects the item it landed on');
+  dragSeq(root.floor, floorAt, [40, 30], [45, 32]);
+  assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [15, 16], 'which locked m1 again');
+  assert.deepEqual([machineAt('m2').x, machineAt('m2').y], [30, 10], 'and m2 starts locked');
+  // a tap on empty floor while unlocked deselects, as ever
+  doubleTap(root.floor, 'm2', [32, 11.5]);
+  dragSeq(root.floor, floorAt, [50, 30], [50, 30]);
+  assert.ok(root.querySelector('#item-bar').innerHTML.includes('Tap an item'), 'empty floor deselects');
+  dragSeq(root.floor, onItem('m2'), [32, 11.5], [32, 20]);
+  assert.deepEqual([machineAt('m2').x, machineAt('m2').y], [30, 10], 'and locks');
+}
+
+// --- the item bar: Move, the arrows and the size steps ---
+{
+  const root = gymWith([mk('m1', 1, 10, 10), mk('m2', 2, 14, 10)]);
+  openMap(root);
+  const bar = root.querySelector('#item-bar');
+  const press = (dataset, id = '') => bar.listeners.click[0]({ target: { closest: () => ({ id, dataset }) } });
+  dragSeq(root.floor, onItem('m1'), [11, 11], [11, 11]); // select
+  assert.ok(bar.innerHTML.includes('aria-pressed="false"') && !bar.innerHTML.includes('data-dx'),
+    'locked: Move is off and no arrows are offered');
+  press({ dx: '1', dy: '0' });
+  assert.equal(machineAt('m1').x, 10, 'and a stale arrow moves nothing');
+  press({}, 'item-move');
+  assert.ok(bar.innerHTML.includes('aria-pressed="true"') && bar.innerHTML.includes('data-dx'),
+    'Move unlocks it and offers the arrows');
+  press({ dx: '0', dy: '1' });
+  assert.deepEqual([machineAt('m1').x, machineAt('m1').y], [10, 11], 'one tap, one grid unit');
+  press({ dx: '1', dy: '0' });
+  assert.equal(machineAt('m1').x, 18, 'an arrow hops over a neighbour to the next free spot');
+  for (let i = 0; i < 60; i++) press({ dx: '1', dy: '0' });
+  assert.equal(machineAt('m1').x, store.getLayout().grid.w - 4, 'the floor\'s edge stops it');
+  press({ dw: '1', dh: '0' });
+  assert.equal(machineAt('m1').w, 4, 'no room to grow past the edge');
+  press({ dw: '0', dh: '1' });
+  assert.equal(machineAt('m1').h, 4, 'height grows by one');
+  for (let i = 0; i < 5; i++) press({ dw: '0', dh: '-1' });
+  assert.equal(machineAt('m1').h, 2, 'and shrinks down to 2, no further');
+  // the drag and the bar share ONE lock: the double tap turns Move off
+  doubleTap(root.floor, 'm1', [store.getLayout().grid.w - 3, 12]);
+  assert.ok(bar.innerHTML.includes('aria-pressed="false"'), 'a double tap locks it, the bar follows');
+  press({}, 'item-move');
+  press({}, 'item-move');
+  press({ dx: '-1', dy: '0' });
+  assert.equal(machineAt('m1').x, store.getLayout().grid.w - 4, 'Move off again: arrows do nothing');
+}
+
+// --- a wall grows along itself; a corner moves by arrow once the outline is unlocked ---
+{
+  const root = gymWith([], [{ id: 'w1', kind: 'line', x: 10, y: 20, w: -6, h: 0 }]);
+  openMap(root);
+  const bar = root.querySelector('#item-bar');
+  const press = (dataset, id = '') => bar.listeners.click[0]({ target: { closest: () => ({ id, dataset }) } });
+  dragSeq(root.floor, onItem('w1'), [8, 20], [8, 20]);
+  press({}, 'item-move');
+  assert.ok(bar.innerHTML.includes('Decrease length'), 'a wall offers a length, not width and height');
+  press({ dw: '1', dh: '0' });
+  const wall = () => store.getLayout().shapes.find((x) => x.id === 'w1');
+  assert.deepEqual([wall().w, wall().h], [-7, 0], 'longer in its own direction');
+  for (let i = 0; i < 10; i++) press({ dw: '-1', dh: '0' });
+  assert.equal(wall().w, -1, 'never shorter than one unit');
+
+  dragSeq(root.floor, onItem('outline'), [0, 0], [0, 0]);
+  press({}, 'item-move');
+  dragSeq(root.floor, onVertex(0), [0, 0], [0, 0]); // pick corner 0
+  press({ dx: '1', dy: '0' });
+  press({ dx: '0', dy: '1' });
+  assert.deepEqual(store.getLayout().outline[0], { x: 1, y: 1 }, 'the picked corner follows the arrows');
 }
 
 console.log('gym editor: all assertions passed');

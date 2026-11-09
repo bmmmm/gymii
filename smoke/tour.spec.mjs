@@ -87,6 +87,11 @@ test('an empty gym floor explains itself until the first item, without moving th
   await page.goto('/');
   await page.locator('#tour-skip').click();
   await page.locator('#view a[href="#gym"]').click();
+  // the Gym opens on its page; the plan is one card there, drawn on request
+  await expect(page.locator('#map-open')).toHaveText('Draw the floor plan');
+  await expect(page.locator('#floor-empty')).toBeHidden();
+  await page.locator('#map-open').click();
+  await expect(page.locator('#tabbar'), 'the editor takes the whole view').toBeHidden();
   await expect(page.locator('#floor-empty')).toBeVisible();
   await holdsTheRules(page, 'the empty gym');
   // the hint and its button fit inside the floor, which clips
@@ -97,7 +102,10 @@ test('an empty gym floor explains itself until the first item, without moving th
   });
   expect(fits, 'the template button is not clipped by the floor').toBe(true);
   await page.locator('#floor-empty-tpl').click();
+  // the Templates card lives on the page: the editor closes for it
   await expect(page.locator('#template-browser .tpl-load, #template-browser p').first()).toBeVisible();
+  await expect(page.locator('#tabbar')).toBeVisible();
+  await page.locator('#map-open').click();
 
   const y = async () => (await page.locator('#add-machine').boundingBox()).y;
   await page.evaluate(() => document.getElementById('view').scrollTo(0, 0));

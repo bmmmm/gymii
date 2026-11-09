@@ -7,6 +7,19 @@ holds open work only.
 
 ## 2026-11-09
 
+Shipped 2026-11-09 (`2026-11-09e`): the Gym screen and its floor plan,
+reorganised for small phones. The Gym now opens on its details — the
+Machines card with "+ Machine" first, the floor plan as a small preview
+card, then Location and Templates; "Edit floor plan" opens the plan as a
+full-screen editor without the tabbar ("‹ Done" leads back). There a
+selected item gets a bar right under the plan: "Move" unlocks it (the
+double tap still works), arrows shift it one grid unit per tap — hopping
+over a neighbour instead of refusing — and −/+ change its size, all 44px
+targets instead of a 13 px box to hit. With an item unlocked, a drag that
+starts ANYWHERE on the plan moves it by the finger's distance. Settings
+lost its "Gym" card: the link sits in "Your gyms" now. And a stepper
+beside a long label wraps under it instead of overflowing a 320px screen.
+
 Shipped 2026-11-09 (`2026-11-09d`): the last loose ends of Minimal mode. A
 plan waiting in the plan builder — an AI import lands there — is named on
 the Minimal screen with "Open the plan builder", which switches to the full
