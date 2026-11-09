@@ -194,6 +194,54 @@ settings, plus the sync-relevant sidecars:
   adopting the code's token as M1 did; a refusal (`401`) is a dead code.
   Parsers ignore fields they do not know.
 
+## Threat model (security audit 2026-11-09)
+
+What the design protects, and what it deliberately does not — so a later
+reader does not mistake an accepted trade for an oversight.
+
+- **Protected: the server's view.** In E2E mode the server (and anyone who
+  reads its disk or its traffic) sees only the outer envelope: gym id,
+  salt, IV, ciphertext and their sizes. The passphrase is generated, never
+  chosen (140 bits), so PBKDF2's iteration count is not what holds it.
+- **Not protected: the device.** The passphrase, salt and token sit in
+  `localStorage` in plain text (`gymii.<gid>.synckey`, `.sync`), and
+  "Show sync code" re-shows them. Whoever holds the unlocked phone, or code
+  running in the app's origin, holds the gym. The browser's origin
+  isolation and the device lock are the boundary; a non-extractable
+  CryptoKey would not change that while the code must stay re-showable for
+  pairing.
+- **A leaked sync code.** Revoking its token ends the holder's access to
+  the server — under Devices on ANOTHER device (a device's own entry has
+  no Revoke), or with the server's CLI. The passphrase cannot be changed
+  in place — a new one would need every device re-paired and a blob the
+  server holds under the old key — so anything the holder already fetched
+  stays readable to them. Starting over means a new gym: export a backup,
+  import it into a new gym and turn sync on there (new id, new passphrase,
+  new blob); delete the old gym WHILE its token still works, so its blob
+  goes too; then revoke that token.
+- **Rollback.** Nothing binds a blob to its revision: a hostile server can
+  hand back an OLDER blob it once held (AES-GCM authenticates the bytes,
+  not their age, and the envelope carries no associated data). The merge
+  limits the damage — per-record `updatedAt` and tombstones keep newer
+  local records and deletes — and fixing it would be an envelope v2.
+- **Plain mode** has no confidentiality at all: on a page without a secure
+  context the blob is readable on the server AND, without TLS, on the
+  network, token included. The card says so; it is the user's own server
+  and their call.
+- **A crafted pairing link.** `#pair=<code>` from someone else would join
+  THEIR server with THEIR passphrase. It never auto-pairs: the code is
+  scrubbed from the URL at once, the card names the server before
+  anything happens, and pairing takes the user's tap.
+- **The app's own page.** No inline script may run (`script-src 'self'`),
+  so markup that slips into `innerHTML` stays inert. A meta CSP cannot set
+  `frame-ancestors` and Pages sends no headers, so app.js refuses to run
+  inside another page's frame instead. `style-src 'unsafe-inline'` and an
+  open `connect-src` (the sync server is the user's choice, plain http
+  included) are accepted.
+- **Cache Storage.** The service worker leaves every request with an
+  `Authorization` header alone, so no sync answer is ever cached there
+  (same-origin mode shares the app's origin with the API).
+
 ## Sync flow (client)
 
 1. `GET` blob (or 304) → decrypt → `remote`.
