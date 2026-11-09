@@ -7,6 +7,14 @@ holds open work only.
 
 ## 2026-11-09
 
+Shipped 2026-11-09 (`2026-11-09c`): sets logged without reps no longer
+read as "0 kg". Their volume is unknown, not zero, and gymii does not
+guess it: next to sets with reps the total reads "≥ 640 kg" (a lower
+bound), a workout logged by weight alone shows its sets and no volume,
+and History's Volume tile and bar say "≥ 3,873 kg", or "—" for a week
+whose load was all weight-only. The calendar's day line follows the same
+rule.
+
 Shipped 2026-11-09 (`2026-11-09b`): "Keep screen awake: Whole workout"
 works in Minimal mode. A workout started there took no wake lock at all,
 and one finished there kept the screen awake until the full Train view

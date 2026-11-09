@@ -71,6 +71,8 @@ test('the hub switches to Minimal and back; sets log with and without reps', asy
   await page.locator('#open-workouts').click();
   const newest = page.locator('#workout-list details.workout').first();
   await expect(newest).toContainText('Leg press');
+  // two of its three sets have no reps: the volume is a lower bound, never a guess
+  await expect(newest.locator('summary')).toContainText(/3 sets · ≥ \d/);
   await newest.locator('summary').click();
   // the history's weight prefilled all three: two bare weights, then one with reps
   await expect(newest.locator('.entry-line')).toContainText(/#5 .*Leg press/);

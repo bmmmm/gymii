@@ -1102,4 +1102,25 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   }
 }
 
+// --- volume of sets without reps: unknown, never 0 and never guessed ---
+{
+  const v = stats.volumeOf([
+    { sets: [{ reps: 10, weight: 40 }, { weight: 80 }, { weight: 80, reps: 0 }] },
+    { bodyweight: true, sets: [{ reps: 12 }, { weight: 10 }] },
+    { assisted: true, sets: [{ weight: 20 }] },
+    { cardio: true, sets: [{ distance: 500, seconds: 120 }] },
+  ]);
+  assert.deepEqual(v, { volume: 400, open: 3 },
+    'reps × weight of the known sets; open = loaded sets without reps (0 reps too), a bodyweight one with added weight among them');
+  assert.deepEqual(stats.volumeOf([{ bodyweight: true, sets: [{ reps: 12 }] }]), { volume: 0, open: 0 },
+    'a bodyweight set without added weight carries no load: 0, not open');
+  assert.deepEqual(stats.volumeOf([{ assisted: true, sets: [{ weight: 20 }] }]), { volume: 0, open: 0 },
+    'an assist is help, not load: never open either');
+  const W = (t, sets) => ({ id: `v${t}`, startedAt: t, finishedAt: t + 3600000, entries: [{ machineId: 'm1', sets }] });
+  const b = stats.weeklyBuckets([W(day(0, 9), [{ weight: 80 }, { weight: 80 }]), W(day(0, 18), [{ reps: 10, weight: 50 }])],
+    { weeks: 1, now: NOW });
+  assert.deepEqual([b[0].volume, b[0].volumeOpen, b[0].sets], [500, 2, 3],
+    'a week counts its known volume and its open sets apart; every set still counts as a set');
+}
+
 console.log('stats.test.mjs: all passed');

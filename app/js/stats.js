@@ -94,7 +94,8 @@ function weekIndex(t, starts, end) {
 
 // Per-week rollup, oldest first; a workout belongs to the week its
 // startedAt falls in. `sets` counts every set (cardio included), `volume`
-// is reps × weight (bodyweight: × ADDED weight), `minutes` the workouts'
+// is reps × weight (bodyweight: × ADDED weight) of the sets whose reps are
+// known, `volumeOpen` the loaded sets without reps (volumeOf), `minutes` the workouts'
 // own durations (absent finishedAt = unknown = 0), `strengthDays` the
 // distinct days with at least one non-cardio set, `muscles` resistance sets
 // per tagged muscle (empty without a layout).
@@ -102,7 +103,7 @@ export function weeklyBuckets(workouts, { weeks = 12, now = Date.now(), layout =
   const { starts, end } = weekRange(weeks, now);
   const muscles = resistanceMuscles(layout);
   const buckets = starts.map((weekStart) => ({
-    weekStart, workouts: 0, sets: 0, volume: 0, minutes: 0, cardioMinutes: 0,
+    weekStart, workouts: 0, sets: 0, volume: 0, volumeOpen: 0, minutes: 0, cardioMinutes: 0,
     strengthDays: 0, muscles: new Map(),
   }));
   const days = buckets.map(() => new Set());
@@ -122,8 +123,9 @@ export function weeklyBuckets(workouts, { weeks = 12, now = Date.now(), layout =
       }
       if (!e.sets.length) return;
       days[i].add(startOfDay(w.startedAt).getTime());
-      // an assisted set's weight is the help, not the load: no volume
-      if (kindOf(e) !== 'assisted') b.volume += sum(e.sets.map(setVolume));
+      const v = volumeOf([e]); // an assist is help, not load: no volume
+      b.volume += v.volume;
+      b.volumeOpen += v.open;
       muscles.get(e.machineId)?.forEach(([mu, weight]) => {
         b.muscles.set(mu, (b.muscles.get(mu) ?? 0) + e.sets.length * weight);
       });
@@ -142,6 +144,27 @@ export function e1rm(weight, reps) {
 }
 
 const kindOf = (e) => (e.cardio ? 'cardio' : e.bodyweight ? 'bodyweight' : e.assisted ? 'assisted' : 'strength');
+
+// Volume (reps × weight) of some entries, and how much of it is OPEN: the
+// loaded sets logged without reps (Minimal mode logs the weight alone).
+// Their reps are unknown, never 0 and never guessed — so `volume` is a
+// lower bound whenever `open` > 0, and every display says so ("≥ 640 kg")
+// or, with nothing known at all, shows no volume instead of "0 kg". A
+// bodyweight set without added weight carries no load: it is 0, not open.
+// Cardio and assisted entries add nothing (an assist is help, not load).
+export function volumeOf(entries) {
+  let volume = 0;
+  let open = 0;
+  entries.forEach((e) => {
+    const kind = kindOf(e);
+    if (kind === 'cardio' || kind === 'assisted') return;
+    e.sets.forEach((st) => {
+      if (st.weight > 0 && !(st.reps > 0)) open += 1;
+      else volume += setVolume(st);
+    });
+  });
+  return { volume, open };
+}
 
 // The heaviest set, then the most reps; a tie goes to the LATER set (the
 // more fatigued one — its rating is the honest one).

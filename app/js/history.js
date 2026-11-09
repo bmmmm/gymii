@@ -7,12 +7,12 @@ import { workoutFromText } from './plantext.js';
 import {
   esc, fmtDate, fmtDay, fmtTime, workoutTotals, setStr, twoTapConfirm, plural,
   dateValue, timeValue, machineChain, keepInView, minsBetween, fmtDuration,
-  parseDuration, parseDistance, hintHtml, variantStr, fieldValue, keepFocus, fmtMetric, cssStr,
+  parseDuration, parseDistance, hintHtml, variantStr, fieldValue, keepFocus, fmtMetric, fmtVolume, cssStr,
   entryKind, machineIcon,
 } from './ui.js';
 import { lineChart, barChart } from './chart.js';
 import {
-  machineSeries, weeklyBuckets, insights, workoutPath, transitionCounts, seriesKey, sameSeries, quantile,
+  machineSeries, weeklyBuckets, volumeOf, insights, workoutPath, transitionCounts, seriesKey, sameSeries, quantile,
 } from './stats.js';
 import { drawLayout } from './map.js';
 import { startWorkoutFrom } from './train.js';
@@ -286,6 +286,12 @@ const METRICS = [['workouts', 'Workouts'], ['sets', 'Sets'], ['volume', 'Volume'
 const metricOf = (s) => (METRICS.some(([k]) => k === s.historyMetric) ? s.historyMetric : 'sets');
 const metricValue = (b, metric) => (metric === 'volume' || metric === 'minutes'
   ? Math.round(b[metric]) : b[metric]); // stats.js hands back raw floats
+// What a tile and its bar SAY: the volume of a week with sets logged
+// without reps is a lower bound ("≥ 3,873 kg"), or unknown ("—") when that
+// is all its load was — never "0 kg" (ui.js fmtVolume, stats.js volumeOf).
+const metricText = (b, metric, unit) => (metric === 'volume'
+  ? fmtVolume(metricValue(b, metric), b.volumeOpen, unit)
+  : fmtMetric(metricValue(b, metric), metric, unit));
 // "8 Sep": a week's Monday — "Week of" already says which weekday it is
 const dayMonth = (t) => fmtDay(t).replace(/^\S+ /, '');
 
@@ -307,8 +313,8 @@ const statTileHtml = ([key, title], { bar, before }, metric, unit) => `
       <button type="button" class="tile stat${key === metric ? ' sel' : ''}" data-metric="${key}"
         aria-pressed="${key === metric}">
         <span class="tile-title">${title}</span>
-        <span class="tile-value">${esc(fmtMetric(metricValue(bar, key), key, unit))}</span>
-        <span class="tile-sub">vs ${esc(fmtMetric(metricValue(before, key), key, unit))} the week before</span>
+        <span class="tile-value">${esc(metricText(bar, key, unit))}</span>
+        <span class="tile-sub">vs ${esc(metricText(before, key, unit))} the week before</span>
       </button>`;
 
 const weekCard = {
@@ -351,9 +357,10 @@ const weekCard = {
       const { bars } = weekData(ctx);
       barChart(chartEl, bars.map((b) => ({
         key: String(b.weekStart.getTime()), label: dayMonth(b.weekStart), v: metricValue(b, metric),
+        text: metricText(b, metric, unit),
       })), {
-        // the selected bar reads exactly like its tile ("2:29 h", "3,873 kg")
-        format: (v) => fmtMetric(v, metric, unit),
+        // the selected bar reads exactly like its tile ("2:29 h", "≥ 3,873 kg")
+        format: (_v, bar) => bar.text,
         label: `${title} per week, last ${WEEKS} weeks`,
         selectedKey: pickedWeek == null ? null : String(pickedWeek),
         onSelect: (bar) => {
@@ -729,14 +736,14 @@ function wireHeatmap(root, { workouts, s, unit, layout }) {
       const entries = sel ? w.entries.filter((e) => sameSeries(e, sel)) : w.entries;
       const sets = entries.reduce((n, e) => n + e.sets.length, 0);
       if (!sets) return;
-      // an assisted set's weight is the help, not the load: no volume
-      const volume = entries.reduce((v, e) => (entryKind(e) === 'assisted' ? v
-        : v + e.sets.reduce((x, st) => x + (st.reps * st.weight || 0), 0)), 0);
+      // an assist adds no volume; sets without reps are open, not 0 (volumeOf)
+      const { volume, open } = volumeOf(entries);
       const dist = entries.reduce(
         (v, e) => v + e.sets.reduce((x, st) => x + (st.distance || 0), 0), 0);
-      const day = days.get(d.getDate()) || { sets: 0, volume: 0, dist: 0, nums: new Set() };
+      const day = days.get(d.getDate()) || { sets: 0, volume: 0, open: 0, dist: 0, nums: new Set() };
       day.sets += sets;
       day.volume += volume;
+      day.open += open;
       day.dist += dist;
       entries.forEach((e) => day.nums.add(liveNum.get(e.machineId) ?? e.num));
       days.set(d.getDate(), day);
@@ -767,7 +774,7 @@ function wireHeatmap(root, { workouts, s, unit, layout }) {
         const label = fmtDay(new Date(y, m, dayNum));
         hmInfo.textContent = info
           ? [`${label} — ${plural(info.sets, 'set')}`,
-            info.volume ? `${Math.round(info.volume)} ${unit}` : '',
+            info.volume ? `${info.open ? '≥ ' : ''}${Math.round(info.volume)} ${unit}` : '',
             info.dist ? `${Math.round(info.dist * 100) / 100} ${distUnit(s)}` : '',
             [...info.nums].sort((a, b) => a - b).map((n) => `#${n}`).join(', ')]
             .filter(Boolean).join(' · ')
@@ -996,6 +1003,12 @@ function wireWorkoutList(root, list, items, s, layout, { readOnly = false } = {}
 }
 
 const setCount = (w) => w.entries.reduce((n, e) => n + e.sets.length, 0);
+// " · 760 kg" after a set count — or nothing, for a workout logged by
+// weight alone (workoutTotals says '' then: no volume is known)
+const totalsPart = (w, s) => {
+  const totals = workoutTotals(w, s);
+  return totals ? ` · ${totals}` : '';
+};
 const minsOf = (w) => // finishedAt can be absent in imported data
   minsBetween(w.startedAt, w.finishedAt ?? w.startedAt);
 
@@ -1015,7 +1028,7 @@ function workoutHtml(w, s, layout, open = false, readOnly = false) {
       <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>
         <span class="muted">${fmtTime(w.startedAt)} · ${minsOf(w)} min</span></div>
       <div class="muted">${w.name ? `<strong>${esc(w.name)}</strong> · ` : ''}${chain}</div>
-      <div class="muted">${plural(sets, 'set')} · ${workoutTotals(w, s)}${w.locker
+      <div class="muted">${plural(sets, 'set')}${totalsPart(w, s)}${w.locker
         ? ` · 🔒 ${esc(w.locker)}` : ''}</div>
     </summary>
     ${w.entries.map((e) => `
@@ -1111,7 +1124,7 @@ function editWorkoutHtml(w, s, layout, gripMsg = null) {
     <summary>
       <div class="spread"><strong>${fmtDate(w.startedAt)}</strong>
         <span class="muted">${fmtTime(w.startedAt)} · ${minsOf(w)} min</span></div>
-      <div class="muted">Editing — ${plural(sets, 'set')} · ${workoutTotals(w, s)}</div>
+      <div class="muted">Editing — ${plural(sets, 'set')}${totalsPart(w, s)}</div>
     </summary>
     <div class="row">
       <label class="field"><span>Date</span>

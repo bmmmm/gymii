@@ -118,9 +118,6 @@ stand. An expectation that fails becomes an issue labelled `bug`.
 Left open by the PR on purpose; Locker, the grips UI, plans and the rest
 timer are out of Minimal's scope by design.
 
-- **Volume of rep-less sets (decision).** A set logged with just the
-  weight counts 0 volume, so a pure Minimal workout reads "0 kg" in
-  History. Count it somehow, or show no volume instead of 0?
 - **Plan builder while Minimal is on.** The AI plan import / builder waits
   until Minimal is off and does not say why — it needs a hint.
 - **Bind prompt.** An open bind prompt (`active.binding`) from the full

@@ -71,8 +71,16 @@ screen is ABSENT, never 0 or null. Every reader guards: ui.js `setStr` reads
 shows an empty field and writes reps (or a weight) only once one is typed,
 the AI export puts `null` in the tuple's place (the prompt and the note say
 null = not recorded), `nextSetDefaults` prefills 10 reps, and stats.js
-derives nothing from absent reps: no e1RM, no volume, no beaten target, no
-assist rep range or rep record (docs/insights.md). Pinned in
+derives nothing from absent reps: no e1RM, no beaten target, no assist rep
+range or rep record (docs/insights.md) — and no volume, which is UNKNOWN
+for such a set, not 0, and never guessed. stats.js `volumeOf()` is the one
+volume rule (workoutTotals, weeklyBuckets and the heatmap all call it): it
+returns the known volume and `open`, the loaded sets without reps, and
+every display says what that means — "≥ 640 kg" next to known volume, no
+volume part at all for a workout logged by weight alone (workoutTotals
+returns '' then, and each caller drops its " · "), "—" for a week whose
+load is all open. A bodyweight set without added weight carries no load
+(0, not open); an assist is never volume. Pinned in
 test/ui, history, ai, stats, train and minimal. Live-logged sets also
 carry `at` (epoch ms, stamped at log time) — older sets lack it, and so
 must sets added by editing or back-logging; every consumer must guard.
