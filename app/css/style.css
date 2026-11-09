@@ -451,6 +451,7 @@ body.map-editing #view { padding-bottom: calc(24px + env(safe-area-inset-bottom)
    320px — under them, the pad would push the sizes off a short screen */
 .sizer { display: grid; grid-template-columns: 44px 44px; gap: 2px 4px; font-size: 15px; text-align: center; }
 .sizer span { grid-column: 1 / -1; }
+.sizer .btn.sizer-wide { width: auto; grid-column: 1 / -1; margin-top: 6px; font-size: 16px; }
 
 svg.floor { display: block; width: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
 

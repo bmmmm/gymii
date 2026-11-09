@@ -377,7 +377,7 @@ function gymWithProps(machines, meta = {}) {
 const last = (el, type) => el.listeners[type].at(-1);
 const chipTap = (value) => ({ target: { closest: () => ({ dataset: { value } }) } });
 
-// --- the brand lives on the gym: the Machines card sets it and folds the machines into it ---
+// --- the brand lives on the gym: the Brand card sets it and folds the machines into it ---
 {
   const { root, props } = gymWithProps([
     { ...mk('m1', 1, 2, 2), brand: 'Technogym' },
@@ -1286,6 +1286,16 @@ const openWithSyncedGrip = () => {
   assert.deepEqual([wall().w, wall().h], [-7, 0], 'longer in its own direction');
   for (let i = 0; i < 10; i++) press({ dw: '-1', dh: '0' });
   assert.equal(wall().w, -1, 'never shorter than one unit');
+  // Turn: a quarter clockwise around the start — a short wall on a phone
+  // has no end handle, so this is its only way to change direction
+  for (let i = 0; i < 4; i++) press({ dw: '1', dh: '0' }); // back to -5: x 10 → 5
+  assert.ok(bar.innerHTML.includes('data-turn'), 'a wall offers Turn');
+  press({ turn: '1' });
+  assert.deepEqual([wall().w, wall().h], [0, -5], 'left turns to up');
+  press({ turn: '1' });
+  assert.deepEqual([wall().w, wall().h], [5, 0], 'up turns to right');
+  for (let i = 0; i < 2; i++) press({ turn: '1' });
+  assert.deepEqual([wall().w, wall().h], [-5, 0], 'four turns bring the wall back');
 
   dragSeq(root.floor, onItem('outline'), [0, 0], [0, 0]);
   press({}, 'item-move');
@@ -1293,6 +1303,20 @@ const openWithSyncedGrip = () => {
   press({ dx: '1', dy: '0' });
   press({ dx: '0', dy: '1' });
   assert.deepEqual(store.getLayout().outline[0], { x: 1, y: 1 }, 'the picked corner follows the arrows');
+}
+
+// --- a turn that would end off the floor is refused, not shortened ---
+{
+  const h = store.newLayout('x').grid.h;
+  const root = gymWith([], [{ id: 'w2', kind: 'line', x: 5, y: h - 2, w: 10, h: 0 }]);
+  openMap(root);
+  const bar = root.querySelector('#item-bar');
+  const press = (dataset, id = '') => bar.listeners.click[0]({ target: { closest: () => ({ id, dataset }) } });
+  dragSeq(root.floor, onItem('w2'), [8, h - 2], [8, h - 2]);
+  press({}, 'item-move');
+  press({ turn: '1' });
+  const wall = store.getLayout().shapes.find((x) => x.id === 'w2');
+  assert.deepEqual([wall.w, wall.h], [10, 0], 'right → down would leave the floor: it stays as it was');
 }
 
 console.log('gym editor: all assertions passed');

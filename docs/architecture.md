@@ -715,7 +715,12 @@ floor outline only hands out its vertex/midpoint handles while it is the
 unlocked one. On a phone a tap that drifts used to shove a whole zone
 across the floor, and the resize handle sat exactly where the thumb grabs
 an item — both now need a deliberate unlock first (a double tap, or the
-editor's Move toggle), and the same gesture takes it back (gym.js owns it). Also exports `findMachineByNum`, the collision helpers
+editor's Move toggle), and the same gesture takes it back (gym.js owns it).
+The RESIZE HANDLE only goes on an item at least `HANDLE_MIN_ITEM_PX` (88px,
+twice its hit circle) on screen — for a wall, its length. Its 44px circle
+sits on the corner, and on a 22×18px machine (a 5×4 box on a 320px phone)
+it covered the whole body: every grab RESIZED instead of moving, and the
+thumb was blamed. A smaller item is sized by the item bar's −/+. Also exports `findMachineByNum`, the collision helpers
 (`fits`, plus `overlapsSolid`/`freeSpot`/`WALL_SNAPPED` re-exported from
 geometry.js, which owns the placement geometry because store.js's
 `addMachine` places machines too; `snap()` rounds to geometry.js's `SNAP`, the
@@ -759,8 +764,9 @@ The Gym screen and its floor-plan editor (renderer imported from map.js).
 TWO MODES, one closure (`mapOpen`, `setMapOpen()`): the PAGE — Machines
 card first (`#machines-add` leads it, as "+ Machine"), then a Floor plan
 card holding a read-only `#floor-preview` (a tap on a machine there opens
-its card) and `#map-open`, then Location and Templates (the layout name
-lives there) — and the EDITOR, `#map-editor`, shown in its place: add
+its card) and `#map-open`, then the Brand card (~16 chips: above the plan
+they pushed it a whole screen down), Location and Templates (the layout
+name lives there) — and the EDITOR, `#map-editor`, shown in its place: add
 buttons, the plan, the item bar, the find row and the Floor card. The
 plan was the screen's first thing and the least important one, and on
 a 320px phone a 3×2 machine is ~13×9 px — a drag on it was a lottery.
@@ -782,7 +788,11 @@ neighbour to the next spot that `fits()`, stopping at the floor's edge;
 wall-snapped fixtures re-snap to their wall; for the outline it moves the
 picked corner `selectedVertex`) and −/+ size buttons (`resize`: a wall's
 length along its axis, a wall piece's width around its centre, else
-width/height, refused when it would not fit). Every step is one `save()`,
+width/height, refused when it would not fit) — and for a wall a Turn
+(`turn`: a quarter clockwise around its start, refused rather than
+shortened when the end would leave the floor, so four turns give back the
+wall it was; a short wall has no end handle any more, so this is its way
+to change direction). Every step is one `save()`,
 so one undo entry. DRAG FROM ANYWHERE: with an item unlocked, a
 pointerdown that misses it starts a RELATIVE move of that item
 (`drag.pending` holds the down point); only once the contact travels past
@@ -827,7 +837,7 @@ so whichever control saves, a field is persisted exactly as its own
 changes nothing and records no undo step. Undo/redo drop staged text. A
 field abandoned without a blur keeps its raw text until its next `change`
 or an undo.
-BRAND: the page's Machines card owns the `MACHINE_BRANDS` chips +
+BRAND: the page's Brand card (below the plan) owns the `MACHINE_BRANDS` chips +
 free text (`#gym-brands`, writes through store's `setGymBrand`; typed
 text goes through `matchBrand`; a hint line counts the brands machines
 carry as their OWN — `ownBrand`, so a copy of the gym's is not listed).

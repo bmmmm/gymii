@@ -83,16 +83,29 @@ assert.equal(tagsWith(svg.innerHTML, 'handle-hit').length, 0,
   'no resize handle until the item is double-tapped');
 assert.ok(!svg.innerHTML.includes('handle-icon'), 'no resize icon under the thumb either');
 
-// --- unlocked by a double tap: solid outline, icon handle, big hit circle ---
+// --- unlocked SMALL item: solid outline, but NO handle ---
+// The 44px hit circle on the corner of a 22×17px machine covered all of it:
+// every grab resized instead of moving. The item bar sizes it instead.
 svg = fakeSvg();
 drawLayout(svg, layout, { editor: true, selectedId: 'm1', unlockedId: 'm1' });
 assert.ok(tagsWith(svg.innerHTML, 'selected-outline')[0].includes('unlocked'),
   'an unlocked outline says so, so the state reads at arm\'s length');
+assert.equal(tagsWith(svg.innerHTML, 'handle-hit').length, 0,
+  'an item under 88px a side has no handle that would swallow its body');
+assert.ok(!svg.innerHTML.includes('handle-icon'), 'nor its icon');
+// a short wall the same: its end handle would cover the whole line
+svg = fakeSvg();
+drawLayout(svg, layout, { editor: true, selectedId: 'l1', unlockedId: 'l1' });
+assert.equal(tagsWith(svg.innerHTML, 'handle-hit').length, 0, '55px wall: no end handle');
+
+// --- unlocked BIG item: icon handle, big hit circle ---
+svg = fakeSvg();
+drawLayout(svg, layout, { editor: true, selectedId: 'z1', unlockedId: 'z1' });
 const hits = tagsWith(svg.innerHTML, 'handle-hit');
 assert.equal(hits.length, 1, 'exactly one resize hit circle');
 assert.equal(attr(hits[0], 'data-handle'), '1', 'hit circle carries data-handle');
 assert.ok(close(num(hits[0], 'r'), 22 / ppu), 'hit circle radius is 22px (44px diameter)');
-assert.ok(close(num(hits[0], 'cx'), 14) && close(num(hits[0], 'cy'), 13),
+assert.ok(close(num(hits[0], 'cx'), 50) && close(num(hits[0], 'cy'), 25),
   'hit circle sits on the bottom-right corner');
 const visible = tagsWith(svg.innerHTML, 'handle');
 assert.equal(visible.length, 1, 'one visible handle circle');
@@ -100,9 +113,10 @@ assert.ok(visible[0].includes('pointer-events="none"'), 'visible handle does not
 assert.ok(close(num(visible[0], 'r'), 13 / ppu), 'visible handle is 26px across');
 assert.equal(tagsWith(svg.innerHTML, 'handle-icon').length, 1, 'diagonal arrow icon present');
 
-// --- machine flush against the corner: handle clamped into the viewBox ---
+// --- item flush against the corner: handle clamped into the viewBox ---
 svg = fakeSvg();
-drawLayout(svg, layout, { editor: true, selectedId: 'm2', unlockedId: 'm2' });
+drawLayout(svg, { ...layout, shapes: [...layout.shapes, { id: 'zc', kind: 'rect', x: 40, y: 20, w: 20, h: 20 }] },
+  { editor: true, selectedId: 'zc', unlockedId: 'zc' });
 const hitR = 22 / ppu;
 const hit2 = tagsWith(svg.innerHTML, 'handle-hit')[0];
 assert.ok(close(num(hit2, 'cx'), 60 + PAD - hitR) && close(num(hit2, 'cy'), 40 + PAD - hitR),
@@ -110,9 +124,9 @@ assert.ok(close(num(hit2, 'cx'), 60 + PAD - hitR) && close(num(hit2, 'cy'), 40 +
 
 // --- the unlock belongs to ONE item: a stale id never unlocks the selected one ---
 svg = fakeSvg();
-drawLayout(svg, layout, { editor: true, selectedId: 'm1', unlockedId: 'm2' });
+drawLayout(svg, layout, { editor: true, selectedId: 'z1', unlockedId: 'm2' });
 assert.equal(tagsWith(svg.innerHTML, 'handle-hit').length, 0,
-  'another item being unlocked does not hand m1 a handle');
+  'another item being unlocked does not hand z1 a handle');
 
 // --- outline selected but LOCKED: no corner handles to grab by accident ---
 svg = fakeSvg();
@@ -200,7 +214,7 @@ assert.ok(!svg.innerHTML.includes('locate') && !svg.innerHTML.includes('opacity=
 // --- zero-width fallback: sizes stay finite ---
 svg = fakeSvg();
 svg.getBoundingClientRect = () => ({ width: 0 });
-drawLayout(svg, layout, { editor: true, selectedId: 'm1', unlockedId: 'm1' });
+drawLayout(svg, layout, { editor: true, selectedId: 'z1', unlockedId: 'z1' });
 const fallbackHit = tagsWith(svg.innerHTML, 'handle-hit')[0];
 assert.ok(Number.isFinite(num(fallbackHit, 'r')) && num(fallbackHit, 'r') > 0,
   'ASSUMED_SVG_PX fallback keeps handle sizes finite');
