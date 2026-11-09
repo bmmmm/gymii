@@ -85,9 +85,9 @@ function loadWorker() {
 }
 
 // A FetchEvent stand-in that records what the worker did with it.
-function fetchEvent(url, method = 'GET') {
+function fetchEvent(url, method = 'GET', headers = {}) {
   return {
-    request: { url, method },
+    request: { url, method, headers: new Headers(headers) },
     answers: [],   // respondWith arguments
     waits: [],     // waitUntil arguments
     respondWith(p) { this.answers.push(p); },
@@ -113,6 +113,21 @@ const flush = async () => { for (let i = 0; i < 6; i++) await new Promise((r) =>
   const w = loadWorker();
   const e = w.dispatch(fetchEvent('https://cdn.example/lib.js'));
   assert.equal(e.answers.length, 0, 'a cross-origin request is left to the browser');
+}
+
+// A sync request on our own origin (gymii-sync's same-origin mode) is the
+// user's data: the gym blob, the gym list, the device list. None of it may
+// land in Cache Storage, where it outlived a factory reset and came back as
+// a stale revision on a slow server.
+for (const path of ['/v1/gyms/g1', '/v1/gyms', '/v1/tokens']) {
+  const w = loadWorker();
+  let asked = 0;
+  w.network(() => { asked += 1; return Promise.resolve(makeResponse('blob')); });
+  const e = w.dispatch(fetchEvent(`${ORIGIN}${path}`, 'GET', { Authorization: 'Bearer t0k' }));
+  await flush();
+  assert.equal(e.answers.length, 0, `${path}: an authorized request is left to the browser`);
+  assert.equal(asked, 0, `${path}: the worker never fetches it itself`);
+  assert.equal(w.puts.length, 0, `${path}: nothing of it is cached`);
 }
 
 // ------------------------------------------------------------- online
