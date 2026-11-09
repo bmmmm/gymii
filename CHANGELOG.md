@@ -7,6 +7,11 @@ holds open work only.
 
 ## 2026-11-09
 
+Shipped 2026-11-09 (`2026-11-09b`): "Keep screen awake: Whole workout"
+works in Minimal mode. A workout started there took no wake lock at all,
+and one finished there kept the screen awake until the full Train view
+rendered again; both views now take and release it on the same rule.
+
 Shipped 2026-11-09 (`2026-11-09`): Minimal mode. One "Minimal" chip on the
 Train screen (and on a running workout's overview) turns Train into a single
 screen without the tab bar: tap an exercise — the ones trained last come

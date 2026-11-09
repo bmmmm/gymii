@@ -118,9 +118,6 @@ stand. An expectation that fails becomes an issue labelled `bug`.
 Left open by the PR on purpose; Locker, the grips UI, plans and the rest
 timer are out of Minimal's scope by design.
 
-- **Wake Lock.** With `keepAwake: 'workout'` only `renderTrain` (train.js)
-  updates the lock; a workout finished in Minimal keeps the screen awake
-  until Train renders again.
 - **Volume of rep-less sets (decision).** A set logged with just the
   weight counts 0 volume, so a pure Minimal workout reads "0 kg" in
   History. Count it somehow, or show no volume instead of 0?
