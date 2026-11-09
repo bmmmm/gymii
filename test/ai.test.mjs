@@ -198,6 +198,19 @@ assert.match(DEFAULT_PROMPT, /"visits"[^.]*\[num, seconds in, seconds out\]/, 't
     'the entry says assisted, its weight is the assist');
   assert.match(ex.note, /assisted:true entries log the ASSISTANCE/, 'the note says what the weight is');
   assert.match(DEFAULT_PROMPT, /assisted:true[^;]*ASSISTANCE — less is stronger/, 'and so does the prompt');
+  // reps are optional (Minimal mode): a missing value is null in its place
+  store.saveWorkouts([{ id: 'mw', startedAt: t0, finishedAt: t0 + 60000, entries: [
+    { machineId: 'ap', num: 17, label: 'Assisted pull-up', assisted: true, settings: {}, sets: [{ weight: 25, at: t0 + 30000 }] },
+    { machineId: 'm1', num: 1, label: 'Chest press', settings: {}, sets: [{ weight: 40 }, { weight: 40, reps: 8 }] },
+    { machineId: 'm1', num: 1, label: 'Chest press', bodyweight: true, settings: {}, sets: [{ reps: 12 }] },
+  ] }]);
+  const bare = JSON.parse(buildAiExport()).workouts[0].entries;
+  assert.deepEqual(bare[0].sets, [[25, null, 30]], 'an assist logged alone: null where the reps go');
+  assert.deepEqual(bare[1].sets, [[40, null], [40, 8]], 'a weight alone: [40, null] — never a guessed 0');
+  assert.deepEqual(bare[2].sets, [[null, 12]], 'a bodyweight set without a weight: null for it');
+  assert.match(DEFAULT_PROMPT, /\[weight, reps\], where null in either place means it was not recorded/,
+    'the prompt says what null means');
+  assert.match(JSON.parse(buildAiExport()).note, /sets are \[weight, reps\] \(null = not recorded/, 'so does the note');
   store.saveWorkouts([]);
   store.saveLayout(keepLayout);
 }

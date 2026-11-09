@@ -705,6 +705,36 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   const reps12 = [W(day(9), [A([S(12, 25)])]), W(day(5), [A([S(12, 25)])], { planId: 'pp' })];
   assert.equal(stats.assistGoalAt(reps12, LA(), planned, { machineId: 'ma' }).goal, 'strength', 'the plan target decides');
   assert.equal(stats.assistGoalAt(reps12, LA(), [], { machineId: 'ma' }).goal, 'endurance', 'without it, 12 reps do');
+
+  // Minimal mode logs the assist alone ({weight}, no reps): no rep range to
+  // go by, and no rep record to stall
+  const bare = (kg) => ({ weight: kg });
+  assert.deepEqual(stats.assistGoal({}, pts([[30, 0]])), { goal: 'strength', observed: true, basis: 'none' },
+    'a top set without reps is no rep range: it says it read nothing');
+  const assistOnly = Array.from({ length: 9 }, (_, i) => W(day(40 - 4 * i), [A([bare(25)])]));
+  assert.equal(find(assistOnly, 'plateau', { layout: LA('endurance') }), undefined,
+    'endurance said, the assist alone logged: no "No new rep best (0 reps)"');
+  assert.equal(find(assistOnly, 'plateau', { layout: LA('strength') })?.text,
+    'No new low in 8 workouts (25 kg assist) — vary reps or assist.', 'the assist record still works without reps');
+}
+
+// --- reps are optional: a series of weight-only sets (Minimal mode) ---
+{
+  const bare = (kg) => ({ weight: kg, at: 1 });
+  assert.equal(stats.e1rm(80, undefined), null, 'no reps: no e1RM');
+  const one = stats.machineSeries([W(day(3), [E('m1', [bare(80), bare(85)])])], 'm1');
+  assert.deepEqual([one[0].top, one[0].e1rm, one[0].volume, one[0].sets], [{ weight: 85, reps: 0 }, null, 0, 2],
+    'the top set is the heaviest, no estimate, no volume — but two sets');
+  // ten workouts on one weight, then more: every rule runs, none fires on the machine
+  const flat = Array.from({ length: 10 }, (_, i) => W(day(30 - 3 * i), [E('m1', [bare(80), bare(80), bare(80)])]));
+  let rows;
+  assert.doesNotThrow(() => { rows = stats.insights(flat, LAYOUT, KG, { now: NOW }); }, 'no rule crashes on weight-only sets');
+  assert.deepEqual(rows.filter((r) => r.machineId === 'm1' && ['progress', 'plateau'].includes(r.kind)), [],
+    'no progress (no target beaten) and no plateau (no e1RM) from weights alone');
+  const bw = Array.from({ length: 4 }, (_, i) => W(day(8 - 2 * i), [E('m1', [{ reps: 12, at: 1 }], { bodyweight: true })]));
+  assert.doesNotThrow(() => stats.insights(bw, LAYOUT, KG, { now: NOW }), 'nor on bodyweight sets without a weight');
+  const weeks = stats.weeklyBuckets(flat, { weeks: 5, now: NOW });
+  assert.ok(weeks.some((b) => b.sets > 0) && weeks.every((b) => b.volume === 0), 'they count as sets, add no volume');
 }
 
 // --- secondary muscles: half a set each, and never "trained" for the gap rule ---

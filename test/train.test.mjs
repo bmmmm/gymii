@@ -506,6 +506,14 @@ assert.deepEqual(nextSetDefaults({ sets: [{ reps: 10, weight: 42.5 }] }, prev, '
   { reps: 10, weight: 42.5 }, 'b: the set just logged beats the same set number from history');
 assert.deepEqual(nextSetDefaults({ sets: prev.sets.slice() }, prev, 'strength', kgS),
   { reps: 8, weight: 50 }, 'b: the set just done keeps winning past history\'s set count');
+// reps are optional (Minimal mode logs the weight alone): a weight-only set
+// still prefills a full set — its weight, and the default 10 reps
+assert.deepEqual(nextSetDefaults({ sets: [] }, { sets: [{ weight: 80, at: 1 }] }, 'strength', kgS),
+  { reps: 10, weight: 80 }, 'b: a weight-only previous set prefills 10 reps');
+assert.deepEqual(nextSetDefaults({ sets: [{ weight: 82.5, at: 2 }] }, prev, 'strength', kgS),
+  { reps: 10, weight: 82.5 }, 'b: so does one just logged this workout');
+assert.deepEqual(nextSetDefaults({ sets: [{ weight: 25, at: 2 }] }, null, 'assisted', kgS),
+  { reps: 10, weight: 25 }, 'b: an assist-only set the same');
 // history only ever seeds the opener — a non-empty entry never reads `last`,
 // so the previous workout's later sets are unreachable by construction; both
 // sides of that line are pinned above.
