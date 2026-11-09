@@ -405,9 +405,10 @@ function syncCard(gym, shownCode, shownQr) {
       ? `<p class="muted">This page runs without HTTPS, so the browser refuses to
         encrypt here. Sync can still run <strong>unencrypted</strong>: this gym —
         floor plan, workouts and plans — is stored readably on the sync server you
-        run yourself. On your own box in your own network that can be a fine
-        trade; it is your server and your call. Opt-in per gym: this switches on
-        "${esc(gym.name)}" alone. Serve gymii over HTTPS (or localhost) and this
+        run yourself, and without HTTPS it also travels readably: anyone on the same
+        network can see it and the token on the way. On your own box in your own
+        network that can be a fine trade; it is your server and your call. Opt-in
+        per gym: this switches on "${esc(gym.name)}" alone. Serve gymii over HTTPS (or localhost) and this
         same card offers end-to-end encryption instead.</p>`
       : `<p class="muted">Sync is off. Turn it on and this gym — floor plan, workouts and
         plans — is encrypted on this device before it leaves it, and stored on a sync
