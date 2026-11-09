@@ -107,16 +107,11 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   (GraphQL `issueTemplates` returns `[]` even for working YAML forms;
   the chooser is login-gated) — it needs real clicks, then close the
   test issue.
-- [ ] **Minimal mode in Safari and the Home Screen app.** Log a few sets,
-  beat a best, finish with Done. *Expect:* the dumbbell, the trophies and
-  the parade run smoothly and the emoji render (Apple's emoji font, not
-  the Noto one CI has). Leaving mid-animation is pinned in Chromium
-  (`smoke/minimal.spec.mjs`: hidden pauses, return finishes, a CDP freeze
-  and a reload replay nothing); open is only whether iOS really sends
-  `visibilitychange` on the Home Screen gesture before it suspends the app
-  — *Expect:* no sprite left hanging on return. Playwright's WebKit would
-  not settle this either (not iOS Safari; it does not even start on
-  garage — no GTK4/GStreamer).
+- [x] **Minimal mode in Safari and the Home Screen app.** Toss, rain,
+  parade and the idle stroller, the emoji, and leaving mid-effect for the
+  Home Screen and back: all smooth, nothing stuck or replayed. Confirmed on
+  a real iPhone on 2026-11-09; the leaving part is also pinned in Chromium
+  (`smoke/minimal.spec.mjs`).
 
 ### Closed (user decision 2026-10-13)
 
