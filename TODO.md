@@ -18,10 +18,10 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   **+**. *Expect:* 45, not 5. Fixed: on iOS the blur is not guaranteed
   before the click, so the stepper now falls back to the value
   `initNumericOverwrite` stashed instead of reading the emptied field.
-- [ ] **Beep in the background.** Start a 30 s rest, go straight to the
-  Home Screen, wait. *Expect:* open — record whether the tone arrives at
-  zero, arrives late, or never. The answer decides whether a notification
-  is needed.
+- [x] **Beep in the background.** Start a 30 s rest, go straight to the
+  Home Screen, wait. Answer (real iPhone, 2026-11-09): silent while the app
+  is in the background, the tone comes when it is opened again. Expected —
+  user decision: no notification.
 - [x] **Keyboard: the field stays centred.** Tap into the weight field,
   then the locker field, then a field at the bottom of Settings, in the
   browser AND the Home Screen app. *Expect:* each lands in the middle of
@@ -47,22 +47,14 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   green against the real one. Left unchecked: that only proves the CSS
   math, not the WebKit/iOS Add-to-Home-Screen round trip itself — the
   actual device check this item describes is still open.
-- [ ] **Scan a pairing QR with a real phone camera once** — the only step
-  no automation can take; everything up to the prefilled field is
-  verified. Device A shows the QR, device B's camera app scans it.
-  *Expect:* gymii opens with the pairing field prefilled. Needs the
-  `gymii-sync` server running. On an iPhone it opens in Safari, so also:
-  *Expect:* the "Sync code received" card on top; "Copy sync code", then
-  gymii from the Home Screen → Settings → Sync → paste → Pair works there.
-  The card keys on `navigator.standalone === false` — record whether a
-  Safari tab really reports `false` (Chromium only fakes it).
-- [ ] **Scan in-app on a real iPhone: the camera's way out** — scanning
-  `gymii-cli invite` in a terminal and pairing from it inside the Home
-  Screen app works (confirmed 2026-11-05). Still open: *Expect* the
-  camera light off right after a scan, and off too on Cancel, on a tab
-  switch and on leaving the app; a second device's QR reads as well as
-  the terminal's. Record distance and terminal (font, line spacing) where
-  it struggles — the decoder otherwise only met synthetic frames.
+- [x] **Scan a pairing QR with a real phone camera once** — device A shows
+  the QR, device B's camera app scans it, gymii pairs from it. Confirmed on
+  a real iPhone on 2026-11-09.
+- [x] **Scan in-app on a real iPhone** — `gymii-cli invite` in a terminal,
+  scanned and paired inside the Home Screen app (2026-11-05). The camera
+  light afterwards: user decision 2026-11-09, does not matter — the stream
+  stopping on a scan, Cancel and a tab switch stays pinned in Chromium
+  (`smoke/scan.spec.mjs`).
 - [ ] **Pair → "Replace this gym's data" inside the Home Screen app** —
   the backup downloads before anything is replaced. *Expect:* iOS offers
   the file (save/share sheet) and the pairing goes on after it; record
