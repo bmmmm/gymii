@@ -170,3 +170,82 @@ test("keepAwake 'workout' takes the lock on Minimal's first set and drops it on 
   await expect(page.locator('#min-done')).toHaveCount(0);
   await expect.poll(held, { message: 'Done ended the workout: the lock is gone' }).toBe(0);
 });
+
+// Leaving the app mid-effect — the Home Screen gesture on an iPhone. Headless
+// Chromium never reports a page hidden (another tab in front changes nothing),
+// so the hide is told the way the browser tells it: visibilityState plus the
+// event. The freeze is the real one, CDP's lifecycle state — what iOS does to
+// a web app in the background: no JS, no timers, no frames. Either way the
+// effect must neither replay on return nor stay stuck on screen.
+// A pause or play lands on the next frame (until then playState already says
+// "paused" while the clock still runs): wait for every animation's `ready`.
+const funState = (page) => page.evaluate(async () => {
+  const anims = document.getAnimations().filter((a) => a.effect?.target?.closest?.('#fun-layer'));
+  await Promise.all(anims.map((a) => a.ready));
+  return {
+    sprites: document.querySelectorAll('#fun-layer .fun-sprite').length,
+    states: [...new Set(anims.map((a) => a.playState))].sort(),
+    time: Math.max(0, ...anims.map((a) => Number(a.currentTime) || 0)),
+  };
+});
+const setHidden = (page, hidden) => page.evaluate((h) => {
+  if (h) {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+  } else {
+    delete document.hidden;
+    delete document.visibilityState;
+  }
+  document.dispatchEvent(new Event('visibilitychange'));
+}, hidden);
+
+test('leaving mid-effect pauses it, coming back finishes it, nothing replays', async ({ page }) => {
+  await seedDemoGym(page);
+  await page.locator('#minimal-toggle').click();
+  await page.locator('#min-new').click();
+  await page.locator('#min-new-name').fill('Hip thrust');
+  await page.locator('#min-new-kind [data-kind="strength"]').click();
+
+  // hidden: every animation of the layer paused, its sprites kept, time still
+  await page.locator('#min-log').click();
+  await expect(page.locator('#fun-layer .fun-sprite').first()).toBeAttached();
+  await setHidden(page, true);
+  const away = await funState(page);
+  expect(away.sprites).toBeGreaterThan(0);
+  expect(away.states, 'all paused while hidden').toEqual(['paused']);
+  await page.waitForTimeout(3000); // longer than any effect runs
+  const later = await funState(page);
+  expect(later.sprites, 'nothing dropped, nothing added').toBe(away.sprites);
+  expect(later.time, 'no time passed for a hidden effect').toBe(away.time);
+
+  // visible again: it plays on from where it stood and ends; no second effect
+  await setHidden(page, false);
+  expect((await funState(page)).states).toEqual(['running']);
+  await expect(page.locator('#fun-layer .fun-sprite')).toHaveCount(0, { timeout: 4000 });
+  await expect(page.locator('#fun-layer .fun-line')).toHaveCount(0, { timeout: 4000 });
+  expect(await activeSets(page)).toHaveLength(1);
+
+  // frozen (the real lifecycle state) mid-effect, thawed after the effect's
+  // length: it ends at once, never stuck, never replayed
+  const cdp = await page.context().newCDPSession(page);
+  await page.locator('#min-log').click();
+  await expect(page.locator('#fun-layer .fun-sprite').first()).toBeAttached();
+  const before = (await funState(page)).sprites;
+  await cdp.send('Page.setWebLifecycleState', { state: 'frozen' });
+  await page.waitForTimeout(3000);
+  await cdp.send('Page.setWebLifecycleState', { state: 'active' });
+  expect((await funState(page)).sprites).toBeLessThanOrEqual(before);
+  await expect(page.locator('#fun-layer .fun-sprite')).toHaveCount(0, { timeout: 4000 });
+  await expect(page.locator('#fun-layer .fun-line')).toHaveCount(0, { timeout: 4000 });
+  expect(await activeSets(page)).toHaveLength(2);
+
+  // iOS may also drop the page and reload it: the effect is gone, not replayed
+  await page.locator('#min-log').click();
+  await expect(page.locator('#fun-layer .fun-sprite').first()).toBeAttached();
+  await page.reload();
+  await expect(page.locator('#min-view')).toBeVisible();
+  await page.waitForTimeout(500);
+  await expect(page.locator('#fun-layer .fun-sprite, #fun-layer .fun-line')).toHaveCount(0);
+  expect(await activeSets(page)).toHaveLength(3);
+  await expect(page.locator('#min-today .min-set')).toHaveCount(3);
+});

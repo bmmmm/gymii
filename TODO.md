@@ -109,9 +109,14 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   test issue.
 - [ ] **Minimal mode in Safari and the Home Screen app.** Log a few sets,
   beat a best, finish with Done. *Expect:* the dumbbell, the trophies and
-  the parade run smoothly and the emoji render; leaving the app mid-
-  animation and coming back neither replays nor freezes it. So far only
-  headless Chromium (Pixel 5, 320 and 390 px) has seen it.
+  the parade run smoothly and the emoji render (Apple's emoji font, not
+  the Noto one CI has). Leaving mid-animation is pinned in Chromium
+  (`smoke/minimal.spec.mjs`: hidden pauses, return finishes, a CDP freeze
+  and a reload replay nothing); open is only whether iOS really sends
+  `visibilitychange` on the Home Screen gesture before it suspends the app
+  — *Expect:* no sprite left hanging on return. Playwright's WebKit would
+  not settle this either (not iOS Safari; it does not even start on
+  garage — no GTK4/GStreamer).
 
 ### Closed (user decision 2026-10-13)
 

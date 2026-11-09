@@ -155,7 +155,12 @@ there would be invisible to a fresh clone, to CI and to cloud agents.
   measures, the switch back continues the workout in the full view
   and History reads it without "undefined"; the fun layer takes no tap (a
   trial click through a running effect), its motifs leave the DOM, reduced
-  motion leaves the line and no running animation, fun off leaves nothing.
+  motion leaves the line and no running animation, fun off leaves nothing;
+  leaving mid-effect pauses every animation with its clock still (headless
+  Chromium never reports a page hidden, so the spec sets `visibilityState`
+  and fires the event — read the clock after each animation's `ready`, a
+  pause lands a frame late), return plays it out, and a real CDP freeze
+  (`Page.setWebLifecycleState`) or a reload mid-effect replays nothing.
   And pairing a gym that holds records (`pair.spec.mjs`): Pair
   unfolds the merge / separate / replace choice with the server named, the
   open choice passes the 320px measures, Replace's first tap only arms,
