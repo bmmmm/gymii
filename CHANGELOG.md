@@ -7,6 +7,21 @@ holds open work only.
 
 ## 2026-11-09
 
+Shipped 2026-11-09 (`2026-11-09h`): security audit follow-ups. The
+service worker no longer caches sync answers: in same-origin mode
+(`gymii-sync -app-dir`) it had kept the gym blob and the device list in
+Cache Storage, past a factory reset, and could hand back a stale revision
+on a slow server (`CACHE` → `gymii-v20` drops what an earlier worker
+stored). gymii refuses to run inside another site's frame and shows a
+link out instead — a meta CSP cannot forbid framing. A machine's doc link
+opens only a web page: a crafted template, backup or sync blob could make
+it a `javascript:`/`data:` link, and a bare "example.org/manual" now
+means https instead of a link into the app. Plan weekdays from a file are
+repaired (a crafted string crashed the Train hub). The unencrypted sync
+card says the data and the token also cross the network readably. New in
+docs/sync-protocol.md: a threat model — what E2E protects, what it
+deliberately does not, and how to start over after a leaked sync code.
+
 Shipped 2026-11-09 (`2026-11-09g`): a tap on the Gym page's floor plan
 opens the plan. Tapping a machine there swapped the whole page for that
 machine's card, so the plan vanished and the view jumped; now the editor
