@@ -601,8 +601,11 @@ function renderStart(root, layout, message) {
           <button type="button" class="recent-info row-open" data-wid="${esc(w.id)}">
             <span class="row-text">
               <strong>${w.name ? esc(w.name) : machineChain(w)}</strong>
-              <span class="muted">${w.name ? `${machineChain(w)} · ` : ''}last: ${new Date(w.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                · ${workoutTotals(w, s)}</span>
+              <span class="muted">${w.name ? `${machineChain(w)} · ` : ''}last: ${new Date(w.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}${(() => {
+    const totals = workoutTotals(w, s);
+    return totals ? `
+                · ${totals}` : '';
+  })()}</span>
             </span>
             <span class="row-chevron" aria-hidden="true">›</span>
           </button>
@@ -1265,7 +1268,10 @@ function renderOverview(root, layout, active, message = '') {
   root.innerHTML = `
     <div class="view-head"><h1>Workout</h1>${minimalToggleHtml(false)}</div>
     ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
-    <p class="muted">${mins} min · ${plural(sets, 'set')} · ${workoutTotals(active, s)}${(() => {
+    <p class="muted">${mins} min · ${plural(sets, 'set')}${(() => {
+    const totals = workoutTotals(active, s);
+    return totals ? ` · ${totals}` : '';
+  })()}${(() => {
     const tally = targetTally(active, layout, s);
     return tally.total ? ` · ${esc(`${tally.hit}/${tally.total}`)} target sets` : '';
   })()}</p>
@@ -2559,7 +2565,10 @@ function finish(root, active) {
   const machines = new Set(saved.entries.map((e) => e.machineId)).size;
   renderTrain(root, `Workout saved: ${minsBetween(saved.startedAt, saved.finishedAt)} min, `
     + `${plural(machines, 'machine')}, `
-    + `${plural(sets, 'set')}, ${workoutTotals(saved, getSettings())} total`
+    + `${plural(sets, 'set')}${(() => {
+      const totals = workoutTotals(saved, getSettings());
+      return totals ? `, ${totals} total` : '';
+    })()}`
     + `${goalTotal ? `, ${goalHit}/${goalTotal} target sets` : ''}.`);
 }
 

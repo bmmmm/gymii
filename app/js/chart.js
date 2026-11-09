@@ -163,7 +163,8 @@ export function lineChart(container, points, {
 // 2-unit stub so it reads as 0, not as missing. x labels on every third
 // column counted back from the last, which reads "now". selectedKey picks
 // the initial column (default the last); onSelect(bar, i) on change only.
-// `format(v)` writes the selected bar's value (default: rounded, plus `unit`).
+// `format(v, bar)` writes the selected bar's value (default: rounded, plus
+// `unit`); it gets the bar too, for a value that needs more than its number.
 export function barChart(container, bars, {
   unit = '', label = 'Bar chart', selectedKey = null, onSelect = null,
   format = (v) => fmtVal(v, unit),
@@ -205,7 +206,7 @@ export function barChart(container, bars, {
       <g class="c-bars has-sel">${rects}
       </g>
       <text class="c-label" x="${(left(s) + bw / 2).toFixed(1)}" y="${valueY.toFixed(1)}"
-        text-anchor="middle">${esc(format(vals[s]))}</text>
+        text-anchor="middle">${esc(format(vals[s], bars[s]))}</text>
     </svg>`;
   };
   interactive(container, {

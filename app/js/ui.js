@@ -1,7 +1,7 @@
 // Small shared UI helpers.
 
 import { distUnit, MUSCLE_REGIONS, getSettings, saveSettings } from './store.js';
-import { SOURCES } from './stats.js'; // stats.js imports nothing: no cycle
+import { SOURCES, volumeOf } from './stats.js'; // stats.js imports nothing: no cycle
 
 // Local-time values for the date/time inputs — toISOString would shift a
 // late-evening workout onto the previous day for anyone west of UTC.
@@ -630,19 +630,26 @@ export function playTimerSound(name) {
 
 // "500 kg · 3.2 km"-style rollup of a workout's strength volume and cardio
 // distance; parts appear only when non-zero so pure-cardio workouts don't
-// read "0 kg". HTML-ready.
+// read "0 kg". Sets logged without reps (Minimal mode) are unknown, not 0
+// (stats.js volumeOf): the known volume reads "≥ 500 kg" next to them, and
+// a workout logged by weight alone gets NO volume part — '' when nothing
+// else is there either, so every caller drops its " · " then. HTML-ready.
 export function workoutTotals(workout, settings) {
-  // an assisted set's weight is the help, not the load: no volume
-  const volume = workout.entries.reduce((v, e) => (entryKind(e) === 'assisted' ? v
-    : v + e.sets.reduce((x, st) => x + (st.reps * st.weight || 0), 0)), 0);
+  const { volume, open } = volumeOf(workout.entries); // an assist adds none
   const distance = workout.entries.reduce(
     (v, e) => v + e.sets.reduce((x, st) => x + (st.distance || 0), 0), 0);
   const unit = esc(settings.unit);
   const parts = [];
-  if (volume) parts.push(`${Math.round(volume)} ${unit}`);
+  if (volume) parts.push(`${open ? '≥ ' : ''}${Math.round(volume)} ${unit}`);
   if (distance) parts.push(`${Math.round(distance * 100) / 100} ${distUnit(settings)}`);
-  return parts.join(' · ') || `0 ${unit}`;
+  return parts.join(' · ') || (open ? '' : `0 ${unit}`);
 }
+
+// The same rule for the weekly Volume figure: "3,873 kg", "≥ 3,873 kg" with
+// sets open, "—" when the week's load is only sets without reps.
+export const fmtVolume = (volume, open, unit) => (open
+  ? (volume > 0 ? `≥ ${fmtMetric(volume, 'volume', unit)}` : '—')
+  : fmtMetric(volume, 'volume', unit));
 
 // One insight (stats.js `insights()`) as a hint line: the instruction, and
 // a ↗ to the study it rests on — the row's own subject (machine, muscle,

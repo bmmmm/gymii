@@ -687,6 +687,21 @@ const barLabel = () => weekChart().innerHTML.match(/class="c-label"[^>]*>([^<]*)
 assert.equal(barLabel(), '2:00 h', 'the selected bar says what its tile says, not "120 min"');
 root.querySelector('#week-tiles').listeners.click(clickOn('.tile', { metric: 'volume' }));
 assert.equal(barLabel(), '2,500 kg', 'one number format for both: "2,500 kg", not "2500 kg"');
+// a workout logged by weight alone (Minimal mode): the volume is unknown,
+// never "0 kg" — the tile says "≥" while known volume sits next to it, its
+// bar says the same, and the workout's own line drops the volume part
+store.saveWorkouts([...store.getWorkouts(), {
+  id: 'wk5', startedAt: weekAt(0, 20), finishedAt: weekAt(0, 21),
+  entries: [entry('m1', 14, 'Leg press', [{ weight: 90 }, { weight: 90 }])],
+}]);
+enter();
+assert.deepEqual(tile('volume'), ['≥ 2,500 kg', 'vs 500 kg the week before'], 'known volume plus open sets: at least');
+assert.equal(barLabel(), '≥ 2,500 kg', 'and its bar reads the same');
+store.saveWorkouts(store.getWorkouts().filter((w) => w.id === 'wk5'));
+enter();
+assert.deepEqual(tile('volume'), ['—', 'vs 0 kg the week before'], 'a week whose load is all open: unknown, not 0 kg');
+assert.ok(weekList().includes('<div class="muted">2 sets</div>'),
+  'the rep-less workout lists its sets without a volume — no "0 kg", no dangling " · "');
 root.querySelector('#week-tiles').listeners.click(clickOn('.tile', { metric: 'minutes' }));
 
 // --- Hints: an instruction with a ↗ to its study, where the user acts ---

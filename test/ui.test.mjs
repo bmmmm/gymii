@@ -137,6 +137,17 @@ assert.equal(ui.workoutTotals(wo([{ reps: 10 }]), kg), '0 kg',
 assert.equal(ui.workoutTotals(wo([]), kg), '0 kg', 'and an empty workout says so');
 assert.equal(ui.workoutTotals({ entries: [{ sets: [{ reps: 10, weight: 40 }] }, { assisted: true, sets: [{ reps: 8, weight: 20 }] }] }, kg),
   '400 kg', 'an assisted set adds no volume: its weight is the help, not the load');
+// sets logged without reps (Minimal mode): unknown, not 0 — no "0 kg", no guess
+assert.equal(ui.workoutTotals(wo([{ weight: 80 }, { weight: 80 }]), kg), '',
+  'a workout logged by weight alone has no volume to show: nothing, not "0 kg"');
+assert.equal(ui.workoutTotals(wo([{ reps: 10, weight: 40 }, { weight: 80 }]), kg), '≥ 400 kg',
+  'next to a set without reps the known volume is a lower bound');
+assert.equal(ui.workoutTotals(wo([{ weight: 80 }, { distance: 500, seconds: 120 }]), kg), '500 m',
+  'the distance stays, the unknown volume does not read as 0');
+assert.equal(ui.fmtVolume(3873, 0, 'kg'), '3,873 kg');
+assert.equal(ui.fmtVolume(3873, 2, 'kg'), '≥ 3,873 kg', 'a week with open sets: at least');
+assert.equal(ui.fmtVolume(0, 2, 'kg'), '—', 'a week whose load is all open: unknown, not 0 kg');
+assert.equal(ui.fmtVolume(0, 0, 'kg'), '0 kg', 'a week without load at all: 0');
 
 assert.equal(ui.machineChain({ entries: [{ num: 3 }, { num: 7 }] }), '#3 → #7');
 assert.equal(ui.machineChain({ entries: [{ num: 16 }, { num: 16 }] }), '#16',
