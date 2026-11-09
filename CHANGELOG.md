@@ -7,6 +7,11 @@ holds open work only.
 
 ## 2026-11-09
 
+Shipped 2026-11-09 (`2026-11-09g`): a tap on the Gym page's floor plan
+opens the plan. Tapping a machine there swapped the whole page for that
+machine's card, so the plan vanished and the view jumped; now the editor
+opens with the machine selected, its card under the plan.
+
 Shipped 2026-11-09 (`2026-11-09f`): moving a machine on the floor plan
 moves it again. An unlocked item's resize handle took a 44px circle on its
 corner, which on a phone covered all of a small machine, so grabbing it
