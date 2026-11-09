@@ -80,6 +80,11 @@ export const OUTLINE_ID = 'outline';
 // width. Values follow the ~44px mobile touch-target guideline.
 const HANDLE_VISIBLE_PX = 26; // resize-handle icon diameter
 const HANDLE_HIT_PX = 44; // resize-handle invisible tap circle
+// The handle's hit circle sits ON the item's corner: on an item under twice
+// its size it covers the body, and every grab RESIZED instead of moving —
+// a 5×4 machine is 22×18 px on a 320 px phone, all of it under the circle.
+// Such an item gets no handle at all; the editor's item bar sizes it (−/+).
+const HANDLE_MIN_ITEM_PX = 2 * HANDLE_HIT_PX;
 const VERTEX_VISIBLE_PX = 20; // outline corner square
 const VERTEX_HIT_PX = 40;
 const MID_VISIBLE_PX = 14; // outline midpoint dot
@@ -524,6 +529,8 @@ function selectionSvg(item, ppu, grid, pad, unlocked = false) {
   const outline = `<rect class="${cls}" x="${b.x - 0.4}" y="${b.y - 0.4}"
     width="${b.w + 0.8}" height="${b.h + 0.8}" pointer-events="none"/>`;
   if (!unlocked) return outline;
+  const span = item.kind === 'line' ? Math.hypot(item.w, item.h) : Math.min(b.w, b.h);
+  if (span * ppu < HANDLE_MIN_ITEM_PX) return outline;
   const visR = HANDLE_VISIBLE_PX / ppu / 2;
   const hitR = HANDLE_HIT_PX / ppu / 2;
   // Clamp the handle center (visible + hit together — it is a UI

@@ -83,6 +83,23 @@ test('Move, the arrows and a drag from anywhere move a small machine', async ({ 
   expect(after.y - before.y, 'moved two units down from far away').toBe(2);
   expect(after.x).toBe(before.x);
 
+  // a drag ON the machine itself moves it and keeps its size: the corner
+  // handle's 44px hit circle used to cover the whole 22×18px box, so every
+  // grab resized it instead
+  await expect(page.locator('#floor .handle-hit')).toHaveCount(0);
+  const box = await page.locator(`#floor g.machine[data-id="${before.id}"] .machine-box`).boundingBox();
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx, cy - 2 * ppu, { steps: 6 });
+  await page.mouse.up();
+  const grabbed = await machine(page, 9);
+  expect([grabbed.x, grabbed.y, grabbed.w, grabbed.h], 'moved up two, same size')
+    .toEqual([after.x, after.y - 2, after.w, after.h]);
+  await page.locator('.dp-down').click();
+  await page.locator('.dp-down').click();
+
   // Move off: the same drag moves nothing (and only deselects)
   await page.locator('#item-move').click();
   await page.mouse.move(sx, sy);

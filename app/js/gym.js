@@ -850,6 +850,25 @@ export function renderGym(root) {
     redraw();
   };
 
+  // A wall turns a quarter clockwise around its start: right → down → left
+  // → up. Its corner handle used to be the only way to change direction,
+  // and a short wall on a phone has none (map.js, HANDLE_MIN_ITEM_PX). A
+  // turn that would end off the floor is refused rather than shortened —
+  // four turns always bring back the wall it started as.
+  const turn = () => {
+    const it = unlockedItem();
+    if (it?.kind !== 'line') return;
+    const w = -it.h;
+    const h = it.w;
+    const ex = it.x + w;
+    const ey = it.y + h;
+    if (ex < 0 || ex > layout.grid.w || ey < 0 || ey > layout.grid.h) return;
+    it.w = w || 0; // never -0 in the stored layout
+    it.h = h || 0;
+    save();
+    redraw();
+  };
+
   // Lock and unlock from the bar — the same state the double tap toggles.
   const toggleMove = () => {
     if (!selectedId) return;
@@ -896,7 +915,9 @@ export function renderGym(root) {
         ? '<p class="muted">Drag a white corner to reshape the floor, or tap one to move it with the arrows. A hollow dot between two corners adds one.</p>'
         : `<div class="nudge">${arrowsHtml}</div>`;
     } else if (unlocked) {
-      const sizes = item.kind === 'line' ? sizeRow('Length', 'length', 1, 0)
+      const sizes = item.kind === 'line' ? `${sizeRow('Length', 'length', 1, 0)}
+          <button type="button" class="btn sizer-wide" data-turn="1"
+            aria-label="Turn the wall a quarter clockwise">↻ Turn</button>`
         : WALL_SNAPPED.has(item.fixture) ? sizeRow('Width', 'width', 1, 0)
           : sizeRow('Width', 'width', 1, 0) + sizeRow('Height', 'height', 0, 1);
       tools = `<div class="nudge">${arrowsHtml}<div class="sizer">${sizes}</div></div>
@@ -920,6 +941,7 @@ export function renderGym(root) {
     if (btn.id === 'item-move') toggleMove();
     else if (btn.dataset.dx !== undefined) nudge(Number(btn.dataset.dx), Number(btn.dataset.dy));
     else if (btn.dataset.dw !== undefined) resize(Number(btn.dataset.dw), Number(btn.dataset.dh));
+    else if (btn.dataset.turn !== undefined) turn();
   });
 
   // "find a machine by number" — mirrors the Train picker's number lookup.
@@ -1366,17 +1388,6 @@ export function renderGym(root) {
       props.innerHTML = `
         <section class="card">
           <h2>Machines</h2>
-          <div class="field-block"><span>Brand — tap to set, tap again to clear</span>
-            <div class="chip-select" id="gym-brands">
-              ${gymBrandOptions.map((b) => `<button type="button"
-                class="chip${gymBrand === b ? ' sel' : ''}" data-value="${esc(b)}">${esc(b)}</button>`).join('')}
-            </div>
-            <div class="row">
-              <input id="gym-brand-custom" type="text" enterkeyhint="done" placeholder="Other brand…">
-              <button type="button" id="gym-brand-set" class="btn btn-inline">Set</button>
-            </div>
-            <p class="muted">${brandHint}</p>
-          </div>
           <button id="machines-add" class="btn btn-primary">+ Machine</button>
           <button id="edit-machines" class="btn">${listOpen
     ? 'Hide the list' : `Edit all machines (${layout.machines.length})`}</button>
@@ -1391,6 +1402,22 @@ export function renderGym(root) {
     : `<div class="floor-preview"><svg id="floor-preview" xmlns="http://www.w3.org/2000/svg"
               role="img" aria-label="Floor plan — tap a machine to open it"></svg></div>`}
           <button id="map-open" class="btn">${emptyFloor ? 'Draw the floor plan' : 'Edit floor plan'}</button>
+        </section>
+        <!-- the brand below the plan: a set-once choice of ~16 chips, and
+             above it the plan sat a whole screen down where nobody found it -->
+        <section class="card" id="gym-brand-card">
+          <h2>Brand</h2>
+          <div class="field-block"><span>Tap to set, tap again to clear</span>
+            <div class="chip-select" id="gym-brands">
+              ${gymBrandOptions.map((b) => `<button type="button"
+                class="chip${gymBrand === b ? ' sel' : ''}" data-value="${esc(b)}">${esc(b)}</button>`).join('')}
+            </div>
+            <div class="row">
+              <input id="gym-brand-custom" type="text" enterkeyhint="done" placeholder="Other brand…">
+              <button type="button" id="gym-brand-set" class="btn btn-inline">Set</button>
+            </div>
+            <p class="muted">${brandHint}</p>
+          </div>
         </section>
         <section class="card">
           <h2>Location</h2>
@@ -1514,7 +1541,7 @@ export function renderGym(root) {
           ? `; the gym's is ${esc(gymBrand)}` : ''}.`
         : gymBrand
           ? `<strong>${esc(gymBrand)}</strong> — the gym's brand.`
-          : 'No brand — set the gym\'s on the Machines card, or this machine\'s own.';
+          : 'No brand — set the gym\'s on the Brand card, or this machine\'s own.';
       const chipRow = (options, selected) => options.map((o) =>
         `<button type="button" class="chip${selected.includes(o) ? ' sel' : ''}"
           data-value="${esc(o)}">${esc(o)}</button>`).join('');

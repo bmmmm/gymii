@@ -7,6 +7,14 @@ holds open work only.
 
 ## 2026-11-09
 
+Shipped 2026-11-09 (`2026-11-09f`): moving a machine on the floor plan
+moves it again. An unlocked item's resize handle took a 44px circle on its
+corner, which on a phone covered all of a small machine, so grabbing it
+squashed or stretched it instead. Items too small for that handle have
+none now (−/+ in the item bar size them), and a wall gets "↻ Turn" there
+to change its direction. The Gym page shows its floor plan on the first
+screen again: the gym's brand chips moved to their own card below it.
+
 Shipped 2026-11-09 (`2026-11-09e`): the Gym screen and its floor plan,
 reorganised for small phones. The Gym now opens on its details — the
 Machines card with "+ Machine" first, the floor plan as a small preview
