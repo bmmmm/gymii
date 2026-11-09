@@ -6,7 +6,7 @@ Open work only — what shipped, and when, is in [CHANGELOG.md](CHANGELOG.md).
 
 ### On a real iPhone
 
-Fifteen checks no emulator settles. All against
+Eighteen checks no emulator settles. All against
 <https://bmmmm.github.io/gymii/>, never `serve.py`: a service worker and
 "Add to Home Screen" need https, and points 2–4 put exactly those on the
 stand. An expectation that fails becomes an issue labelled `bug`.
@@ -107,6 +107,28 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   (GraphQL `issueTemplates` returns `[]` even for working YAML forms;
   the chooser is login-gated) — it needs real clicks, then close the
   test issue.
+- [ ] **Minimal mode in Safari and the Home Screen app.** Log a few sets,
+  beat a best, finish with Done. *Expect:* the dumbbell, the trophies and
+  the parade run smoothly and the emoji render; leaving the app mid-
+  animation and coming back neither replays nor freezes it. So far only
+  headless Chromium (Pixel 5, 320 and 390 px) has seen it.
+
+### Minimal mode — open (PR #4, shipped 2026-11-09)
+
+Left open by the PR on purpose; Locker, the grips UI, plans and the rest
+timer are out of Minimal's scope by design.
+
+- **Wake Lock.** With `keepAwake: 'workout'` only `renderTrain` (train.js)
+  updates the lock; a workout finished in Minimal keeps the screen awake
+  until Train renders again.
+- **Volume of rep-less sets (decision).** A set logged with just the
+  weight counts 0 volume, so a pure Minimal workout reads "0 kg" in
+  History. Count it somehow, or show no volume instead of 0?
+- **Plan builder while Minimal is on.** The AI plan import / builder waits
+  until Minimal is off and does not say why — it needs a hint.
+- **Bind prompt.** An open bind prompt (`active.binding`) from the full
+  view stays untouched in Minimal; it is still waiting when the full view
+  comes back.
 
 ### Closed (user decision 2026-10-13)
 
