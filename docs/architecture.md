@@ -763,8 +763,9 @@ split exists to prevent).
 The Gym screen and its floor-plan editor (renderer imported from map.js).
 TWO MODES, one closure (`mapOpen`, `setMapOpen()`): the PAGE — Machines
 card first (`#machines-add` leads it, as "+ Machine"), then a Floor plan
-card holding a read-only `#floor-preview` (a tap on a machine there opens
-its card) and `#map-open`, then the Brand card (~16 chips: above the plan
+card holding a read-only `#floor-preview` (a tap there opens the EDITOR,
+with the machine it hit selected — swapping the page for that machine's
+card made the plan the thumb had just tapped vanish) and `#map-open`, then the Brand card (~16 chips: above the plan
 they pushed it a whole screen down), Location and Templates (the layout
 name lives there) — and the EDITOR, `#map-editor`, shown in its place: add
 buttons, the plan, the item bar, the find row and the Floor card. The

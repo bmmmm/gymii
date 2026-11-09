@@ -431,8 +431,7 @@ body.map-editing #view { padding-bottom: calc(24px + env(safe-area-inset-bottom)
 .map-editor .toolbar-sub .btn { flex: 1 1 22%; }
 .floor-preview { border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
   background: var(--surface); margin: 4px 0 10px; }
-.floor-preview svg { display: block; width: 100%; }
-.floor-preview .machine-box { cursor: pointer; }
+.floor-preview svg { display: block; width: 100%; cursor: pointer; }
 
 /* the selected item's tools, right under the plan */
 .item-bar { margin-top: 10px; }

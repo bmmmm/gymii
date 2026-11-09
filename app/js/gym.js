@@ -1400,7 +1400,7 @@ export function renderGym(root) {
               it shows where each machine stands, finds a free one nearby and
               traces your walking paths.</p>`
     : `<div class="floor-preview"><svg id="floor-preview" xmlns="http://www.w3.org/2000/svg"
-              role="img" aria-label="Floor plan — tap a machine to open it"></svg></div>`}
+              role="img" aria-label="Floor plan — tap to edit it"></svg></div>`}
           <button id="map-open" class="btn">${emptyFloor ? 'Draw the floor plan' : 'Edit floor plan'}</button>
         </section>
         <!-- the brand below the plan: a set-once choice of ~16 chips, and
@@ -1511,14 +1511,17 @@ export function renderGym(root) {
         root.scrollTo?.(0, 0); // its card stands where the overview began
       });
       props.querySelector('#map-open').addEventListener('click', () => setMapOpen(true));
-      // the preview is a way into a machine's card, nothing more: it moves
-      // nothing, so a plain tap is all it takes
+      // A tap on the preview opens the PLAN, with the machine it hit
+      // selected (its tools and card under it). It used to swap the page
+      // for that machine's card: the plan the thumb had just tapped
+      // vanished and the view jumped to the top of something else.
       previewSvg = props.querySelector('#floor-preview');
       previewSvg?.addEventListener('click', (e) => {
         const id = e.target.closest?.('[data-id]')?.dataset.id;
-        if (!id || !layout.machines.some((m) => m.id === id)) return;
-        select(id);
-        root.scrollTo?.(0, 0);
+        selectedId = id && layout.machines.some((m) => m.id === id) ? id : null;
+        unlockedId = null;
+        brandOpen = false;
+        setMapOpen(true);
       });
       if (previewSvg) redraw();
       return;

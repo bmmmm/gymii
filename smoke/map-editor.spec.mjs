@@ -31,18 +31,28 @@ test('the Gym opens on its page; the plan is a card, the editor a mode without t
   await expect(page.locator('#machines-add')).toBeVisible();
   await holdsTheRules(page, 'the Gym page');
 
-  // a tap on a machine in the preview opens its card on the page
+  // a tap on a machine in the preview opens the PLAN with it selected —
+  // it used to swap the page for the machine's card, and the plan the thumb
+  // had just tapped was gone
   const m9 = await machine(page, 9);
   await page.locator(`#floor-preview [data-id="${m9.id}"]`).click();
-  await expect(page.locator('#m-num')).toHaveValue('9');
-  await expect(page.locator('#props-back')).toBeVisible();
-  await page.locator('#props-map').click();
   await expect(page.locator('#tabbar')).toBeHidden();
-  await expect(page.locator('#floor')).toBeVisible();
+  await expect(page.locator('#floor')).toBeInViewport();
   await expect(page.locator('#item-bar .item-name')).toHaveText(/^#9/);
-
+  await expect(page.locator('#m-num')).toHaveValue('9');
   await page.locator('#map-done').click();
   await expect(page.locator('#tabbar')).toBeVisible();
+  await expect(page.locator('#floor-preview')).toBeVisible();
+
+  // the find row on the page opens the machine's CARD, and the card leads
+  // to the plan
+  await page.locator('#find-num').fill('9');
+  await page.locator('#find-go').click();
+  await expect(page.locator('#props-back')).toBeVisible();
+  await page.locator('#props-map').click();
+  await expect(page.locator('#floor')).toBeVisible();
+  await expect(page.locator('#item-bar .item-name')).toHaveText(/^#9/);
+  await page.locator('#map-done').click();
   await expect(page.locator('#floor-preview')).toBeVisible();
 
   // leaving the Gym from the editor never strands the app without its tabbar
