@@ -16,7 +16,7 @@ import {
   esc, fmtDuration, workoutTotals, setStr, twoTapConfirm, stepperField, plural, machineChain,
   minsBetween,
   primeAudio, playTimerSound, keepInView, parseDuration, parseDistance, hintHtml, fieldValue,
-  variantStr, entryKind, machineIcon,
+  variantStr, entryKind, machineIcon, minimalToggleHtml, wireMinimalToggle,
 } from './ui.js';
 import { ensurePersisted } from './persist.js';
 import { loadDemoData } from './demo.js';
@@ -435,8 +435,9 @@ function renderHub(root, layout, message) {
     : last ? lastWorkoutLabel(last)
       : 'Tap to start your first workout';
 
+  // the Minimal switch sits ON the view it changes (ui.js minimalToggleHtml)
   root.innerHTML = `
-    <h1>Train</h1>
+    <div class="view-head"><h1>Train</h1>${minimalToggleHtml(false)}</div>
     ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
     <div class="tile-grid">
       <button type="button" class="tile hero" id="hub-start">
@@ -473,6 +474,7 @@ function renderHub(root, layout, message) {
   // real route changes — the hash router takes it from here
   root.querySelector('#hub-gym').addEventListener('click', () => { location.hash = '#gym'; });
   root.querySelector('#hub-history').addEventListener('click', () => { location.hash = '#history'; });
+  wireMinimalToggle(root);
 }
 
 // The Plans tile's own screen: just the shared card, nothing of the start
@@ -1262,8 +1264,10 @@ function renderOverview(root, layout, active, message = '') {
     </button>`;
   }).join('');
 
+  // the Minimal switch again: a running workout is never on the hub, and
+  // without it here a workout continued in the full view could not go back
   root.innerHTML = `
-    <h1>Workout</h1>
+    <div class="view-head"><h1>Workout</h1>${minimalToggleHtml(false)}</div>
     ${message ? `<p class="notice" role="status">${esc(message)}</p>` : ''}
     <p class="muted">${mins} min · ${plural(sets, 'set')} · ${workoutTotals(active, s)}${(() => {
     const tally = targetTally(active, layout, s);
@@ -1380,6 +1384,8 @@ function renderOverview(root, layout, active, message = '') {
     // the node tapped was replaced: hand focus to its successor in place
     coverage.querySelector('#muscle-fold')?.focus?.({ preventScroll: true });
   });
+
+  wireMinimalToggle(root);
 
   // two-tap guard: finishing only happens once, at the very end
   const finishBtn = root.querySelector('#finish');
@@ -1667,16 +1673,41 @@ const targetStr = (t, type, s) => (type === 'cardio'
 // the set list, the log button and "Next:" on the rest screen. Assisted
 // reads as a minus: the counterweight takes that much off ("unassisted"
 // once it is down to 0). A cardio set's level trails as "L5" (ui.js setStr
-// says the same on "Last:" and in History).
+// says the same on "Last:" and in History). A set without reps (Minimal
+// mode logs the weight alone) reads "80 kg", never "80 kg × undefined".
+const byReps = (st) => (st.reps != null ? ` × ${st.reps}` : '');
 const setWords = (st, type, s) => (type === 'cardio'
   ? `${st.distance} ${distUnit(s)} · ${fmtDuration(st.seconds)}${st.level ? ` · L${st.level}` : ''}`
   : type === 'bodyweight'
-    ? (st.weight ? `BW+${st.weight} ${s.unit} × ${st.reps}` : `BW × ${st.reps}`)
+    ? (st.weight ? `BW+${st.weight} ${s.unit}${byReps(st)}` : `BW${byReps(st)}`)
     : type === 'assisted'
-      ? (st.weight ? `−${st.weight} ${s.unit} × ${st.reps}` : `unassisted × ${st.reps}`)
-      : `${st.weight} ${s.unit} × ${st.reps}`);
+      ? (st.weight ? `−${st.weight} ${s.unit}${byReps(st)}` : `unassisted${byReps(st)}`)
+      : `${st.weight} ${s.unit}${byReps(st)}`);
 
 // --- logging screen ---
+
+// The plan slot a set at (machine, exercise, grip) counts against — grown
+// when the workout has none, so the overview and "Next:" see the machine.
+// Free workouts grow the plan by a free slot; a fresh exercise or grip at a
+// machine whose slots are scoped gets its own slot (after its siblings); a
+// broader slot already aggregates it otherwise. It keeps what its siblings
+// have: free if the machine's first slot is free. Mutates `active.plan`,
+// returns whether it did. Exported: Minimal mode logs into the same
+// workout, which must stay valid for this view (minimal.js).
+export function ensureSlot(active, machineId, exercise = null, grip = null) {
+  const machineSlots = active.plan.filter((p) => p.machineId === machineId);
+  if (!machineSlots.length) {
+    active.plan.push({ machineId, exercise: null, free: true });
+    return true;
+  }
+  if (machineSlots.some((p) => (!p.exercise || p.exercise === exercise)
+    && (p.grip == null || p.grip === grip))) return false;
+  const lastIdx = active.plan.findLastIndex((p) => p.machineId === machineId);
+  active.plan.splice(lastIdx + 1, 0, {
+    machineId, exercise, ...(grip ? { grip } : {}), ...(machineSlots[0].free ? { free: true } : {}),
+  });
+  return true;
+}
 
 // Resolves which entry the logging screen edits. At multi-exercise
 // machines (free weights) each exercise gets its own entry; until one is
@@ -1745,22 +1776,9 @@ function renderLog(root, layout, active, reveal = null, message = '') {
   const plans = getPlans();
   const { exercises, grips, exercise, grip, pickPending, entry, last } = resolveEntry(machine, active, layout, s, workouts);
 
-  const machineSlots = active.plan.filter((p) => p.machineId === machine.id);
-  if (!machineSlots.length) { // free workouts grow the plan — a free slot
-    active.plan.push({ machineId: machine.id, exercise: null, free: true });
-    saveLog(active);
-  } else if (!pickPending && !machineSlots.some((p) => (!p.exercise || p.exercise === exercise)
-    && (p.grip == null || p.grip === grip))) {
-    // a fresh exercise or grip at a machine whose slots are scoped gets its
-    // own slot (after its siblings) so the overview and "Next:" see it; a
-    // broader slot already aggregates it otherwise. It keeps what its
-    // siblings have: free if the machine's first slot is free.
-    const lastIdx = active.plan.findLastIndex((p) => p.machineId === machine.id);
-    active.plan.splice(lastIdx + 1, 0, {
-      machineId: machine.id, exercise, ...(grip ? { grip } : {}), ...(machineSlots[0].free ? { free: true } : {}),
-    });
-    saveLog(active);
-  }
+  // until an exercise is picked only the machine itself gets a slot
+  if ((!pickPending || !active.plan.some((p) => p.machineId === machine.id))
+    && ensureSlot(active, machine.id, exercise, grip)) saveLog(active);
 
   // entry flags rule the screen — sets stay homogeneous per entry
   const type = entry ? entryKind(entry) : 'strength';
@@ -2850,7 +2868,10 @@ function dismissRest() {
 // it would paint the workout under that tab's pill. The pill app.js's
 // route() marks active is exactly that question, asked of the one place
 // that answers it.
-const onTrainTab = () => document.querySelector('#tabbar a.active')?.dataset.tab === 'train';
+// Minimal mode renders the Train ROUTE without this module's screens
+// (app.js), so the Train pill alone does not mean renderTrain owns #view.
+const onTrainTab = () => document.querySelector('#tabbar a.active')?.dataset.tab === 'train'
+  && !document.body.classList.contains('minimal-mode');
 
 // Stop the machinery, leave the fact: used when a new rest replaces this
 // one, and when the workout ends under it.
@@ -2867,8 +2888,11 @@ function stopRest() {
 
 // The rest is over — by Skip, or 900ms after the tone. The deadline goes
 // with it. The inline row is removed by id rather than re-rendered: a
-// re-render here would take a half-typed input field with it.
-function endRest() {
+// re-render here would take a half-typed input field with it. Exported for
+// Minimal mode, which has no rest timer: a set logged there ends a running
+// rest like a set logged here with rest 0, and its Done stops the machinery
+// like finish() does — no ghost tone at the old zero.
+export function endRest() {
   stopRest();
   if (typeof document !== 'undefined') document.getElementById('rest-inline')?.remove();
   const active = getActive();

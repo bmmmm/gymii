@@ -52,6 +52,27 @@ assert.equal(saved.name, 'Push day', 'workout name carried into history');
 assert.equal(store.getActive(), null, 'active cleared after finish');
 assert.equal(store.getWorkouts().length, 1);
 
+// finishWorkout's `now` is the MOMENT it finished (Minimal mode's auto-close
+// passes the last set's time): finishedAt and the open visit take it, the
+// sync stamp stays the write's — and without it, it is now, as ever
+{
+  const keep = store.getWorkouts();
+  const t = Date.now();
+  const late = store.finishWorkout({
+    v: 2, id: 'late', startedAt: t - 5 * 3600000, currentMachineId: 'm1',
+    visits: [{ machineId: 'm1', in: t - 5 * 3600000 }],
+    entries: [{ machineId: 'm1', num: 1, label: 'Chest press', settings: {}, sets: [{ weight: 40, at: t - 4 * 3600000 }] }],
+  }, { now: t - 4 * 3600000 });
+  assert.equal(late.finishedAt, t - 4 * 3600000, 'finishedAt is the moment passed in');
+  assert.equal(late.visits[0].out, t - 4 * 3600000, 'the open visit closes then');
+  assert.ok(late.updatedAt >= t, 'the sync stamp is the write\'s, not that moment');
+  assert.deepEqual(late.entries[0].sets, [{ weight: 40, at: t - 4 * 3600000 }], 'a set without reps is stored as it is');
+  const plain = store.finishWorkout({ v: 2, id: 'plain', startedAt: t - 60000, entries: [
+    { machineId: 'm1', num: 1, label: 'Chest press', settings: {}, sets: [{ reps: 1, weight: 1 }] }] });
+  assert.ok(plain.finishedAt >= t && plain.finishedAt <= Date.now(), 'without `now`: finished now');
+  store.saveWorkouts(keep);
+}
+
 // last-entry lookup feeds the training defaults
 const last = store.lastEntryFor('m1');
 assert.equal(last.sets[1].weight, 45);

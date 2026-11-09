@@ -1212,6 +1212,57 @@ select {
 
 .empty .big { font-size: 40px; margin-bottom: 12px; }
 
+/* --- Minimal mode (js/minimal.js) --- */
+
+/* a view head with its own toggles: the Train hub, the workout overview and
+   the Minimal view carry the "Minimal" chip beside their title */
+.view-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.view-head h1 { min-width: 0; }
+.view-head-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.mode-toggle { flex-shrink: 0; }
+
+/* one screen: no tabbar (app.js toggles the class on the Train route only),
+   so #view no longer keeps the bar's room at the bottom */
+body.minimal-mode #tabbar { display: none; }
+body.minimal-mode #view { padding-bottom: calc(24px + env(safe-area-inset-bottom) + var(--kb, 0px)); }
+
+.min-series { margin-bottom: 14px; }
+.min-series .chip { gap: 4px; }
+.min-title { font-size: 19px; font-weight: 700; margin-bottom: 12px; }
+.min-fields { display: flex; flex-direction: column; gap: 10px; }
+.min-fields .spread { align-items: center; }
+.min-fields .label { font-size: 14px; color: var(--muted); }
+.min-extra-row { display: flex; justify-content: flex-end; margin: 10px 0; }
+.min-today { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.min-today > .muted { margin-right: 2px; }
+/* a set is a short number ("20"): the 44px box needs a floor, not padding */
+.min-today .chip { min-width: 44px; justify-content: center; }
+/* armed by twoTapConfirm: the set's value became the question */
+.min-today .chip.armed { color: var(--danger); border-color: var(--danger); font-weight: 600; }
+/* a set of a workout already finished today: read, not tapped */
+.min-set-old {
+  display: inline-flex; align-items: center; min-height: 32px; padding: 0 10px;
+  border: 1px dashed var(--border); border-radius: 999px; color: var(--muted); font-size: 12px;
+}
+#min-log { margin-top: 12px; }
+.min-new input { width: 100%; }
+.min-new .muted { margin: 10px 0; }
+
+/* The fun layer: fixed, OUTSIDE #view (a re-render never cuts a motif off),
+   never in the way of a tap (pointer-events: none), never a layout shift
+   (fixed and clipped), never read out (aria-hidden on the element). Sprites
+   are placed once and move by transform/opacity only. Below the rest
+   overlay, above everything else. */
+.fun-layer { position: fixed; inset: 0; z-index: 40; pointer-events: none; overflow: hidden; contain: strict; }
+.fun-sprite { position: absolute; line-height: 1; will-change: transform, opacity; }
+.fun-line {
+  position: absolute; top: 16%; left: 0; right: 0; margin: 0 auto;
+  width: max-content; max-width: calc(100% - 32px);
+  padding: 10px 16px; border-radius: 999px; text-align: center;
+  background: var(--surface-2); border: 1px solid var(--accent); color: var(--text);
+  font-size: 15px; font-weight: 600; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
 /* Motion here is decoration, except one thing: the locate highlight keeps
    marking the machine even when its pulse stops — the white stroke comes
    inline from machineSvg, not from the animation. */
