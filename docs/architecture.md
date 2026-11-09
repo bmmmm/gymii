@@ -48,7 +48,13 @@ layout's, never none: a gridless layout is not written, and the push
 back would empty the server's machines. The views escape the same
 fields anyway, for records stored before the checks (map.js draws
 geometry through `Number()`), and app/index.html's CSP keeps any inline
-handler that slips through from running. Pinned by test/untrusted.test.mjs and
+handler that slips through from running. A plan's `days` are whole 0–6
+or absent (`cleanPlan`, as `planFromImport` keeps them — a string there
+crashed the Train hub). A machine's `docUrl` is the one stored value that
+becomes a LINK: esc() keeps it inside its href but not its scheme, so it
+renders, and the editor stores it, through `webUrl()` — http(s) as it is,
+a bare host as https, anything with another scheme (`javascript:`,
+`data:`) or a leading `/` as no link at all. Pinned by test/untrusted.test.mjs and
 sync.test.mjs block 19. Stored
 weights are always in the current display
 unit — `setUnit()` converts ALL gyms' data in one shot. The unit is
@@ -578,6 +584,14 @@ mirror, inversion, a terminal's half blocks with hairlines and tall
 cells, scratches up to and past what Reed-Solomon carries.
 
 ## `app/js/app.js`
+
+FRAMED, IT DOES NOT RUN. A meta CSP cannot carry `frame-ancestors` and
+GitHub Pages sends no headers of ours, so app.js checks
+`top !== self` before anything else and, inside someone else's frame,
+replaces the shell with one "Open gymii" link (`target="_top"`) — no
+router, no sync, no storage writes. An invisible gymii under a decoy page
+could otherwise collect the two taps of a guarded delete or of "Show sync
+code". `smoke/boot.spec.mjs` frames it and pins that.
 
 Hash-router, renders views into `#view`. MINIMAL MODE swaps the Train
 ROUTE's renderer: with the device-local `settings.minimal` on, `#train`
@@ -1829,6 +1843,13 @@ does NOT carry `Cache-Control: no-store`, which keeps `serve.py` honest
 the timeout promise never settles at all and the network wins, so first
 loads and on-demand template files still work on a slow line; a network
 REJECTION beats the timer immediately, so hard offline stays instant.
+A request carrying `Authorization` is left to the browser entirely: that
+is every sync request and nothing else. In same-origin mode
+(`gymii-sync -app-dir`) the sync API shares the app's origin, and caching
+its answers kept the gym blob and the device list in Cache Storage —
+keyed by URL whatever token asked, past a factory reset (which clears
+localStorage only), and served as a stale revision on a slow server.
+`test/sw.test.mjs` pins it.
 IMPORTANT:
 new static files (js modules, css, icons) must be added to the SHELL
 list in `app/sw.js` — EXCEPT template files: they are on-demand content the

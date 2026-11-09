@@ -2,7 +2,9 @@
 // files (no stale-module hell, no cache-name bump per deploy); an offline
 // user gets whatever was last fetched successfully. Relative URLs keep the
 // app subpath-safe (e.g. GitHub Pages project sites).
-const CACHE = 'gymii-v19'; // bumped: minimal.js (Minimal mode)
+// bumped: sync API answers are no longer cached — activate() drops the old
+// cache and with it every sync answer an earlier worker stored there
+const CACHE = 'gymii-v20';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest',
   'css/style.css',
@@ -39,6 +41,14 @@ const NET_TIMEOUT_MS = 2500;
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
+  // A sync request is the user's DATA, never app shell. In same-origin mode
+  // (gymii-sync -app-dir) the sync API shares this origin, and caching its
+  // answers parked the gym blob, the gym list and the device list in Cache
+  // Storage — keyed by URL alone, whichever token asked, past a factory
+  // reset (which clears localStorage only), and handed back as a stale
+  // revision whenever the server took longer than NET_TIMEOUT_MS. Every
+  // sync request carries the bearer token and nothing else here does.
+  if (e.request.headers.has('Authorization')) return;
   networkFirst(e);
 });
 

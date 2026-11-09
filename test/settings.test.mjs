@@ -487,6 +487,8 @@ try {
   assert.ok(root.innerHTML.includes('Turn on unencrypted sync'),
     'the insecure page names the trade on the button itself');
   assert.match(root.innerHTML, /refuses to\s+encrypt/, 'and says why encryption is off the table');
+  assert.match(root.innerHTML, /travels readably:[^<]*the token on the way/,
+    'and that the gym and the token cross the network in the clear, not just sit on the server');
 
   root.querySelector('#sync-server').value = 'http://box:8639';
   root.querySelector('#sync-token').value = 'tok-plain';

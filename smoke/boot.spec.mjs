@@ -68,3 +68,13 @@ test('the service worker registers, activates and precaches the shell', async ({
     .filter((path) => !cached.includes(path));
   expect(missing, 'every SHELL entry resolved to a real file and was cached').toEqual([]);
 });
+
+// Clickjacking guard (js/app.js): no frame-ancestors is possible from a meta
+// CSP on Pages, so a framed gymii must not run at all — only a link out.
+test('inside another page gymii refuses to run', async ({ page, baseURL }) => {
+  await page.setContent(`<iframe src="${baseURL}/" width="400" height="700"></iframe>`);
+  const frame = page.frameLocator('iframe');
+  await expect(frame.locator('a[target="_top"]')).toHaveText('Open gymii');
+  await expect(frame.locator('#tabbar')).toHaveCount(0);
+  await expect(frame.locator('#tour-next, #hub-start')).toHaveCount(0);
+});
