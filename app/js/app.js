@@ -98,23 +98,45 @@ function route() {
   updateSyncBadge();
 }
 
-applyTheme(getSettings()); // before the first render, so nothing flashes in the other theme
-initSteppers();
-initNumericOverwrite();
-// Every focused field lands centred above the keyboard, with its context
-// (on the log screen: steppers AND the log button, via data-focus-context).
-initFocusCentering();
-initAmbientSync(); // M2: pull on open/visible, debounced push after edits
-onSyncActivity(updateSyncBadge);
-onWriteError(showStorageAlert);
-window.addEventListener('hashchange', route);
-// the Minimal switch re-routes in place (ui.js reroute): same hash, no reload
-window.addEventListener(REROUTE, route);
-route();
+// Clickjacking guard. A meta CSP cannot carry frame-ancestors and GitHub
+// Pages sends no headers of its own, so the page refuses to run inside
+// someone else's frame: an invisible gymii under a decoy page could
+// collect the two taps of a guarded delete, or of "Show sync code". The
+// comparison itself never throws across origins; nothing is read or
+// written, the shell is replaced by one link out.
+const framed = globalThis.top !== globalThis.self;
 
-// Offline support; relative path keeps the registration subpath-safe.
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  });
+function refuseFrame() {
+  document.getElementById('tabbar')?.remove();
+  document.getElementById('view').innerHTML = `
+    <section class="card">
+      <h1>gymii</h1>
+      <p class="muted">gymii only runs as its own page, never inside another site.</p>
+      <a class="btn btn-primary" href="./" target="_top" rel="noopener">Open gymii</a>
+    </section>`;
+}
+
+if (framed) {
+  refuseFrame();
+} else {
+  applyTheme(getSettings()); // before the first render, so nothing flashes in the other theme
+  initSteppers();
+  initNumericOverwrite();
+  // Every focused field lands centred above the keyboard, with its context
+  // (on the log screen: steppers AND the log button, via data-focus-context).
+  initFocusCentering();
+  initAmbientSync(); // M2: pull on open/visible, debounced push after edits
+  onSyncActivity(updateSyncBadge);
+  onWriteError(showStorageAlert);
+  window.addEventListener('hashchange', route);
+  // the Minimal switch re-routes in place (ui.js reroute): same hash, no reload
+  window.addEventListener(REROUTE, route);
+  route();
+
+  // Offline support; relative path keeps the registration subpath-safe.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
 }
