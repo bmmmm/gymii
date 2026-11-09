@@ -35,7 +35,7 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   `smoke/keyboard.spec.mjs` proves the mechanism headlessly by
   stubbing `visualViewport` directly, since Chromium has no real on-screen
   keyboard to shrink it. Confirmed on a real iPhone on 2026-09-24.
-- [ ] **Safe area in standalone.** Add to Home Screen, open from there.
+- [x] **Safe area in standalone.** Add to Home Screen, open from there.
   *Expect:* content starts below the status bar / Dynamic Island — the
   `env(safe-area-inset-top)` fix, which in a browser can only be checked
   at inset 0, where it measured the expected 12 px. No code bug found: the
@@ -44,9 +44,9 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   Chromium can newly fake via CDP (`Emulation.setSafeAreaInsetsOverride`):
   a real nonzero inset does scale in additively (71px/130px for a 59/34
   notch+indicator), proven red against a deliberately flattened rule and
-  green against the real one. Left unchecked: that only proves the CSS
-  math, not the WebKit/iOS Add-to-Home-Screen round trip itself — the
-  actual device check this item describes is still open.
+  green against the real one. That only proves the CSS math; the
+  Add-to-Home-Screen round trip itself was confirmed on a real iPhone on
+  2026-11-09.
 - [x] **Scan a pairing QR with a real phone camera once** — device A shows
   the QR, device B's camera app scans it, gymii pairs from it. Confirmed on
   a real iPhone on 2026-11-09.
@@ -55,16 +55,18 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   light afterwards: user decision 2026-11-09, does not matter — the stream
   stopping on a scan, Cancel and a tab switch stays pinned in Chromium
   (`smoke/scan.spec.mjs`).
-- [ ] **Pair → "Replace this gym's data" inside the Home Screen app** —
+- [x] **Pair → "Replace this gym's data" inside the Home Screen app** —
   the backup downloads before anything is replaced. *Expect:* iOS offers
   the file (save/share sheet) and the pairing goes on after it; record
   what a standalone web app does with the download, since that is the
   only copy of what Replace gives up. Afterwards Devices on the other
   device lists the phone under the invite's name, and the invite's own
   entry is gone.
-- [ ] **Weight tapped, then Log set at once.** On the log screen tap the
+  Confirmed on a real iPhone on 2026-11-09.
+- [x] **Weight tapped, then Log set at once.** On the log screen tap the
   weight field and immediately tap "✓ Log set". *Expect:* the value the
   field showed is logged, not 0.
+  Confirmed on a real iPhone on 2026-11-09.
 - [ ] **A finish refused by full storage.** Hard to stage on purpose; if it
   ever happens: *Expect:* the banner names the problem and the rest
   countdown keeps running (proven in Chromium by `smoke/workout.spec.mjs`).
@@ -89,9 +91,10 @@ stand. An expectation that fails becomes an issue labelled `bug`.
 - [ ] **Gym editor: label field, then a chip, no blur.** Type a label with
   a trailing space, tap a muscle chip straight away. *Expect:* the trimmed
   label is saved, never an empty one.
-- [ ] **True black from the home screen.** With True black on, launch the
+- [x] **True black from the home screen.** With True black on, launch the
   Home Screen app. *Expect:* black from the first frame, no dark-grey flash
   before the app paints.
+  Confirmed on a real iPhone on 2026-11-09.
 - [ ] **The issue forms, signed in.** The chooser
   (`/issues/new/choose`) should show four forms + two contact links with
   "Blank issue" as maintainers-only, and the template form must block
