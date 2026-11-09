@@ -5,6 +5,7 @@ import {
   ensureMachine, addMachineVariant, bindItemTo, machineTrainedWhole, newEntry, nameChipsFor, skipPlanDay, machineBrand,
   newestStampedSet, setAssistGoal, COMMON_GRIPS,
   switchMachine, rateLastSet, usageByMuscle, MUSCLE_GROUPS, setGoalFor, setTargetSets, lastEntryIn, lastGripIn,
+  webUrl,
 } from './store.js';
 import { planFromText } from './plantext.js';
 import { todayStatus } from './weekday.js';
@@ -1979,7 +1980,7 @@ function renderLog(root, layout, active, reveal = null, message = '') {
         ${machineBrand(layout, machine) || machine.model
     ? `<div class="muted">${[machineBrand(layout, machine), machine.model].filter(Boolean).map(esc).join(' · ')}</div>`
     : ''}
-        ${machine.docUrl ? `<a class="doc-link" href="${esc(machine.docUrl)}"
+        ${webUrl(machine.docUrl) ? `<a class="doc-link" href="${esc(webUrl(machine.docUrl))}"
           target="_blank" rel="noopener">Machine docs ↗</a>` : ''}
       </div>
       <div class="head-actions">

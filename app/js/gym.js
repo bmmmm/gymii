@@ -2,7 +2,7 @@ import {
   getLayout, saveLayout, newLayout, uid, importData, defaultOutline, exportGymTemplate,
   getSettings, saveSettings, usageByMachine, getActive, ownBrand, setGymBrand, matchBrand,
   MUSCLE_REGIONS, MUSCLE_GROUPS, COMMON_SETTINGS, ZONE_LABELS, MACHINE_BRANDS, MAP_LAYERS, nextNum,
-  COMMON_GRIPS,
+  COMMON_GRIPS, webUrl,
 } from './store.js';
 import { freeSpot, WALL_SNAPPED, SNAP } from './geometry.js';
 import {
@@ -82,7 +82,8 @@ const MACHINE_TEXT = {
   label: (m, v) => { m.label = v || `Machine ${m.num}`; return m.label; },
   // absent, never empty: exports and templates stay clean
   model: (m, v) => { if (v) m.model = v; else delete m.model; return v; },
-  docUrl: (m, v) => { m.docUrl = v; return v; },
+  // a web page or nothing (store.js webUrl) — what the link will open
+  docUrl: (m, v) => { m.docUrl = webUrl(v); return m.docUrl; },
 };
 
 // Swatch row for picking an item accent color (empty = default look).

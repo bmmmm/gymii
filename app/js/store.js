@@ -1294,6 +1294,19 @@ export function exportBackup() {
 // of demo.js and templates/ — none can close an attribute.
 export const isSafeId = (id) => typeof id === 'string' && /^[\w-]+$/.test(id);
 const isColor = (c) => c == null || (typeof c === 'string' && /^#(?:[0-9a-f]{3}){1,2}$/i.test(c));
+
+// A machine's doc link is a web page or nothing. esc() keeps a crafted
+// `docUrl` inside its href, but not its SCHEME: `javascript:` (dead under
+// the CSP, yet a link) or `data:` would still be a link that looks like
+// gymii's own. So the link renders through this, and the editor stores
+// through it. A bare "example.org/manual" was a link relative to the app
+// itself; it now means the https page it was meant as.
+export function webUrl(raw) {
+  const url = typeof raw === 'string' ? raw.trim() : '';
+  if (!url || /^https?:\/\//i.test(url)) return url;
+  // a scheme drops the link; "host:8080/…" is a port, not a scheme
+  return /^[a-z][a-z0-9+.-]*:(?!\d)/i.test(url) || url.startsWith('/') ? '' : `https://${url}`;
+}
 const finiteOrAbsent = (o, keys) => keys.every((k) => o[k] == null || Number.isFinite(o[k]));
 const isPlaced = (o) => finiteOrAbsent(o, ['x', 'y', 'w', 'h', 'rot']);
 // `level` is a cardio set's resistance step (a rower's 1–10) — unit-less,
@@ -1418,8 +1431,13 @@ export function cleanPlan(p) {
   if (!p || !isSafeId(p.id) || !Array.isArray(p.items)
     || !p.items.every((it) => it && typeof it === 'object'
       && (it.machineId == null || isSafeId(it.machineId)))) return null;
+  // weekdays as plantext.js's planFromImport keeps them: whole 0–6, once
+  // each — a string here was a crash of the Train hub (`p.days.map`)
+  const { days, ...rest } = p;
   return {
-    ...p,
+    ...rest,
+    ...(Array.isArray(days)
+      ? { days: [...new Set(days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))] } : {}),
     items: p.items.map((it) => ({
       ...stringOrDrop(numFields(it, ['num']), 'grip'),
       ...(it.target ? { target: numFields(it.target, ['sets', ...SET_NUMBERS]) } : {}),

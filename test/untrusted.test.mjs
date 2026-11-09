@@ -199,6 +199,34 @@ assert.deepEqual(store.getPlans()[0].items[0],
   { machineId: null, name: 'Row', target: { sets: 3, reps: 10 } },
   'plan item numbers: num dropped, target repaired, a grip that is no string dropped');
 
+// plan weekdays: a list of whole 0–6, once each, or nothing — a string
+// here crashed the Train hub (`p.days.map`)
+store.importData(backup({
+  plans: [
+    { id: 'p-days-str', name: 'Str', days: '13', items: [] },
+    { id: 'p-days-mixed', name: 'Mixed', days: [1, 1, 9, '2', 3.5, 3], items: [] },
+  ],
+}));
+assert.deepEqual(store.getPlans().map((p) => [p.id, p.days]),
+  [['p-days-str', undefined], ['p-days-mixed', [1, 3]]], 'plan days: repaired or dropped');
+
+// a machine's doc link: a web page or nothing (store.js webUrl)
+for (const [raw, want] of [
+  ['https://example.org/m', 'https://example.org/m'],
+  ['  HTTP://example.org ', 'HTTP://example.org'],
+  ['example.org/manual', 'https://example.org/manual'],
+  ['gym.example:8080/doc', 'https://gym.example:8080/doc'],
+  ['javascript:alert(1)', ''],
+  [' JavaScript:alert(1)', ''],
+  ['data:text/html,<b>x</b>', ''],
+  ['vbscript:x', ''],
+  ['//evil.example', ''],
+  ['/relative', ''],
+  ['', ''],
+  [null, ''],
+  [42, ''],
+]) assert.equal(store.webUrl(raw), want, `webUrl(${JSON.stringify(raw)})`);
+
 // --- 1e. backup settings: a bad field keeps the device's own value ---
 store.saveSettings({ ...store.getSettings(), unit: 'kg', restSeconds: 90, weightStep: 2.5 });
 store.importData(backup({ settings: { unit: `kg${X}`, restSeconds: `90${X}`, weightStep: X } }));
@@ -595,5 +623,34 @@ renderGym(fresh());
 inert(root.querySelector('#props').innerHTML, 'gym editor, machine card');
 assert.ok(root.querySelector('#props').innerHTML.includes('id="m-num" type="number" inputmode="numeric" value="1&quot;'),
   'gym editor: machine num escaped');
+
+// --- Train: a machine's free text and its doc link ---
+// Layer 2 for the text fields: label, model, muscles and settings fields
+// render through esc(); a doc link with a scheme renders as no link at all.
+for (const [docUrl, href] of [
+  ['javascript:alert(1)', null],
+  ['data:text/html,<b>x</b>', null],
+  ['example.org/manual', 'https://example.org/manual'],
+]) {
+  const l = store.newLayout('Text gym');
+  l.machines.push({
+    id: 'm9', num: 9, label: `Row${X}`, model: `XR${X}`, x: 1, y: 1, w: 3, h: 3,
+    settingsFields: [`Seat${X}`], muscles: [`Back${X}`], docUrl,
+  });
+  store.saveLayout(l);
+  store.saveActive({
+    v: 2, id: 'w-text', startedAt: Date.now() - 60000, plan: [{ machineId: 'm9', exercise: null }],
+    currentMachineId: 'm9', currentExercise: null, restOverrides: {}, entries: [],
+  });
+  renderTrain(fresh());
+  inert(root.innerHTML, `log screen, free text (${docUrl})`);
+  for (const needle of ['Row&quot;', 'XR&quot;', 'Back&quot;', 'Seat&quot;']) {
+    assert.ok(root.innerHTML.includes(needle), `log screen: ${needle.slice(0, -6)} escaped`);
+  }
+  assert.ok(!/href="(?:javascript|data):/i.test(root.innerHTML), `log screen: no ${docUrl} link`);
+  if (href) assert.ok(root.innerHTML.includes(`href="${href}"`), 'log screen: a bare host links as https');
+  else assert.ok(!root.innerHTML.includes('Machine docs'), `log screen: ${docUrl} renders no link`);
+}
+store.clearActive();
 
 console.log('untrusted input: all assertions passed');

@@ -48,7 +48,13 @@ layout's, never none: a gridless layout is not written, and the push
 back would empty the server's machines. The views escape the same
 fields anyway, for records stored before the checks (map.js draws
 geometry through `Number()`), and app/index.html's CSP keeps any inline
-handler that slips through from running. Pinned by test/untrusted.test.mjs and
+handler that slips through from running. A plan's `days` are whole 0–6
+or absent (`cleanPlan`, as `planFromImport` keeps them — a string there
+crashed the Train hub). A machine's `docUrl` is the one stored value that
+becomes a LINK: esc() keeps it inside its href but not its scheme, so it
+renders, and the editor stores it, through `webUrl()` — http(s) as it is,
+a bare host as https, anything with another scheme (`javascript:`,
+`data:`) or a leading `/` as no link at all. Pinned by test/untrusted.test.mjs and
 sync.test.mjs block 19. Stored
 weights are always in the current display
 unit — `setUnit()` converts ALL gyms' data in one shot. The unit is
