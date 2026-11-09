@@ -1422,6 +1422,15 @@ weekdays, the map, grips UI, RIR, locker, muscles. Invariants:
   empty one); the view says so.
 - No rest timer here: a log ends a rest still running from the full view
   (train.js `endRest`), as a set logged there with rest 0 would.
+- No plans here either, so what the full view keeps open for them is said or
+  answered, never left waiting unseen. A plan in the builder (train.js
+  `openBuilder()` — an AI import lands there, a half-built plan stays there)
+  gets a line naming it and "Open the plan builder", which turns Minimal off
+  and reroutes; not while a workout runs, which outranks the builder in the
+  full view too. A bind prompt left open there (`active.binding`, "Which
+  machine is this?") is cleared by the next set logged here, as Skip would
+  clear it: the plan step stays unbound and is asked again later, never bound
+  to the machine just logged by guess.
 - THE FUN — decided by pure functions, played on a stage. `occasionFor`
   picks the set's occasion on the state BEFORE it is stored: a new best
   (`isNewBest`: strength the heaviest weight, assisted the least assist,

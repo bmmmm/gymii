@@ -8,7 +8,7 @@ import { strict as assert } from 'node:assert';
 
 const store = await import(new URL('../app/js/store.js', import.meta.url).href);
 const m = await import(new URL('../app/js/minimal.js', import.meta.url).href);
-const { renderTrain } = await import(new URL('../app/js/train.js', import.meta.url).href);
+const { renderTrain, openPlanBuilder, openBuilder } = await import(new URL('../app/js/train.js', import.meta.url).href);
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
@@ -535,6 +535,56 @@ const pickSeries = (machineId, exercise, grip) => click('#min-series', chipFor(m
   assert.ok(hub.innerHTML.includes('id="minimal-toggle"') && hub.innerHTML.includes('<h1>Train</h1>'),
     'the hub carries the switch, off');
   assert.ok(hub.innerHTML.includes('aria-pressed="false"'));
+}
+
+// ======================================================================
+// 16. what Minimal has no screen for: a plan in the builder, a bind prompt
+// ======================================================================
+{
+  store.clearActive();
+  settings({ minimal: true });
+  m.renderMinimal(root);
+  assert.ok(!root.innerHTML.includes('id="min-plan"'), 'no plan waiting: no card');
+
+  // an AI import hands its plan to the builder, then routes to #train —
+  // which Minimal renders: the plan must not wait there unseen
+  store.savePlan({ id: 'pw', name: 'Push <day>', items: [{ machineId: 'lp', exercise: null }] });
+  openPlanBuilder('pw', 'Imported from AI — review, adjust, save.');
+  m.renderMinimal(root);
+  assert.ok(root.innerHTML.includes('id="min-plan"')
+    && root.innerHTML.includes('Plan "Push &lt;day&gt;" is waiting for review in the plan builder.'),
+    'Minimal names the waiting plan, escaped');
+  const events = [];
+  globalThis.window = new EventTarget();
+  window.addEventListener('gymii:reroute', () => events.push('reroute'));
+  click('#min-plan-open');
+  delete globalThis.window;
+  assert.equal(store.getSettings().minimal, undefined, 'one tap turns Minimal off');
+  assert.deepEqual(events, ['reroute'], 'and routes again, in place');
+  assert.equal(openBuilder()?.planId, 'pw', 'the builder still holds that plan: the full view opens on it');
+  const full = { ...root, innerHTML: '', querySelector: root.querySelector };
+
+  // a running workout outranks the builder (as in the full view): no card then
+  settings({ minimal: true });
+  store.saveActive({
+    v: 2, id: 'w-bind', startedAt: Date.now(),
+    plan: [{ machineId: null, name: 'Hack squat', exercise: null }, { machineId: 'lp', exercise: null }],
+    binding: 0, currentMachineId: null, currentExercise: null, entries: [],
+  });
+  m.renderMinimal(root);
+  assert.ok(!root.innerHTML.includes('id="min-plan"'), 'a workout runs: the builder waits, unannounced');
+
+  // the bind prompt from the full view: a set logged here moves on from it,
+  // as Skip would — the plan step stays unbound, never bound by guess
+  pickSeries('lp');
+  click('#min-log');
+  const a = store.getActive();
+  assert.ok(!('binding' in a), 'the bind prompt is answered by moving on');
+  assert.equal(a.plan[0].machineId, null, 'its step stays unbound');
+  assert.equal(activeSets('lp').length, 1, 'and the set went where it was logged');
+  renderTrain(full);
+  assert.ok(!full.innerHTML.includes('Which machine is this?'), 'the full view does not pop the old question');
+  store.clearActive();
 }
 
 // the stub was the device; nothing else may have written outside it

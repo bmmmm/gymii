@@ -55,6 +55,12 @@ export function openPlanBuilder(planId, notice = '') {
   builder = { planId, notice };
 }
 
+// The builder's open state, or null — for Minimal mode, which renders the
+// Train route WITHOUT this module's screens: a plan handed over by the AI
+// import, or left half-built before Minimal went on, would wait there
+// unseen. Minimal says so and offers the way back (minimal.js).
+export const openBuilder = () => builder;
+
 // Which non-workout, non-builder screen the Train tab shows. Layered UNDER
 // builder/active in screenKey's priority — exactly like builder already
 // sits under active — so the AI-import and mid-workout paths never consult

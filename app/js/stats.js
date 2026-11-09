@@ -620,7 +620,9 @@ export const walkSaving = (ratio) => (ratio <= 0.15 ? 'a fraction of the walk'
 
 // One point per workout for a machine's progress chart. `volume` is
 // reps × weight (cardio: total distance); `e1rm` the best valid estimate
-// across the sets, strength only; `rir` the top set's rating when it has one.
+// across the sets, strength only; `rir` the top set's rating when it has one;
+// `repless: true` on a strength workout logged by weight alone (no set has
+// reps — Minimal mode), absent otherwise.
 export function machineSeries(workouts, machineId, exercise = null, grip = null) {
   return seriesEntries(workouts, machineId, exercise, grip).map(({ w, e, kind }) => {
     if (kind === 'cardio') {
@@ -643,6 +645,7 @@ export function machineSeries(workouts, machineId, exercise = null, grip = null)
       volume: kind === 'assisted' ? 0 : sum(e.sets.map(setVolume)),
       sets: e.sets.length,
       ...(isRir(top.rir) ? { rir: top.rir } : {}),
+      ...(kind === 'strength' && e.sets.every((st) => !(st.reps > 0)) ? { repless: true } : {}),
     };
   });
 }
@@ -1102,7 +1105,10 @@ export function inBusyWindow(row, at) {
 }
 
 // 8 — no new best estimated 1RM for six or more workouts on a machine that
-// is still being trained.
+// is still being trained. A series logged by weight alone (Minimal mode) has
+// no e1RM; there the record is the TOP WEIGHT, over the workouts whose sets
+// ALL lack reps — a workout with reps stays out, since 80 × 5 → 80 × 10 is
+// progress a top weight cannot see (weightPlateau).
 function plateauRule(ws, settings, now, layout = null, plans = []) {
   const unit = settings?.unit ?? 'kg';
   return trainedPairs(ws).flatMap(({ machineId, exercise, grip }) => {
@@ -1112,7 +1118,10 @@ function plateauRule(ws, settings, now, layout = null, plans = []) {
         .map((extra) => insight('plateau', extra.score, { ...extra.row, machineId, exercise, grip }));
     }
     const pts = series.filter((p) => p.kind === 'strength' && p.e1rm != null);
-    if (pts.length < 8) return [];
+    if (pts.length < 8) {
+      return weightPlateau(series, unit, now)
+        .map((row) => insight('plateau', row.score, { ...row.row, machineId, exercise, grip }));
+    }
     const best = Math.max(...pts.slice(0, -6).map((p) => p.e1rm));
     if (Math.max(...pts.slice(-6).map((p) => p.e1rm)) > best) return [];
     if (daysBetween(pts[pts.length - 1].t, now) >= RECENT_DAYS) return [];
@@ -1125,6 +1134,25 @@ function plateauRule(ws, settings, now, layout = null, plans = []) {
       grip,
     })];
   });
+}
+
+// 8, weight alone — the same windows as the e1RM rule (eight workouts, none
+// of the last six past the best of the earlier ones, trained in the last 21
+// days) on the top weight of the rep-less workouts. Only reached when the
+// e1RM rule has too few points, so one series never gets two plateaus.
+function weightPlateau(series, unit, now) {
+  const pts = series.filter((p) => p.kind === 'strength' && p.repless && p.top.weight > 0);
+  if (pts.length < 8 || daysBetween(pts[pts.length - 1].t, now) >= RECENT_DAYS) return [];
+  const best = Math.max(...pts.slice(0, -6).map((p) => p.top.weight));
+  if (Math.max(...pts.slice(-6).map((p) => p.top.weight)) > best) return [];
+  const since = pts.length - 1 - pts.findIndex((p) => p.top.weight === best);
+  return [{
+    score: since - 6,
+    row: {
+      text: `No new top weight in ${since} workouts (${num(best)} ${unit}) — vary reps or load.`,
+      source: 'acsm2009',
+    },
+  }];
 }
 
 // 8, assisted — no e1RM to compare: the record is the LEAST assist
