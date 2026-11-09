@@ -117,3 +117,54 @@ test('the fun layer never takes a tap, and reduced motion moves nothing', async 
   await expect(layer.locator('.fun-sprite, .fun-line')).toHaveCount(0);
   expect(await activeSets(page)).toHaveLength(4);
 });
+
+// keepAwake 'workout' holds the screen lock exactly as long as a workout
+// runs. Minimal mode never calls renderTrain, where the lock used to be
+// reconciled alone — a workout started here took no lock, and one finished
+// here kept it. Chromium headless has no real wake lock to watch, so a stub
+// counts the sentinels held.
+test("keepAwake 'workout' takes the lock on Minimal's first set and drops it on Done", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__held = 0;
+    Object.defineProperty(navigator, 'wakeLock', {
+      configurable: true,
+      value: {
+        request: async () => {
+          window.__held += 1;
+          const listeners = [];
+          let released = false;
+          return {
+            addEventListener: (type, fn) => { if (type === 'release') listeners.push(fn); },
+            release: async () => {
+              if (released) return;
+              released = true;
+              window.__held -= 1;
+              listeners.forEach((fn) => fn());
+            },
+          };
+        },
+      },
+    });
+  });
+  await seedDemoGym(page);
+  await page.evaluate(async () => {
+    const { getSettings, saveSettings } = await import('/js/store.js');
+    saveSettings({ ...getSettings(), keepAwake: 'workout', minimal: true });
+  });
+  await page.reload();
+  await expect(page.locator('#min-view')).toBeVisible();
+  const held = () => page.evaluate(() => window.__held);
+  expect(await held(), 'no workout yet, no lock').toBe(0);
+
+  await page.locator('#min-new').click();
+  await page.locator('#min-new-name').fill('Hip thrust');
+  await page.locator('#min-new-kind [data-kind="strength"]').click();
+  await page.locator('#min-log').click();
+  expect(await activeSets(page)).toHaveLength(1);
+  await expect.poll(held, { message: 'the first set started a workout: the lock is held' }).toBe(1);
+
+  await page.locator('#min-done').click();
+  await page.locator('#min-done').click();
+  await expect(page.locator('#min-done')).toHaveCount(0);
+  await expect.poll(held, { message: 'Done ended the workout: the lock is gone' }).toBe(0);
+});

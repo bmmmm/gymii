@@ -22,7 +22,9 @@ import {
   finishWorkout, ensureMachine, nextNum, newEntry, switchMachine, lastEntryIn, distUnit,
 } from './store.js';
 import { sameSeries, seriesKey, startOfDay } from './stats.js';
-import { startWorkoutFrom, nextSetDefaults, ensureSlot, endRest, restLeft } from './train.js';
+import {
+  startWorkoutFrom, nextSetDefaults, ensureSlot, endRest, restLeft, syncWorkoutLock,
+} from './train.js';
 import {
   esc, stepperField, fieldValue, parseDistance, parseDuration, setStr, twoTapConfirm, keepInView,
   entryKind, machineIcon, variantStr, minimalToggleHtml, wireMinimalToggle, plural, minsBetween, fmtTime,
@@ -305,6 +307,9 @@ const sameSel = (a, b) => !!a && !!b && seriesKey(a) === seriesKey(b);
 // workout's current machine there (it may have moved in the full view).
 export function renderMinimal(root, { entry = false, notice = '' } = {}) {
   const closed = autoClose();
+  // the 'workout'-scoped wake lock follows the workout here too: this view
+  // re-renders after every log and Done, and an auto-close lands above
+  syncWorkoutLock();
   const s = getSettings();
   const layout = getLayout();
   const workouts = getWorkouts();

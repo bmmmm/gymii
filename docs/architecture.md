@@ -1782,7 +1782,12 @@ active workout exists — battery cost, never the default) or `off`; a
 stored pre-scope boolean migrates in `getSettings()`. The lock lives in
 a module-level manager in train.js (two independent reasons —
 break/workout — reconciled via `syncWakeLock()`, so a re-render
-mid-break cannot drop it), is re-acquired on visibilitychange and
+mid-break cannot drop it). The workout reason is set by the exported
+`syncWorkoutLock()`, which BOTH renderers of the Train route call first —
+`renderTrain` and minimal.js's `renderMinimal`; with only renderTrain
+doing it, a workout started in Minimal took no lock and one finished
+there kept it (`smoke/minimal.spec.mjs` counts the sentinels of a stubbed
+`navigator.wakeLock`). The lock is re-acquired on visibilitychange and
 released when nothing wants it; denial is silently ignored. There is no
 web API for device BRIGHTNESS, so dimming can only ever mean our own
 pixels: `settings.timerDim` (`10s` default, `now`, `off`) darkens the

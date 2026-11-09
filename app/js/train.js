@@ -144,11 +144,7 @@ export function renderTrain(root, message = '') {
   const key = screenKey(active, builder, screen);
   if (key !== lastScreenKey && root.scrollTop) root.scrollTop = 0;
   lastScreenKey = key;
-  // 'workout' scope: the lock lives exactly as long as the workout does.
-  // renderTrain runs after every state change here, so finishing or
-  // discarding a workout releases it on the next render.
-  lockForWorkout = getSettings().keepAwake === 'workout' && !!active;
-  syncWakeLock();
+  syncWorkoutLock();
   // An in-progress workout outranks onboarding: machines can be wiped
   // mid-workout by an import or a gym edit, and the quick start must
   // never overwrite logged sets. The plan builder outranks it too — a plan
@@ -2603,6 +2599,16 @@ async function applyWakeLock() {
   } catch { /* unsupported or denied */ } finally {
     wakeLockPending = false;
   }
+}
+
+// 'workout' scope: the lock lives exactly as long as the workout does.
+// Both renderers of the Train route call this first — renderTrain and
+// Minimal mode's renderMinimal run after every state change of theirs, so
+// a workout started or finished in either view takes or releases the lock
+// on that render. Exported for minimal.js.
+export function syncWorkoutLock() {
+  lockForWorkout = getSettings().keepAwake === 'workout' && !!getActive();
+  syncWakeLock();
 }
 
 function syncWakeLock() {
