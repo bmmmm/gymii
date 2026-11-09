@@ -1245,6 +1245,7 @@ body.minimal-mode #view { padding-bottom: calc(24px + env(safe-area-inset-bottom
   border: 1px dashed var(--border); border-radius: 999px; color: var(--muted); font-size: 12px;
 }
 #min-log { margin-top: 12px; }
+.min-plan { margin: 12px 0; }
 .min-new input { width: 100%; }
 .min-new .muted { margin: 10px 0; }
 

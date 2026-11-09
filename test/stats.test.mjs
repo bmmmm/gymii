@@ -725,12 +725,14 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
   const one = stats.machineSeries([W(day(3), [E('m1', [bare(80), bare(85)])])], 'm1');
   assert.deepEqual([one[0].top, one[0].e1rm, one[0].volume, one[0].sets], [{ weight: 85, reps: 0 }, null, 0, 2],
     'the top set is the heaviest, no estimate, no volume — but two sets');
-  // ten workouts on one weight, then more: every rule runs, none fires on the machine
+  // ten workouts on one weight: every rule runs; no progress (no target
+  // beaten), and the plateau reads the top weight, not an e1RM there is none of
   const flat = Array.from({ length: 10 }, (_, i) => W(day(30 - 3 * i), [E('m1', [bare(80), bare(80), bare(80)])]));
   let rows;
   assert.doesNotThrow(() => { rows = stats.insights(flat, LAYOUT, KG, { now: NOW }); }, 'no rule crashes on weight-only sets');
-  assert.deepEqual(rows.filter((r) => r.machineId === 'm1' && ['progress', 'plateau'].includes(r.kind)), [],
-    'no progress (no target beaten) and no plateau (no e1RM) from weights alone');
+  assert.deepEqual(rows.filter((r) => r.machineId === 'm1' && ['progress', 'plateau'].includes(r.kind)).map((r) => r.text),
+    ['No new top weight in 9 workouts (80 kg) — vary reps or load.'],
+    'no progress from weights alone; the plateau is the top weight\'s');
   const bw = Array.from({ length: 4 }, (_, i) => W(day(8 - 2 * i), [E('m1', [{ reps: 12, at: 1 }], { bodyweight: true })]));
   assert.doesNotThrow(() => stats.insights(bw, LAYOUT, KG, { now: NOW }), 'nor on bodyweight sets without a weight');
   const weeks = stats.weeklyBuckets(flat, { weeks: 5, now: NOW });
@@ -1100,6 +1102,29 @@ const find = (ws, kind, { layout = LAYOUT, settings = KG, plans = [] } = {}) => 
     assert.equal(stats.closerStop({ layout: L4, from: chest, next, candidates: [slot(legs), slot(push)], recentMuscles: [] })
       .machine.id, 't', 'without the malus the nearer pushdown would win');
   }
+}
+
+// 8 plateau, weight alone (Minimal mode): no e1RM — the record is the top
+// weight, over the workouts whose sets ALL lack reps
+{
+  const wonly = (weights, last = 2) => weights.map((kg, i) =>
+    W(day(last + (weights.length - 1 - i) * 3), [E('m1', [{ weight: kg }, { weight: kg }])]));
+  const p = find(wonly([80, 85, 80, 80, 80, 80, 80, 80]), 'plateau');
+  assert.equal(p?.text, 'No new top weight in 6 workouts (85 kg) — vary reps or load.');
+  assert.deepEqual([p.machineId, p.exercise, p.source], ['m1', null, 'acsm2009']);
+  assert.equal(find(wonly([85, 80, 80, 80, 80, 80, 80]), 'plateau'), undefined, 'weight alone: 7 workouts are one short');
+  assert.equal(find(wonly([80, 85, 80, 80, 80, 80, 80, 87.5]), 'plateau'), undefined, 'a heavier top weight in the last six: no plateau');
+  assert.equal(find(wonly([80, 85, 80, 80, 80, 80, 80, 80], 21), 'plateau'), undefined, 'weight alone: 21 days ago is dropped');
+  // a workout WITH reps stays out: 80 × 5 → 80 × 10 is progress a top weight cannot see
+  const mixed = wonly([80, 85, 80, 80, 80, 80, 80, 80]);
+  mixed[7] = W(day(2), [E('m1', [S(10, 80)])]);
+  assert.equal(find(mixed, 'plateau'), undefined, 'a workout with reps is not a weight-only point: seven left, no plateau');
+  assert.equal(stats.machineSeries(mixed, 'm1').filter((x) => x.repless).length, 7, 'repless marks the weight-only workouts');
+  // eight e1RM sessions: the e1RM rule speaks, never both
+  const both = [...wonly([80, 85, 80, 80, 80, 80, 80, 80], 30), ...[7, 8, 7, 7, 7, 7, 7, 7]
+    .map((r, i) => W(day(2 + (7 - i) * 3, 9), [E('m1', [S(r, 60)])]))];
+  assert.deepEqual(stats.insights(both, LAYOUT, KG, { now: NOW }).filter((x) => x.kind === 'plateau').map((x) => x.text),
+    ['No new best in 6 workouts (76 kg e1RM) — vary reps or load.'], 'one plateau per series: the e1RM one');
 }
 
 // --- volume of sets without reps: unknown, never 0 and never guessed ---

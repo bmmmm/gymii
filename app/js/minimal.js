@@ -18,16 +18,17 @@
 // helpers); train.js imports nothing from here — no cycle.
 
 import {
-  getLayout, saveLayout, getSettings, saveSettings, getActive, saveActive, getWorkouts,
+  getLayout, saveLayout, getSettings, saveSettings, getActive, saveActive, getWorkouts, getPlans,
   finishWorkout, ensureMachine, nextNum, newEntry, switchMachine, lastEntryIn, distUnit,
 } from './store.js';
 import { sameSeries, seriesKey, startOfDay } from './stats.js';
 import {
-  startWorkoutFrom, nextSetDefaults, ensureSlot, endRest, restLeft, syncWorkoutLock,
+  startWorkoutFrom, nextSetDefaults, ensureSlot, endRest, restLeft, syncWorkoutLock, openBuilder,
 } from './train.js';
 import {
   esc, stepperField, fieldValue, parseDistance, parseDuration, setStr, twoTapConfirm, keepInView,
   entryKind, machineIcon, variantStr, minimalToggleHtml, wireMinimalToggle, plural, minsBetween, fmtTime,
+  reroute,
 } from './ui.js';
 import { ensurePersisted } from './persist.js';
 import { ambientFinished } from './sync.js';
@@ -331,6 +332,18 @@ export function renderMinimal(root, { entry = false, notice = '' } = {}) {
 
   const msg = notice || (closed ? `Your last workout was saved — it ended at ${fmtTime(closed.finishedAt)}.` : '');
   const funOn = s.minimalFun !== false;
+  // a plan waiting in the builder (an AI import lands there, a half-built
+  // one stays there) has no screen here — say so, one tap back to it. A
+  // running workout outranks the builder in the full view too: not then.
+  const waiting = active ? null : openBuilder();
+  const waitingPlan = waiting?.planId ? getPlans().find((p) => p.id === waiting.planId) : null;
+  const waitingHtml = waiting ? `
+      <div class="min-plan" id="min-plan">
+        <p class="muted">${waitingPlan
+    ? `Plan "${esc(waitingPlan.name || 'unnamed')}" is waiting for review in the plan builder.`
+    : 'A new plan is waiting in the plan builder.'} Minimal mode has no plans.</p>
+        <button type="button" id="min-plan-open" class="btn btn-inline">Open the plan builder</button>
+      </div>` : '';
 
   // the chips: the first CHIP_LIMIT and the selected one, the rest behind "+N more"
   const shown = showAll ? chips : chips.filter((c, i) => i < CHIP_LIMIT || c === sel);
@@ -353,6 +366,7 @@ export function renderMinimal(root, { entry = false, notice = '' } = {}) {
         </div>
       </div>
       ${msg ? `<p class="notice" role="status">${esc(msg)}</p>` : ''}
+      ${waitingHtml}
       <div class="chip-select min-series" id="min-series">
         ${chipHtml}
         ${hidden ? `<button type="button" class="chip" data-more="1">+${hidden} more</button>` : ''}
@@ -363,6 +377,12 @@ export function renderMinimal(root, { entry = false, notice = '' } = {}) {
     </div>`;
 
   wireMinimalToggle(root);
+  // the full view again — its Train route opens on the builder
+  root.querySelector('#min-plan-open')?.addEventListener('click', () => {
+    const { minimal: _off, ...rest } = getSettings();
+    saveSettings(rest);
+    reroute();
+  });
   wireFun(root);
   wireSeries(root, chips);
   if (adding) wireNewForm(root);
@@ -635,6 +655,11 @@ function logSet(root, sel, kind, values) {
     active.entries.push(entry);
   }
   entry.sets.push(set);
+  // a bind prompt left open in the full view ("Which machine is this?")
+  // was asked about a plan step; a set logged here moved on from it, as
+  // Skip there would — the step stays unbound and is asked again later,
+  // never bound to this machine by guess
+  delete active.binding;
   // no rest timer here: like a set logged with rest 0 in the full view, it
   // ends a rest still running from there
   const resting = restLeft(active) > 0;

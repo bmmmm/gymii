@@ -7,6 +7,15 @@ holds open work only.
 
 ## 2026-11-09
 
+Shipped 2026-11-09 (`2026-11-09d`): the last loose ends of Minimal mode. A
+plan waiting in the plan builder — an AI import lands there — is named on
+the Minimal screen with "Open the plan builder", which switches to the full
+view on it; before, the import seemed to vanish. A "Which machine is this?"
+prompt left open in the full view is answered by the next set logged in
+Minimal, as Skip would: the plan step stays unbound and comes up again. And
+an exercise logged by weight alone now gets the plateau hint too, on its top
+weight: "No new top weight in 6 workouts (85 kg) — vary reps or load."
+
 Shipped 2026-11-09 (`2026-11-09c`): sets logged without reps no longer
 read as "0 kg". Their volume is unknown, not zero, and gymii does not
 guess it: next to sets with reps the total reads "≥ 640 kg" (a lower

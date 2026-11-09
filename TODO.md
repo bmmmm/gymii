@@ -113,17 +113,6 @@ stand. An expectation that fails becomes an issue labelled `bug`.
   animation and coming back neither replays nor freezes it. So far only
   headless Chromium (Pixel 5, 320 and 390 px) has seen it.
 
-### Minimal mode — open (PR #4, shipped 2026-11-09)
-
-Left open by the PR on purpose; Locker, the grips UI, plans and the rest
-timer are out of Minimal's scope by design.
-
-- **Plan builder while Minimal is on.** The AI plan import / builder waits
-  until Minimal is off and does not say why — it needs a hint.
-- **Bind prompt.** An open bind prompt (`active.binding`) from the full
-  view stays untouched in Minimal; it is still waiting when the full view
-  comes back.
-
 ### Closed (user decision 2026-10-13)
 
 Unbound items and the muscle filter: fine as is. Template browser filters:
